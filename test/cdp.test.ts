@@ -1,4 +1,6 @@
+import { createHash } from "node:crypto";
 import { once } from "node:events";
+import net from "node:net";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { type RawData, type WebSocket, WebSocketServer } from "ws";
@@ -22,10 +24,14 @@ type RpcHandler = (rpc: Rpc, socket: WebSocket) => void;
 
 const servers: WebSocketServer[] = [];
 const clients: CdpClient[] = [];
+const rawServers: net.Server[] = [];
+const rawSockets: net.Socket[] = [];
 
 afterEach(async () => {
   vi.restoreAllMocks();
   await Promise.all(clients.splice(0).map((client) => client.close()));
+  for (const socket of rawSockets.splice(0)) socket.destroy();
+  for (const server of rawServers.splice(0)) server.close();
   for (const server of servers.splice(0)) {
     for (const socket of server.clients) socket.terminate();
     server.close();
@@ -392,5 +398,73 @@ describe("closing", () => {
     await client.close();
     deliver(JSON.stringify({ method: "Late.event", params: {} }));
     expect(handler).toHaveBeenCalledTimes(1);
+  });
+});
+
+const WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+
+async function startRawServer(afterHandshake: (socket: net.Socket) => void) {
+  const server = net.createServer((socket) => {
+    rawSockets.push(socket);
+    socket.once("data", (data) => {
+      const key = /Sec-WebSocket-Key: (.+)\r\n/i.exec(data.toString())?.[1] ?? "";
+      const accept = createHash("sha1")
+        .update(key + WS_GUID)
+        .digest("base64");
+      socket.write(
+        "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\n" +
+          `Connection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`,
+      );
+      afterHandshake(socket);
+    });
+  });
+  rawServers.push(server);
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  return `ws://127.0.0.1:${(server.address() as AddressInfo).port}`;
+}
+
+describe("transport failures", () => {
+  it("rejects pending requests with the reason when the socket errors after open", async () => {
+    const url = await startRawServer((socket) => {
+      setTimeout(() => socket.write(Buffer.from([0xf0, 0x00])), 20);
+    });
+    const client = await CdpClient.connect({ url });
+    clients.push(client);
+    const failure = await client.send("Any").catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(CdpClosedError);
+    expect((failure as Error).message).toContain("Invalid WebSocket frame");
+  });
+
+  it("forces the socket down when the peer ignores the close handshake", async () => {
+    const url = await startRawServer(() => undefined);
+    const client = await CdpClient.connect({ url });
+    const started = Date.now();
+    await client.close();
+    const elapsed = Date.now() - started;
+    expect(elapsed).toBeGreaterThanOrEqual(900);
+    expect(elapsed).toBeLessThan(3000);
+  });
+});
+
+describe("close ordering", () => {
+  it("waits for the transport to finish closing", async () => {
+    let release: () => void = () => undefined;
+    const client = await CdpClient.connect({
+      url: "ws://unused",
+      createTransport: async () => ({
+        send: () => undefined,
+        close: () => new Promise<void>((resolve) => (release = resolve)),
+        onMessage: () => undefined,
+        onClose: () => undefined,
+      }),
+    });
+    let done = false;
+    const closing = client.close().then(() => (done = true));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(done).toBe(false);
+    release();
+    await closing;
+    expect(done).toBe(true);
   });
 });
