@@ -48,3 +48,4 @@ export {
   type TabInfo,
   type TabScope,
 } from "./sessions.js";
+export { CdpBackend } from "./cdp-backend.js";

@@ -468,3 +468,60 @@ describe("close ordering", () => {
     expect(done).toBe(true);
   });
 });
+
+describe("onClose", () => {
+  it("notifies once when the server drops the connection", async () => {
+    const { client } = await connect((_rpc, socket) => socket.terminate());
+    const handler = vi.fn();
+    client.onClose(handler);
+    await client.send("Any").catch(() => undefined);
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it("notifies when the client is closed locally and not after unsubscribe", async () => {
+    const { client } = await connect(echo);
+    const kept = vi.fn();
+    const removed = vi.fn();
+    client.onClose(kept);
+    client.onClose(removed)();
+    await client.close();
+    expect(kept).toHaveBeenCalledTimes(1);
+    expect(removed).not.toHaveBeenCalled();
+  });
+
+  it("calls a handler registered after the close", async () => {
+    const { client } = await connect(echo);
+    await client.close();
+    const handler = vi.fn();
+    client.onClose(handler);
+    await Promise.resolve();
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it("survives a late handler that throws and honors an immediate unsubscribe", async () => {
+    const stderr = silentStderr();
+    const { client } = await connect(echo);
+    await client.close();
+    client.onClose(() => {
+      throw new Error("late boom");
+    });
+    const cancelled = vi.fn();
+    client.onClose(cancelled)();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(cancelled).not.toHaveBeenCalled();
+    expect(stderr).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a throwing handler from breaking the others", async () => {
+    const stderr = silentStderr();
+    const { client } = await connect(echo);
+    const good = vi.fn();
+    client.onClose(() => {
+      throw new Error("boom");
+    });
+    client.onClose(good);
+    await client.close();
+    expect(good).toHaveBeenCalledTimes(1);
+    expect(stderr).toHaveBeenCalled();
+  });
+});

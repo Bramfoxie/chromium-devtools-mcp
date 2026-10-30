@@ -46,6 +46,7 @@ export class CdpClient {
   private readonly pending = new Map<number, Pending>();
   private readonly listeners = new Map<string, Set<EventHandler>>();
   private readonly closeWaiters = new Set<(error: Error) => void>();
+  private readonly closeHandlers = new Set<() => void>();
 
   private constructor(
     private readonly transport: Transport,
@@ -148,6 +149,20 @@ export class CdpClient {
     });
   }
 
+  onClose(handler: () => void): () => void {
+    if (this.isClosed) {
+      let cancelled = false;
+      queueMicrotask(() => {
+        if (!cancelled) this.runCloseHandler(handler);
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
+    this.closeHandlers.add(handler);
+    return () => void this.closeHandlers.delete(handler);
+  }
+
   async attach(targetId: string): Promise<CdpSession> {
     const result = await this.send("Target.attachToTarget", { targetId, flatten: true });
     const sessionId = isRecord(result) ? result.sessionId : undefined;
@@ -174,6 +189,14 @@ export class CdpClient {
     await this.transport.close();
   }
 
+  private runCloseHandler(handler: () => void): void {
+    try {
+      handler();
+    } catch (failure) {
+      logError(`a close handler threw: ${messageOf(failure)}`);
+    }
+  }
+
   private shutdown(error: Error): void {
     if (this.isClosed) return;
     this.isClosed = true;
@@ -184,6 +207,8 @@ export class CdpClient {
     this.pending.clear();
     for (const waiter of [...this.closeWaiters]) waiter(error);
     this.closeWaiters.clear();
+    for (const handler of [...this.closeHandlers]) this.runCloseHandler(handler);
+    this.closeHandlers.clear();
     this.listeners.clear();
   }
 

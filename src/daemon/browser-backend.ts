@@ -22,4 +22,8 @@ export interface BrowserBackend {
   listTargets(): Promise<TargetInfo[]>;
   attach(targetId: string): Promise<BackendSession>;
   onTargetDestroyed(handler: (targetId: string) => void): () => void;
+  // fires when the connection ends, including after close()
+  onDisconnected(handler: () => void): () => void;
+  // closes the connection to the browser, not the browser itself
+  close(): Promise<void>;
 }

@@ -59,6 +59,7 @@ export class FakeBackend implements BrowserBackend {
   > = {};
   afterCreate: ((targetId: string) => void) | undefined;
   private readonly destroyed = new Set<(targetId: string) => void>();
+  private readonly disconnected = new Set<() => void>();
   private counter = 0;
 
   private fail(name: keyof FakeBackend["failures"]): void {
@@ -118,6 +119,20 @@ export class FakeBackend implements BrowserBackend {
   onTargetDestroyed(handler: (targetId: string) => void): () => void {
     this.destroyed.add(handler);
     return () => void this.destroyed.delete(handler);
+  }
+
+  onDisconnected(handler: () => void): () => void {
+    this.disconnected.add(handler);
+    return () => void this.disconnected.delete(handler);
+  }
+
+  async close(): Promise<void> {
+    this.log.push("close");
+    this.disconnect();
+  }
+
+  disconnect(): void {
+    for (const handler of [...this.disconnected]) handler();
   }
 
   seedTab(url: string, contextId?: string): string {
