@@ -25,7 +25,7 @@ Clients: Claude Code, Cherry Studio, Cursor, Codex.
 - Browsers: Chrome, Arc.
 - OS: macOS, Linux, Windows.
 - Transport: stdio.
-- Node.js 20 or newer.
+- Node.js 22 or newer.
 
 ## Roadmap
 
