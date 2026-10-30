@@ -2,8 +2,6 @@
 
 MCP server that lets AI agents drive your real Chromium browser through the DevTools Protocol.
 
-Status: design phase. Nothing is published yet.
-
 ## Features
 
 - Works with the browser you already use, including your profile, bookmarks and logins, or with a separate persistent managed profile. Switchable in config.
