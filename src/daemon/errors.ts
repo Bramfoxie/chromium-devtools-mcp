@@ -14,3 +14,39 @@ export class AlreadyRunningError extends DaemonError {
     this.name = "AlreadyRunningError";
   }
 }
+
+export class ProtocolViolationError extends DaemonError {
+  constructor(detail: string) {
+    super(`Invalid daemon message: ${detail}.`);
+    this.name = "ProtocolViolationError";
+  }
+}
+
+export class RpcError extends DaemonError {
+  constructor(
+    readonly code: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = "RpcError";
+  }
+}
+
+export class IpcTimeoutError extends DaemonError {
+  constructor(
+    readonly method: string,
+    readonly timeoutMs: number,
+  ) {
+    super(
+      `Daemon request ${method} timed out after ${timeoutMs} ms. Check that the daemon is responsive or raise the timeout.`,
+    );
+    this.name = "IpcTimeoutError";
+  }
+}
+
+export class IpcClosedError extends DaemonError {
+  constructor(detail: string) {
+    super(`Daemon connection is closed: ${detail}. Reconnect to the daemon and retry.`);
+    this.name = "IpcClosedError";
+  }
+}

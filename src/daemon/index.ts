@@ -18,3 +18,22 @@ export {
 } from "./paths.js";
 export { type DirIO, type DirStat, ensurePrivateDir } from "./private-dir.js";
 export { ensureToken, generateToken, readToken, tokensMatch } from "./token.js";
+export { IpcClosedError, IpcTimeoutError, ProtocolViolationError, RpcError } from "./errors.js";
+export { IpcClient, type IpcConnectOptions, type IpcEventHandler } from "./client.js";
+export {
+  encodeMessage,
+  ErrorCode,
+  LineDecoder,
+  MAX_LINE_BYTES,
+  type HelloParams,
+  type Request,
+  type Response,
+  type ServerEvent,
+} from "./protocol.js";
+export {
+  acceptConnection,
+  type AcceptOptions,
+  type ClientConnection,
+  type IncomingRequest,
+  type RequestHandler,
+} from "./server.js";
