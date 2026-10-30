@@ -9,6 +9,18 @@ export const ErrorCode = {
   unknownMethod: "unknown_method",
   internal: "internal",
   busy: "busy",
+  sessionRequired: "session_required",
+  sessionClosed: "session_closed",
+  notFound: "not_found",
+  notOwned: "not_owned",
+  alreadyClaimed: "already_claimed",
+  forbiddenMethod: "forbidden_method",
+  unsupportedUrl: "unsupported_url",
+  notCreated: "not_created",
+  cdpError: "cdp_error",
+  cdpTimeout: "cdp_timeout",
+  browserClosed: "browser_closed",
+  resultTooLarge: "result_too_large",
 } as const;
 
 const id = z.number().int().nonnegative();

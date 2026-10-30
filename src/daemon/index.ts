@@ -37,3 +37,14 @@ export {
   type IncomingRequest,
   type RequestHandler,
 } from "./server.js";
+export type { BackendSession, BrowserBackend, TargetInfo } from "./browser-backend.js";
+export { Daemon, type DaemonOptions } from "./daemon.js";
+export { createRequestHandler } from "./handler.js";
+export {
+  ClientSession,
+  type Emit,
+  SessionRegistry,
+  type SessionOptions,
+  type TabInfo,
+  type TabScope,
+} from "./sessions.js";

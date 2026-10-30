@@ -322,13 +322,15 @@ describe("handler failures", () => {
         return loop;
       },
     ],
-  ])("answers with an internal error for %s and keeps serving", async (_name, produce) => {
+  ])("answers with an error for %s and keeps serving", async (name, produce) => {
     const stderr = quietStderr();
     const server = await startServer({
       handler: async ({ method }) => (method === "produce" ? produce() : "alive"),
     });
     const client = await connectClient(server);
-    await expect(client.request("produce")).rejects.toMatchObject({ code: ErrorCode.internal });
+    await expect(client.request("produce")).rejects.toMatchObject({
+      code: name.includes("size limit") ? ErrorCode.resultTooLarge : ErrorCode.internal,
+    });
     await expect(client.request("other")).resolves.toBe("alive");
     expect(stderr.mock.calls.map((call) => String(call[0])).join("")).toContain(
       "could not encode a response",

@@ -1,5 +1,5 @@
 import type net from "node:net";
-import { RpcError } from "./errors.js";
+import { ProtocolViolationError, RpcError } from "./errors.js";
 import { describeError, logDaemon, quoted } from "./log.js";
 import {
   encodeMessage,
@@ -15,6 +15,7 @@ const DEFAULT_HELLO_TIMEOUT_MS = 5000;
 const MAX_IN_FLIGHT = 64;
 const MAX_WRITE_BUFFER_BYTES = 8 * 1024 * 1024;
 const INTERNAL_MESSAGE = "The daemon failed to handle the request.";
+const TOO_LARGE_MESSAGE = "The result is larger than the 1 MiB limit of the daemon protocol.";
 
 export interface ClientConnection {
   readonly clientName: string;
@@ -73,8 +74,14 @@ export function acceptConnection(socket: net.Socket, options: AcceptOptions): vo
       write(message);
     } catch (error) {
       logDaemon(`could not encode a response: ${describeError(error)}`);
+      const tooLarge = error instanceof ProtocolViolationError;
       guarded("reply", () =>
-        write({ id, error: { code: ErrorCode.internal, message: INTERNAL_MESSAGE } }),
+        write({
+          id,
+          error: tooLarge
+            ? { code: ErrorCode.resultTooLarge, message: TOO_LARGE_MESSAGE }
+            : { code: ErrorCode.internal, message: INTERNAL_MESSAGE },
+        }),
       );
     }
   };
