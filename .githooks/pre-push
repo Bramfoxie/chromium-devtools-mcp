@@ -1,0 +1,19 @@
+#!/bin/sh
+allowed_email="me@bramfoxie.com"
+zero=0000000000000000000000000000000000000000
+
+while read -r _ local_sha _ remote_sha; do
+  [ "$local_sha" = "$zero" ] && continue
+  if [ "$remote_sha" = "$zero" ]; then
+    range="$local_sha --not --remotes"
+  else
+    range="$remote_sha..$local_sha"
+  fi
+  bad=$(git log --format='%h %ae %ce' $range | awk -v a="$allowed_email" '$2 != a || $3 != a')
+  if [ -n "$bad" ]; then
+    echo "pre-push: commits not authored and committed by $allowed_email:" >&2
+    echo "$bad" >&2
+    exit 1
+  fi
+done
+exit 0

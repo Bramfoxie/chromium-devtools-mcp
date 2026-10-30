@@ -1,0 +1,29 @@
+#!/bin/sh
+fail() {
+  echo "pre-commit: $1" >&2
+  exit 1
+}
+
+staged=$(git diff --cached --name-only --diff-filter=ACM)
+[ -n "$staged" ] || exit 0
+
+for f in AGENTS.md CLAUDE.md; do
+  printf '%s\n' "$staged" | grep -qx "$f" && fail "$f must not be committed"
+done
+
+dashes="$(printf '\342\200\224')|$(printf '\342\200\223')"
+for f in $staged; do
+  [ -f "$f" ] || continue
+  case "$f" in .githooks/*) continue ;; esac
+  git show ":$f" | grep -qE "$dashes" && fail "em or en dash found in $f"
+done
+
+if [ -f package.json ]; then
+  has_script() { node -e "process.exit(require('./package.json').scripts?.['$1'] ? 0 : 1)"; }
+  for s in lint typecheck; do
+    if has_script "$s"; then
+      npm run -s "$s" || fail "npm run $s failed"
+    fi
+  done
+fi
+exit 0
