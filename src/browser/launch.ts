@@ -16,13 +16,13 @@ export interface ChildHandle {
 
 export interface LaunchDeps {
   findExecutable: (browser: BrowserName) => string;
-  spawn: (command: string, args: string[]) => ChildHandle;
+  spawn         : (command: string, args: string[]) => ChildHandle;
   startTimeoutMs: number;
-  stopGraceMs: number;
+  stopGraceMs   : number;
 }
 
 export interface ManagedBrowser {
-  readonly port: number;
+  readonly port        : number;
   readonly webSocketUrl: string;
   stop(): Promise<void>;
 }
@@ -41,7 +41,9 @@ export function buildLaunchArgs(config: ManagedConfig): string[] {
     "--no-first-run",
     "--no-default-browser-check",
   ];
+
   if (config.headless) args.push("--headless=new");
+
   return args;
 }
 
@@ -49,9 +51,12 @@ export function parseListeningUrl(
   output: string,
 ): { port: number; webSocketUrl: string } | undefined {
   const match = LISTENING_PATTERN.exec(output);
+
   if (!match?.[1]) return undefined;
+
   try {
     const port = Number(new URL(match[1]).port);
+
     return Number.isInteger(port) && port > 0 ? { port, webSocketUrl: match[1] } : undefined;
   } catch {
     return undefined;
@@ -60,8 +65,9 @@ export function parseListeningUrl(
 
 export function spawnProcess(command: string, args: string[]): ChildHandle {
   const child = nodeSpawn(command, args, { stdio: ["ignore", "ignore", "pipe"] });
+
   return {
-    kill: (signal) => child.kill(signal),
+    kill    : (signal) => child.kill(signal),
     onStderr: (handler) => {
       child.stderr.setEncoding("utf8");
       child.stderr.on("data", handler);
@@ -79,9 +85,9 @@ export function spawnProcess(command: string, args: string[]): ChildHandle {
 
 const defaultDeps: LaunchDeps = {
   findExecutable: (browser) => findBrowserExecutable(browser),
-  spawn: spawnProcess,
+  spawn         : spawnProcess,
   startTimeoutMs: 15_000,
-  stopGraceMs: 5_000,
+  stopGraceMs   : 5_000,
 };
 
 function messageOf(error: unknown): string {
@@ -99,6 +105,7 @@ export async function launchManaged(
       `failed to start ${executable}: ${detail}. Check that the file exists and is executable.`,
     );
   let child: ChildHandle;
+
   try {
     child = deps.spawn(executable, buildLaunchArgs(config));
   } catch (error) {
@@ -117,6 +124,7 @@ export async function launchManaged(
 
     const timer = setTimeout(() => {
       if (settled) return;
+
       settled = true;
       child.kill("SIGTERM");
       void terminate(child, exited, deps.stopGraceMs).then(() =>
@@ -132,15 +140,19 @@ export async function launchManaged(
     const stop = () =>
       (stopping ??= (async () => {
         if (exitReason !== undefined) return;
+
         child.kill("SIGTERM");
         await terminate(child, exited, deps.stopGraceMs);
       })());
 
     child.onStderr((chunk) => {
       if (settled) return;
+
       buffered = (buffered + chunk).slice(-MAX_BUFFERED_STDERR);
       const endpoint = parseListeningUrl(buffered);
+
       if (!endpoint) return;
+
       settled = true;
       buffered = "";
       clearTimeout(timer);
@@ -149,6 +161,7 @@ export async function launchManaged(
 
     child.onError((message) => {
       if (settled) return;
+
       settled = true;
       clearTimeout(timer);
       reject(startFailure(message));
@@ -158,6 +171,7 @@ export async function launchManaged(
       exitReason ??= reason;
       markExited();
       if (settled) return;
+
       settled = true;
       clearTimeout(timer);
       reject(
@@ -176,12 +190,15 @@ async function settlesWithin(promise: Promise<void>, ms: number): Promise<boolea
     timer = setTimeout(() => resolve(false), ms);
   });
   const result = await Promise.race([promise.then(() => true as const), timedOut]);
+
   clearTimeout(timer);
+
   return result;
 }
 
 async function terminate(child: ChildHandle, exited: Promise<void>, graceMs: number) {
   if (await settlesWithin(exited, graceMs)) return;
+
   child.kill("SIGKILL");
   await settlesWithin(exited, graceMs);
 }

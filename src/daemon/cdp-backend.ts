@@ -4,16 +4,16 @@ import type { BackendSession, BrowserBackend, TargetInfo } from "./browser-backe
 import { DaemonError } from "./errors.js";
 
 const contextsSchema = z.object({
-  browserContextIds: z.array(z.string()).optional(),
+  browserContextIds      : z.array(z.string()).optional(),
   defaultBrowserContextId: z.string().min(1).optional(),
 });
 const createdContextSchema = z.object({ browserContextId: z.string().min(1) });
 const createdTargetSchema = z.object({ targetId: z.string().min(1) });
 const targetInfoSchema = z.object({
-  targetId: z.string().min(1),
-  type: z.string(),
-  title: z.string().default(""),
-  url: z.string().default(""),
+  targetId        : z.string().min(1),
+  type            : z.string(),
+  title           : z.string().default(""),
+  url             : z.string().default(""),
   browserContextId: z.string().nullish(),
 });
 const targetsSchema = z.object({ targetInfos: z.array(z.unknown()) });
@@ -21,14 +21,16 @@ const destroyedSchema = z.object({ targetId: z.string().min(1) });
 
 function parseResult<T>(schema: z.ZodType<T>, value: unknown, method: string): T {
   const result = schema.safeParse(value);
+
   if (result.success) return result.data;
+
   throw new DaemonError(`The browser sent an unexpected response to ${method}.`);
 }
 
 function wrapSession(session: CdpSession): BackendSession {
   return {
-    send: (method, params, timeoutMs) => session.send(method, params, { timeoutMs }),
-    on: (event, handler) => session.on(event, (params) => handler(params)),
+    send  : (method, params, timeoutMs) => session.send(method, params, { timeoutMs }),
+    on    : (event, handler) => session.on(event, (params) => handler(params)),
     detach: () => session.detach(),
   };
 }
@@ -46,16 +48,19 @@ export class CdpBackend implements BrowserBackend {
       await client.send("Target.getBrowserContexts"),
       "Target.getBrowserContexts",
     );
+
     if (!contexts.defaultBrowserContextId) {
       throw new DaemonError(
         "This browser does not report its default browser context. Update the browser and try again.",
       );
     }
+
     return new CdpBackend(client, contexts.defaultBrowserContextId);
   }
 
   async createContext(): Promise<string> {
     const result = await this.client.send("Target.createBrowserContext", {});
+
     return parseResult(createdContextSchema, result, "Target.createBrowserContext")
       .browserContextId;
   }
@@ -70,6 +75,7 @@ export class CdpBackend implements BrowserBackend {
       background: true,
       ...(contextId === undefined ? {} : { browserContextId: contextId }),
     });
+
     return parseResult(createdTargetSchema, result, "Target.createTarget").targetId;
   }
 
@@ -83,16 +89,18 @@ export class CdpBackend implements BrowserBackend {
       await this.client.send("Target.getTargets"),
       "Target.getTargets",
     );
+
     return result.targetInfos
       .flatMap((entry) => {
         const info = targetInfoSchema.safeParse(entry);
+
         return info.success ? [info.data] : [];
       })
       .filter((info) => info.type === "page" && !info.url.startsWith("devtools://"))
       .map((info) => ({
         targetId: info.targetId,
-        url: info.url,
-        title: info.title,
+        url     : info.url,
+        title   : info.title,
         contextId:
           info.browserContextId == null || info.browserContextId === this.defaultContextId
             ? undefined
@@ -107,6 +115,7 @@ export class CdpBackend implements BrowserBackend {
   onTargetDestroyed(handler: (targetId: string) => void): () => void {
     return this.client.on("Target.targetDestroyed", (params) => {
       const parsed = destroyedSchema.safeParse(params);
+
       if (parsed.success) handler(parsed.data.targetId);
     });
   }

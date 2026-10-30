@@ -18,8 +18,8 @@ const mac = { platform: "darwin" as const, homedir: "/Users/u", env: {} };
 const linux = { platform: "linux" as const, homedir: "/home/u", env: {} };
 const windows = {
   platform: "win32" as const,
-  homedir: "C:\\Users\\u",
-  env: { LOCALAPPDATA: "C:\\Users\\u\\AppData\\Local" },
+  homedir : "C:\\Users\\u",
+  env     : { LOCALAPPDATA: "C:\\Users\\u\\AppData\\Local" },
 };
 
 const config = { browser: "chrome" as const, debugPort: 9222 };
@@ -28,24 +28,25 @@ const fileContent = "9333\n/devtools/browser/from-file\n";
 const version = { webSocketDebuggerUrl: "ws://127.0.0.1:9222/devtools/browser/from-http" };
 
 interface World {
-  files?: Record<string, string>;
+  files?    : Record<string, string>;
   openPorts?: number[];
-  versions?: Record<number, unknown>;
+  versions? : Record<number, unknown>;
 }
 
 function deps(world: World = {}, overrides: Partial<AttachDeps> = {}) {
   const logs: string[] = [];
   const value: AttachDeps = {
-    context: mac,
-    readFile: async (file) => world.files?.[file],
-    isPortOpen: async (port) => world.openPorts?.includes(port) ?? false,
-    fetchVersion: async (port) => world.versions?.[port],
-    sleep: async () => undefined,
-    log: (message) => logs.push(message),
-    onWaiting: () => undefined,
+    context       : mac,
+    readFile      : async (file) => world.files?.[file],
+    isPortOpen    : async (port) => world.openPorts?.includes(port) ?? false,
+    fetchVersion  : async (port) => world.versions?.[port],
+    sleep         : async () => undefined,
+    log           : (message) => logs.push(message),
+    onWaiting     : () => undefined,
     pollIntervalMs: 1,
     ...overrides,
   };
+
   return { value, logs };
 }
 
@@ -93,7 +94,7 @@ describe("browserUserDataDir", () => {
 describe("parseActivePortFile", () => {
   it("builds the endpoint from the port file", () => {
     expect(parseActivePortFile("9333\r\n/devtools/browser/x\r\n")).toEqual({
-      port: 9333,
+      port        : 9333,
       webSocketUrl: "ws://127.0.0.1:9333/devtools/browser/x",
     });
   });
@@ -109,31 +110,34 @@ describe("parseActivePortFile", () => {
 describe("resolveAttachEndpoint", () => {
   it("prefers the port file when its port is open", async () => {
     const { value } = deps({
-      files: { [portFile]: fileContent },
+      files    : { [portFile]: fileContent },
       openPorts: [9333],
-      versions: { 9222: version },
+      versions : { 9222: version },
     });
+
     expect(await resolveAttachEndpoint(config, value)).toEqual({
-      port: 9333,
+      port        : 9333,
       webSocketUrl: "ws://127.0.0.1:9333/devtools/browser/from-file",
-      source: "port-file",
+      source      : "port-file",
     });
   });
 
   it("ignores a stale port file and uses the configured debug port", async () => {
     const { value } = deps({ files: { [portFile]: fileContent }, versions: { 9222: version } });
+
     expect(await resolveAttachEndpoint(config, value)).toMatchObject({
-      port: 9222,
+      port  : 9222,
       source: "debug-port",
     });
   });
 
   it("uses the configured debug port when there is no port file", async () => {
     const { value } = deps({ versions: { 9222: version } });
+
     expect(await resolveAttachEndpoint(config, value)).toEqual({
-      port: 9222,
+      port        : 9222,
       webSocketUrl: version.webSocketDebuggerUrl,
-      source: "debug-port",
+      source      : "debug-port",
     });
   });
 
@@ -143,6 +147,7 @@ describe("resolveAttachEndpoint", () => {
       { files: { [file]: fileContent }, openPorts: [9333] },
       { context: windows },
     );
+
     expect(await resolveAttachEndpoint(config, value)).toMatchObject({ source: "port-file" });
   });
 
@@ -155,6 +160,7 @@ describe("resolveAttachEndpoint", () => {
         },
       },
     );
+
     expect(await resolveAttachEndpoint(config, value)).toMatchObject({ source: "debug-port" });
   });
 
@@ -174,12 +180,14 @@ describe("resolveAttachEndpoint", () => {
     ["unparseable URL", { webSocketDebuggerUrl: "::::" }],
   ])("rejects a version response with %s", async (_name, response) => {
     const { value } = deps({ versions: { 9222: response } });
+
     expect(await resolveAttachEndpoint(config, value)).toBeUndefined();
   });
 
   it("accepts a URL without an explicit port when the debug port is 80", async () => {
     const response = { webSocketDebuggerUrl: "ws://127.0.0.1/devtools/browser/x" };
     const { value } = deps({ versions: { 80: response } });
+
     expect(await resolveAttachEndpoint({ ...config, debugPort: 80 }, value)).toMatchObject({
       port: 80,
     });
@@ -189,12 +197,14 @@ describe("resolveAttachEndpoint", () => {
     for (const host of ["[::1]", "localhost"]) {
       const response = { webSocketDebuggerUrl: `ws://${host}:9222/devtools/browser/x` };
       const { value } = deps({ versions: { 9222: response } });
+
       expect(await resolveAttachEndpoint(config, value)).toMatchObject({ source: "debug-port" });
     }
   });
 
   it("skips the port file for a browser without a known directory", async () => {
     const { value } = deps({ versions: { 9222: version } }, { context: linux });
+
     expect(await resolveAttachEndpoint({ browser: "arc", debugPort: 9222 }, value)).toMatchObject({
       source: "debug-port",
     });
@@ -204,6 +214,7 @@ describe("resolveAttachEndpoint", () => {
 describe("attachBrowser", () => {
   it("returns immediately and reports the chosen source and port", async () => {
     const { value, logs } = deps({ versions: { 9222: version } });
+
     await expect(attachBrowser(config, value)).resolves.toMatchObject({ source: "debug-port" });
     expect(logs).toEqual(["Attaching to chrome on port 9222 (debug-port)."]);
   });
@@ -215,16 +226,18 @@ describe("attachBrowser", () => {
       {},
       {
         fetchVersion: async () => (++fetches === 3 ? version : undefined),
-        sleep: async () => {
+        sleep       : async () => {
           sleeps += 1;
         },
       },
     );
     const endpoint = await attachBrowser(config, value);
+
     expect(endpoint.source).toBe("debug-port");
     expect(fetches).toBe(3);
     expect(sleeps).toBe(2);
     const instructions = logs.filter((line) => line.includes("Cannot attach"));
+
     expect(instructions).toHaveLength(1);
     expect(instructions[0]).toContain("chrome://inspect/#remote-debugging");
     expect(instructions[0]).toContain("--remote-debugging-port=9222");
@@ -238,9 +251,10 @@ describe("attachBrowser", () => {
       {},
       {
         fetchVersion: async () => (++fetches === 4 ? version : undefined),
-        onWaiting: (instructions) => waiting.push(instructions),
+        onWaiting   : (instructions) => waiting.push(instructions),
       },
     );
+
     await attachBrowser(config, value);
     expect(waiting).toHaveLength(1);
     expect(waiting[0]).toContain("chrome://inspect/#remote-debugging");
@@ -252,6 +266,7 @@ describe("attachBrowser", () => {
       { versions: { 9222: version } },
       { onWaiting: (text) => waiting.push(text) },
     );
+
     await attachBrowser(config, value);
     expect(waiting).toEqual([]);
   });
@@ -265,6 +280,7 @@ describe("attachBrowser", () => {
       {
         fetchVersion: async () => {
           if (++fetches === 2) controller.abort();
+
           return undefined;
         },
         sleep: async () => {
@@ -275,6 +291,7 @@ describe("attachBrowser", () => {
     const failure = await attachBrowser(config, value, controller.signal).catch(
       (error: unknown) => error,
     );
+
     expect(failure).toBeInstanceOf(AttachError);
     expect(fetches).toBe(2);
     expect(sleeps).toBe(2);
@@ -284,9 +301,9 @@ describe("attachBrowser", () => {
   it("passes the abort signal to the probes and the sleep", async () => {
     const controller = new AbortController();
     const seen = {
-      isPortOpen: [] as unknown[],
+      isPortOpen  : [] as unknown[],
       fetchVersion: [] as unknown[],
-      sleep: [] as unknown[],
+      sleep       : [] as unknown[],
     };
     let fetches = 0;
     const { value } = deps(
@@ -294,11 +311,13 @@ describe("attachBrowser", () => {
       {
         isPortOpen: async (_port, signal) => {
           seen.isPortOpen.push(signal);
+
           return false;
         },
         fetchVersion: async (_port, signal) => {
           seen.fetchVersion.push(signal);
           if (++fetches === 3) controller.abort();
+
           return undefined;
         },
         sleep: async (_ms, signal) => {
@@ -306,7 +325,9 @@ describe("attachBrowser", () => {
         },
       },
     );
+
     await attachBrowser(config, value, controller.signal).catch(() => undefined);
+
     for (const calls of Object.values(seen)) {
       expect(calls.length).toBeGreaterThan(0);
       expect(calls.every((signal) => signal === controller.signal)).toBe(true);
@@ -315,8 +336,10 @@ describe("attachBrowser", () => {
 
   it("does not poll when already cancelled", async () => {
     const controller = new AbortController();
+
     controller.abort();
     const { value, logs } = deps({ versions: { 9222: version } });
+
     await expect(attachBrowser(config, value, controller.signal)).rejects.toBeInstanceOf(
       AttachError,
     );
@@ -327,6 +350,7 @@ describe("attachBrowser", () => {
 describe("setupInstructions", () => {
   it("offers the inspect toggle with the version requirement for Chrome", () => {
     const text = setupInstructions(config);
+
     expect(text).toContain("Chrome 144 or newer");
     expect(text).toContain("chrome://inspect/#remote-debugging");
     expect(text).toContain("Option 2");
@@ -334,6 +358,7 @@ describe("setupInstructions", () => {
 
   it("offers only the port flag for Arc", () => {
     const text = setupInstructions({ browser: "arc", debugPort: 9222 });
+
     expect(text).toContain("Arc");
     expect(text).not.toContain("chrome://inspect");
     expect(text).toContain("--remote-debugging-port=9222");
@@ -348,14 +373,17 @@ describe("setupInstructions", () => {
 
 describe("default I/O", () => {
   const closers: Array<() => void> = [];
+
   afterEach(() => {
     for (const close of closers.splice(0)) close();
   });
 
   async function serve(handler: http.RequestListener) {
     const server = http.createServer(handler);
+
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     closers.push(() => server.close());
+
     return (server.address() as AddressInfo).port;
   }
 
@@ -366,6 +394,7 @@ describe("default I/O", () => {
       response.setHeader("content-type", "application/json");
       response.end(JSON.stringify(version));
     });
+
     expect(await fetchVersion(port)).toEqual(version);
     expect(urls).toEqual(["/json/version"]);
   });
@@ -377,12 +406,14 @@ describe("default I/O", () => {
       response.setHeader("location", `http://127.0.0.1:${target}/json/version`);
       response.end();
     });
+
     expect(await fetchVersion(port)).toBeUndefined();
   });
 
   it("gives up on a server that never answers", async () => {
     const port = await serve(() => undefined);
     const started = Date.now();
+
     expect(await fetchVersion(port, undefined, 50)).toBeUndefined();
     expect(Date.now() - started).toBeLessThan(1500);
   });
@@ -394,6 +425,7 @@ describe("default I/O", () => {
       response.write(big.slice(0, 50 * 1024));
       response.end(big.slice(50 * 1024));
     });
+
     expect(await fetchVersion(sized)).toBeUndefined();
     expect(await fetchVersion(chunked)).toBeUndefined();
   });
@@ -401,8 +433,10 @@ describe("default I/O", () => {
   it("stops waiting for an answer when the signal aborts", async () => {
     const port = await serve(() => undefined);
     const controller = new AbortController();
+
     setTimeout(() => controller.abort(), 30);
     const started = Date.now();
+
     expect(await fetchVersion(port, controller.signal)).toBeUndefined();
     expect(Date.now() - started).toBeLessThan(900);
   });
@@ -413,19 +447,24 @@ describe("default I/O", () => {
       response.statusCode = 500;
       response.end("{}");
     });
+
     expect(await fetchVersion(html)).toBeUndefined();
     expect(await fetchVersion(failing)).toBeUndefined();
     const server = http.createServer();
+
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     const closed = (server.address() as AddressInfo).port;
+
     await new Promise<void>((resolve) => server.close(() => resolve()));
     expect(await fetchVersion(closed)).toBeUndefined();
   });
 
   it("probes whether a port accepts connections", async () => {
     const server = net.createServer((socket) => socket.destroy());
+
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     const port = (server.address() as AddressInfo).port;
+
     expect(await probePort(port)).toBe(true);
     await new Promise<void>((resolve) => server.close(() => resolve()));
     expect(await probePort(port)).toBe(false);
@@ -433,17 +472,21 @@ describe("default I/O", () => {
 
   it("probePort resolves false immediately for an aborted signal", async () => {
     const controller = new AbortController();
+
     controller.abort();
     expect(await probePort(1, controller.signal)).toBe(false);
   });
 
   it("abortableSleep ends early on abort and waits otherwise", async () => {
     const controller = new AbortController();
+
     setTimeout(() => controller.abort(), 20);
     const started = Date.now();
+
     await abortableSleep(5000, controller.signal);
     expect(Date.now() - started).toBeLessThan(1000);
     const waited = Date.now();
+
     await abortableSleep(40);
     expect(Date.now() - waited).toBeGreaterThanOrEqual(30);
   });

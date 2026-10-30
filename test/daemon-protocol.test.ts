@@ -20,6 +20,7 @@ describe("encodeMessage", () => {
   it("accepts a message at the size limit and rejects one above it", () => {
     const overhead = Buffer.byteLength(JSON.stringify({ s: "" }));
     const fits = { s: "x".repeat(MAX_LINE_BYTES - overhead) };
+
     expect(encodeMessage(fits).length).toBe(MAX_LINE_BYTES + 1);
     expect(() => encodeMessage({ s: "x".repeat(MAX_LINE_BYTES - overhead + 1) })).toThrow(
       ProtocolViolationError,
@@ -42,6 +43,7 @@ describe("LineDecoder", () => {
   it("handles a long unterminated line sent in tiny chunks in linear time", () => {
     const decoder = new LineDecoder();
     const started = Date.now();
+
     for (let i = 0; i < 100_000; i += 1) decoder.push("x");
     expect(decoder.push("\n")).toHaveLength(1);
     expect(Date.now() - started).toBeLessThan(1500);
@@ -50,18 +52,21 @@ describe("LineDecoder", () => {
   it("handles many short lines in one chunk in linear time", () => {
     const started = Date.now();
     const lines = new LineDecoder().push("a\n".repeat(200_000));
+
     expect(lines).toHaveLength(200_000);
     expect(Date.now() - started).toBeLessThan(1500);
   });
 
   it("keeps the byte count across chunks for a line that finally completes", () => {
     const decoder = new LineDecoder();
+
     decoder.push("x".repeat(1048576 - 1));
     expect(() => decoder.push("yy\n")).toThrow(ProtocolViolationError);
   });
 
   it("returns complete lines and keeps the rest", () => {
     const decoder = new LineDecoder();
+
     expect(decoder.push('{"a":1}\n{"b"')).toEqual(['{"a":1}']);
     expect(decoder.push(":2}\n")).toEqual(['{"b":2}']);
   });
@@ -77,6 +82,7 @@ describe("LineDecoder", () => {
   it("does not split a multibyte character across chunks", () => {
     const bytes = Buffer.from("\u044f\u044f\n");
     const decoder = new LineDecoder();
+
     expect(decoder.push(bytes.subarray(0, 1))).toEqual([]);
     expect(decoder.push(bytes.subarray(1, 3))).toEqual([]);
     expect(decoder.push(bytes.subarray(3))).toEqual(["\u044f\u044f"]);
@@ -84,6 +90,7 @@ describe("LineDecoder", () => {
 
   it("accepts a line at the limit", () => {
     const line = "x".repeat(MAX_LINE_BYTES);
+
     expect(new LineDecoder().push(`${line}\n`)).toEqual([line]);
   });
 
@@ -95,12 +102,14 @@ describe("LineDecoder", () => {
 
   it("rejects an unterminated line that grows above the limit", () => {
     const decoder = new LineDecoder();
+
     expect(decoder.push("x".repeat(MAX_LINE_BYTES))).toEqual([]);
     expect(() => decoder.push("x")).toThrow(ProtocolViolationError);
   });
 
   it("measures the limit in bytes", () => {
     const wide = "\u044f".repeat(MAX_LINE_BYTES / 2 + 1);
+
     expect(() => new LineDecoder().push(`${wide}\n`)).toThrow(ProtocolViolationError);
   });
 });

@@ -35,12 +35,13 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . && prettier --check .",
-    "format": "prettier --write .",
+    "format": "eslint . --fix && prettier --write .",
     "test": "vitest run --passWithNoTests",
     "prepare": "git config core.hooksPath .githooks || true",
     "prepublishOnly": "npm run build"
   },
   "devDependencies": {
+    "@stylistic/eslint-plugin": "^5.10.0",
     "@types/node": "^26.6.6",
     "@types/ws": "^8.18.2",
     "eslint": "^10.14.0",

@@ -39,17 +39,19 @@ export type BrowserConnector = (
 ) => Promise<BrowserHandle>;
 
 export interface RunDeps {
-  layout: DaemonLayout;
-  connectBrowser: BrowserConnector;
-  idleTimeoutMs: number;
+  layout         : DaemonLayout;
+  connectBrowser : BrowserConnector;
+  idleTimeoutMs  : number;
   helloTimeoutMs?: number;
 }
 
 export const connectBrowser: BrowserConnector = async (config, hooks, signal) => {
   if (config.mode === "managed") {
     const launched = await launchManaged(config);
+
     try {
       const client = await CdpClient.connect({ url: launched.webSocketUrl });
+
       return {
         client,
         stop: async () => {
@@ -59,11 +61,14 @@ export const connectBrowser: BrowserConnector = async (config, hooks, signal) =>
       };
     } catch (error) {
       await launched.stop().catch(() => undefined);
+
       throw error;
     }
   }
+
   const endpoint = await attachBrowser(config, { onWaiting: hooks.onWaiting }, signal);
   const client = await CdpClient.connect({ url: endpoint.webSocketUrl });
+
   return { client, stop: () => client.close() };
 };
 
@@ -80,7 +85,7 @@ export async function runDaemon(
   overrides: Partial<RunDeps> = {},
 ): Promise<RunningDaemon> {
   const deps: RunDeps = {
-    layout: currentLayout(),
+    layout       : currentLayout(),
     connectBrowser,
     idleTimeoutMs: DEFAULT_IDLE_TIMEOUT_MS,
     ...overrides,
@@ -97,11 +102,11 @@ export async function runDaemon(
 
   const daemon = new Daemon({
     token,
-    allowFocus: config.allowFocus,
-    identity: { browser: config.browser, mode: config.mode },
+    allowFocus    : config.allowFocus,
+    identity      : { browser: config.browser, mode: config.mode },
     helloTimeoutMs: deps.helloTimeoutMs,
-    idleTimeoutMs: deps.idleTimeoutMs,
-    onIdle: () => void stop("idle"),
+    idleTimeoutMs : deps.idleTimeoutMs,
+    onIdle        : () => void stop("idle"),
   });
   const instance = await acquireInstance(layout.instance(token), daemon.accept);
 
@@ -112,9 +117,12 @@ export async function runDaemon(
       await quietly("stop the browser", () => browser?.stop());
       await quietly("release the daemon socket", () => instance.release());
       const outcome: DaemonOutcome = error ? { reason, error } : { reason };
+
       finish(outcome);
+
       return outcome;
     })();
+
     return stopping;
   };
 
@@ -125,13 +133,18 @@ export async function runDaemon(
         { onWaiting: (message) => daemon.setWaiting(message) },
         controller.signal,
       );
+
       if (stopping) {
         await quietly("stop the browser", () => handle.stop());
+
         return;
       }
+
       browser = handle;
       const created = await CdpBackend.create(handle.client);
+
       if (stopping) return;
+
       created.onDisconnected(() => {
         logDaemon("the browser disconnected, stopping the daemon");
         void stop("browser_disconnected");
@@ -139,6 +152,7 @@ export async function runDaemon(
       daemon.setBackend(created);
     } catch (error) {
       if (stopping) return;
+
       logDaemon(`could not reach the browser: ${describeError(error)}`);
       await stop("failed", error instanceof Error ? error : new Error(String(error)));
     }

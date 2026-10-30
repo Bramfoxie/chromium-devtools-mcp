@@ -34,12 +34,12 @@ export type RequestHandler = (
 ) => Promise<unknown>;
 
 export interface AcceptOptions {
-  token: string;
-  handler: RequestHandler;
+  token          : string;
+  handler        : RequestHandler;
   helloTimeoutMs?: number;
-  helloResult?: () => unknown;
-  onReady?: (connection: ClientConnection) => void;
-  onClose?: (connection: ClientConnection) => void;
+  helloResult?   : () => unknown;
+  onReady?       : (connection: ClientConnection) => void;
+  onClose?       : (connection: ClientConnection) => void;
 }
 
 function guarded(label: string, action: (() => void) | undefined): void {
@@ -59,7 +59,9 @@ export function acceptConnection(socket: net.Socket, options: AcceptOptions): vo
 
   const write = (message: unknown) => {
     if (socket.destroyed || !socket.writable) return;
+
     socket.write(encodeMessage(message));
+
     if (socket.writableLength > MAX_WRITE_BUFFER_BYTES) {
       logDaemon("dropped a client that does not read its messages");
       socket.destroy();
@@ -71,11 +73,13 @@ export function acceptConnection(socket: net.Socket, options: AcceptOptions): vo
       "error" in outcome
         ? { id, error: { code: outcome.error.code, message: outcome.error.message } }
         : { id, result: outcome.result };
+
     try {
       write(message);
     } catch (error) {
       logDaemon(`could not encode a response: ${describeError(error)}`);
       const tooLarge = error instanceof ProtocolViolationError;
+
       guarded("reply", () =>
         write({
           id,
@@ -96,27 +100,35 @@ export function acceptConnection(socket: net.Socket, options: AcceptOptions): vo
     () => reject("no hello in time"),
     options.helloTimeoutMs ?? DEFAULT_HELLO_TIMEOUT_MS,
   );
+
   socket.once("close", () => {
     clearTimeout(helloTimer);
     const closing = connection;
+
     if (closing) guarded("onClose", () => options.onClose?.(closing));
   });
 
   const authenticate = (line: string): boolean => {
     const parsed = requestSchema.safeParse(parseLine(line));
+
     if (!parsed.success || parsed.data.method !== "hello") {
       reject("the first message is not a hello");
+
       return false;
     }
+
     const params = helloParamsSchema.safeParse(parsed.data.params);
+
     if (!params.success || !tokensMatch(options.token, params.data.token)) {
       reject("invalid hello");
+
       return false;
     }
+
     clearTimeout(helloTimer);
     const ready: ClientConnection = {
       clientName: params.data.clientName,
-      sendEvent: (event, eventParams) => {
+      sendEvent : (event, eventParams) => {
         try {
           write({ event, params: eventParams });
         } catch (error) {
@@ -125,17 +137,21 @@ export function acceptConnection(socket: net.Socket, options: AcceptOptions): vo
       },
       close: () => socket.destroy(),
     };
+
     connection = ready;
     reply(parsed.data.id, { result: { ok: true, daemon: options.helloResult?.() } });
     guarded("onReady", () => options.onReady?.(ready));
+
     return true;
   };
 
   const run = (id: number, method: string, params: unknown, active: ClientConnection) => {
     if (inFlight >= MAX_IN_FLIGHT) {
       reply(id, { error: new RpcError(ErrorCode.busy, "Too many requests are in progress.") });
+
       return;
     }
+
     inFlight += 1;
     Promise.resolve()
       .then(() => options.handler({ method, params }, active))
@@ -144,8 +160,10 @@ export function acceptConnection(socket: net.Socket, options: AcceptOptions): vo
         (error: unknown) => {
           if (error instanceof RpcError) {
             reply(id, { error });
+
             return;
           }
+
           logDaemon(`request ${quoted(method)} failed: ${describeError(error)}`);
           reply(id, { error: new RpcError(ErrorCode.internal, INTERNAL_MESSAGE) });
         },
@@ -161,19 +179,27 @@ export function acceptConnection(socket: net.Socket, options: AcceptOptions): vo
   const dispatch = (line: string, active: ClientConnection) => {
     const raw = parseLine(line);
     const parsed = requestSchema.safeParse(raw);
+
     if (!parsed.success) {
       const id = (raw as { id?: unknown } | null)?.id;
+
       if (typeof id !== "number" || !Number.isSafeInteger(id) || id < 0) {
         throw new RpcError(ErrorCode.badRequest, "The request is malformed.");
       }
+
       reply(id, { error: new RpcError(ErrorCode.badRequest, "The request is malformed.") });
+
       return;
     }
+
     const { id, method, params } = parsed.data;
+
     if (method === "hello") {
       reply(id, { error: new RpcError(ErrorCode.badRequest, "The connection is already open.") });
+
       return;
     }
+
     run(id, method, params, active);
   };
 

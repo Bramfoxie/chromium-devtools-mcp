@@ -27,12 +27,15 @@ function inProcessDaemon(layout: DaemonLayout, connectBrowser: BrowserConnector)
       connectBrowser,
       idleTimeoutMs: 60_000,
     }).catch(() => undefined);
+
     if (running) {
       started.push(running);
       harness.track(async () => void (await running.stop()));
     }
+
     return { exited: running ? running.done.then(() => undefined) : Promise.resolve() };
   };
+
   return { started, startDaemon };
 }
 
@@ -40,16 +43,18 @@ function makeLink(layout: DaemonLayout, startDaemon: LinkDeps["startDaemon"], mo
   const link = new DaemonLink(
     { browser: "chrome", mode },
     {
-      connect: (expect) => connectToDaemon({ clientName: "mcp-test", expect, layout }),
+      connect       : (expect) => connectToDaemon({ clientName: "mcp-test", expect, layout }),
       startDaemon,
-      sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
-      now: () => Date.now(),
-      logFile: "/data/daemon.log",
+      sleep         : (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+      now           : () => Date.now(),
+      logFile       : "/data/daemon.log",
       startTimeoutMs: 5000,
       pollIntervalMs: 20,
     },
   );
+
   harness.track(() => link.close());
+
   return link;
 }
 
@@ -62,6 +67,7 @@ describe("link to a real daemon", () => {
     const { targetId } = (await link.request("tab.create", { url: "https://a.example/" })) as {
       targetId: string;
     };
+
     expect(started).toHaveLength(1);
     expect(browser.targets.get(targetId)?.url).toBe("https://a.example/");
     await link.close();
@@ -73,8 +79,10 @@ describe("link to a real daemon", () => {
     const { connect } = await startFakeBrowser(harness);
     const { started, startDaemon } = inProcessDaemon(layout, connect);
     const first = makeLink(layout, startDaemon);
+
     await first.request("tab.list");
     const second = makeLink(layout, startDaemon);
+
     await second.request("tab.list");
     expect(started).toHaveLength(1);
   });
@@ -86,6 +94,7 @@ describe("link to a real daemon", () => {
     const first = makeLink(layout, startDaemon);
     const second = makeLink(layout, startDaemon);
     const { targetId } = (await first.request("tab.create")) as { targetId: string };
+
     await expect(second.request("tab.close", { targetId })).rejects.toMatchObject({
       code: "not_owned",
     });
@@ -95,8 +104,10 @@ describe("link to a real daemon", () => {
     const layout = await makeLayout(harness);
     const { connect } = await startFakeBrowser(harness);
     const { started, startDaemon } = inProcessDaemon(layout, connect);
+
     await makeLink(layout, startDaemon).request("tab.list");
     const other = makeLink(layout, startDaemon, "attach");
+
     await expect(other.request("tab.list")).rejects.toBeInstanceOf(DaemonConfigMismatchError);
     expect(started).toHaveLength(1);
   });
@@ -106,6 +117,7 @@ describe("link to a real daemon", () => {
     const { connect } = await startFakeBrowser(harness);
     const { started, startDaemon } = inProcessDaemon(layout, connect);
     const link = makeLink(layout, startDaemon);
+
     await link.request("tab.list");
     await started[0]?.stop();
     await vi.waitFor(async () => {
@@ -122,11 +134,13 @@ describe("link to a real daemon", () => {
     const waiting: BrowserConnector = async (config, hooks, signal) => {
       hooks.onWaiting("Open chrome://inspect/#remote-debugging and enable it.");
       await gate;
+
       return connect(config, hooks, signal);
     };
     const { startDaemon } = inProcessDaemon(layout, waiting);
     const link = makeLink(layout, startDaemon);
     const failure = await link.request("tab.list").catch((error: unknown) => error);
+
     expect(failure).toBeInstanceOf(DaemonNotReadyError);
     expect((failure as Error).message).toContain("chrome://inspect");
     release();

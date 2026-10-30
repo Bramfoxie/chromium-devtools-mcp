@@ -4,15 +4,15 @@ export const browsers = ["chrome", "arc"] as const;
 export const modes = ["attach", "managed"] as const;
 
 export const configSchema = z.strictObject({
-  browser: z.enum(browsers),
-  mode: z.enum(modes),
-  headless: z.boolean(),
+  browser   : z.enum(browsers),
+  mode      : z.enum(modes),
+  headless  : z.boolean(),
   profileDir: z.string().min(1),
-  debugPort: z.number().int().min(1).max(65535),
+  debugPort : z.number().int().min(1).max(65535),
   allowFocus: z.boolean(),
-  safety: z.strictObject({
-    readOnly: z.boolean(),
-    allowedDomains: z.array(z.string().min(1)),
+  safety    : z.strictObject({
+    readOnly        : z.boolean(),
+    allowedDomains  : z.array(z.string().min(1)),
     confirmDangerous: z.boolean(),
   }),
 });

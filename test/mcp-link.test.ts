@@ -30,7 +30,9 @@ class FakeIpc {
 
   async request(method: string, params?: unknown): Promise<unknown> {
     if (this.closed) throw new IpcClosedError("closed");
+
     this.calls.push({ method, params });
+
     return this.handler(method, params);
   }
 
@@ -49,9 +51,10 @@ const alive: StartedDaemon = { exited: new Promise<void>(() => undefined) };
 
 function fakeClock() {
   const clock = { time: 0 };
+
   return {
     clock,
-    now: () => clock.time,
+    now  : () => clock.time,
     sleep: async (ms: number) => {
       clock.time += ms;
     },
@@ -64,19 +67,22 @@ function link(overrides: Partial<LinkDeps> = {}, isolated?: boolean) {
   const deps: LinkDeps = {
     connect: async (expect) => {
       connects.push(expect);
+
       throw new DaemonNotRunningError();
     },
     startDaemon: async () => {
       starts.push(Date.now());
+
       return alive;
     },
-    sleep: async () => undefined,
-    now: () => Date.now(),
-    logFile: "/data/daemon.log",
+    sleep         : async () => undefined,
+    now           : () => Date.now(),
+    logFile       : "/data/daemon.log",
     startTimeoutMs: 2000,
     pollIntervalMs: 1,
     ...overrides,
   };
+
   return {
     link: new DaemonLink({ browser: "chrome", mode: "managed", isolated }, deps),
     starts,
@@ -88,6 +94,7 @@ describe("connecting to a running daemon", () => {
   it("connects, opens one session and forwards requests", async () => {
     const ipc = new FakeIpc((method) => (method === "echo" ? "pong" : {}));
     const { link: l, starts, connects } = link({ connect: async () => asIpc(ipc) });
+
     await expect(l.request("echo", { a: 1 })).resolves.toBe("pong");
     await l.request("echo");
     expect(starts).toEqual([]);
@@ -100,9 +107,11 @@ describe("connecting to a running daemon", () => {
     const { link: l } = link({
       connect: async (expect) => {
         seen.push(expect);
+
         return asIpc(new FakeIpc());
       },
     });
+
     await l.request("x");
     expect(seen).toEqual([{ browser: "chrome", mode: "managed" }]);
   });
@@ -114,6 +123,7 @@ describe("connecting to a running daemon", () => {
   ])("opens a session with isolated=%s as %s", async (isolated, expected) => {
     const ipc = new FakeIpc();
     const { link: l } = link({ connect: async () => asIpc(ipc) }, isolated);
+
     await l.request("x");
     expect(ipc.calls[0]).toEqual({ method: "session.open", params: { isolated: expected } });
   });
@@ -122,6 +132,7 @@ describe("connecting to a running daemon", () => {
     const ipc = new FakeIpc();
     const connect = vi.fn(async () => asIpc(ipc));
     const { link: l } = link({ connect });
+
     await Promise.all([l.request("a"), l.request("b"), l.request("c")]);
     expect(connect).toHaveBeenCalledTimes(1);
     expect(ipc.calls.filter((call) => call.method === "session.open")).toHaveLength(1);
@@ -135,6 +146,7 @@ describe("connecting to a running daemon", () => {
       );
     });
     const { link: l, starts } = link({ connect });
+
     await expect(l.request("x")).rejects.toBeInstanceOf(DaemonConfigMismatchError);
     expect(connect).toHaveBeenCalledTimes(1);
     expect(starts).toEqual([]);
@@ -146,6 +158,7 @@ describe("connecting to a running daemon", () => {
         throw new DaemonError("Cannot read the daemon token file (EACCES). Check its permissions.");
       },
     });
+
     await expect(l.request("x")).rejects.toThrow(/Check its permissions/);
     expect(starts).toEqual([]);
   });
@@ -153,9 +166,11 @@ describe("connecting to a running daemon", () => {
   it("passes other errors of the session handshake through unchanged", async () => {
     const ipc = new FakeIpc((method) => {
       if (method === "session.open") throw new RpcError(ErrorCode.badRequest, "no");
+
       return {};
     });
     const { link: l } = link({ connect: async () => asIpc(ipc) });
+
     await expect(l.request("x")).rejects.toMatchObject({ code: ErrorCode.badRequest });
   });
 });
@@ -164,11 +179,13 @@ describe("starting the daemon", () => {
   function comesUpAfter(polls: number) {
     let attempts = 0;
     const ipc = new FakeIpc();
+
     return {
       ipc,
       connect: async () => {
         attempts += 1;
         if (attempts <= polls) throw new DaemonNotRunningError();
+
         return asIpc(ipc);
       },
     };
@@ -178,6 +195,7 @@ describe("starting the daemon", () => {
     const { connect, ipc } = comesUpAfter(4);
     const sleeps: number[] = [];
     const { link: l, starts } = link({ connect, sleep: async (ms) => void sleeps.push(ms) });
+
     await l.request("x");
     expect(starts).toHaveLength(1);
     expect(sleeps.length).toBeGreaterThanOrEqual(3);
@@ -187,6 +205,7 @@ describe("starting the daemon", () => {
   it("starts it once for concurrent requests", async () => {
     const { connect } = comesUpAfter(3);
     const { link: l, starts } = link({ connect });
+
     await Promise.all([l.request("a"), l.request("b")]);
     expect(starts).toHaveLength(1);
   });
@@ -199,9 +218,11 @@ describe("starting the daemon", () => {
         attempts += 1;
         if (attempts === 1) throw new IpcClosedError("the daemon rejected the handshake");
         if (attempts === 2) throw new DaemonNotRunningError();
+
         return asIpc(ipc);
       },
     });
+
     await l.request("x");
     expect(starts).toHaveLength(1);
   });
@@ -210,6 +231,7 @@ describe("starting the daemon", () => {
     const time = fakeClock();
     const { link: l, starts } = link({ startTimeoutMs: 40, now: time.now, sleep: time.sleep });
     const failure = await l.request("x").catch((error: unknown) => error);
+
     expect(failure).toBeInstanceOf(DaemonError);
     expect((failure as Error).message).toContain("did not start within 40 ms");
     expect((failure as Error).message).toContain("/data/daemon.log");
@@ -223,15 +245,19 @@ describe("starting the daemon", () => {
     const { link: l } = link({
       connect: async () => {
         if (!answering) throw new DaemonNotRunningError();
+
         return asIpc(ipc);
       },
       startDaemon: async () => {
         started += 1;
         if (started === 1) return { exited: Promise.resolve() };
+
         answering = true;
+
         return alive;
       },
     });
+
     await l.request("x");
     expect(started).toBe(2);
   });
@@ -241,13 +267,15 @@ describe("starting the daemon", () => {
     const time = fakeClock();
     const { link: l } = link({
       startTimeoutMs: 60,
-      now: time.now,
-      sleep: time.sleep,
-      startDaemon: async () => {
+      now           : time.now,
+      sleep         : time.sleep,
+      startDaemon   : async () => {
         started += 1;
+
         return { exited: Promise.resolve() };
       },
     });
+
     await expect(l.request("x")).rejects.toThrow(/did not start/);
     expect(started).toBe(3);
   });
@@ -259,6 +287,7 @@ describe("starting the daemon", () => {
       },
     });
     const failure = await l.request("x").catch((error: unknown) => error);
+
     expect(failure).toBeInstanceOf(DaemonError);
     expect((failure as Error).message).toContain("spawn EACCES");
     expect((failure as Error).message).toContain("/data/daemon.log");
@@ -270,13 +299,16 @@ describe("starting the daemon", () => {
     const { link: l } = link({
       connect: async () => {
         if (started < 2) throw new DaemonNotRunningError();
+
         return asIpc(ipc);
       },
       startDaemon: async () => {
         started += 1;
+
         return { exited: Promise.reject(new Error("watch failed")) };
       },
     });
+
     await expect(l.request("x")).resolves.toEqual({});
     expect(started).toBe(2);
   });
@@ -286,17 +318,22 @@ describe("waiting for the browser", () => {
   function notReady(states: string[], then: "ready" | "stay") {
     const ipc = new FakeIpc((method) => {
       if (method === "daemon.status") return { state: states.shift() ?? "starting" };
+
       return {};
     });
     let gate = then === "ready" ? 0 : Number.POSITIVE_INFINITY;
     const original = ipc.request.bind(ipc);
+
     ipc.request = async (method, params) => {
       if (method === "session.open" && gate > 0) {
         gate -= 1;
+
         throw new RpcError(ErrorCode.browserNotReady, "The browser is not ready yet.");
       }
+
       return original(method, params);
     };
+
     return { ipc, release: () => void (gate = 0) };
   }
 
@@ -304,18 +341,23 @@ describe("waiting for the browser", () => {
     let remaining = 3;
     const ipc = new FakeIpc((method) => (method === "daemon.status" ? { state: "starting" } : {}));
     const base = ipc.request.bind(ipc);
+
     ipc.request = async (method, params) => {
       if (method === "session.open" && remaining > 0) {
         remaining -= 1;
+
         throw new RpcError(ErrorCode.browserNotReady, "starting");
       }
+
       return base(method, params);
     };
+
     const sleeps: number[] = [];
     const { link: l } = link({
       connect: async () => asIpc(ipc),
-      sleep: async (ms) => void sleeps.push(ms),
+      sleep  : async (ms) => void sleeps.push(ms),
     });
+
     await expect(l.request("x")).resolves.toEqual({});
     expect(sleeps).toHaveLength(3);
   });
@@ -326,6 +368,7 @@ describe("waiting for the browser", () => {
     const sleeps: number[] = [];
     const { link: l } = link({ connect, sleep: async (ms) => void sleeps.push(ms) });
     const failure = await l.request("x").catch((error: unknown) => error);
+
     expect(failure).toBeInstanceOf(DaemonNotReadyError);
     expect((failure as Error).message).toContain("The browser is not ready yet.");
     expect(sleeps).toEqual([]);
@@ -335,6 +378,7 @@ describe("waiting for the browser", () => {
     const { ipc, release } = notReady(["waiting", "waiting"], "stay");
     const connect = vi.fn(async () => asIpc(ipc));
     const { link: l } = link({ connect });
+
     await expect(l.request("x")).rejects.toBeInstanceOf(DaemonNotReadyError);
     release();
     await expect(l.request("x")).resolves.toEqual({});
@@ -348,20 +392,23 @@ describe("waiting for the browser", () => {
     );
     const time = fakeClock();
     const { link: l } = link({
-      connect: async () => asIpc(ipc),
+      connect       : async () => asIpc(ipc),
       startTimeoutMs: 40,
-      now: time.now,
-      sleep: time.sleep,
+      now           : time.now,
+      sleep         : time.sleep,
     });
+
     await expect(l.request("x")).rejects.toBeInstanceOf(DaemonNotReadyError);
   });
 
   it("still reports not ready when the status cannot be read", async () => {
     const ipc = new FakeIpc((method) => {
       if (method === "daemon.status") throw new RpcError(ErrorCode.internal, "boom");
+
       throw new RpcError(ErrorCode.browserNotReady, "not ready");
     });
     const { link: l } = link({ connect: async () => asIpc(ipc) });
+
     await expect(l.request("x")).rejects.toBeInstanceOf(DaemonNotReadyError);
   });
 });
@@ -372,6 +419,7 @@ describe("losing the daemon", () => {
     const second = new FakeIpc();
     const clients = [first, second];
     const { link: l } = link({ connect: async () => asIpc(clients.shift() ?? second) });
+
     await l.request("a");
     first.drop();
     await l.request("b");
@@ -381,11 +429,13 @@ describe("losing the daemon", () => {
   it("does not repeat a request that failed because the connection dropped", async () => {
     const first = new FakeIpc((method) => {
       if (method === "risky") throw new IpcClosedError("the daemon closed the connection");
+
       return {};
     });
     const second = new FakeIpc();
     const clients = [first, second];
     const { link: l } = link({ connect: async () => asIpc(clients.shift() ?? second) });
+
     await l.request("warm");
     await expect(l.request("risky")).rejects.toBeInstanceOf(IpcClosedError);
     expect(second.calls).toEqual([]);
@@ -403,17 +453,22 @@ describe("losing the daemon", () => {
       connect: async () => {
         if (phase === "first") {
           phase = "gone";
+
           return asIpc(first);
         }
+
         if (phase === "gone") throw new DaemonNotRunningError();
+
         return asIpc(second);
       },
       startDaemon: async () => {
         started += 1;
         phase = "back";
+
         return alive;
       },
     });
+
     await l.request("a");
     first.drop();
     await l.request("b");
@@ -426,11 +481,13 @@ describe("failures while establishing", () => {
   it("closes the connection when the session cannot be opened for another reason", async () => {
     const first = new FakeIpc((method) => {
       if (method === "session.open") throw new RpcError(ErrorCode.badRequest, "no");
+
       return {};
     });
     const second = new FakeIpc();
     const clients = [first, second];
     const { link: l } = link({ connect: async () => asIpc(clients.shift() ?? second) });
+
     await expect(l.request("x")).rejects.toMatchObject({ code: ErrorCode.badRequest });
     expect(first.closes).toBe(1);
     await l.request("again");
@@ -446,12 +503,15 @@ describe("closing", () => {
     const { link: l } = link({
       connect: async () => {
         await gate;
+
         return asIpc(ipc);
       },
     });
     const pending = l.request("x").catch((error: unknown) => error);
+
     await Promise.resolve();
     const closing = l.close();
+
     release();
     await closing;
     expect(ipc.closes).toBe(1);
@@ -464,12 +524,15 @@ describe("closing", () => {
     const gate = new Promise<void>((resolve) => (release = resolve));
     const ipc = new FakeIpc(async (method) => {
       if (method === "session.open") await gate;
+
       return {};
     });
     const { link: l } = link({ connect: async () => asIpc(ipc) });
     const pending = l.request("x").catch((error: unknown) => error);
+
     await vi.waitFor(() => expect(ipc.calls).toHaveLength(1));
     const closing = l.close();
+
     release();
     await closing;
     expect(await pending).toBeInstanceOf(IpcClosedError);
@@ -479,6 +542,7 @@ describe("closing", () => {
   it("closes the connection once and refuses further requests", async () => {
     const ipc = new FakeIpc();
     const { link: l } = link({ connect: async () => asIpc(ipc) });
+
     await l.request("a");
     await l.close();
     await l.close();
@@ -488,6 +552,7 @@ describe("closing", () => {
 
   it("is safe to close before the first request", async () => {
     const { link: l } = link();
+
     await expect(l.close()).resolves.toBeUndefined();
     await expect(l.ready()).rejects.toBeInstanceOf(IpcClosedError);
   });

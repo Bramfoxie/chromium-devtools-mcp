@@ -18,6 +18,7 @@ import {
 import { createSocketHarness } from "./helpers/daemon-socket.js";
 
 const harness = createSocketHarness();
+
 afterEach(async () => {
   vi.restoreAllMocks();
   await harness.dispose();
@@ -37,14 +38,19 @@ async function startServer(overrides: Partial<AcceptOptions> = {}) {
       token,
       handler: async ({ method, params }) => {
         if (method === "echo") return params;
+
         if (method === "slow") {
           const { ms, value } = params as { ms: number; value: string };
+
           await new Promise((resolve) => setTimeout(resolve, ms));
+
           return value;
         }
+
         if (method === "fail") throw new RpcError("custom_code", "custom failure");
         if (method === "boom") throw new Error("secret-xyz leaked detail");
         if (method === "hang") return new Promise<never>(() => undefined);
+
         throw new RpcError(ErrorCode.unknownMethod, `Unknown method ${method}.`);
       },
       onReady: (connection) => ready.push(connection),
@@ -52,7 +58,9 @@ async function startServer(overrides: Partial<AcceptOptions> = {}) {
       ...overrides,
     }),
   );
+
   harness.track(() => handle.release());
+
   return { options, token, ready, closed, handle };
 }
 
@@ -62,17 +70,19 @@ async function connectClient(
 ) {
   const client = await IpcClient.connect({
     socketPath: server.options.socketPath,
-    token: server.token,
+    token     : server.token,
     clientName: "test-client",
     requestTimeoutMs,
   });
+
   harness.track(() => client.close());
+
   return client;
 }
 
 interface RawClient {
   socket: net.Socket;
-  lines: string[];
+  lines : string[];
   closed: Promise<void>;
   send(text: string): void;
 }
@@ -80,15 +90,19 @@ interface RawClient {
 async function rawClient(socketPath: string): Promise<RawClient> {
   const socket = await new Promise<net.Socket>((resolve, reject) => {
     const created = net.connect(socketPath);
+
     created.once("connect", () => resolve(created));
     created.once("error", reject);
   });
+
   harness.track(async () => void socket.destroy());
   const decoder = new LineDecoder();
   const lines: string[] = [];
+
   socket.on("data", (chunk: Buffer) => lines.push(...decoder.push(chunk)));
   socket.on("error", () => undefined);
   const closed = new Promise<void>((resolve) => socket.once("close", () => resolve()));
+
   return { socket, lines, closed, send: (text) => void socket.write(text) };
 }
 
@@ -99,6 +113,7 @@ describe("handshake", () => {
   it("authenticates, exposes the client name and answers requests", async () => {
     const server = await startServer();
     const client = await connectClient(server);
+
     expect(server.ready.map((connection) => connection.clientName)).toEqual(["test-client"]);
     await expect(client.request("echo", { a: [1, 2] })).resolves.toEqual({ a: [1, 2] });
     await expect(client.request("echo")).resolves.toBeUndefined();
@@ -109,9 +124,10 @@ describe("handshake", () => {
     const server = await startServer();
     const failure = await IpcClient.connect({
       socketPath: server.options.socketPath,
-      token: generateToken(),
+      token     : generateToken(),
       clientName: "intruder",
     }).catch((error: unknown) => error);
+
     expect(failure).toBeInstanceOf(IpcClosedError);
     expect((failure as Error).message).toContain("rejected the handshake");
     expect(server.ready).toEqual([]);
@@ -129,6 +145,7 @@ describe("handshake", () => {
     const stderr = quietStderr();
     const server = await startServer();
     const raw = await rawClient(server.options.socketPath);
+
     raw.send(text);
     await raw.closed;
     expect(raw.lines).toEqual([]);
@@ -140,6 +157,7 @@ describe("handshake", () => {
     quietStderr();
     const server = await startServer({ helloTimeoutMs: 50 });
     const raw = await rawClient(server.options.socketPath);
+
     await raw.closed;
     expect(server.ready).toEqual([]);
   });
@@ -147,6 +165,7 @@ describe("handshake", () => {
   it("keeps an authenticated connection open past the hello timeout", async () => {
     const server = await startServer({ helloTimeoutMs: 50 });
     const client = await connectClient(server);
+
     await new Promise((resolve) => setTimeout(resolve, 150));
     await expect(client.request("echo", "still here")).resolves.toBe("still here");
   });
@@ -155,6 +174,7 @@ describe("handshake", () => {
     quietStderr();
     const server = await startServer();
     const raw = await rawClient(server.options.socketPath);
+
     raw.send(`{"id":1,"method":"echo"}\n${hello(server.token)}`);
     await raw.closed;
     expect(raw.lines).toEqual([]);
@@ -165,10 +185,12 @@ describe("handshake", () => {
     const stderr = quietStderr();
     const server = await startServer();
     const raw = await rawClient(server.options.socketPath);
+
     raw.send(hello("wrong-token-value"));
     await raw.closed;
     expect(raw.lines).toEqual([]);
     const logged = stderr.mock.calls.map((call) => String(call[0])).join("");
+
     expect(logged).not.toContain("wrong-token-value");
     expect(logged).not.toContain(server.token);
   });
@@ -176,11 +198,12 @@ describe("handshake", () => {
   it("rejects a second hello on an open connection", async () => {
     const server = await startServer();
     const raw = await rawClient(server.options.socketPath);
+
     raw.send(hello(server.token));
     raw.send(hello(server.token).replace('"id":1', '"id":2'));
     await vi.waitFor(() => expect(raw.lines).toHaveLength(2));
     expect(JSON.parse(raw.lines[1] ?? "")).toMatchObject({
-      id: 2,
+      id   : 2,
       error: { code: ErrorCode.badRequest },
     });
   });
@@ -197,6 +220,7 @@ describe("requests", () => {
     const fast = client
       .request("slow", { ms: 5, value: "fast" })
       .then((v) => results.push(String(v)));
+
     await Promise.all([slow, fast]);
     expect(results).toEqual(["fast", "slow"]);
   });
@@ -205,6 +229,7 @@ describe("requests", () => {
     const server = await startServer();
     const client = await connectClient(server);
     const failure = await client.request("fail").catch((error: unknown) => error);
+
     expect(failure).toBeInstanceOf(RpcError);
     expect(failure).toMatchObject({ code: "custom_code", message: "custom failure" });
   });
@@ -214,6 +239,7 @@ describe("requests", () => {
     const server = await startServer();
     const client = await connectClient(server);
     const failure = await client.request("boom").catch((error: unknown) => error);
+
     expect(failure).toMatchObject({ code: ErrorCode.internal });
     expect((failure as Error).message).not.toContain("secret-xyz");
     expect(stderr.mock.calls.map((call) => String(call[0])).join("")).toContain(
@@ -224,6 +250,7 @@ describe("requests", () => {
   it("answers unknown methods with a typed error and keeps the connection", async () => {
     const server = await startServer();
     const client = await connectClient(server);
+
     await expect(client.request("nope")).rejects.toMatchObject({ code: ErrorCode.unknownMethod });
     await expect(client.request("echo", 1)).resolves.toBe(1);
   });
@@ -231,11 +258,12 @@ describe("requests", () => {
   it("answers a malformed request that has an id with bad_request", async () => {
     const server = await startServer();
     const raw = await rawClient(server.options.socketPath);
+
     raw.send(hello(server.token));
     raw.send('{"id":7,"method":""}\n');
     await vi.waitFor(() => expect(raw.lines).toHaveLength(2));
     expect(JSON.parse(raw.lines[1] ?? "")).toMatchObject({
-      id: 7,
+      id   : 7,
       error: { code: ErrorCode.badRequest },
     });
   });
@@ -248,6 +276,7 @@ describe("requests", () => {
     quietStderr();
     const server = await startServer();
     const raw = await rawClient(server.options.socketPath);
+
     raw.send(hello(server.token));
     await vi.waitFor(() => expect(raw.lines).toHaveLength(1));
     raw.send(text);
@@ -257,7 +286,9 @@ describe("requests", () => {
   it("clears the request timer when the response arrives", async () => {
     const server = await startServer();
     const client = await connectClient(server);
+
     vi.useFakeTimers();
+
     try {
       await client.request("echo", 1);
       expect(vi.getTimerCount()).toBe(0);
@@ -269,6 +300,7 @@ describe("requests", () => {
   it("ignores a response that arrives after the request timed out", async () => {
     const server = await startServer();
     const client = await connectClient(server);
+
     await expect(
       client.request("slow", { ms: 80, value: "late" }, { timeoutMs: 20 }),
     ).rejects.toBeInstanceOf(IpcTimeoutError);
@@ -280,6 +312,7 @@ describe("requests", () => {
     const server = await startServer();
     const client = await connectClient(server);
     const circular: Record<string, unknown> = {};
+
     circular.self = circular;
     await expect(client.request("echo", circular)).rejects.toThrow();
     await expect(client.request("echo", 1n)).rejects.toThrow();
@@ -291,6 +324,7 @@ describe("requests", () => {
     const server = await startServer();
     const client = await connectClient(server, 40);
     const failure = await client.request("hang").catch((error: unknown) => error);
+
     expect(failure).toBeInstanceOf(IpcTimeoutError);
     expect(failure).toMatchObject({ method: "hang", timeoutMs: 40 });
     await expect(client.request("hang", undefined, { timeoutMs: 20 })).rejects.toMatchObject({
@@ -302,10 +336,12 @@ describe("requests", () => {
     const server = await startServer();
     const client = await connectClient(server);
     const pending = client.request("slow", { ms: 60, value: "late" }).catch(() => undefined);
+
     await client.close();
     await pending;
     await new Promise((resolve) => setTimeout(resolve, 100));
     const second = await connectClient(server);
+
     await expect(second.request("echo", "alive")).resolves.toBe("alive");
   });
 });
@@ -318,7 +354,9 @@ describe("handler failures", () => {
       "a circular result",
       async () => {
         const loop: Record<string, unknown> = {};
+
         loop.self = loop;
+
         return loop;
       },
     ],
@@ -328,6 +366,7 @@ describe("handler failures", () => {
       handler: async ({ method }) => (method === "produce" ? produce() : "alive"),
     });
     const client = await connectClient(server);
+
     await expect(client.request("produce")).rejects.toMatchObject({
       code: name.includes("size limit") ? ErrorCode.resultTooLarge : ErrorCode.internal,
     });
@@ -344,6 +383,7 @@ describe("handler failures", () => {
     }) as unknown as RequestHandler;
     const server = await startServer({ handler });
     const client = await connectClient(server);
+
     await expect(client.request("any")).rejects.toMatchObject({ code: ErrorCode.internal });
     await expect(client.request("any")).rejects.toMatchObject({ code: ErrorCode.internal });
   });
@@ -356,8 +396,10 @@ describe("handler failures", () => {
       },
     });
     const client = await connectClient(server);
+
     await client.request("name\u001b[31m\nFORGED").catch(() => undefined);
     const logged = stderr.mock.calls.map((call) => String(call[0])).join("");
+
     expect(logged.trimEnd().split("\n")).toHaveLength(1);
     expect(logged).not.toContain("\u001b");
   });
@@ -365,12 +407,13 @@ describe("handler failures", () => {
   it("limits the number of requests in flight per connection", async () => {
     const server = await startServer();
     const raw = await rawClient(server.options.socketPath);
+
     raw.send(hello(server.token));
     for (let id = 2; id <= 65; id += 1) raw.send(`{"id":${id},"method":"hang"}\n`);
     raw.send('{"id":66,"method":"hang"}\n');
     await vi.waitFor(() => expect(raw.lines).toHaveLength(2));
     expect(JSON.parse(raw.lines[1] ?? "")).toMatchObject({
-      id: 66,
+      id   : 66,
       error: { code: ErrorCode.busy },
     });
   });
@@ -378,6 +421,7 @@ describe("handler failures", () => {
   it("frees an in-flight slot when a request completes", async () => {
     const server = await startServer();
     const client = await connectClient(server);
+
     for (let round = 0; round < 3; round += 1) {
       await Promise.all(Array.from({ length: 40 }, () => client.request("echo", round)));
     }
@@ -387,13 +431,16 @@ describe("handler failures", () => {
     quietStderr();
     const server = await startServer();
     const raw = await rawClient(server.options.socketPath);
+
     raw.socket.pause();
     raw.send(hello(server.token));
     await vi.waitFor(() => expect(server.ready).toHaveLength(1));
     const chunk = "x".repeat(900_000);
+
     for (let i = 0; i < 60 && !raw.socket.destroyed; i += 1) {
       server.ready[0]?.sendEvent("big", chunk);
     }
+
     raw.socket.resume();
     await raw.closed;
   });
@@ -402,6 +449,7 @@ describe("handler failures", () => {
     quietStderr();
     const server = await startServer();
     const raw = await rawClient(server.options.socketPath);
+
     raw.send(hello(server.token));
     await vi.waitFor(() => expect(raw.lines).toHaveLength(1));
     raw.send('{"id":1e300,"method":""}\n');
@@ -419,11 +467,13 @@ describe("handler failures", () => {
       },
     });
     const first = await connectClient(server);
+
     await first.close();
     await vi.waitFor(() =>
       expect(stderr.mock.calls.map((call) => String(call[0])).join("")).toContain("onClose failed"),
     );
     const second = await connectClient(server);
+
     await expect(second.request("echo", 1)).resolves.toBe(1);
   });
 });
@@ -431,8 +481,10 @@ describe("handler failures", () => {
 describe("bare sockets", () => {
   it("does not crash on a socket error and clears the hello timer on close", () => {
     vi.useFakeTimers();
+
     try {
       const socket = new net.Socket();
+
       acceptConnection(socket, { token: generateToken(), handler: async () => undefined });
       expect(vi.getTimerCount()).toBe(1);
       expect(() => socket.emit("error", new Error("ECONNRESET"))).not.toThrow();
@@ -453,6 +505,7 @@ describe("events", () => {
       seen.push(params);
       off();
     });
+
     server.ready[0]?.sendEvent("tick", { n: 1 });
     server.ready[0]?.sendEvent("tick", { n: 2 });
     await client.request("echo");
@@ -462,9 +515,11 @@ describe("events", () => {
   it("does not register handlers on a closed client", async () => {
     const server = await startServer();
     const client = await connectClient(server);
+
     await client.close();
     const handler = vi.fn();
     const off = client.on("tick", handler);
+
     expect(() => off()).not.toThrow();
   });
 
@@ -472,6 +527,7 @@ describe("events", () => {
     const server = await startServer();
     const client = await connectClient(server);
     const connection = server.ready[0];
+
     await client.close();
     await vi.waitFor(() => expect(server.closed).toHaveLength(1));
     expect(() => connection?.sendEvent("tick", 1)).not.toThrow();
@@ -482,6 +538,7 @@ describe("events", () => {
     const server = await startServer();
     const client = await connectClient(server);
     const good = vi.fn();
+
     client.on("tick", () => {
       throw new Error("boom");
     });
@@ -498,6 +555,7 @@ describe("closing", () => {
     const server = await startServer();
     const client = await connectClient(server);
     const pending = client.request("hang").catch((error: unknown) => error);
+
     await vi.waitFor(() => expect(server.ready).toHaveLength(1));
     server.ready[0]?.close();
     expect(await pending).toBeInstanceOf(IpcClosedError);
@@ -507,9 +565,12 @@ describe("closing", () => {
   it("clears request timers when the client closes", async () => {
     const server = await startServer();
     const client = await connectClient(server);
+
     vi.useFakeTimers();
+
     try {
       const pending = client.request("hang").catch((error: unknown) => error);
+
       expect(vi.getTimerCount()).toBe(1);
       await client.close();
       expect(await pending).toBeInstanceOf(IpcClosedError);
@@ -522,6 +583,7 @@ describe("closing", () => {
   it("notifies the server when a client closes and is idempotent", async () => {
     const server = await startServer();
     const client = await connectClient(server);
+
     await client.close();
     await client.close();
     await vi.waitFor(() => expect(server.closed).toHaveLength(1));
@@ -533,6 +595,7 @@ describe("closing", () => {
     quietStderr();
     const server = await startServer();
     const raw = await rawClient(server.options.socketPath);
+
     raw.send("garbage\n");
     await raw.closed;
     expect(server.closed).toEqual([]);
@@ -542,9 +605,10 @@ describe("closing", () => {
     const options = await harness.options();
     const failure = await IpcClient.connect({
       socketPath: options.socketPath,
-      token: generateToken(),
+      token     : generateToken(),
       clientName: "x",
     }).catch((error: unknown) => error);
+
     expect(failure).toBeInstanceOf(IpcClosedError);
     expect((failure as Error).message).toContain("cannot reach the daemon");
   });
@@ -554,9 +618,10 @@ describe("closing", () => {
     const first = await connectClient(server);
     const second = await IpcClient.connect({
       socketPath: server.options.socketPath,
-      token: server.token,
+      token     : server.token,
       clientName: "other-client",
     });
+
     harness.track(() => second.close());
     await expect(
       Promise.all([first.request("echo", 1), second.request("echo", 2)]),

@@ -6,41 +6,42 @@ import { acceptConnection, type ClientConnection, type RequestHandler } from "./
 import { SessionRegistry } from "./sessions.js";
 
 export interface DaemonOptions {
-  token: string;
-  allowFocus: boolean;
-  identity: { browser: string; mode: string };
+  token          : string;
+  allowFocus     : boolean;
+  identity       : { browser: string; mode: string };
   helloTimeoutMs?: number;
-  idleTimeoutMs?: number;
-  onIdle?: () => void;
+  idleTimeoutMs? : number;
+  onIdle?        : () => void;
 }
 
 export class Daemon {
-  private registry: SessionRegistry<ClientConnection> | undefined;
+  private registry        : SessionRegistry<ClientConnection> | undefined;
   private readonly handler: RequestHandler;
-  private state: DaemonStatus["state"] = "starting";
-  private message: string | undefined;
+  private state           : DaemonStatus["state"] = "starting";
+  private message         : string | undefined;
   private clients = 0;
-  private idleTimer: NodeJS.Timeout | undefined;
+  private idleTimer       : NodeJS.Timeout | undefined;
   private stopped = false;
 
   constructor(private readonly options: DaemonOptions) {
     this.handler = createRequestHandler({
       registry: () => this.registry,
-      status: () => this.status(),
+      status  : () => this.status(),
     });
   }
 
   status(): DaemonStatus {
     return {
-      state: this.state,
+      state  : this.state,
       browser: this.options.identity.browser,
-      mode: this.options.identity.mode,
+      mode   : this.options.identity.mode,
       ...(this.message === undefined ? {} : { message: this.message }),
     };
   }
 
   setWaiting(message: string): void {
     if (this.registry) return;
+
     this.state = "waiting";
     this.message = message;
   }
@@ -56,11 +57,11 @@ export class Daemon {
 
   accept = (socket: net.Socket): void => {
     acceptConnection(socket, {
-      token: this.options.token,
+      token         : this.options.token,
       helloTimeoutMs: this.options.helloTimeoutMs,
-      helloResult: () => this.options.identity,
-      handler: this.handler,
-      onReady: () => {
+      helloResult   : () => this.options.identity,
+      handler       : this.handler,
+      onReady       : () => {
         this.clients += 1;
         this.cancelIdle();
       },
@@ -88,7 +89,9 @@ export class Daemon {
   private scheduleIdle(): void {
     this.cancelIdle();
     const timeout = this.options.idleTimeoutMs;
+
     if (this.stopped || !this.registry || this.clients > 0 || timeout === undefined) return;
+
     this.idleTimer = setTimeout(() => this.options.onIdle?.(), timeout);
   }
 }

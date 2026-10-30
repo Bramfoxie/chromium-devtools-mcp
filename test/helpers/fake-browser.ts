@@ -3,16 +3,16 @@ import type { AddressInfo } from "node:net";
 import { type RawData, type WebSocket, WebSocketServer } from "ws";
 
 interface Rpc {
-  id: number;
-  method: string;
-  params?: Record<string, unknown>;
+  id        : number;
+  method    : string;
+  params?   : Record<string, unknown>;
   sessionId?: string;
 }
 
 interface FakeTarget {
-  type: string;
-  url: string;
-  title: string;
+  type            : string;
+  url             : string;
+  title           : string;
   browserContextId: string | undefined;
 }
 
@@ -40,6 +40,7 @@ export class FakeBrowser {
         this.handle(socket, JSON.parse(data.toString()) as Rpc),
       );
     });
+
     return `ws://127.0.0.1:${(this.server.address() as AddressInfo).port}`;
   }
 
@@ -54,7 +55,9 @@ export class FakeBrowser {
 
   addTarget(type: string, url: string, browserContextId?: string): string {
     const id = `T${++this.counter}`;
+
     this.targets.set(id, { type, url, title: `title ${url}`, browserContextId });
+
     return id;
   }
 
@@ -86,95 +89,130 @@ export class FakeBrowser {
     this.calls.push(rpc);
     const reply = (result: unknown) =>
       socket.send(JSON.stringify({ id: rpc.id, result, sessionId: rpc.sessionId }));
+
     if (this.silent.has(rpc.method)) return;
+
     const failure = this.failures.get(rpc.method);
+
     if (failure) {
       socket.send(JSON.stringify({ id: rpc.id, error: failure }));
+
       return;
     }
+
     if (this.malformed.has(rpc.method)) {
       reply({ unexpected: true });
+
       return;
     }
+
     const params = rpc.params ?? {};
+
     switch (rpc.method) {
       case "Target.setDiscoverTargets":
         this.discovering = params.discover === true;
         reply({});
+
         return;
       case "Target.getBrowserContexts":
         reply({
           browserContextIds: [...this.contexts],
           ...(this.reportDefaultContext ? { defaultBrowserContextId: this.defaultContext } : {}),
         });
+
         return;
+
       case "Target.createBrowserContext": {
         const id = `CTX${++this.counter}`;
+
         this.contexts.add(id);
         reply({ browserContextId: id });
+
         return;
       }
+
       case "Target.disposeBrowserContext": {
         const id = String(params.browserContextId);
+
         if (!this.contexts.has(id)) {
           socket.send(
             JSON.stringify({
-              id: rpc.id,
+              id   : rpc.id,
               error: { code: -32000, message: "Failed to find context" },
             }),
           );
+
           return;
         }
+
         this.contexts.delete(id);
+
         for (const [targetId, target] of [...this.targets]) {
           if (target.browserContextId === id) this.destroy(targetId);
         }
+
         reply({});
+
         return;
       }
+
       case "Target.createTarget": {
         const context = params.browserContextId as string | undefined;
+
         reply({
           targetId: this.addTarget("page", String(params.url), context ?? this.defaultContext),
         });
+
         return;
       }
+
       case "Target.closeTarget":
         if (!this.targets.has(String(params.targetId))) {
           socket.send(
             JSON.stringify({
-              id: rpc.id,
+              id   : rpc.id,
               error: { code: -32602, message: "No target with given id found" },
             }),
           );
+
           return;
         }
+
         reply({ success: true });
         this.destroy(String(params.targetId));
+
         return;
       case "Target.getTargets":
         reply({
           targetInfos: [...this.targets].map(([targetId, target]) => ({ targetId, ...target })),
         });
+
         return;
+
       case "Target.attachToTarget": {
         if (!this.targets.has(String(params.targetId))) {
           socket.send(
             JSON.stringify({
-              id: rpc.id,
+              id   : rpc.id,
               error: { code: -32602, message: "No target with given id found" },
             }),
           );
+
           return;
         }
+
         const sessionId = `S${++this.counter}`;
+
         this.sessions.set(sessionId, String(params.targetId));
         reply({ sessionId });
+
         return;
       }
+
       case "Target.detachFromTarget":
         this.sessions.delete(String(params.sessionId));
         reply({});
+
         return;
       default:
         reply({ echoed: rpc.method });

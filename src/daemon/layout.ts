@@ -9,23 +9,23 @@ import {
 
 export interface DaemonLayout {
   tokenFile: string;
-  platform: NodeJS.Platform;
-  uid: number | undefined;
+  platform : NodeJS.Platform;
+  uid      : number | undefined;
   socketPath(token: string): string;
   instance(token: string): InstanceOptions;
 }
 
 export function currentLayout(context: DaemonPathContext = currentPathContext()): DaemonLayout {
   return {
-    tokenFile: tokenPath(context),
-    platform: context.platform,
-    uid: context.uid,
+    tokenFile : tokenPath(context),
+    platform  : context.platform,
+    uid       : context.uid,
     socketPath: (token) => socketPath(context, token),
-    instance: (token) => ({
+    instance  : (token) => ({
       socketPath: socketPath(context, token),
       runtimeDir: runtimeDir(context),
-      platform: context.platform,
-      uid: context.uid,
+      platform  : context.platform,
+      uid       : context.uid,
     }),
   };
 }

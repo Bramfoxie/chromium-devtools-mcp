@@ -11,24 +11,24 @@ import {
 
 const token = "a".repeat(64);
 const linux: DaemonPathContext = {
-  env: {},
+  env     : {},
   platform: "linux",
-  homedir: "/home/u",
-  uid: 1000,
+  homedir : "/home/u",
+  uid     : 1000,
   username: "u",
 };
 const mac: DaemonPathContext = {
-  env: {},
+  env     : {},
   platform: "darwin",
-  homedir: "/Users/u",
-  uid: 501,
+  homedir : "/Users/u",
+  uid     : 501,
   username: "u",
 };
 const windows: DaemonPathContext = {
-  env: { LOCALAPPDATA: "C:\\Users\\u\\AppData\\Local" },
+  env     : { LOCALAPPDATA: "C:\\Users\\u\\AppData\\Local" },
   platform: "win32",
-  homedir: "C:\\Users\\u",
-  uid: undefined,
+  homedir : "C:\\Users\\u",
+  uid     : undefined,
   username: "u",
 };
 
@@ -41,6 +41,7 @@ describe("socketPath and runtimeDir", () => {
 
   it("does not depend on TMPDIR or XDG_RUNTIME_DIR", () => {
     const env = { TMPDIR: "/somewhere/else", XDG_RUNTIME_DIR: "/run/user/1000" };
+
     expect(socketPath({ ...linux, env }, token)).toBe(socketPath(linux, token));
     expect(socketPath({ ...mac, env }, token)).toBe(socketPath(mac, token));
   });
@@ -60,6 +61,7 @@ describe("socketPath and runtimeDir", () => {
 
   it("derives an unpredictable pipe name from the token", () => {
     const other = "b".repeat(64);
+
     expect(socketPath(windows, token)).toBe(socketPath(windows, token));
     expect(socketPath(windows, token)).not.toBe(socketPath(windows, other));
     expect(socketPath(windows, token)).not.toContain(token);
@@ -104,6 +106,7 @@ describe("currentUsername", () => {
     const failing = () => {
       throw new Error("ENOENT");
     };
+
     expect(currentUsername({ USER: "ci" }, failing)).toBe("ci");
     expect(currentUsername({ USERNAME: "winci" }, failing)).toBe("winci");
     expect(currentUsername({}, failing)).toBe("user");
@@ -111,6 +114,7 @@ describe("currentUsername", () => {
 
   it("builds a context for the running process", () => {
     const context = currentPathContext();
+
     expect(context.platform).toBe(process.platform);
     expect(context.username.length).toBeGreaterThan(0);
   });

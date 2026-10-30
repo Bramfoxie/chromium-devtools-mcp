@@ -10,13 +10,13 @@ function withFile(content: string | undefined) {
 describe("defaults", () => {
   it("returns the documented defaults", () => {
     expect(loadConfig(withFile(undefined))).toEqual({
-      browser: "chrome",
-      mode: "attach",
-      headless: false,
+      browser   : "chrome",
+      mode      : "attach",
+      headless  : false,
       profileDir: "/home/u/.local/share/chromium-devtools-mcp/profile",
-      debugPort: 9222,
+      debugPort : 9222,
       allowFocus: false,
-      safety: { readOnly: false, allowedDomains: [], confirmDangerous: false },
+      safety    : { readOnly: false, allowedDomains: [], confirmDangerous: false },
     });
   });
 });
@@ -25,6 +25,7 @@ describe("sources and precedence", () => {
   it("reads values from the config file", () => {
     const file = JSON.stringify({ browser: "arc", safety: { readOnly: true } });
     const config = loadConfig(withFile(file));
+
     expect(config.browser).toBe("arc");
     expect(config.safety.readOnly).toBe(true);
     expect(config.safety.confirmDangerous).toBe(false);
@@ -35,6 +36,7 @@ describe("sources and precedence", () => {
       ...withFile(JSON.stringify({ mode: "attach", debugPort: 9000 })),
       env: { CHROMIUM_DEVTOOLS_MCP_MODE: "managed", CHROMIUM_DEVTOOLS_MCP_DEBUG_PORT: "9333" },
     });
+
     expect(config.mode).toBe("managed");
     expect(config.debugPort).toBe(9333);
   });
@@ -42,9 +44,10 @@ describe("sources and precedence", () => {
   it("lets argv override env", () => {
     const config = loadConfig({
       ...withFile(undefined),
-      env: { CHROMIUM_DEVTOOLS_MCP_HEADLESS: "true" },
+      env : { CHROMIUM_DEVTOOLS_MCP_HEADLESS: "true" },
       argv: ["--no-headless", "--browser=arc"],
     });
+
     expect(config.headless).toBe(false);
     expect(config.browser).toBe("arc");
   });
@@ -54,13 +57,14 @@ describe("sources and precedence", () => {
       ...withFile(undefined),
       env: {
         CHROMIUM_DEVTOOLS_MCP_ALLOWED_DOMAINS: "a.com, b.com",
-        CHROMIUM_DEVTOOLS_MCP_READ_ONLY: "1",
+        CHROMIUM_DEVTOOLS_MCP_READ_ONLY      : "1",
       },
       argv: ["--confirm-dangerous", "--allowed-domains", "c.com"],
     });
+
     expect(config.safety).toEqual({
-      readOnly: true,
-      allowedDomains: ["c.com"],
+      readOnly        : true,
+      allowedDomains  : ["c.com"],
       confirmDangerous: true,
     });
   });
@@ -105,14 +109,15 @@ describe("sources and precedence", () => {
         "--confirm-dangerous",
       ],
     });
+
     expect(config).toEqual({
-      browser: "arc",
-      mode: "managed",
-      headless: false,
+      browser   : "arc",
+      mode      : "managed",
+      headless  : false,
       profileDir: "/p",
-      debugPort: 9333,
+      debugPort : 9333,
       allowFocus: true,
-      safety: { readOnly: true, allowedDomains: ["a.com", "b.com"], confirmDangerous: true },
+      safety    : { readOnly: true, allowedDomains: ["a.com", "b.com"], confirmDangerous: true },
     });
   });
 });
@@ -180,6 +185,7 @@ describe("paths", () => {
 
   it("honors the config path override", () => {
     const env = { CHROMIUM_DEVTOOLS_MCP_CONFIG: "/custom/config.json" };
+
     expect(configFilePath({ env, platform: "linux", homedir: "/home/u" })).toBe(
       "/custom/config.json",
     );

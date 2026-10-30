@@ -12,25 +12,26 @@ import {
 import { spawnProcess } from "../src/browser/launch.js";
 
 const config: ManagedConfig = {
-  browser: "chrome",
-  headless: false,
+  browser   : "chrome",
+  headless  : false,
   profileDir: "/data/profile",
-  debugPort: 9222,
+  debugPort : 9222,
 };
 
 const listening = "DevTools listening on ws://127.0.0.1:9222/devtools/browser/abc-123\n";
 
 class FakeChild implements ChildHandle {
-  signals: string[] = [];
+  signals               : string[] = [];
   private stderrHandlers: Array<(chunk: string) => void> = [];
-  private exitHandlers: Array<(reason: string) => void> = [];
-  private errorHandlers: Array<(message: string) => void> = [];
+  private exitHandlers  : Array<(reason: string) => void> = [];
+  private errorHandlers : Array<(message: string) => void> = [];
 
   constructor(private readonly dieOn: string[] = ["SIGTERM", "SIGKILL"]) {}
 
   kill(signal: "SIGTERM" | "SIGKILL"): boolean {
     this.signals.push(signal);
     if (this.dieOn.includes(signal)) this.exit(`terminated by ${signal}`);
+
     return true;
   }
 
@@ -63,14 +64,16 @@ function harness(child = new FakeChild(), overrides: Partial<LaunchDeps> = {}) {
   const spawned: Array<{ command: string; args: string[] }> = [];
   const deps: Partial<LaunchDeps> = {
     findExecutable: () => "/bin/browser",
-    spawn: (command, args) => {
+    spawn         : (command, args) => {
       spawned.push({ command, args });
+
       return child;
     },
     startTimeoutMs: 1000,
-    stopGraceMs: 20,
+    stopGraceMs   : 20,
     ...overrides,
   };
+
   return { deps, spawned, child };
 }
 
@@ -81,6 +84,7 @@ afterEach(() => {
 describe("buildLaunchArgs", () => {
   it("passes the port and the profile directory", () => {
     const args = buildLaunchArgs(config);
+
     expect(args).toContain("--remote-debugging-port=9222");
     expect(args).toContain("--user-data-dir=/data/profile");
     expect(args).not.toContain("--headless=new");
@@ -94,7 +98,7 @@ describe("buildLaunchArgs", () => {
 describe("parseListeningUrl", () => {
   it("extracts the endpoint from the browser output", () => {
     expect(parseListeningUrl(`noise\n${listening}more`)).toEqual({
-      port: 9222,
+      port        : 9222,
       webSocketUrl: "ws://127.0.0.1:9222/devtools/browser/abc-123",
     });
   });
@@ -111,15 +115,16 @@ describe("launchManaged", () => {
   it("spawns the resolved executable and resolves with the endpoint", async () => {
     const { deps, spawned, child } = harness();
     const pending = launchManaged(config, deps);
+
     child.write(listening);
     await expect(pending).resolves.toMatchObject({
-      port: 9222,
+      port        : 9222,
       webSocketUrl: "ws://127.0.0.1:9222/devtools/browser/abc-123",
     });
     expect(spawned).toEqual([
       {
         command: "/bin/browser",
-        args: [
+        args   : [
           "--remote-debugging-port=9222",
           "--user-data-dir=/data/profile",
           "--no-first-run",
@@ -132,6 +137,7 @@ describe("launchManaged", () => {
   it("assembles the endpoint from split output chunks", async () => {
     const { deps, child } = harness();
     const pending = launchManaged(config, deps);
+
     child.write("DevTools listening on ws://127.0.0.1:92");
     child.write("22/devtools/browser/abc-123\n");
     await expect(pending).resolves.toMatchObject({ port: 9222 });
@@ -140,6 +146,7 @@ describe("launchManaged", () => {
   it("ignores unrelated output before the endpoint line", async () => {
     const { deps, child } = harness();
     const pending = launchManaged(config, deps);
+
     child.write("ERROR: display link failed\n");
     child.write(listening);
     await expect(pending).resolves.toMatchObject({ port: 9222 });
@@ -148,8 +155,10 @@ describe("launchManaged", () => {
   it("fails with the profile hint when the browser exits early", async () => {
     const { deps, child } = harness();
     const pending = launchManaged(config, deps);
+
     child.exit("exited with code 0");
     const failure = await pending.catch((error: unknown) => error);
+
     expect(failure).toBeInstanceOf(BrowserLaunchError);
     expect((failure as Error).message).toContain("exited with code 0");
     expect((failure as Error).message).toContain("/data/profile");
@@ -158,6 +167,7 @@ describe("launchManaged", () => {
   it("times out, stops the browser and names the profile and port", async () => {
     const { deps, child } = harness(new FakeChild(), { startTimeoutMs: 30 });
     const failure = await launchManaged(config, deps).catch((error: unknown) => error);
+
     expect(failure).toBeInstanceOf(BrowserLaunchError);
     expect((failure as Error).message).toContain("within 30 ms");
     expect((failure as Error).message).toContain("port 9222");
@@ -170,6 +180,7 @@ describe("launchManaged", () => {
         throw new BrowserNotFoundError("missing");
       },
     });
+
     await expect(launchManaged(config, deps)).rejects.toBeInstanceOf(BrowserNotFoundError);
     expect(spawned).toEqual([]);
   });
@@ -181,6 +192,7 @@ describe("launchManaged", () => {
       },
     });
     const failure = await launchManaged(config, deps).catch((error: unknown) => error);
+
     expect(failure).toBeInstanceOf(BrowserLaunchError);
     expect((failure as Error).message).toContain("spawn exploded");
   });
@@ -188,8 +200,10 @@ describe("launchManaged", () => {
   it("reports a spawn error without the profile hint", async () => {
     const { deps, child } = harness();
     const pending = launchManaged(config, deps);
+
     child.fail("spawn /bin/browser ENOENT");
     const failure = await pending.catch((error: unknown) => error);
+
     expect(failure).toBeInstanceOf(BrowserLaunchError);
     expect((failure as Error).message).toContain("failed to start /bin/browser");
     expect((failure as Error).message).not.toContain("profile");
@@ -198,6 +212,7 @@ describe("launchManaged", () => {
   it("passes the headless flag to the spawned browser", async () => {
     const { deps, spawned, child } = harness();
     const pending = launchManaged({ ...config, headless: true }, deps);
+
     child.write(listening);
     await pending;
     expect(spawned[0]?.args).toContain("--headless=new");
@@ -206,6 +221,7 @@ describe("launchManaged", () => {
   it("keeps a profile directory with spaces and a leading dash as one argument", async () => {
     const { deps, spawned, child } = harness();
     const pending = launchManaged({ ...config, profileDir: "--evil dir" }, deps);
+
     child.write(listening);
     await pending;
     expect(spawned[0]?.args).toContain("--user-data-dir=--evil dir");
@@ -215,9 +231,10 @@ describe("launchManaged", () => {
   it("accepts CRLF line endings and IPv6 hosts", async () => {
     const { deps, child } = harness();
     const pending = launchManaged(config, deps);
+
     child.write("DevTools listening on ws://[::1]:9222/devtools/browser/v6\r\n");
     await expect(pending).resolves.toMatchObject({
-      port: 9222,
+      port        : 9222,
       webSocketUrl: "ws://[::1]:9222/devtools/browser/v6",
     });
   });
@@ -225,6 +242,7 @@ describe("launchManaged", () => {
   it("uses the first endpoint line when several are printed", async () => {
     const { deps, child } = harness();
     const pending = launchManaged(config, deps);
+
     child.write(`${listening}DevTools listening on ws://127.0.0.1:1/devtools/browser/other\n`);
     await expect(pending).resolves.toMatchObject({ port: 9222 });
   });
@@ -232,6 +250,7 @@ describe("launchManaged", () => {
   it("does not resolve from a partial line without a line break", async () => {
     const { deps, child } = harness(new FakeChild(), { startTimeoutMs: 30 });
     const pending = launchManaged(config, deps);
+
     child.write("DevTools listening on ws://127.0.0.1:9222/devtools/browser/abc");
     await expect(pending).rejects.toBeInstanceOf(BrowserLaunchError);
   });
@@ -240,6 +259,7 @@ describe("launchManaged", () => {
     for (const reason of ["terminated by SIGKILL", "exited with code 1"]) {
       const { deps, child } = harness();
       const pending = launchManaged(config, deps);
+
       child.exit(reason);
       await expect(pending).rejects.toThrow(reason);
     }
@@ -248,6 +268,7 @@ describe("launchManaged", () => {
   it("escalates to SIGKILL when a hung browser ignores SIGTERM at timeout", async () => {
     const child = new FakeChild(["SIGKILL"]);
     const { deps } = harness(child, { startTimeoutMs: 30 });
+
     await expect(launchManaged(config, deps)).rejects.toBeInstanceOf(BrowserLaunchError);
     expect(child.signals).toEqual(["SIGTERM", "SIGKILL"]);
   });
@@ -256,6 +277,7 @@ describe("launchManaged", () => {
     vi.useFakeTimers();
     const { deps, child } = harness();
     const pending = launchManaged(config, deps);
+
     child.write(listening);
     await pending;
     expect(vi.getTimerCount()).toBe(0);
@@ -265,6 +287,7 @@ describe("launchManaged", () => {
     vi.useFakeTimers();
     const { deps, child } = harness();
     const pending = launchManaged(config, deps);
+
     child.exit("exited with code 0");
     await pending.catch(() => undefined);
     expect(vi.getTimerCount()).toBe(0);
@@ -275,13 +298,16 @@ describe("stop", () => {
   async function started(child: FakeChild) {
     const { deps } = harness(child);
     const pending = launchManaged(config, deps);
+
     child.write(listening);
+
     return pending;
   }
 
   it("terminates the browser with SIGTERM", async () => {
     const child = new FakeChild();
     const browser = await started(child);
+
     await browser.stop();
     expect(child.signals).toEqual(["SIGTERM"]);
   });
@@ -289,6 +315,7 @@ describe("stop", () => {
   it("escalates to SIGKILL when SIGTERM is ignored", async () => {
     const child = new FakeChild(["SIGKILL"]);
     const browser = await started(child);
+
     await browser.stop();
     expect(child.signals).toEqual(["SIGTERM", "SIGKILL"]);
   });
@@ -296,6 +323,7 @@ describe("stop", () => {
   it("sends signals once for concurrent stop calls", async () => {
     const child = new FakeChild(["SIGKILL"]);
     const browser = await started(child);
+
     await Promise.all([browser.stop(), browser.stop()]);
     expect(child.signals).toEqual(["SIGTERM", "SIGKILL"]);
   });
@@ -303,6 +331,7 @@ describe("stop", () => {
   it("leaves no timers behind after stop", async () => {
     const child = new FakeChild();
     const browser = await started(child);
+
     vi.useFakeTimers();
     await browser.stop();
     expect(vi.getTimerCount()).toBe(0);
@@ -311,6 +340,7 @@ describe("stop", () => {
   it("still stops the browser after an error event following a successful start", async () => {
     const child = new FakeChild();
     const browser = await started(child);
+
     child.fail("kill EPERM");
     await browser.stop();
     expect(child.signals).toEqual(["SIGTERM"]);
@@ -319,6 +349,7 @@ describe("stop", () => {
   it("gives up waiting when SIGKILL does not end the process", async () => {
     const child = new FakeChild([]);
     const browser = await started(child);
+
     await browser.stop();
     expect(child.signals).toEqual(["SIGTERM", "SIGKILL"]);
   });
@@ -326,6 +357,7 @@ describe("stop", () => {
   it("does nothing when the browser already exited", async () => {
     const child = new FakeChild();
     const browser = await started(child);
+
     child.exit("exited with code 0");
     await browser.stop();
     expect(child.signals).toEqual([]);
@@ -337,17 +369,20 @@ describe("spawnProcess", () => {
     const child = spawnProcess(command, args);
     const result = {
       stderr: "",
-      exit: undefined as string | undefined,
-      error: undefined as string | undefined,
+      exit  : undefined as string | undefined,
+      error : undefined as string | undefined,
     };
+
     child.onStderr((chunk) => (result.stderr += chunk));
     child.onExit((reason) => (result.exit = reason));
     child.onError((message) => (result.error = message));
+
     return { child, result };
   }
 
   it("streams stderr and reports a clean exit", async () => {
     const { result } = collect(process.execPath, ["-e", "console.error('hello stderr')"]);
+
     await vi.waitFor(() => expect(result.exit).toBeDefined());
     expect(result.stderr).toContain("hello stderr");
     expect(result.exit).toBe("exited with code 0");
@@ -355,12 +390,14 @@ describe("spawnProcess", () => {
 
   it("reports a missing executable through onError", async () => {
     const { result } = collect("/definitely/not/a/browser", []);
+
     await vi.waitFor(() => expect(result.error).toBeDefined());
     expect(result.error).toContain("ENOENT");
   });
 
   it("reports termination after kill", async () => {
     const { child, result } = collect(process.execPath, ["-e", "setInterval(() => {}, 1000)"]);
+
     child.kill("SIGTERM");
     await vi.waitFor(() => expect(result.exit).toBeDefined());
     expect(result.exit).toMatch(/terminated by SIGTERM|exited with code/);

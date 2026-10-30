@@ -17,6 +17,7 @@ describe("packageVersion", () => {
   it("reads the version of package.json", () => {
     const expected = (JSON.parse(readFileSync("package.json", "utf8")) as { version: string })
       .version;
+
     expect(packageVersion()).toBe(expected);
   });
 });
@@ -26,9 +27,10 @@ describe("createMcpServer", () => {
     const server = createMcpServer("9.8.7");
     const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
     const client = new Client({ name: "test-client", version: "1.0.0" });
+
     await Promise.all([server.connect(serverSide), client.connect(clientSide)]);
     expect(client.getServerVersion()).toMatchObject({
-      name: "chromium-devtools-mcp",
+      name   : "chromium-devtools-mcp",
       version: "9.8.7",
     });
     await client.close();
@@ -40,9 +42,9 @@ describe("daemonLogFile", () => {
   const layout = (platform: NodeJS.Platform, tokenFile: string): DaemonLayout => ({
     tokenFile,
     platform,
-    uid: undefined,
+    uid       : undefined,
     socketPath: () => "",
-    instance: () => ({ socketPath: "", runtimeDir: undefined, platform, uid: undefined }),
+    instance  : () => ({ socketPath: "", runtimeDir: undefined, platform, uid: undefined }),
   });
 
   it("puts the log next to the token with the platform separators", () => {
@@ -64,15 +66,17 @@ describe("runMcpServer", () => {
     const link = { close: vi.fn(async () => undefined) };
     const lines: string[] = [];
     let pending = "";
+
     stdout.on("data", (chunk: Buffer) => {
       pending += chunk.toString();
       const parts = pending.split("\n");
+
       pending = parts.pop() ?? "";
       lines.push(...parts);
     });
     const start = () =>
       runMcpServer(managedConfig, [], {
-        link: link as unknown as DaemonLink,
+        link   : link as unknown as DaemonLink,
         stdin,
         stdout,
         version: "1.2.3",
@@ -81,27 +85,30 @@ describe("runMcpServer", () => {
       stdin.write(
         `${JSON.stringify({
           jsonrpc: "2.0",
-          id: 1,
-          method: "initialize",
-          params: {
+          id     : 1,
+          method : "initialize",
+          params : {
             protocolVersion: "2025-03-26",
-            capabilities: {},
-            clientInfo: { name: "t", version: "1" },
+            capabilities   : {},
+            clientInfo     : { name: "t", version: "1" },
           },
         })}\n`,
       );
+
     return { stdin, stdout, link, lines, start, initialize };
   }
 
   it("answers the handshake on stdout and writes nothing else there", async () => {
     const { lines, start, initialize } = setup();
     const running = await start();
+
     initialize();
     await vi.waitFor(() => expect(lines).toHaveLength(1));
     const reply = JSON.parse(lines[0] ?? "") as { id: number; result: { serverInfo: unknown } };
+
     expect(reply.id).toBe(1);
     expect(reply.result.serverInfo).toMatchObject({
-      name: "chromium-devtools-mcp",
+      name   : "chromium-devtools-mcp",
       version: "1.2.3",
     });
     await running.stop();
@@ -111,6 +118,7 @@ describe("runMcpServer", () => {
   it("finishes and closes the daemon link when the client closes stdin", async () => {
     const { stdin, link, start, initialize } = setup();
     const running = await start();
+
     initialize();
     stdin.end();
     await running.done;
@@ -120,6 +128,7 @@ describe("runMcpServer", () => {
   it("finishes when the input stream is destroyed", async () => {
     const { stdin, link, start } = setup();
     const running = await start();
+
     stdin.destroy();
     await running.done;
     expect(link.close).toHaveBeenCalledTimes(1);
@@ -128,6 +137,7 @@ describe("runMcpServer", () => {
   it("stops once however often it is asked and does not touch the link before", async () => {
     const { link, start } = setup();
     const running = await start();
+
     expect(link.close).not.toHaveBeenCalled();
     await Promise.all([running.stop(), running.stop()]);
     await running.stop();
@@ -138,8 +148,10 @@ describe("runMcpServer", () => {
   it("still finishes when closing the link fails", async () => {
     const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     const { link, start } = setup();
+
     link.close.mockRejectedValueOnce(new Error("link boom"));
     const running = await start();
+
     await running.stop();
     await running.done;
     expect(stderr.mock.calls.map((call) => String(call[0])).join("")).toContain(
@@ -151,6 +163,7 @@ describe("runMcpServer", () => {
   it("does not start the daemon just because the server started", async () => {
     const { link, start } = setup();
     const running = await start();
+
     expect(Object.keys(link)).toEqual(["close"]);
     await running.stop();
   });

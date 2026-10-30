@@ -23,16 +23,20 @@ function listenOnSocket(
         for (const socket of sockets) socket.destroy();
         server.close(() => done());
       });
+
     server.once("error", reject);
     server.listen(path, () => {
       server.off("error", reject);
       server.on("error", (error) => {
         process.stderr.write(`chromium-devtools-mcp: daemon socket error: ${error.message}\n`);
       });
+
       if (!restrict) {
         resolve({ close });
+
         return;
       }
+
       chmod(path, 0o600).then(
         () => resolve({ close }),
         (error: unknown) => {
@@ -51,6 +55,7 @@ function probeSocket(path: string): Promise<"alive" | "stale"> {
       socket.destroy();
       resolve(result);
     };
+
     socket.setTimeout(PROBE_TIMEOUT_MS, () => finish("alive"));
     socket.once("connect", () => finish("alive"));
     socket.once("error", (error: NodeJS.ErrnoException) => {
@@ -61,24 +66,30 @@ function probeSocket(path: string): Promise<"alive" | "stale"> {
 
 async function lockCleanup(socketPath: string): Promise<(() => Promise<void>) | undefined> {
   const dir = `${socketPath}.lock`;
+
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
       await mkdir(dir);
+
       return () => rm(dir, { recursive: true, force: true });
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+
       const held = await stat(dir).catch(() => undefined);
+
       if (held && Date.now() - held.mtimeMs < STALE_LOCK_MS) return undefined;
+
       await rm(dir, { recursive: true, force: true });
     }
   }
+
   return undefined;
 }
 
 export const realInstanceIO: InstanceIO = {
-  listen: listenOnSocket,
-  probe: probeSocket,
+  listen      : listenOnSocket,
+  probe       : probeSocket,
   removeSocket: (path) => rm(path, { force: true }),
   lockCleanup,
-  sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  sleep       : (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
 };

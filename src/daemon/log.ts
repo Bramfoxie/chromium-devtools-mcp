@@ -6,6 +6,7 @@ export function logDaemon(message: string): void {
 
 export function quoted(text: string): string {
   const clipped = text.length > MAX_LOGGED_CHARS ? `${text.slice(0, MAX_LOGGED_CHARS)}...` : text;
+
   return JSON.stringify(clipped);
 }
 

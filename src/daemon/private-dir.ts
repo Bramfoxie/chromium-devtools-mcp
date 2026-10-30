@@ -3,9 +3,9 @@ import path from "node:path";
 import { DaemonError } from "./errors.js";
 
 export interface DirStat {
-  uid: number;
-  mode: number;
-  isDirectory: boolean;
+  uid           : number;
+  mode          : number;
+  isDirectory   : boolean;
   isSymbolicLink: boolean;
 }
 
@@ -18,6 +18,7 @@ export interface DirIO {
 export const realDirIO: DirIO = {
   mkdir: async (dir) => {
     await mkdir(path.dirname(dir), { recursive: true });
+
     try {
       await mkdir(dir, { mode: 0o700 });
     } catch (error) {
@@ -26,10 +27,11 @@ export const realDirIO: DirIO = {
   },
   lstat: async (dir) => {
     const stat = await lstat(dir);
+
     return {
-      uid: stat.uid,
-      mode: stat.mode,
-      isDirectory: stat.isDirectory(),
+      uid           : stat.uid,
+      mode          : stat.mode,
+      isDirectory   : stat.isDirectory(),
       isSymbolicLink: stat.isSymbolicLink(),
     };
   },
@@ -44,14 +46,18 @@ export async function ensurePrivateDir(
 ): Promise<void> {
   await io.mkdir(dir);
   if (platform === "win32") return;
+
   const stat = await io.lstat(dir);
+
   if (stat.isSymbolicLink || !stat.isDirectory) {
     throw new DaemonError(`${dir} must be a real directory. Remove it and start the daemon again.`);
   }
+
   if (uid !== undefined && stat.uid !== uid) {
     throw new DaemonError(
       `${dir} is owned by another user. Ask its owner to remove it, then start the daemon again.`,
     );
   }
+
   if ((stat.mode & 0o077) !== 0) await io.chmod(dir, 0o700);
 }

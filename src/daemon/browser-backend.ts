@@ -1,7 +1,7 @@
 export interface TargetInfo {
-  targetId: string;
-  url: string;
-  title: string;
+  targetId : string;
+  url      : string;
+  title    : string;
   // undefined for the default browser context
   contextId: string | undefined;
 }

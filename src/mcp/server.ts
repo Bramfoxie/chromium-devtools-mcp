@@ -20,9 +20,9 @@ export interface RunningMcp {
 }
 
 export interface McpOptions {
-  link?: DaemonLink;
-  stdin?: Readable;
-  stdout?: Writable;
+  link?   : DaemonLink;
+  stdin?  : Readable;
+  stdout? : Writable;
   version?: string;
 }
 
@@ -30,12 +30,15 @@ export function packageVersion(): string {
   const file = fileURLToPath(new URL("../../package.json", import.meta.url));
   const parsed: unknown = JSON.parse(readFileSync(file, "utf8"));
   const version = (parsed as { version?: unknown }).version;
+
   if (typeof version !== "string") throw new DaemonError("package.json has no version");
+
   return version;
 }
 
 export function daemonLogFile(layout: DaemonLayout): string {
   const p = pathFor(layout.platform);
+
   return p.join(p.dirname(layout.tokenFile), "daemon.log");
 }
 
@@ -43,22 +46,23 @@ export function createDaemonLink(config: Config, flags: string[]): DaemonLink {
   const layout = currentLayout();
   const logFile = daemonLogFile(layout);
   const deps: LinkDeps = {
-    connect: (expect) => connectToDaemon({ clientName: SERVER_NAME, expect, layout }),
+    connect    : (expect) => connectToDaemon({ clientName: SERVER_NAME, expect, layout }),
     startDaemon: () =>
       spawnDaemonProcess({
         execPath: process.execPath,
-        script: fileURLToPath(new URL("../cli.js", import.meta.url)),
+        script  : fileURLToPath(new URL("../cli.js", import.meta.url)),
         flags,
         logFile,
         platform: layout.platform,
-        uid: layout.uid,
+        uid     : layout.uid,
       }),
-    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
-    now: () => Date.now(),
+    sleep         : (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    now           : () => Date.now(),
     logFile,
     startTimeoutMs: START_TIMEOUT_MS,
     pollIntervalMs: POLL_INTERVAL_MS,
   };
+
   return new DaemonLink({ browser: config.browser, mode: config.mode }, deps);
 }
 
@@ -83,28 +87,35 @@ export async function runMcpServer(
   let begun = false;
   const stop = (): Promise<void> => {
     if (begun) return stopping ?? Promise.resolve();
+
     begun = true;
     stopping = (async () => {
       stdin.off("end", onInputEnd);
       stdin.off("close", onInputEnd);
+
       try {
         await server.close();
       } catch (error) {
         logDaemon(`could not close the MCP server: ${describeError(error)}`);
       }
+
       try {
         await link.close();
       } catch (error) {
         logDaemon(`could not close the daemon link: ${describeError(error)}`);
       }
+
       finish();
     })();
+
     return stopping;
   };
   const onInputEnd = () => void stop();
+
   server.server.onclose = () => void stop();
   stdin.once("end", onInputEnd);
   stdin.once("close", onInputEnd);
   await server.connect(new StdioServerTransport(stdin, stdout));
+
   return { done, stop };
 }

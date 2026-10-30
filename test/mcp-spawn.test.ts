@@ -7,13 +7,16 @@ import { afterEach, describe, expect, it } from "vitest";
 import { spawnDaemonProcess } from "../src/mcp/index.js";
 
 const dirs: string[] = [];
+
 afterEach(async () => {
   for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true });
 });
 
 async function tempLog(): Promise<string> {
   const dir = await mkdtemp(path.join(os.tmpdir(), "cdm-spawn-"));
+
   dirs.push(dir);
+
   return path.join(dir, "state", "daemon.log");
 }
 
@@ -29,8 +32,10 @@ function fakeSpawn() {
   const child = new FakeChild();
   const spawn = ((command: string, args: string[], options: Record<string, unknown>) => {
     calls.push({ command, args, options });
+
     return child;
   }) as unknown as typeof nodeSpawn;
+
   return { calls, child, spawn };
 }
 
@@ -38,10 +43,11 @@ describe("spawnDaemonProcess", () => {
   it("starts a detached daemon with the flags and writes its output to the log", async () => {
     const logFile = await tempLog();
     const { calls, child, spawn } = fakeSpawn();
+
     await spawnDaemonProcess({
       execPath: "/usr/bin/node",
-      script: "/app/dist/cli.js",
-      flags: ["--mode", "managed"],
+      script  : "/app/dist/cli.js",
+      flags   : ["--mode", "managed"],
       logFile,
       spawn,
     });
@@ -50,6 +56,7 @@ describe("spawnDaemonProcess", () => {
     expect(calls[0]?.args).toEqual(["/app/dist/cli.js", "daemon", "--mode", "managed"]);
     expect(calls[0]?.options).toMatchObject({ detached: true, windowsHide: true });
     const stdio = calls[0]?.options.stdio as unknown[];
+
     expect(stdio[0]).toBe("ignore");
     expect(typeof stdio[1]).toBe("number");
     expect(stdio[2]).toBe(stdio[1]);
@@ -59,8 +66,10 @@ describe("spawnDaemonProcess", () => {
   it("creates the log directory and keeps the log private", async () => {
     const logFile = await tempLog();
     const { spawn } = fakeSpawn();
+
     await spawnDaemonProcess({ execPath: "n", script: "s", flags: [], logFile, spawn });
     const info = await stat(logFile);
+
     expect(info.isFile()).toBe(true);
     if (process.platform !== "win32") expect(info.mode & 0o077).toBe(0);
   });
@@ -68,6 +77,7 @@ describe("spawnDaemonProcess", () => {
   it("appends to a small log and truncates one above one mebibyte", async () => {
     const logFile = await tempLog();
     const { spawn } = fakeSpawn();
+
     await spawnDaemonProcess({ execPath: "n", script: "s", flags: [], logFile, spawn });
     await writeFile(logFile, "old output\n");
     await spawnDaemonProcess({ execPath: "n", script: "s", flags: [], logFile, spawn });
@@ -82,12 +92,13 @@ describe("spawnDaemonProcess", () => {
     const first = fakeSpawn();
     const started = await spawnDaemonProcess({
       execPath: "n",
-      script: "s",
-      flags: [],
+      script  : "s",
+      flags   : [],
       logFile,
-      spawn: first.spawn,
+      spawn   : first.spawn,
     });
     let exited = false;
+
     void started.exited.then(() => {
       exited = true;
     });
@@ -98,11 +109,12 @@ describe("spawnDaemonProcess", () => {
     const second = fakeSpawn();
     const failed = await spawnDaemonProcess({
       execPath: "n",
-      script: "s",
-      flags: [],
+      script  : "s",
+      flags   : [],
       logFile,
-      spawn: second.spawn,
+      spawn   : second.spawn,
     });
+
     second.child.emit("error", new Error("spawn ENOENT"));
     await expect(failed.exited).resolves.toBeUndefined();
   });
@@ -112,8 +124,10 @@ describe("spawnDaemonProcess", () => {
     async () => {
       const logFile = await tempLog();
       const { spawn } = fakeSpawn();
+
       await spawnDaemonProcess({ execPath: "n", script: "s", flags: [], logFile, spawn });
       const target = path.join(path.dirname(logFile), "elsewhere.txt");
+
       await writeFile(target, "keep");
       await rm(logFile);
       await symlink(target, logFile);
@@ -127,6 +141,7 @@ describe("spawnDaemonProcess", () => {
   it.skipIf(process.platform === "win32")("keeps the data directory private", async () => {
     const logFile = await tempLog();
     const { spawn } = fakeSpawn();
+
     await spawnDaemonProcess({ execPath: "n", script: "s", flags: [], logFile, spawn });
     expect((await stat(path.dirname(logFile))).mode & 0o077).toBe(0);
   });
@@ -136,6 +151,7 @@ describe("spawnDaemonProcess", () => {
     const spawn = (() => {
       throw new Error("spawn exploded");
     }) as unknown as typeof nodeSpawn;
+
     await expect(
       spawnDaemonProcess({ execPath: "n", script: "s", flags: [], logFile, spawn }),
     ).rejects.toThrow("spawn exploded");

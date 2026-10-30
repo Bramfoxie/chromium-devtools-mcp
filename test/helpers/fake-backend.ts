@@ -1,7 +1,13 @@
 import type { BackendSession, BrowserBackend, TargetInfo } from "../../src/daemon/index.js";
 
+interface SentCommand {
+  method   : string;
+  params   : object | undefined;
+  timeoutMs: number | undefined;
+}
+
 export class FakeSession implements BackendSession {
-  sent: Array<{ method: string; params: object | undefined; timeoutMs: number | undefined }> = [];
+  sent   : SentCommand[] = [];
   detached = false;
   failure: Error | undefined;
   private readonly handlers = new Map<string, Set<(params: unknown) => void>>();
@@ -14,16 +20,20 @@ export class FakeSession implements BackendSession {
   async send(method: string, params: object | undefined, timeoutMs?: number): Promise<unknown> {
     this.sent.push({ method, params, timeoutMs });
     if (this.failure) throw this.failure;
+
     return { echoed: method, target: this.targetId };
   }
 
   on(event: string, handler: (params: unknown) => void): () => void {
     let set = this.handlers.get(event);
+
     if (!set) {
       set = new Set();
       this.handlers.set(event, set);
     }
+
     set.add(handler);
+
     return () => void set.delete(handler);
   }
 
@@ -64,6 +74,7 @@ export class FakeBackend implements BrowserBackend {
 
   private fail(name: keyof FakeBackend["failures"]): void {
     const error = this.failures[name]?.shift();
+
     if (error) throw error;
   }
 
@@ -71,14 +82,17 @@ export class FakeBackend implements BrowserBackend {
     await this.gates.createContext;
     this.fail("createContext");
     const id = `ctx${++this.counter}`;
+
     this.contexts.add(id);
     this.log.push(`createContext ${id}`);
+
     return id;
   }
 
   async disposeContext(contextId: string): Promise<void> {
     this.contexts.delete(contextId);
     this.log.push(`disposeContext ${contextId}`);
+
     for (const [targetId, target] of [...this.targets]) {
       if (target.contextId === contextId) this.destroyTarget(targetId);
     }
@@ -88,9 +102,11 @@ export class FakeBackend implements BrowserBackend {
     await this.gates.createTarget;
     this.fail("createTarget");
     const id = `tab${++this.counter}`;
+
     this.targets.set(id, { url, title: `title of ${url}`, contextId });
     this.log.push(`createTarget ${id} ${contextId ?? "default"} ${url}`);
     this.afterCreate?.(id);
+
     return id;
   }
 
@@ -103,7 +119,9 @@ export class FakeBackend implements BrowserBackend {
 
   async listTargets(): Promise<TargetInfo[]> {
     const snapshot = [...this.targets];
+
     await this.gates.listTargets;
+
     return snapshot.map(([targetId, target]) => ({ targetId, ...target }));
   }
 
@@ -111,18 +129,22 @@ export class FakeBackend implements BrowserBackend {
     await this.gates.attach;
     this.fail("attach");
     const session = new FakeSession(targetId, this.log);
+
     this.sessions.set(targetId, session);
     this.log.push(`attach ${targetId}`);
+
     return session;
   }
 
   onTargetDestroyed(handler: (targetId: string) => void): () => void {
     this.destroyed.add(handler);
+
     return () => void this.destroyed.delete(handler);
   }
 
   onDisconnected(handler: () => void): () => void {
     this.disconnected.add(handler);
+
     return () => void this.disconnected.delete(handler);
   }
 
@@ -137,7 +159,9 @@ export class FakeBackend implements BrowserBackend {
 
   seedTab(url: string, contextId?: string): string {
     const id = `tab${++this.counter}`;
+
     this.targets.set(id, { url, title: `title of ${url}`, contextId });
+
     return id;
   }
 
