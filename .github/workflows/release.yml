@@ -2,7 +2,7 @@ name: Release
 
 on:
   push:
-    tags: ["v*"]
+    branches: [master]
 
 permissions:
   contents: read
@@ -18,12 +18,27 @@ jobs:
           node-version: 26
           cache: npm
           registry-url: https://registry.npmjs.org
-      - run: npm install -g npm@latest
-      - name: Check tag matches package version
-        run: test "v$(node -p "require('./package.json').version")" = "${GITHUB_REF_NAME}"
-      - run: npm ci
-      - run: npm run lint
-      - run: npm run typecheck
-      - run: npm test
-      - run: npm run build
-      - run: npm publish --access public
+      - name: Check whether this version is already published
+        id: version
+        run: |
+          name=$(node -p "require('./package.json').name")
+          version=$(node -p "require('./package.json').version")
+          if npm view "${name}@${version}" version > /dev/null 2>&1; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.version.outputs.publish == 'true'
+        run: npm install -g npm@latest
+      - if: steps.version.outputs.publish == 'true'
+        run: npm ci
+      - if: steps.version.outputs.publish == 'true'
+        run: npm run lint
+      - if: steps.version.outputs.publish == 'true'
+        run: npm run typecheck
+      - if: steps.version.outputs.publish == 'true'
+        run: npm test
+      - if: steps.version.outputs.publish == 'true'
+        run: npm run build
+      - if: steps.version.outputs.publish == 'true'
+        run: npm publish --access public
