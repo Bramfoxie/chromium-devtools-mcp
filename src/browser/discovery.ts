@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import os from "node:os";
-import path from "node:path";
 import type { Config } from "../config/index.js";
+import { pathFor } from "./platform-path.js";
 
 export type BrowserName = Config["browser"];
 
@@ -31,10 +31,6 @@ const LINUX_CHROME_NAMES = ["google-chrome-stable", "google-chrome", "chrome"];
 const LINUX_CHROME_FIXED = ["/opt/google/chrome/chrome"];
 const WINDOWS_CHROME_RELATIVE = ["Google", "Chrome", "Application", "chrome.exe"];
 const WINDOWS_ROOT_VARIABLES = ["LOCALAPPDATA", "PROGRAMFILES", "PROGRAMFILES(X86)"];
-
-function pathFor(platform: NodeJS.Platform): typeof path.posix {
-  return platform === "win32" ? path.win32 : path.posix;
-}
 
 export function browserCandidates(
   browser: BrowserName,

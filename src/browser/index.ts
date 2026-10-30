@@ -16,3 +16,15 @@ export {
   type ManagedConfig,
   parseListeningUrl,
 } from "./launch.js";
+export {
+  AttachError,
+  attachBrowser,
+  type AttachConfig,
+  type AttachDeps,
+  type AttachEndpoint,
+  browserUserDataDir,
+  type EndpointSource,
+  parseActivePortFile,
+  resolveAttachEndpoint,
+  setupInstructions,
+} from "./attach.js";
