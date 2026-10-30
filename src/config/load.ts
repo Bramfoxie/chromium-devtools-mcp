@@ -84,24 +84,33 @@ function envLayer(env: NodeJS.ProcessEnv): Layer {
   });
 }
 
+function parseFlags(argv: string[]) {
+  try {
+    return parseArgs({
+      args: argv,
+      strict: true,
+      allowPositionals: false,
+      allowNegative: true,
+      options: {
+        browser: { type: "string" },
+        mode: { type: "string" },
+        headless: { type: "boolean" },
+        "profile-dir": { type: "string" },
+        "debug-port": { type: "string" },
+        "allow-focus": { type: "boolean" },
+        "read-only": { type: "boolean" },
+        "allowed-domains": { type: "string" },
+        "confirm-dangerous": { type: "boolean" },
+      },
+    });
+  } catch (error) {
+    const reason = (error as Error).message.split(". ")[0] ?? "unreadable arguments";
+    throw new ConfigError(`invalid command line: ${reason}`);
+  }
+}
+
 function argvLayer(argv: string[]): Layer {
-  const { values } = parseArgs({
-    args: argv,
-    strict: false,
-    allowPositionals: true,
-    allowNegative: true,
-    options: {
-      browser: { type: "string" },
-      mode: { type: "string" },
-      headless: { type: "boolean" },
-      "profile-dir": { type: "string" },
-      "debug-port": { type: "string" },
-      "allow-focus": { type: "boolean" },
-      "read-only": { type: "boolean" },
-      "allowed-domains": { type: "string" },
-      "confirm-dangerous": { type: "boolean" },
-    },
-  });
+  const { values } = parseFlags(argv);
   const port = values["debug-port"];
   const domains = values["allowed-domains"];
   return compact({

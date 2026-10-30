@@ -65,9 +65,55 @@ describe("sources and precedence", () => {
     });
   });
 
-  it("ignores unrelated argv entries", () => {
-    const config = loadConfig({ ...withFile(undefined), argv: ["install", "--client", "cursor"] });
-    expect(config.mode).toBe("attach");
+  it("rejects an unknown flag instead of ignoring it", () => {
+    expect(() => loadConfig({ ...withFile(undefined), argv: ["--readonly"] })).toThrow(
+      new ConfigError("invalid command line: Unknown option '--readonly'"),
+    );
+    expect(() => loadConfig({ ...withFile(undefined), argv: ["--mod", "attach"] })).toThrow(
+      /Unknown option '--mod'/,
+    );
+  });
+
+  it("rejects positional arguments", () => {
+    expect(() => loadConfig({ ...withFile(undefined), argv: ["install"] })).toThrow(ConfigError);
+    expect(() => loadConfig({ ...withFile(undefined), argv: ["--headless", "extra"] })).toThrow(
+      /invalid command line/,
+    );
+  });
+
+  it("rejects a flag that lacks its value or gets one it does not take", () => {
+    expect(() => loadConfig({ ...withFile(undefined), argv: ["--browser"] })).toThrow(
+      /invalid command line: Option '--browser <value>' argument missing/,
+    );
+    expect(() => loadConfig({ ...withFile(undefined), argv: ["--headless=true"] })).toThrow(
+      /invalid command line/,
+    );
+  });
+
+  it("accepts every documented flag", () => {
+    const config = loadConfig({
+      ...withFile(undefined),
+      argv: [
+        "--browser=arc",
+        "--mode=managed",
+        "--no-headless",
+        "--profile-dir=/p",
+        "--debug-port=9333",
+        "--allow-focus",
+        "--read-only",
+        "--allowed-domains=a.com,b.com",
+        "--confirm-dangerous",
+      ],
+    });
+    expect(config).toEqual({
+      browser: "arc",
+      mode: "managed",
+      headless: false,
+      profileDir: "/p",
+      debugPort: 9333,
+      allowFocus: true,
+      safety: { readOnly: true, allowedDomains: ["a.com", "b.com"], confirmDangerous: true },
+    });
   });
 });
 

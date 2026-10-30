@@ -71,6 +71,19 @@ describe("daemon command", () => {
     expect(output.join("")).toContain("Usage:");
   });
 
+  it("refuses a mistyped flag with the real loader and does not start", async () => {
+    const run = vi.fn();
+    const output: string[] = [];
+    const code = await main(["daemon", "--readonly"], {
+      run,
+      write: (text) => void output.push(text),
+      onSignal: () => undefined,
+    });
+    expect(code).toBe(2);
+    expect(run).not.toHaveBeenCalled();
+    expect(output.join("")).toContain("Unknown option '--readonly'");
+  });
+
   it("treats an already running daemon as success", async () => {
     const { output, run } = harness({
       load: () => ({}) as never,
