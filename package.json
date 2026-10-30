@@ -1,0 +1,43 @@
+{
+  "name": "chromium-devtools-mcp",
+  "version": "0.0.1",
+  "description": "MCP server that lets AI agents drive your Chromium browser through the DevTools Protocol",
+  "license": "MIT",
+  "author": "Milana Kustinskaya <me@bramfoxie.com>",
+  "type": "module",
+  "bin": {
+    "chromium-devtools-mcp": "dist/cli.js"
+  },
+  "main": "dist/index.js",
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "mcp",
+    "chrome",
+    "chromium",
+    "arc",
+    "devtools",
+    "cdp"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . && prettier --check .",
+    "format": "prettier --write .",
+    "test": "vitest run --passWithNoTests",
+    "prepare": "git config core.hooksPath .githooks || true",
+    "prepublishOnly": "npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "eslint": "^10.14.0",
+    "prettier": "^3.9.10",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.72.1",
+    "vitest": "^5.0.5"
+  }
+}
