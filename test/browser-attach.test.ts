@@ -42,6 +42,7 @@ function deps(world: World = {}, overrides: Partial<AttachDeps> = {}) {
     fetchVersion: async (port) => world.versions?.[port],
     sleep: async () => undefined,
     log: (message) => logs.push(message),
+    onWaiting: () => undefined,
     pollIntervalMs: 1,
     ...overrides,
   };
@@ -228,6 +229,31 @@ describe("attachBrowser", () => {
     expect(instructions[0]).toContain("chrome://inspect/#remote-debugging");
     expect(instructions[0]).toContain("--remote-debugging-port=9222");
     expect(instructions[0]).toContain("non-default directory");
+  });
+
+  it("hands the instructions to onWaiting exactly once", async () => {
+    let fetches = 0;
+    const waiting: string[] = [];
+    const { value } = deps(
+      {},
+      {
+        fetchVersion: async () => (++fetches === 4 ? version : undefined),
+        onWaiting: (instructions) => waiting.push(instructions),
+      },
+    );
+    await attachBrowser(config, value);
+    expect(waiting).toHaveLength(1);
+    expect(waiting[0]).toContain("chrome://inspect/#remote-debugging");
+  });
+
+  it("does not call onWaiting when the browser is already available", async () => {
+    const waiting: string[] = [];
+    const { value } = deps(
+      { versions: { 9222: version } },
+      { onWaiting: (text) => waiting.push(text) },
+    );
+    await attachBrowser(config, value);
+    expect(waiting).toEqual([]);
   });
 
   it("rejects with AttachError when cancelled while waiting", async () => {

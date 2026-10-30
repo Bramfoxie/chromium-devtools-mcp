@@ -49,3 +49,17 @@ export {
   type TabScope,
 } from "./sessions.js";
 export { CdpBackend } from "./cdp-backend.js";
+export { connectToDaemon, type ConnectToDaemonOptions } from "./daemon-client.js";
+export { DaemonConfigMismatchError, DaemonNotRunningError } from "./errors.js";
+export type { DaemonState, DaemonStatus } from "./handler.js";
+export { currentLayout, type DaemonLayout } from "./layout.js";
+export {
+  type BrowserConnector,
+  type BrowserHandle,
+  type ConnectHooks,
+  type DaemonOutcome,
+  type RunDeps,
+  runDaemon,
+  type RunningDaemon,
+  type StopReason,
+} from "./runner.js";

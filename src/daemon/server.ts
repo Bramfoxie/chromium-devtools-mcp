@@ -37,6 +37,7 @@ export interface AcceptOptions {
   token: string;
   handler: RequestHandler;
   helloTimeoutMs?: number;
+  helloResult?: () => unknown;
   onReady?: (connection: ClientConnection) => void;
   onClose?: (connection: ClientConnection) => void;
 }
@@ -125,7 +126,7 @@ export function acceptConnection(socket: net.Socket, options: AcceptOptions): vo
       close: () => socket.destroy(),
     };
     connection = ready;
-    reply(parsed.data.id, { result: { ok: true } });
+    reply(parsed.data.id, { result: { ok: true, daemon: options.helloResult?.() } });
     guarded("onReady", () => options.onReady?.(ready));
     return true;
   };

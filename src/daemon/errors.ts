@@ -50,3 +50,21 @@ export class IpcClosedError extends DaemonError {
     this.name = "IpcClosedError";
   }
 }
+
+export class DaemonNotRunningError extends DaemonError {
+  constructor() {
+    super(
+      "No chromium-devtools-mcp daemon is running for this user. Start it with the daemon command and try again.",
+    );
+    this.name = "DaemonNotRunningError";
+  }
+}
+
+export class DaemonConfigMismatchError extends DaemonError {
+  constructor(running: string, expected: string) {
+    super(
+      `The running daemon uses ${running}, but this client expects ${expected}. Stop the daemon or make both use the same configuration.`,
+    );
+    this.name = "DaemonConfigMismatchError";
+  }
+}

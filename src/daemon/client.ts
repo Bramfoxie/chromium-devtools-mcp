@@ -30,6 +30,7 @@ export class IpcClient {
   private readonly handlers = new Map<string, Set<IpcEventHandler>>();
   private readonly decoder = new LineDecoder();
   private readonly closedSignal: Promise<void>;
+  private hello: unknown;
 
   private constructor(
     private readonly socket: net.Socket,
@@ -48,7 +49,7 @@ export class IpcClient {
     const socket = await openSocket(options.socketPath, connectTimeoutMs);
     const client = new IpcClient(socket, options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS);
     try {
-      await client.request(
+      client.hello = await client.request(
         "hello",
         { token: options.token, clientName: options.clientName },
         { timeoutMs: connectTimeoutMs },
@@ -63,6 +64,10 @@ export class IpcClient {
       throw error;
     }
     return client;
+  }
+
+  get helloResult(): unknown {
+    return this.hello;
   }
 
   get closed(): boolean {

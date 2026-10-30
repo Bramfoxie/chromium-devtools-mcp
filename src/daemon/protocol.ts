@@ -21,6 +21,7 @@ export const ErrorCode = {
   cdpTimeout: "cdp_timeout",
   browserClosed: "browser_closed",
   resultTooLarge: "result_too_large",
+  browserNotReady: "browser_not_ready",
 } as const;
 
 const id = z.number().int().nonnegative();

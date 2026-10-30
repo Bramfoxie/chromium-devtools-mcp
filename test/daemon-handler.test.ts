@@ -23,7 +23,12 @@ async function start(allowFocus = false) {
   const options = await harness.options();
   const token = generateToken();
   const backend = new FakeBackend();
-  const daemon = new Daemon({ backend, token, allowFocus });
+  const daemon = new Daemon({
+    token,
+    allowFocus,
+    identity: { browser: "chrome", mode: "managed" },
+  });
+  daemon.setBackend(backend);
   const handle = await acquireInstance(options, daemon.accept);
   harness.track(async () => {
     await handle.release();
@@ -96,6 +101,7 @@ describe("session handling", () => {
 
 describe("parameter validation", () => {
   it.each([
+    ["daemon.status", {}],
     ["session.open", {}],
     ["tab.create", {}],
     ["tab.list", {}],
@@ -107,7 +113,9 @@ describe("parameter validation", () => {
   ])("%s rejects unknown fields", async (method, valid) => {
     const { connect } = await start();
     const client = await connect();
-    if (method !== "session.open") await client.request("session.open");
+    if (method !== "session.open" && method !== "daemon.status") {
+      await client.request("session.open");
+    }
     const error = await failure(client.request(method, { ...valid, surprise: true }));
     expect(error.code).toBe(ErrorCode.badRequest);
     expect(error.message).toContain("surprise");

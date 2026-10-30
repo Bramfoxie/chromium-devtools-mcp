@@ -2,8 +2,22 @@ import { z } from "zod";
 import { RpcError } from "./errors.js";
 import { quoted } from "./log.js";
 import { ErrorCode } from "./protocol.js";
-import type { ClientSession, SessionRegistry } from "./sessions.js";
 import type { ClientConnection, RequestHandler } from "./server.js";
+import type { ClientSession, SessionRegistry } from "./sessions.js";
+
+export type DaemonState = "starting" | "waiting" | "ready";
+
+export interface DaemonStatus {
+  state: DaemonState;
+  browser: string;
+  mode: string;
+  message?: string;
+}
+
+export interface HandlerContext {
+  registry(): SessionRegistry<ClientConnection> | undefined;
+  status(): DaemonStatus;
+}
 
 const SAFE_URL_PROTOCOLS = new Set(["http:", "https:"]);
 const DOMAIN_METHOD = /^[A-Za-z][A-Za-z0-9]*\.[A-Za-z][A-Za-z0-9]*$/;
@@ -12,6 +26,7 @@ const targetId = z.string().min(1).max(128);
 const domainName = z.string().regex(DOMAIN_METHOD).max(100);
 
 const schemas = {
+  "daemon.status": z.strictObject({}),
   "session.open": z.strictObject({ isolated: z.boolean().optional() }),
   "tab.create": z.strictObject({ url: z.string().min(1).max(2048).optional() }),
   "tab.list": z.strictObject({ scope: z.enum(["owned", "available"]).optional() }),
@@ -68,10 +83,21 @@ function normalizeUrl(url: string): string {
   return parsed.href;
 }
 
-export function createRequestHandler(registry: SessionRegistry<ClientConnection>): RequestHandler {
+export function createRequestHandler(context: HandlerContext): RequestHandler {
   return async ({ method, params }, connection) => {
     if (!isMethod(method)) {
       throw new RpcError(ErrorCode.unknownMethod, `Unknown method ${method}.`);
+    }
+    if (method === "daemon.status") {
+      parseParams(method, params);
+      return context.status();
+    }
+    const registry = context.registry();
+    if (!registry) {
+      throw new RpcError(
+        ErrorCode.browserNotReady,
+        context.status().message ?? "The browser is not ready yet. Try again in a moment.",
+      );
     }
     if (method === "session.open") {
       const { isolated } = parseParams(method, params);

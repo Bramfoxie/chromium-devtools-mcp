@@ -30,6 +30,7 @@ export interface AttachDeps {
   fetchVersion: (port: number, signal?: AbortSignal) => Promise<unknown>;
   sleep: (ms: number, signal?: AbortSignal) => Promise<void>;
   log: (message: string) => void;
+  onWaiting: (instructions: string) => void;
   pollIntervalMs: number;
 }
 
@@ -147,7 +148,9 @@ export async function attachBrowser(
       return endpoint;
     }
     if (!instructed) {
-      deps.log(setupInstructions(config));
+      const instructions = setupInstructions(config);
+      deps.log(instructions);
+      deps.onWaiting(instructions);
       instructed = true;
     }
     await deps.sleep(deps.pollIntervalMs, signal);
@@ -227,6 +230,7 @@ function defaultAttachDeps(): AttachDeps {
     fetchVersion,
     sleep: abortableSleep,
     log: (message) => process.stderr.write(`chromium-devtools-mcp: ${message}\n`),
+    onWaiting: () => undefined,
     pollIntervalMs: 1000,
   };
 }
