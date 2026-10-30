@@ -4,6 +4,14 @@
   "description": "MCP server that lets AI agents drive your Chromium browser through the DevTools Protocol",
   "license": "MIT",
   "author": "Milana Kustinskaya <me@bramfoxie.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Bramfoxie/chromium-devtools-mcp.git"
+  },
+  "homepage": "https://github.com/Bramfoxie/chromium-devtools-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/Bramfoxie/chromium-devtools-mcp/issues"
+  },
   "type": "module",
   "bin": {
     "chromium-devtools-mcp": "dist/cli.js"
