@@ -164,6 +164,7 @@ export async function launchManaged(
 
       settled = true;
       clearTimeout(timer);
+      markExited();
       reject(startFailure(message));
     });
 
@@ -177,7 +178,7 @@ export async function launchManaged(
       reject(
         new BrowserLaunchError(
           `${config.browser} ${reason} before remote debugging was ready. ` +
-            `Another browser instance may already use the profile ${config.profileDir}: close it or set another profileDir.`,
+            `Another browser instance may already use the profile ${config.profileDir} or the port ${config.debugPort}: close it or set another profileDir or debugPort.`,
         ),
       );
     });

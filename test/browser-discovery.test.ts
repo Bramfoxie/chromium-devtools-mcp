@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { BROWSERS } from "../src/browser/browsers.js";
+import { browsers } from "../src/config/index.js";
 import {
   BrowserNotFoundError,
   browserCandidates,
@@ -35,17 +37,17 @@ describe("macOS", () => {
     expect(findBrowserExecutable("chrome", { ...mac, exists: present(chrome) })).toBe(chrome);
   });
 
-  it("finds Arc in the user Applications folder", () => {
-    const arc = "/Users/u/Applications/Arc.app/Contents/MacOS/Arc";
+  it("finds Chrome in the user Applications folder", () => {
+    const chrome = "/Users/u/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 
-    expect(findBrowserExecutable("arc", { ...mac, exists: present(arc) })).toBe(arc);
+    expect(findBrowserExecutable("chrome", { ...mac, exists: present(chrome) })).toBe(chrome);
   });
 
   it("prefers the system-wide install over the user one", () => {
-    const system = "/Applications/Arc.app/Contents/MacOS/Arc";
-    const user = "/Users/u/Applications/Arc.app/Contents/MacOS/Arc";
+    const system = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+    const user = "/Users/u/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 
-    expect(findBrowserExecutable("arc", { ...mac, exists: present(user, system) })).toBe(system);
+    expect(findBrowserExecutable("chrome", { ...mac, exists: present(user, system) })).toBe(system);
   });
 });
 
@@ -71,10 +73,13 @@ describe("Linux", () => {
     ]);
   });
 
-  it("reports Arc as unsupported", () => {
-    expect(() => findBrowserExecutable("arc", { ...linux, exists: () => true })).toThrow(
-      /not supported on linux/,
-    );
+  it("skips empty PATH segments", () => {
+    const context = { ...linux, env: { PATH: "/a::/b" } };
+
+    expect(browserCandidates("chrome", context).slice(0, 2)).toEqual([
+      "/a/google-chrome-stable",
+      "/a/google-chrome",
+    ]);
   });
 });
 
@@ -91,16 +96,13 @@ describe("Windows", () => {
     expect(findBrowserExecutable("chrome", { ...windows, exists: present(chrome) })).toBe(chrome);
   });
 
-  it("skips missing environment variables", () => {
+  it("skips missing environment variables and prefers per-user paths", () => {
     const candidates = browserCandidates("chrome", { ...windows, env: { PROGRAMFILES: "D:\\PF" } });
 
-    expect(candidates).toEqual(["D:\\PF\\Google\\Chrome\\Application\\chrome.exe"]);
-  });
-
-  it("reports Arc as unsupported", () => {
-    expect(() => findBrowserExecutable("arc", { ...windows, exists: () => true })).toThrow(
-      BrowserNotFoundError,
-    );
+    expect(candidates).toEqual([
+      "C:\\Users\\u\\AppData\\Local\\Google\\Chrome\\Application\\chrome.exe",
+      "D:\\PF\\Google\\Chrome\\Application\\chrome.exe",
+    ]);
   });
 });
 
@@ -117,5 +119,17 @@ describe("not found", () => {
     expect(failure).toBeInstanceOf(BrowserNotFoundError);
     expect((failure as Error).message).toContain("Could not find chrome on darwin");
     expect((failure as Error).message).toContain("/Applications/Google Chrome.app");
+  });
+});
+
+describe("browser table", () => {
+  it.each(browsers)("describes %s on every platform", (browser) => {
+    for (const context of [mac, linux, windows]) {
+      expect(BROWSERS[browser].label).not.toBe("");
+      expect(browserCandidates(browser, context).length).toBeGreaterThan(0);
+      expect(BROWSERS[browser].userDataDir(context)).not.toBe("");
+    }
+
+    expect(BROWSERS[browser].attachSteps(9222).join("\n")).toContain("9222");
   });
 });

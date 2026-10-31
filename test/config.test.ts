@@ -24,10 +24,10 @@ describe("defaults", () => {
 
 describe("sources and precedence", () => {
   it("reads values from the config file", () => {
-    const file = JSON.stringify({ browser: "arc", safety: { readOnly: true } });
+    const file = JSON.stringify({ browser: "chrome", safety: { readOnly: true } });
     const config = loadConfig(withFile(file));
 
-    expect(config.browser).toBe("arc");
+    expect(config.browser).toBe("chrome");
     expect(config.safety.readOnly).toBe(true);
     expect(config.safety.confirmDangerous).toBe(false);
   });
@@ -46,11 +46,11 @@ describe("sources and precedence", () => {
     const config = loadConfig({
       ...withFile(undefined),
       env : { CHROMIUM_DEVTOOLS_MCP_HEADLESS: "true" },
-      argv: ["--no-headless", "--browser=arc"],
+      argv: ["--no-headless", "--browser=chrome"],
     });
 
     expect(config.headless).toBe(false);
-    expect(config.browser).toBe("arc");
+    expect(config.browser).toBe("chrome");
   });
 
   it("parses lists and booleans from env and argv", () => {
@@ -99,7 +99,7 @@ describe("sources and precedence", () => {
     const config = loadConfig({
       ...withFile(undefined),
       argv: [
-        "--browser=arc",
+        "--browser=chrome",
         "--mode=managed",
         "--no-headless",
         "--profile-dir=/p",
@@ -112,7 +112,7 @@ describe("sources and precedence", () => {
     });
 
     expect(config).toEqual({
-      browser   : "arc",
+      browser   : "chrome",
       mode      : "managed",
       headless  : false,
       profileDir: "/p",
@@ -131,7 +131,7 @@ describe("validation", () => {
   });
 
   it("rejects unknown keys in the file", () => {
-    expect(() => loadConfig(withFile(JSON.stringify({ browsr: "arc" })))).toThrow(ConfigError);
+    expect(() => loadConfig(withFile(JSON.stringify({ browsr: "chrome" })))).toThrow(ConfigError);
   });
 
   it("rejects an out of range port", () => {

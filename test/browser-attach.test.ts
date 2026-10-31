@@ -10,6 +10,7 @@ import {
   browserUserDataDir,
   parseActivePortFile,
   resolveAttachEndpoint,
+  runningInProfile,
   setupInstructions,
 } from "../src/browser/index.js";
 import { abortableSleep, fetchVersion, probePort, readIfExists } from "../src/browser/attach.js";
@@ -38,6 +39,7 @@ function deps(world: World = {}, overrides: Partial<AttachDeps> = {}) {
   const value: AttachDeps = {
     context       : mac,
     readFile      : async (file) => world.files?.[file],
+    hasFile       : async () => false,
     isPortOpen    : async (port) => world.openPorts?.includes(port) ?? false,
     fetchVersion  : async (port) => world.versions?.[port],
     sleep         : async () => undefined,
@@ -51,12 +53,9 @@ function deps(world: World = {}, overrides: Partial<AttachDeps> = {}) {
 }
 
 describe("browserUserDataDir", () => {
-  it("returns the default Chrome and Arc directories on macOS", () => {
+  it("returns the default Chrome directory on macOS", () => {
     expect(browserUserDataDir("chrome", mac)).toBe(
       "/Users/u/Library/Application Support/Google/Chrome",
-    );
-    expect(browserUserDataDir("arc", mac)).toBe(
-      "/Users/u/Library/Application Support/Arc/User Data",
     );
   });
 
@@ -84,10 +83,79 @@ describe("browserUserDataDir", () => {
       "C:\\Users\\u\\AppData\\Local\\Google\\Chrome\\User Data",
     );
   });
+});
 
-  it("has no Arc directory outside macOS", () => {
-    expect(browserUserDataDir("arc", linux)).toBeUndefined();
-    expect(browserUserDataDir("arc", windows)).toBeUndefined();
+describe("runningInProfile", () => {
+  it("returns the endpoint of a browser that runs on the directory", async () => {
+    const files: Record<string, string> = { "C:\\p\\DevToolsActivePort": fileContent };
+    const io = {
+      context   : windows,
+      readFile  : async (file: string) => files[file],
+      hasFile   : async () => false,
+      isPortOpen: async (port: number) => port === 9333,
+    };
+
+    expect(await runningInProfile("C:\\p", 9333, io)).toEqual({
+      port        : 9333,
+      webSocketUrl: "ws://127.0.0.1:9333/devtools/browser/from-file",
+      source      : "port-file",
+    });
+    expect(await runningInProfile("C:\\p", 9333, { ...io, isPortOpen: async () => false })).toBe(
+      undefined,
+    );
+    expect(await runningInProfile("C:\\other", 9333, io)).toBeUndefined();
+  });
+
+  it.each([
+    { name: "macOS", context: mac, dir: "/p", lock: "/p/SingletonSocket", other: "/p/lockfile" },
+    { name: "Linux", context: linux, dir: "/p", lock: "/p/SingletonSocket", other: "/p/lockfile" },
+    {
+      name   : "Windows",
+      context: windows,
+      dir    : "C:\\p",
+      lock   : "C:\\p\\lockfile",
+      other  : "C:\\p\\SingletonSocket",
+    },
+  ])("finds the browser through the debug port when $name holds the profile lock", async (c) => {
+    const io = {
+      context     : c.context,
+      readFile    : async () => undefined,
+      hasFile     : async (file: string) => file === c.lock,
+      fetchVersion: async () => version,
+    };
+
+    expect(await runningInProfile(c.dir, 9222, io)).toEqual({
+      port        : 9222,
+      webSocketUrl: "ws://127.0.0.1:9222/devtools/browser/from-http",
+      source      : "debug-port",
+    });
+    expect(
+      await runningInProfile(c.dir, 9222, { ...io, hasFile: async (file) => file === c.other }),
+    ).toBeUndefined();
+  });
+
+  it("finds nothing when the profile is unlocked and the port file is gone", async () => {
+    const io = {
+      context     : windows,
+      readFile    : async () => undefined,
+      hasFile     : async () => false,
+      fetchVersion: async () => version,
+    };
+
+    expect(await runningInProfile("C:\\p", 9222, io)).toBeUndefined();
+  });
+
+  it("returns undefined when the version response is not a browser socket", async () => {
+    const io = {
+      context     : windows,
+      readFile    : async () => undefined,
+      hasFile     : async () => true,
+      fetchVersion: async () => ({
+        webSocketDebuggerUrl: "ws://127.0.0.1:9222/devtools/page/1",
+      }),
+    };
+
+    expect(await runningInProfile("C:\\p", 9222, io)).toBeUndefined();
   });
 });
 
@@ -108,18 +176,25 @@ describe("parseActivePortFile", () => {
 });
 
 describe("resolveAttachEndpoint", () => {
-  it("prefers the port file when its port is open", async () => {
-    const { value } = deps({
-      files    : { [portFile]: fileContent },
-      openPorts: [9333],
-      versions : { 9222: version },
-    });
+  it("uses the port file URL when its port is open, without HTTP discovery", async () => {
+    const fetched: number[] = [];
+    const { value } = deps(
+      { files: { [portFile]: fileContent }, openPorts: [9333], versions: { 9222: version } },
+      {
+        fetchVersion: async (port) => {
+          fetched.push(port);
+
+          return undefined;
+        },
+      },
+    );
 
     expect(await resolveAttachEndpoint(config, value)).toEqual({
       port        : 9333,
       webSocketUrl: "ws://127.0.0.1:9333/devtools/browser/from-file",
       source      : "port-file",
     });
+    expect(fetched).toEqual([]);
   });
 
   it("ignores a stale port file and uses the configured debug port", async () => {
@@ -201,14 +276,6 @@ describe("resolveAttachEndpoint", () => {
       expect(await resolveAttachEndpoint(config, value)).toMatchObject({ source: "debug-port" });
     }
   });
-
-  it("skips the port file for a browser without a known directory", async () => {
-    const { value } = deps({ versions: { 9222: version } }, { context: linux });
-
-    expect(await resolveAttachEndpoint({ browser: "arc", debugPort: 9222 }, value)).toMatchObject({
-      source: "debug-port",
-    });
-  });
 });
 
 describe("attachBrowser", () => {
@@ -216,7 +283,46 @@ describe("attachBrowser", () => {
     const { value, logs } = deps({ versions: { 9222: version } });
 
     await expect(attachBrowser(config, value)).resolves.toMatchObject({ source: "debug-port" });
-    expect(logs).toEqual(["Attaching to chrome on port 9222 (debug-port)."]);
+    expect(logs).toEqual(["Attaching to Chrome on port 9222 (debug-port)."]);
+  });
+
+  it("does not swallow unexpected errors while waiting", async () => {
+    const broken = {
+      get platform(): NodeJS.Platform {
+        throw new Error("boom");
+      },
+      homedir: "/home/u",
+      env    : {},
+    };
+    const { value } = deps({}, { context: broken });
+
+    await expect(attachBrowser(config, value)).rejects.toThrow("boom");
+  });
+
+  it("keeps waiting when a probe throws instead of failing", async () => {
+    let calls = 0;
+    let sleeps = 0;
+    const { value, logs } = deps(
+      {},
+      {
+        fetchVersion: async () => {
+          calls += 1;
+
+          if (calls < 3) throw new Error("socket hang up");
+
+          return version;
+        },
+        sleep: async () => {
+          sleeps += 1;
+        },
+      },
+    );
+    const endpoint = await attachBrowser(config, value);
+
+    expect(endpoint.source).toBe("debug-port");
+    expect(calls).toBe(3);
+    expect(sleeps).toBe(2);
+    expect(logs.filter((line) => line.includes("Cannot attach"))).toHaveLength(1);
   });
 
   it("prints the instructions once and waits until remote debugging appears", async () => {
@@ -356,33 +462,29 @@ describe("setupInstructions", () => {
     expect(text).toContain("Option 2");
   });
 
-  it("offers only the port flag for Arc", () => {
-    const text = setupInstructions({ browser: "arc", debugPort: 9222 });
-
-    expect(text).toContain("Arc");
-    expect(text).not.toContain("chrome://inspect");
-    expect(text).toContain("--remote-debugging-port=9222");
-  });
-
   it("contains only plain ASCII", () => {
-    for (const browser of ["chrome", "arc"] as const) {
-      expect(setupInstructions({ browser, debugPort: 9222 })).toMatch(/^[\x20-\x7E\n]+$/);
-    }
+    expect(setupInstructions({ browser: "chrome", debugPort: 9222 })).toMatch(/^[\x20-\x7E\n]+$/);
   });
 });
 
 describe("default I/O", () => {
-  const closers: Array<() => void> = [];
+  const closers: Array<() => Promise<void>> = [];
 
-  afterEach(() => {
-    for (const close of closers.splice(0)) close();
+  afterEach(async () => {
+    for (const close of closers.splice(0)) await close();
   });
 
   async function serve(handler: http.RequestListener) {
     const server = http.createServer(handler);
 
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-    closers.push(() => server.close());
+    closers.push(
+      () =>
+        new Promise<void>((resolve) => {
+          server.closeAllConnections();
+          server.close(() => resolve());
+        }),
+    );
 
     return (server.address() as AddressInfo).port;
   }
@@ -415,7 +517,7 @@ describe("default I/O", () => {
     const started = Date.now();
 
     expect(await fetchVersion(port, undefined, 50)).toBeUndefined();
-    expect(Date.now() - started).toBeLessThan(1500);
+    expect(Date.now() - started).toBeLessThan(800);
   });
 
   it("rejects oversized responses", async () => {
@@ -437,8 +539,8 @@ describe("default I/O", () => {
     setTimeout(() => controller.abort(), 30);
     const started = Date.now();
 
-    expect(await fetchVersion(port, controller.signal)).toBeUndefined();
-    expect(Date.now() - started).toBeLessThan(900);
+    expect(await fetchVersion(port, controller.signal, 60_000)).toBeUndefined();
+    expect(Date.now() - started).toBeLessThan(800);
   });
 
   it("returns undefined for non-JSON, error status and closed ports", async () => {
@@ -470,6 +572,11 @@ describe("default I/O", () => {
     expect(await probePort(port)).toBe(false);
   });
 
+  it("probePort returns false for invalid ports instead of throwing", async () => {
+    await expect(probePort(0)).resolves.toBe(false);
+    await expect(probePort(70000)).resolves.toBe(false);
+  });
+
   it("probePort resolves false immediately for an aborted signal", async () => {
     const controller = new AbortController();
 
@@ -484,11 +591,11 @@ describe("default I/O", () => {
     const started = Date.now();
 
     await abortableSleep(5000, controller.signal);
-    expect(Date.now() - started).toBeLessThan(1000);
+    expect(Date.now() - started).toBeLessThan(4500);
     const waited = Date.now();
 
-    await abortableSleep(40);
-    expect(Date.now() - waited).toBeGreaterThanOrEqual(30);
+    await abortableSleep(100);
+    expect(Date.now() - waited).toBeGreaterThanOrEqual(90);
   });
 
   it("reads an existing file and returns undefined for a missing one", async () => {

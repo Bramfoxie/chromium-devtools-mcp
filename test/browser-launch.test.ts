@@ -152,7 +152,7 @@ describe("launchManaged", () => {
     await expect(pending).resolves.toMatchObject({ port: 9222 });
   });
 
-  it("fails with the profile hint when the browser exits early", async () => {
+  it("fails with the profile and port hint when the browser exits early", async () => {
     const { deps, child } = harness();
     const pending = launchManaged(config, deps);
 
@@ -162,6 +162,7 @@ describe("launchManaged", () => {
     expect(failure).toBeInstanceOf(BrowserLaunchError);
     expect((failure as Error).message).toContain("exited with code 0");
     expect((failure as Error).message).toContain("/data/profile");
+    expect((failure as Error).message).toContain("9222");
   });
 
   it("times out, stops the browser and names the profile and port", async () => {

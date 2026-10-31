@@ -26,5 +26,6 @@ export {
   type EndpointSource,
   parseActivePortFile,
   resolveAttachEndpoint,
+  runningInProfile,
   setupInstructions,
 } from "./attach.js";

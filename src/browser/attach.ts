@@ -1,8 +1,8 @@
-import { readFile } from "node:fs/promises";
+import { lstat, readFile } from "node:fs/promises";
 import net from "node:net";
 import os from "node:os";
-import { type BrowserName, type DiscoveryContext } from "./discovery.js";
-import { pathFor } from "./platform-path.js";
+import { pathFor, type Config } from "../config/index.js";
+import { BROWSERS, type BrowserName, type DiscoveryContext } from "./browsers.js";
 
 const PORT_FILE_NAME = "DevToolsActivePort";
 const BROWSER_PATH_PREFIX = "/devtools/browser/";
@@ -18,14 +18,12 @@ export interface AttachEndpoint {
   source      : EndpointSource;
 }
 
-export interface AttachConfig {
-  browser  : BrowserName;
-  debugPort: number;
-}
+export type AttachConfig = Pick<Config, "browser" | "debugPort">;
 
 export interface AttachDeps {
   context       : DiscoveryContext;
   readFile      : (file: string) => Promise<string | undefined>;
+  hasFile       : (file: string) => Promise<boolean>;
   isPortOpen    : (port: number, signal?: AbortSignal) => Promise<boolean>;
   fetchVersion  : (port: number, signal?: AbortSignal) => Promise<unknown>;
   sleep         : (ms: number, signal?: AbortSignal) => Promise<void>;
@@ -41,31 +39,8 @@ export class AttachError extends Error {
   }
 }
 
-export function browserUserDataDir(
-  browser: BrowserName,
-  { env, platform, homedir }: DiscoveryContext,
-): string | undefined {
-  const p = pathFor(platform);
-
-  if (platform === "darwin") {
-    const support = p.join(homedir, "Library", "Application Support");
-
-    return browser === "chrome"
-      ? p.join(support, "Google", "Chrome")
-      : p.join(support, "Arc", "User Data");
-  }
-
-  if (browser !== "chrome") return undefined;
-
-  if (platform === "win32") {
-    const base = env.LOCALAPPDATA || p.join(homedir, "AppData", "Local");
-
-    return p.join(base, "Google", "Chrome", "User Data");
-  }
-
-  const base = env.XDG_CONFIG_HOME || p.join(homedir, ".config");
-
-  return p.join(base, "google-chrome");
+export function browserUserDataDir(browser: BrowserName, context: DiscoveryContext): string {
+  return BROWSERS[browser].userDataDir(context);
 }
 
 export function parseActivePortFile(
@@ -100,12 +75,73 @@ function browserWebSocketUrl(version: unknown, port: number): string | undefined
   }
 }
 
-async function readPortFile(deps: AttachDeps, file: string): Promise<string | undefined> {
+async function endpointInDir(
+  deps: Pick<AttachDeps, "context" | "readFile" | "isPortOpen">,
+  dir: string,
+  signal?: AbortSignal,
+): Promise<AttachEndpoint | undefined> {
+  let content: string | undefined;
+
   try {
-    return await deps.readFile(file);
+    content = await deps.readFile(pathFor(deps.context.platform).join(dir, PORT_FILE_NAME));
   } catch {
     return undefined;
   }
+
+  const parsed = content === undefined ? undefined : parseActivePortFile(content);
+
+  // The chrome://inspect server has no HTTP endpoints, so the file is the only source of the URL.
+  if (parsed && (await deps.isPortOpen(parsed.port, signal).catch(() => false))) {
+    return { ...parsed, source: "port-file" };
+  }
+
+  return undefined;
+}
+
+async function portFileEndpoint(
+  deps: AttachDeps,
+  browser: BrowserName,
+  signal?: AbortSignal,
+): Promise<AttachEndpoint | undefined> {
+  return endpointInDir(deps, browserUserDataDir(browser, deps.context), signal);
+}
+
+// Finds a browser that already runs on the given user data directory.
+// Chrome writes no port file for an explicit debugging port, so such a
+// browser is found through /json/version when the profile is locked.
+export async function runningInProfile(
+  dir: string,
+  debugPort: number,
+  overrides: Partial<
+    Pick<AttachDeps, "context" | "readFile" | "hasFile" | "isPortOpen" | "fetchVersion">
+  > = {},
+): Promise<AttachEndpoint | undefined> {
+  const deps: AttachDeps = { ...defaultAttachDeps(), ...overrides };
+
+  const fromFile = await endpointInDir(deps, dir);
+
+  if (fromFile) return fromFile;
+
+  if (!(await profileLocked(deps, dir))) return undefined;
+
+  let version: unknown;
+
+  try {
+    version = await deps.fetchVersion(debugPort);
+  } catch {
+    return undefined;
+  }
+
+  const webSocketUrl = browserWebSocketUrl(version, debugPort);
+
+  return webSocketUrl ? { port: debugPort, webSocketUrl, source: "debug-port" } : undefined;
+}
+
+// A lock file that exists proves the profile is held by a running browser.
+async function profileLocked(deps: AttachDeps, dir: string): Promise<boolean> {
+  const name = deps.context.platform === "win32" ? "lockfile" : "SingletonSocket";
+
+  return deps.hasFile(pathFor(deps.context.platform).join(dir, name));
 }
 
 export async function resolveAttachEndpoint(
@@ -113,19 +149,18 @@ export async function resolveAttachEndpoint(
   deps: AttachDeps,
   signal?: AbortSignal,
 ): Promise<AttachEndpoint | undefined> {
-  const dir = browserUserDataDir(config.browser, deps.context);
+  const fromFile = await portFileEndpoint(deps, config.browser, signal);
 
-  if (dir) {
-    const file = pathFor(deps.context.platform).join(dir, PORT_FILE_NAME);
-    const content = await readPortFile(deps, file);
-    const parsed = content === undefined ? undefined : parseActivePortFile(content);
+  if (fromFile) return fromFile;
 
-    if (parsed && (await deps.isPortOpen(parsed.port, signal))) {
-      return { ...parsed, source: "port-file" };
-    }
+  let version: unknown;
+
+  try {
+    version = await deps.fetchVersion(config.debugPort, signal);
+  } catch {
+    return undefined;
   }
 
-  const version = await deps.fetchVersion(config.debugPort, signal);
   const webSocketUrl = browserWebSocketUrl(version, config.debugPort);
 
   if (webSocketUrl) return { port: config.debugPort, webSocketUrl, source: "debug-port" };
@@ -134,25 +169,12 @@ export async function resolveAttachEndpoint(
 }
 
 export function setupInstructions(config: AttachConfig): string {
-  const name = config.browser === "chrome" ? "Chrome" : "Arc";
-  const lines = [
-    `Cannot attach to ${name} yet: remote debugging is not enabled. Waiting until it is.`,
-  ];
+  const spec = BROWSERS[config.browser];
 
-  if (config.browser === "chrome") {
-    lines.push(
-      'Option 1 (Chrome 144 or newer): in the Chrome window you want to control, open chrome://inspect/#remote-debugging and turn on "Allow remote debugging for this browser instance". Chrome asks you to approve each connection.',
-    );
-  }
-
-  lines.push(
-    `${config.browser === "chrome" ? "Option 2" : "Option"}: quit ${name} and start it with --remote-debugging-port=${config.debugPort}` +
-      (config.browser === "chrome"
-        ? " and --user-data-dir pointing to a non-default directory. This uses a separate profile, not your everyday one."
-        : "."),
-  );
-
-  return lines.join("\n");
+  return [
+    `Cannot attach to ${spec.label} yet: remote debugging is not enabled. Waiting until it is.`,
+    ...spec.attachSteps(config.debugPort),
+  ].join("\n");
 }
 
 export async function attachBrowser(
@@ -167,7 +189,7 @@ export async function attachBrowser(
     const endpoint = await resolveAttachEndpoint(config, deps, signal);
 
     if (endpoint) {
-      deps.log(`Attaching to ${config.browser} on port ${endpoint.port} (${endpoint.source}).`);
+      deps.log(`Attaching to ${BROWSERS[config.browser].label} on port ${endpoint.port} (${endpoint.source}).`);
 
       return endpoint;
     }
@@ -196,6 +218,17 @@ export async function readIfExists(file: string): Promise<string | undefined> {
   }
 }
 
+export async function fileExists(file: string): Promise<boolean> {
+  try {
+    await lstat(file);
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Probes and fetches always contact 127.0.0.1; IPv6 URLs are accepted from the browser only.
 export function probePort(port: number, signal?: AbortSignal): Promise<boolean> {
   return new Promise((resolve) => {
     if (signal?.aborted) {
@@ -204,7 +237,16 @@ export function probePort(port: number, signal?: AbortSignal): Promise<boolean> 
       return;
     }
 
-    const socket = net.connect({ host: "127.0.0.1", port });
+    let socket: net.Socket;
+
+    try {
+      socket = net.connect({ host: "127.0.0.1", port });
+    } catch {
+      resolve(false);
+
+      return;
+    }
+
     const finish = (open: boolean) => {
       signal?.removeEventListener("abort", onAbort);
       socket.destroy();
@@ -233,6 +275,10 @@ export async function fetchVersion(
     });
 
     if (!response.ok) return undefined;
+
+    const declared = Number(response.headers.get("content-length"));
+
+    if (Number.isFinite(declared) && declared > MAX_VERSION_BYTES) return undefined;
 
     const text = await response.text();
 
@@ -265,6 +311,7 @@ function defaultAttachDeps(): AttachDeps {
   return {
     context       : { env: process.env, platform: process.platform, homedir: os.homedir() },
     readFile      : readIfExists,
+    hasFile       : fileExists,
     isPortOpen    : probePort,
     fetchVersion,
     sleep         : abortableSleep,

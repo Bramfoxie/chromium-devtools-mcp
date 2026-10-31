@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const browsers = ["chrome", "arc"] as const;
+export const browsers = ["chrome"] as const;
 export const modes = ["attach", "managed"] as const;
 
 export const configSchema = z.strictObject({
