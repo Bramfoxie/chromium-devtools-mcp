@@ -1,17 +1,25 @@
 #!/bin/sh
-allowed_email="me@bramfoxie.com"
+owner="Milana Kustinskaya <me@bramfoxie.com>"
 zero=0000000000000000000000000000000000000000
+tab=$(printf '\t')
+
+fail() {
+  echo "pre-push: $1" >&2
+  exit 1
+}
 
 while read -r _ local_sha _ remote_sha; do
   [ "$local_sha" = "$zero" ] && continue
   if [ "$remote_sha" = "$zero" ]; then
     range="$local_sha --not --remotes"
   else
+    git cat-file -e "$remote_sha^{commit}" 2>/dev/null || fail "remote commit $remote_sha is not known locally; fetch first"
     range="$remote_sha..$local_sha"
   fi
-  bad=$(git log --format='%h %ae %ce' $range | awk -v a="$allowed_email" '$2 != a || $3 != a')
+  log=$(git log --format="%h$tab%an <%ae>$tab%cn <%ce>" $range) || fail "cannot list the commits to push"
+  bad=$(printf '%s\n' "$log" | awk -F "$tab" -v o="$owner" 'NF && ($2 != o || $3 != o)')
   if [ -n "$bad" ]; then
-    echo "pre-push: commits not authored and committed by $allowed_email:" >&2
+    echo "pre-push: commits not authored and committed by $owner:" >&2
     echo "$bad" >&2
     exit 1
   fi
