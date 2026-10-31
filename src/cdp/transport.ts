@@ -5,6 +5,7 @@ const MAX_PAYLOAD_BYTES = 256 * 1024 * 1024;
 const CLOSE_GRACE_MS = 1000;
 
 export interface Transport {
+  // Throws synchronously when the socket is not open.
   send(data: string): void;
   close(): Promise<void>;
   onMessage(handler: (data: string) => void): void;
@@ -39,6 +40,8 @@ function wrap(socket: WebSocket): Transport {
 
         const force = setTimeout(() => socket.terminate(), CLOSE_GRACE_MS);
 
+        force.unref();
+
         socket.once("close", () => {
           clearTimeout(force);
           resolve();
@@ -52,7 +55,13 @@ function wrap(socket: WebSocket): Transport {
       socket.on("close", (code, reason) => {
         const text = reason.toString("utf8");
 
-        handler(lastError ?? (text === "" ? `socket closed with code ${code}` : text));
+        handler(
+          text === ""
+            ? (code === 1006 && lastError !== undefined
+              ? lastError
+              : `socket closed with code ${code}`)
+            : text,
+        );
       });
     },
   };
@@ -60,21 +69,33 @@ function wrap(socket: WebSocket): Transport {
 
 export const wsTransportFactory: TransportFactory = (url) =>
   new Promise((resolve, reject) => {
-    const socket = new WebSocket(url, {
-      perMessageDeflate: false,
-      maxPayload       : MAX_PAYLOAD_BYTES,
-      followRedirects  : false,
-    });
-    const onError = (error: Error) => {
+    const fail = (detail: string) =>
       reject(
         new CdpClosedError(
-          `cannot connect to ${url} (${error.message}). ` +
+          `cannot connect to ${url} (${detail}). ` +
             "Check that the browser is running with remote debugging enabled",
         ),
       );
+    let socket: WebSocket;
+
+    try {
+      socket = new WebSocket(url, {
+        perMessageDeflate: false,
+        maxPayload       : MAX_PAYLOAD_BYTES,
+        followRedirects  : false,
+      });
+    } catch (error) {
+      fail(error instanceof Error ? error.message : String(error));
+
+      return;
+    }
+
+    const onError = (error: Error) => {
+      fail(error.message);
+      socket.terminate();
     };
 
-    socket.once("error", onError);
+    socket.on("error", onError);
     socket.once("open", () => {
       socket.off("error", onError);
       resolve(wrap(socket));

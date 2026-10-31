@@ -1,4 +1,4 @@
-import type { CdpClient, EventHandler } from "./client.js";
+import type { CdpClient, EventHandler, SessionSendOptions } from "./client.js";
 
 export class CdpSession {
   constructor(
@@ -7,7 +7,7 @@ export class CdpSession {
     readonly targetId: string,
   ) {}
 
-  send(method: string, params?: object, options: { timeoutMs?: number } = {}): Promise<unknown> {
+  send(method: string, params?: object, options: SessionSendOptions = {}): Promise<unknown> {
     return this.client.send(method, params, { ...options, sessionId: this.sessionId });
   }
 

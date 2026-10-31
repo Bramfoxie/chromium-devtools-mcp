@@ -1,6 +1,6 @@
 export class CdpError extends Error {
-  constructor(message: string) {
-    super(message);
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
     this.name = "CdpError";
   }
 }
@@ -33,8 +33,11 @@ export class CdpTimeoutError extends CdpError {
 }
 
 export class CdpClosedError extends CdpError {
-  constructor(detail: string) {
-    super(`CDP connection is closed: ${detail}. Reconnect to the browser and retry.`);
+  constructor(detail: string, options?: { cause?: unknown }) {
+    super(
+      `CDP connection is closed: ${detail}. Reconnect to the browser and retry.`,
+      options,
+    );
     this.name = "CdpClosedError";
   }
 }

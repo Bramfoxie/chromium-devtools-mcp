@@ -28,15 +28,21 @@ const rawServers: net.Server[] = [];
 const rawSockets: net.Socket[] = [];
 
 afterEach(async () => {
-  vi.restoreAllMocks();
   await Promise.all(clients.splice(0).map((client) => client.close()));
   for (const socket of rawSockets.splice(0)) socket.destroy();
-  for (const server of rawServers.splice(0)) server.close();
+  await Promise.all(
+    rawServers
+      .splice(0)
+      .map((server) => new Promise<void>((resolve) => server.close(() => resolve()))),
+  );
+  await Promise.all(
+    servers.splice(0).map((server) => {
+      for (const socket of server.clients) socket.terminate();
 
-  for (const server of servers.splice(0)) {
-    for (const socket of server.clients) socket.terminate();
-    server.close();
-  }
+      return new Promise<void>((resolve) => server.close(() => resolve()));
+    }),
+  );
+  vi.restoreAllMocks();
 });
 
 async function startServer(handler: RpcHandler) {
@@ -115,6 +121,27 @@ describe("requests", () => {
     expect((failure as Error).message).toContain("not found");
   });
 
+  it("treats any present error field as a failure", async () => {
+    const { client } = await connect((rpc, socket) => {
+      socket.send(JSON.stringify({ id: rpc.id, error: "boom" }));
+    });
+    const failure = await client.send("Nope.nope").catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(CdpProtocolError);
+    expect(failure).toMatchObject({ method: "Nope.nope", code: undefined });
+    expect((failure as Error).message).toContain("boom");
+  });
+
+  it("falls back to a default detail when the error has no code or message", async () => {
+    const { client } = await connect((rpc, socket) => {
+      socket.send(JSON.stringify({ id: rpc.id, error: {} }));
+    });
+    const failure = await client.send("Nope.nope").catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(CdpProtocolError);
+    expect((failure as Error).message).toContain("no details");
+  });
+
   it("rejects with CdpTimeoutError when no response arrives", async () => {
     const { client } = await connect(() => undefined, 50);
     const failure = await client.send("Slow.method").catch((error: unknown) => error);
@@ -162,6 +189,54 @@ describe("requests", () => {
     await expect(client.send("X")).resolves.toBe("ok");
     expect(stderr).toHaveBeenCalledTimes(3);
   });
+
+  it("logs messages without an id and without a method", async () => {
+    const stderr = silentStderr();
+    const { client } = await connect((rpc, socket) => {
+      socket.send(JSON.stringify({}));
+      socket.send(JSON.stringify({ id: "one", result: "stray" }));
+      reply(socket, rpc.id, "ok");
+    });
+
+    await expect(client.send("X")).resolves.toBe("ok");
+    expect(stderr).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects invalid timeouts instead of firing instantly", async () => {
+    const { client } = await connect(echo);
+
+    for (const timeoutMs of [Number.NaN, -1, Number.POSITIVE_INFINITY, 2 ** 31]) {
+      await expect(client.send("X", {}, { timeoutMs })).rejects.toBeInstanceOf(CdpError);
+      await expect(client.once("X.event", undefined, timeoutMs)).rejects.toBeInstanceOf(CdpError);
+    }
+
+    await expect(CdpClient.connect({ url: "ws://unused", requestTimeoutMs: -1 })).rejects.toBeInstanceOf(
+      CdpError,
+    );
+    expect(client.closed).toBe(false);
+  });
+
+  it("rejects when the transport throws synchronously", async () => {
+    const timers = vi.spyOn(globalThis, "clearTimeout");
+    const client = await CdpClient.connect({
+      url            : "ws://unused",
+      createTransport: async () => ({
+        send: () => {
+          throw new Error("socket is closed");
+        },
+        close    : async () => undefined,
+        onMessage: () => undefined,
+        onClose  : () => undefined,
+      }),
+    });
+
+    clients.push(client);
+    const failure = await client.send("X").catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(CdpClosedError);
+    expect((failure as Error).message).toContain("socket is closed");
+    expect(timers).toHaveBeenCalled();
+  });
 });
 
 describe("connect", () => {
@@ -170,6 +245,13 @@ describe("connect", () => {
 
     server.close();
     await expect(CdpClient.connect({ url })).rejects.toBeInstanceOf(CdpClosedError);
+  });
+
+  it("rejects with CdpClosedError for a malformed URL", async () => {
+    const failure = await CdpClient.connect({ url: "http://[::1" }).catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(CdpClosedError);
+    expect((failure as Error).message).toContain("cannot connect");
   });
 
   it("uses an injected transport factory", async () => {
@@ -255,6 +337,49 @@ describe("events", () => {
     expect(good).toHaveBeenCalledTimes(1);
     expect(stderr).toHaveBeenCalledTimes(1);
   });
+
+  it("skips a handler removed during dispatch and ignores one added there", async () => {
+    let deliver: (data: string) => void = () => undefined;
+    const client = await CdpClient.connect({
+      url            : "ws://unused",
+      createTransport: async () => ({
+        send     : () => undefined,
+        close    : async () => undefined,
+        onMessage: (handler) => {
+          deliver = handler;
+        },
+        onClose: () => undefined,
+      }),
+    });
+
+    clients.push(client);
+    const calls: string[] = [];
+    const late = () => {
+      calls.push("late");
+    };
+    const off = client.on("X.event", () => {
+      calls.push("first");
+      off();
+      client.on("X.event", late);
+    });
+
+    deliver(JSON.stringify({ method: "X.event", params: {} }));
+    expect(calls).toEqual(["first"]);
+    deliver(JSON.stringify({ method: "X.event", params: {} }));
+    expect(calls).toEqual(["first", "late"]);
+  });
+
+  it("treats a non-string session id as a root event", async () => {
+    const { client } = await connect((rpc, socket) => {
+      socket.send(JSON.stringify({ method: "X.event", params: { n: 1 }, sessionId: 7 }));
+      reply(socket, rpc.id, null);
+    });
+    const root = vi.fn();
+
+    client.on("X.event", root);
+    await client.send("Go");
+    expect(root).toHaveBeenCalledWith({ n: 1 }, undefined);
+  });
 });
 
 describe("sessions", () => {
@@ -319,9 +444,20 @@ describe("sessions", () => {
     second.on("Page.loadEventFired", onSecond);
     client.on("Page.loadEventFired", onRoot);
     await first.send("Emit.event");
+    expect(onFirst).toHaveBeenCalledTimes(1);
     expect(onFirst).toHaveBeenCalledWith({ from: "s-a" }, "s-a");
     expect(onSecond).not.toHaveBeenCalled();
+    expect(onRoot).toHaveBeenCalledTimes(1);
     expect(onRoot).toHaveBeenCalledWith({ from: "root" }, undefined);
+  });
+
+  it("resolves once with the next session event", async () => {
+    const { client } = await connect(browser);
+    const session = await client.attach("a");
+    const next = client.once("Page.loadEventFired", session.sessionId);
+
+    await session.send("Emit.event");
+    await expect(next).resolves.toEqual({ from: "s-a" });
   });
 
   it("clears session listeners on detach", async () => {
@@ -372,6 +508,45 @@ describe("sessions", () => {
     await client.send("Emit.detached");
     await client.send("Emit.toSession", { target: "s-a" });
     expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects an in-flight session request as soon as the target detaches", async () => {
+    const held: Rpc[] = [];
+    const { client } = await connect((rpc, socket) => {
+      if (rpc.method === "Hold") {
+        held.push(rpc);
+
+        return;
+      }
+
+      browser(rpc, socket);
+    });
+    const session = await client.attach("a");
+    const pending = session.send("Hold").catch((error: unknown) => error);
+
+    await vi.waitFor(() => expect(held).toHaveLength(1));
+    client.dropSession(session.sessionId);
+    const failure = await pending;
+
+    expect(failure).toBeInstanceOf(CdpProtocolError);
+    expect((failure as CdpProtocolError).method).toBe("Hold");
+    expect((failure as Error).message).toContain("detached");
+    expect(client.closed).toBe(false);
+  });
+
+  it("rejects a session-scoped once waiter as soon as the target detaches", async () => {
+    const { client } = await connect(browser);
+    const session = await client.attach("a");
+    const waiting = client
+      .once("Page.loadEventFired", session.sessionId, 30_000)
+      .catch((error: unknown) => error);
+
+    client.dropSession(session.sessionId);
+    const failure = await waiting;
+
+    expect(failure).toBeInstanceOf(CdpProtocolError);
+    expect((failure as CdpProtocolError).method).toBe("Page.loadEventFired");
+    expect((failure as Error).message).toContain("detached");
   });
 });
 
@@ -508,6 +683,37 @@ describe("close ordering", () => {
     release();
     await closing;
     expect(done).toBe(true);
+  });
+
+  it("makes concurrent close calls wait for the same transport close", async () => {
+    let closes = 0;
+    let release: () => void = () => undefined;
+    const client = await CdpClient.connect({
+      url            : "ws://unused",
+      createTransport: async () => ({
+        send : () => undefined,
+        close: () => {
+          closes += 1;
+
+          return new Promise<void>((resolve) => (release = resolve));
+        },
+        onMessage: () => undefined,
+        onClose  : () => undefined,
+      }),
+    });
+    let first = false;
+    let second = false;
+    const one = client.close().then(() => (first = true));
+    const two = client.close().then(() => (second = true));
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(first).toBe(false);
+    expect(second).toBe(false);
+    release();
+    await Promise.all([one, two]);
+    expect(first).toBe(true);
+    expect(second).toBe(true);
+    expect(closes).toBe(1);
   });
 });
 
