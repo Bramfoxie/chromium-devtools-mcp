@@ -16,7 +16,7 @@ const FIELDS = ["browser", "mode", "debugPort", "allowFocus", "headless", "profi
 
 export type IdentityField = (typeof FIELDS)[number];
 
-// The settings two clients must share to use one daemon; managed-only fields are left out in attach mode.
+// Settings two clients must share; managed-only fields are omitted in attach mode.
 export function daemonIdentity(
   config: Pick<Config, "browser" | "mode" | "debugPort" | "allowFocus" | "headless" | "profileDir">,
 ): DaemonIdentity {

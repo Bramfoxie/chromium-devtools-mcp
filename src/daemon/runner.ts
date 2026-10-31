@@ -78,8 +78,7 @@ async function isHeadless(client: CdpClient): Promise<boolean | undefined> {
   return typeof agent === "string" ? HEADLESS_AGENT.test(agent) : undefined;
 }
 
-// Reuses a browser left on the managed profile, for example by a daemon that was killed.
-// The daemon never closes a browser it did not launch itself.
+// Reuses a browser left on the managed profile; never closes it.
 async function adoptManaged(
   config: Config,
   deps: ConnectorDeps,

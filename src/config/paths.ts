@@ -12,7 +12,7 @@ export function pathFor(platform: NodeJS.Platform): typeof path.posix {
   return platform === "win32" ? path.win32 : path.posix;
 }
 
-// Empty and relative values are ignored, as the XDG base directory spec requires.
+// Empty and relative values are ignored.
 export function baseDir(
   value: string | undefined,
   fallback: string,

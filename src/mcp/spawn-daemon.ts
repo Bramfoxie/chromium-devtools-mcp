@@ -21,7 +21,7 @@ function openLog(logFile: string): number {
   try {
     const stats = lstatSync(logFile);
 
-    // Opening a directory for appending succeeds on Windows, so reject it directly.
+    // A directory opens for appending on Windows.
     if (stats.isDirectory()) {
       throw new DaemonError(
         `Cannot open the daemon log ${logFile}: it is a directory. Check its permissions.`,
@@ -39,7 +39,7 @@ function openLog(logFile: string): number {
     }
   }
 
-  // O_NOFOLLOW is missing on Windows, so a symlink there is followed; the private directory keeps that within one user.
+  // O_NOFOLLOW is absent on Windows.
   const flags =
     constants.O_WRONLY | constants.O_CREAT | constants.O_APPEND | (constants.O_NOFOLLOW ?? 0);
 

@@ -90,7 +90,7 @@ async function endpointInDir(
 
   const parsed = content === undefined ? undefined : parseActivePortFile(content);
 
-  // The chrome://inspect server has no HTTP endpoints, so the file is the only source of the URL.
+  // The inspect server has no HTTP endpoints; the port file is the only URL source.
   if (parsed && (await deps.isPortOpen(parsed.port, signal).catch(() => false))) {
     return { ...parsed, source: "port-file" };
   }
@@ -106,9 +106,7 @@ async function portFileEndpoint(
   return endpointInDir(deps, browserUserDataDir(browser, deps.context), signal);
 }
 
-// Finds a browser that already runs on the given user data directory.
-// Chrome writes no port file for an explicit debugging port, so such a
-// browser is found through /json/version when the profile is locked.
+// Finds a browser already running on the user data directory.
 export async function runningInProfile(
   dir: string,
   debugPort: number,
@@ -137,7 +135,7 @@ export async function runningInProfile(
   return webSocketUrl ? { port: debugPort, webSocketUrl, source: "debug-port" } : undefined;
 }
 
-// A lock file that exists proves the profile is held by a running browser.
+// A lock file proves a running browser holds the profile.
 async function profileLocked(deps: AttachDeps, dir: string): Promise<boolean> {
   const name = deps.context.platform === "win32" ? "lockfile" : "SingletonSocket";
 
@@ -228,7 +226,7 @@ export async function fileExists(file: string): Promise<boolean> {
   }
 }
 
-// Probes and fetches always contact 127.0.0.1; IPv6 URLs are accepted from the browser only.
+// Probes and fetches use 127.0.0.1 only.
 export function probePort(port: number, signal?: AbortSignal): Promise<boolean> {
   return new Promise((resolve) => {
     if (signal?.aborted) {

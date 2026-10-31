@@ -57,7 +57,7 @@ export class Daemon {
     this.armIdle();
   }
 
-  // Starts counting idle time in every state, so a daemon nobody uses never waits forever.
+  // Idle counting starts in every state.
   armIdle(): void {
     this.idleArmed = true;
     this.scheduleIdle();
