@@ -42,7 +42,7 @@ Clients: Claude Code, Cherry Studio, Cursor, Codex.
 
 Attach mode controls the browser you already run. The browser has to allow it:
 
-- Chrome 144 or newer: open `chrome://inspect/#remote-debugging` and turn on remote debugging for this browser instance. Chrome may ask you to allow a connection; click Allow.
+- A recent Chrome: open `chrome://inspect/#remote-debugging` and turn on remote debugging for this browser instance. Chrome may ask you to allow a connection; click Allow.
 - Start Chrome with `--remote-debugging-port=<debugPort>`. Chrome 136 and newer ignore this flag on the default profile, so it also needs `--user-data-dir` pointing to another directory.
 
 Until the browser allows it, the daemon prints these instructions, returns them to the client and keeps checking.

@@ -457,7 +457,7 @@ describe("setupInstructions", () => {
   it("offers the inspect toggle with the version requirement for Chrome", () => {
     const text = setupInstructions(config);
 
-    expect(text).toContain("Chrome 144 or newer");
+    expect(text).toContain("a recent Chrome");
     expect(text).toContain("chrome://inspect/#remote-debugging");
     expect(text).toContain("Option 2");
     expect(text).toContain("may ask you to approve a connection");
