@@ -3,6 +3,7 @@ import { CdpClosedError } from "./errors.js";
 
 const MAX_PAYLOAD_BYTES = 256 * 1024 * 1024;
 const CLOSE_GRACE_MS = 1000;
+const HANDSHAKE_TIMEOUT_MS = 10_000;
 
 export interface Transport {
   // Throws synchronously when the socket is not open.
@@ -67,8 +68,14 @@ function wrap(socket: WebSocket): Transport {
   };
 }
 
-export const wsTransportFactory: TransportFactory = (url) =>
-  new Promise((resolve, reject) => {
+export function createWsTransportFactory(handshakeTimeoutMs: number): TransportFactory {
+  return (url) => connectSocket(url, handshakeTimeoutMs);
+}
+
+export const wsTransportFactory: TransportFactory = createWsTransportFactory(HANDSHAKE_TIMEOUT_MS);
+
+function connectSocket(url: string, handshakeTimeoutMs: number): Promise<Transport> {
+  return new Promise((resolve, reject) => {
     const fail = (detail: string) =>
       reject(
         new CdpClosedError(
@@ -83,6 +90,7 @@ export const wsTransportFactory: TransportFactory = (url) =>
         perMessageDeflate: false,
         maxPayload       : MAX_PAYLOAD_BYTES,
         followRedirects  : false,
+        handshakeTimeout : handshakeTimeoutMs,
       });
     } catch (error) {
       fail(error instanceof Error ? error.message : String(error));
@@ -101,3 +109,4 @@ export const wsTransportFactory: TransportFactory = (url) =>
       resolve(wrap(socket));
     });
   });
+}

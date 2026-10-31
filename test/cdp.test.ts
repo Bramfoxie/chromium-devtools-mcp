@@ -10,6 +10,7 @@ import {
   CdpError,
   CdpProtocolError,
   CdpTimeoutError,
+  createWsTransportFactory,
   type Transport,
 } from "../src/cdp/index.js";
 
@@ -660,6 +661,22 @@ describe("transport failures", () => {
 
     expect(elapsed).toBeGreaterThanOrEqual(900);
     expect(elapsed).toBeLessThan(3000);
+  });
+});
+
+describe("handshake timeout", () => {
+  it("fails when the peer accepts the connection but never answers the upgrade", async () => {
+    const server = net.createServer((socket) => rawSockets.push(socket));
+
+    rawServers.push(server);
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const url = `ws://127.0.0.1:${(server.address() as AddressInfo).port}`;
+
+    const failure = await createWsTransportFactory(100)(url).catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(CdpClosedError);
+    expect((failure as Error).message).toContain("handshake");
   });
 });
 
