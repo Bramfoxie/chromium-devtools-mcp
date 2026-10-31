@@ -5,6 +5,14 @@ export class DaemonError extends Error {
   }
 }
 
+export function errorCode(error: unknown): string | undefined {
+  if (typeof error !== "object" || error === null) return undefined;
+
+  const code = (error as { code?: unknown }).code;
+
+  return typeof code === "string" ? code : undefined;
+}
+
 export class AlreadyRunningError extends DaemonError {
   constructor(readonly socketPath: string) {
     super(

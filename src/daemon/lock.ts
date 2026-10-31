@@ -1,5 +1,5 @@
 import type net from "node:net";
-import { AlreadyRunningError, DaemonError } from "./errors.js";
+import { AlreadyRunningError, DaemonError, errorCode } from "./errors.js";
 import { maxSocketPathBytes } from "./paths.js";
 import { ensurePrivateDir } from "./private-dir.js";
 import { realInstanceIO } from "./socket-io.js";
@@ -40,7 +40,7 @@ export interface InstanceDeps {
 }
 
 function isAddressInUse(error: unknown): boolean {
-  return (error as NodeJS.ErrnoException).code === "EADDRINUSE";
+  return errorCode(error) === "EADDRINUSE";
 }
 
 export async function acquireInstance(
@@ -70,7 +70,7 @@ export async function acquireInstance(
     } catch (error) {
       if (isAddressInUse(error)) return "in-use";
 
-      throw new DaemonError(`Cannot listen on the daemon socket: ${(error as Error).message}.`);
+      throw new DaemonError(`Cannot listen on the daemon socket: ${error instanceof Error ? error.message : String(error)}.`);
     }
   };
 

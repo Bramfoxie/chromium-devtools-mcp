@@ -15,8 +15,8 @@ import { createSocketHarness } from "./helpers/daemon-socket.js";
 const harness = createSocketHarness();
 
 afterEach(async () => {
-  vi.restoreAllMocks();
   await harness.dispose();
+  vi.restoreAllMocks();
 });
 
 async function start(allowFocus = false) {
@@ -83,6 +83,22 @@ describe("session handling", () => {
       isolated: true,
     });
     expect((await failure(client.request("session.open"))).code).toBe(ErrorCode.badRequest);
+  });
+
+  it("opens a fresh session after the connection closed and reopened", async () => {
+    const { backend, connect } = await start();
+    const first = await connect();
+
+    await first.request("session.open");
+    await first.request("tab.create", { url: "https://a.example/" });
+    await first.close();
+    const second = await connect();
+
+    await expect(second.request("session.open")).resolves.toEqual({ isolated: false });
+    const owned = (await second.request("tab.list")) as { tabs: unknown[] };
+
+    expect(owned.tabs).toEqual([]);
+    expect(backend.log).toContain("closeTarget tab1");
   });
 
   it("answers unknown methods without touching the browser", async () => {

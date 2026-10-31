@@ -239,7 +239,7 @@ describe("events", () => {
     await vi.waitFor(() => expect(seen).toEqual([id]));
   });
 
-  it("stops reporting after unsubscribe and ignores malformed events", async () => {
+  it("stops reporting after unsubscribe", async () => {
     const { client, backend } = await setup();
     const handler = vi.fn();
     const off = backend.onTargetDestroyed(handler);

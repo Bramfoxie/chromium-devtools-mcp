@@ -1,4 +1,4 @@
-export { AlreadyRunningError, DaemonError } from "./errors.js";
+export { AlreadyRunningError, DaemonError, errorCode } from "./errors.js";
 export {
   acquireInstance,
   type InstanceDeps,

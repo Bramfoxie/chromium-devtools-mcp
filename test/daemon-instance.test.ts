@@ -401,6 +401,32 @@ describe("token", () => {
     expect(await readdir(dir)).toEqual(["daemon.token"]);
   });
 
+  it("gives up on a stuck token lock instead of waiting forever", async () => {
+    const dir = await tempDir();
+    const file = path.join(dir, "daemon.token");
+
+    await writeFile(file, "garbage");
+    await mkdir(`${file}.lock`);
+    await expect(
+      ensureToken(file, process.platform, uid, { lockWaitMs: 50 }),
+    ).rejects.toThrow(/token lock .*daemon\.token\.lock.*remove that directory/);
+    expect((await readdir(dir)).sort()).toEqual(["daemon.token", "daemon.token.lock"]);
+  });
+
+  it("gives parallel callers the persisted token on a corrupted file", async () => {
+    const dir = await tempDir();
+    const file = path.join(dir, "daemon.token");
+
+    await writeFile(file, "garbage");
+    const tokens = await Promise.all(
+      Array.from({ length: 8 }, () => ensureToken(file, process.platform, uid)),
+    );
+
+    expect(new Set(tokens).size).toBe(1);
+    expect(await readToken(file)).toBe(tokens[0]);
+    expect(await readdir(dir)).toEqual(["daemon.token"]);
+  });
+
   it.skipIf(!posix)("writes the file with mode 0600", async () => {
     const dir = await tempDir();
     const file = path.join(dir, "daemon.token");
@@ -409,7 +435,7 @@ describe("token", () => {
     expect((await stat(file)).mode & 0o777).toBe(0o600);
   });
 
-  it("removes its temporary file when publishing fails", async () => {
+  it("fails without leaving files behind when the token path is a directory", async () => {
     const dir = await tempDir();
     const file = path.join(dir, "daemon.token");
 

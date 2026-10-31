@@ -1,6 +1,6 @@
 import { chmod, lstat, mkdir } from "node:fs/promises";
 import path from "node:path";
-import { DaemonError } from "./errors.js";
+import { DaemonError, errorCode } from "./errors.js";
 
 export interface DirStat {
   uid           : number;
@@ -22,7 +22,7 @@ export const realDirIO: DirIO = {
     try {
       await mkdir(dir, { mode: 0o700 });
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      if (errorCode(error) !== "EEXIST") throw error;
     }
   },
   lstat: async (dir) => {

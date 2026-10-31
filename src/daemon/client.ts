@@ -108,6 +108,7 @@ export class IpcClient {
     });
   }
 
+  // Subscribing after close silently returns a no-op; the handler never fires.
   on(event: string, handler: IpcEventHandler): () => void {
     if (this.isClosed) return () => undefined;
 
@@ -154,7 +155,7 @@ export class IpcClient {
     try {
       for (const line of this.decoder.push(chunk)) this.handleLine(line);
     } catch (error) {
-      logDaemon(`closing the daemon connection: ${describeError(error)}`);
+      logDaemon(`closing the connection to the daemon: ${describeError(error)}`);
       this.shutdown(new IpcClosedError("the daemon sent an invalid message"));
       this.socket.destroy();
     }

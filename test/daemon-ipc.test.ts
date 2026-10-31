@@ -20,8 +20,8 @@ import { createSocketHarness } from "./helpers/daemon-socket.js";
 const harness = createSocketHarness();
 
 afterEach(async () => {
-  vi.restoreAllMocks();
   await harness.dispose();
+  vi.restoreAllMocks();
 });
 
 function quietStderr() {
@@ -546,6 +546,23 @@ describe("events", () => {
     server.ready[0]?.sendEvent("tick");
     await client.request("echo");
     expect(good).toHaveBeenCalledTimes(1);
+    expect(stderr).toHaveBeenCalled();
+  });
+
+  it("drops an event that cannot be encoded and logs it", async () => {
+    const stderr = quietStderr();
+    const server = await startServer();
+    const client = await connectClient(server);
+    const seen: unknown[] = [];
+
+    client.on("tick", (params) => seen.push(params));
+    const cyclic: Record<string, unknown> = {};
+
+    cyclic.self = cyclic;
+    server.ready[0]?.sendEvent("tick", cyclic);
+    server.ready[0]?.sendEvent("tick", { n: 1 });
+    await client.request("echo");
+    expect(seen).toEqual([{ n: 1 }]);
     expect(stderr).toHaveBeenCalled();
   });
 });

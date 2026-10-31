@@ -1,9 +1,6 @@
 import { createHash } from "node:crypto";
 import os from "node:os";
-import { defaultProfileDir } from "../config/index.js";
-import { pathFor } from "../browser/platform-path.js";
-
-const APP_NAME = "chromium-devtools-mcp";
+import { APP_NAME, defaultProfileDir, pathFor } from "../config/index.js";
 const SOCKET_FILE = "daemon.sock";
 const TOKEN_FILE = "daemon.token";
 const UNIX_RUNTIME_ROOT = "/tmp";

@@ -181,7 +181,7 @@ export function acceptConnection(socket: net.Socket, options: AcceptOptions): vo
     const parsed = requestSchema.safeParse(raw);
 
     if (!parsed.success) {
-      const id = (raw as { id?: unknown } | null)?.id;
+      const id = typeof raw === "object" && raw !== null ? (raw as { id?: unknown }).id : undefined;
 
       if (typeof id !== "number" || !Number.isSafeInteger(id) || id < 0) {
         throw new RpcError(ErrorCode.badRequest, "The request is malformed.");

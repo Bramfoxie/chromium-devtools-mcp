@@ -1,6 +1,8 @@
 import { chmod, mkdir, rm, stat } from "node:fs/promises";
 import net from "node:net";
 import type { InstanceIO, ListeningServer } from "./lock.js";
+import { errorCode } from "./errors.js";
+import { logDaemon } from "./log.js";
 
 const PROBE_TIMEOUT_MS = 1000;
 const STALE_LOCK_MS = 5000;
@@ -28,7 +30,7 @@ function listenOnSocket(
     server.listen(path, () => {
       server.off("error", reject);
       server.on("error", (error) => {
-        process.stderr.write(`chromium-devtools-mcp: daemon socket error: ${error.message}\n`);
+        logDaemon(`daemon socket error: ${error.message}`);
       });
 
       if (!restrict) {
@@ -73,7 +75,7 @@ async function lockCleanup(socketPath: string): Promise<(() => Promise<void>) | 
 
       return () => rm(dir, { recursive: true, force: true });
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      if (errorCode(error) !== "EEXIST") throw error;
 
       const held = await stat(dir).catch(() => undefined);
 
