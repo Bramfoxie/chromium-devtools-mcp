@@ -304,7 +304,13 @@ export class ClientSession {
   }
 
   private ensureUnowned(targetId: string): void {
-    if (this.registry.ownerOf(targetId)) {
+    const owner = this.registry.ownerOf(targetId);
+
+    if (owner === this) {
+      throw new RpcError(ErrorCode.alreadyClaimed, "The tab is already claimed by this session.");
+    }
+
+    if (owner) {
       throw new RpcError(ErrorCode.alreadyClaimed, "The tab is already used by another session.");
     }
   }

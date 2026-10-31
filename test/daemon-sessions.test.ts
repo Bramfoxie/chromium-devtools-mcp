@@ -187,6 +187,34 @@ describe("tab ownership", () => {
     expect(results.filter((result) => result === ErrorCode.alreadyClaimed)).toHaveLength(1);
   });
 
+  it("tells a same-session racing claim about itself, not about another session", async () => {
+    const { backend, open } = setup();
+    const a = await open("a");
+    const userTab = backend.seedTab("https://user.example/");
+    let release: () => void = () => undefined;
+
+    backend.gates.listTargets = new Promise<void>((resolve) => (release = resolve));
+
+    const first = a.claimTab(userTab).then(
+      () => undefined,
+      (failure: unknown) => failure,
+    );
+    const second = a.claimTab(userTab).then(
+      () => undefined,
+      (failure: unknown) => failure,
+    );
+
+    await new Promise((resolve) => setImmediate(resolve));
+    release();
+    const failures = (await Promise.all([first, second])).filter(
+      (result): result is RpcError => result instanceof RpcError,
+    );
+
+    expect(failures).toHaveLength(1);
+    expect(failures[0]?.code).toBe(ErrorCode.alreadyClaimed);
+    expect((failures[0] as Error).message).toContain("by this session");
+  });
+
   it("does not claim tabs of other contexts or tabs that do not exist", async () => {
     const { backend, open } = setup();
     const shared = await open("a");
