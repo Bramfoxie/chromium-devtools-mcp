@@ -24,10 +24,10 @@ describe("defaults", () => {
 
 describe("sources and precedence", () => {
   it("reads values from the config file", () => {
-    const file = JSON.stringify({ browser: "chrome", safety: { readOnly: true } });
+    const file = JSON.stringify({ headless: true, safety: { readOnly: true } });
     const config = loadConfig(withFile(file));
 
-    expect(config.browser).toBe("chrome");
+    expect(config.headless).toBe(true);
     expect(config.safety.readOnly).toBe(true);
     expect(config.safety.confirmDangerous).toBe(false);
   });
@@ -50,7 +50,6 @@ describe("sources and precedence", () => {
     });
 
     expect(config.headless).toBe(false);
-    expect(config.browser).toBe("chrome");
   });
 
   it("parses lists and booleans from env and argv", () => {
@@ -101,7 +100,7 @@ describe("sources and precedence", () => {
       argv: [
         "--browser=chrome",
         "--mode=managed",
-        "--no-headless",
+        "--headless",
         "--profile-dir=/p",
         "--debug-port=9333",
         "--allow-focus",
@@ -114,7 +113,7 @@ describe("sources and precedence", () => {
     expect(config).toEqual({
       browser   : "chrome",
       mode      : "managed",
-      headless  : false,
+      headless  : true,
       profileDir: "/p",
       debugPort : 9333,
       allowFocus: true,
@@ -247,6 +246,11 @@ describe("validation", () => {
   it("accepts every negative boolean flag", () => {
     const config = loadConfig({
       ...withFile(undefined),
+      env: {
+        CHROMIUM_DEVTOOLS_MCP_ALLOW_FOCUS      : "true",
+        CHROMIUM_DEVTOOLS_MCP_READ_ONLY        : "true",
+        CHROMIUM_DEVTOOLS_MCP_CONFIRM_DANGEROUS: "true",
+      },
       argv: ["--no-allow-focus", "--no-read-only", "--no-confirm-dangerous"],
     });
 
