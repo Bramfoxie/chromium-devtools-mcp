@@ -512,6 +512,17 @@ describe("sending commands", () => {
     ]);
   });
 
+  it("sends the normalized URL of Page.navigate to the browser", async () => {
+    const { backend, open } = setup();
+    const a = await open("a");
+    const tab = await a.createTab("about:blank");
+
+    await a.send(tab, "Page.navigate", { url: " HTTPS://X.example " });
+    expect(backend.sessions.get(tab)?.sent).toEqual([
+      { method: "Page.navigate", params: { url: "https://x.example/" }, timeoutMs: undefined },
+    ]);
+  });
+
   it("shares one attach between concurrent commands", async () => {
     const { backend, open } = setup();
     const a = await open("a");
@@ -553,7 +564,7 @@ describe("sending commands", () => {
   });
 
   it.each([
-    "Page.navigate",
+    "Page.reload",
     "Runtime.evaluate",
     "DOM.getDocument",
     "Network.enable",
@@ -607,7 +618,7 @@ describe("races with closing", () => {
     let release: () => void = () => undefined;
 
     backend.gates.attach = new Promise<void>((resolve) => (release = resolve));
-    const subscribing = a.subscribe(tab, "X.y");
+    const subscribing = a.subscribe(tab, "Page.loadEventFired");
 
     await Promise.resolve();
     backend.destroyTarget(tab);
@@ -620,13 +631,13 @@ describe("races with closing", () => {
     const a = await open("a");
     const tab = await a.createTab("about:blank");
 
-    await Promise.all([a.subscribe(tab, "X.y"), a.subscribe(tab, "X.y")]);
-    expect(backend.sessions.get(tab)?.listenerCount("X.y")).toBe(1);
+    await Promise.all([a.subscribe(tab, "Page.loadEventFired"), a.subscribe(tab, "Page.loadEventFired")]);
+    expect(backend.sessions.get(tab)?.listenerCount("Page.loadEventFired")).toBe(1);
   });
 
   it.each([
     ["send", (a: ClientSessionLike, tab: string) => a.send(tab, "Page.enable", undefined)],
-    ["subscribe", (a: ClientSessionLike, tab: string) => a.subscribe(tab, "X.y")],
+    ["subscribe", (a: ClientSessionLike, tab: string) => a.subscribe(tab, "Page.loadEventFired")],
     ["closeTab", (a: ClientSessionLike, tab: string) => a.closeTab(tab)],
     ["claimTab", (a: ClientSessionLike, tab: string) => a.claimTab(tab)],
     ["listTabs", (a: ClientSessionLike) => a.listTabs("owned")],
@@ -655,7 +666,7 @@ describe("CDP failures", () => {
 
     if (session) session.failure = failure;
 
-    const error = await a.send(tab, "Page.navigate", undefined).catch((reason: unknown) => reason);
+    const error = await a.send(tab, "Page.reload", undefined).catch((reason: unknown) => reason);
 
     expect(error).toBeInstanceOf(RpcError);
     expect((error as RpcError).code).toBe(expected);
@@ -689,17 +700,28 @@ describe("subscriptions", () => {
     ]);
   });
 
+  it("refuses to subscribe to events outside the allowed domains", async () => {
+    const { backend, open } = setup();
+    const tab = backend.seedTab("https://a.example/");
+    const session = await open("a");
+
+    await session.claimTab(tab);
+    expect(await code(session.subscribe(tab, "Target.targetCreated"))).toBe(
+      ErrorCode.forbiddenMethod,
+    );
+  });
+
   it("does not subscribe twice and stops after unsubscribe", async () => {
     const { backend, emitted, open } = setup();
     const a = await open("a");
     const tab = await a.createTab("about:blank");
 
-    await a.subscribe(tab, "X.y");
-    await a.subscribe(tab, "X.y");
-    expect(backend.sessions.get(tab)?.listenerCount("X.y")).toBe(1);
-    a.unsubscribe(tab, "X.y");
-    expect(backend.sessions.get(tab)?.listenerCount("X.y")).toBe(0);
-    backend.sessions.get(tab)?.emit("X.y", {});
+    await a.subscribe(tab, "Page.loadEventFired");
+    await a.subscribe(tab, "Page.loadEventFired");
+    expect(backend.sessions.get(tab)?.listenerCount("Page.loadEventFired")).toBe(1);
+    a.unsubscribe(tab, "Page.loadEventFired");
+    expect(backend.sessions.get(tab)?.listenerCount("Page.loadEventFired")).toBe(0);
+    backend.sessions.get(tab)?.emit("Page.loadEventFired", {});
     expect(emitted.a).toEqual([]);
   });
 
@@ -709,22 +731,22 @@ describe("subscriptions", () => {
     const first = await a.createTab("about:blank");
     const second = await a.createTab("about:blank");
 
-    await a.subscribe(first, "X.y");
-    await a.subscribe(second, "X.y");
+    await a.subscribe(first, "Page.loadEventFired");
+    await a.subscribe(second, "Page.loadEventFired");
     await a.closeTab(first);
-    expect(backend.sessions.get(first)?.listenerCount("X.y")).toBe(0);
+    expect(backend.sessions.get(first)?.listenerCount("Page.loadEventFired")).toBe(0);
     await registry.close("a");
-    expect(backend.sessions.get(second)?.listenerCount("X.y")).toBe(0);
+    expect(backend.sessions.get(second)?.listenerCount("Page.loadEventFired")).toBe(0);
   });
 
   it("does not register a subscription that finishes after the tab is gone", async () => {
     const { backend, open } = setup();
     const a = await open("a");
     const tab = await a.createTab("about:blank");
-    const subscribing = a.subscribe(tab, "X.y");
+    const subscribing = a.subscribe(tab, "Page.loadEventFired");
 
     backend.destroyTarget(tab);
     expect(await code(subscribing)).toBe(ErrorCode.notFound);
-    expect(backend.sessions.get(tab)?.listenerCount("X.y") ?? 0).toBe(0);
+    expect(backend.sessions.get(tab)?.listenerCount("Page.loadEventFired") ?? 0).toBe(0);
   });
 });

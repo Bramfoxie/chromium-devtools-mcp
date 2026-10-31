@@ -40,6 +40,7 @@ export {
 export type { BackendSession, BrowserBackend, TargetInfo } from "./browser-backend.js";
 export { Daemon, type DaemonOptions } from "./daemon.js";
 export { createRequestHandler } from "./handler.js";
+export { checkCall, checkEvent, normalizeUrl, type PolicyOptions } from "./method-policy.js";
 export {
   ClientSession,
   type Emit,

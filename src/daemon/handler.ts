@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { RpcError } from "./errors.js";
 import { quoted } from "./log.js";
+import { normalizeUrl } from "./method-policy.js";
 import { ErrorCode } from "./protocol.js";
 import type { ClientConnection, RequestHandler } from "./server.js";
 import type { ClientSession, SessionRegistry } from "./sessions.js";
@@ -19,7 +20,6 @@ export interface HandlerContext {
   status(): DaemonStatus;
 }
 
-const SAFE_URL_PROTOCOLS = new Set(["http:", "https:"]);
 const DOMAIN_METHOD = /^[A-Za-z][A-Za-z0-9]*\.[A-Za-z][A-Za-z0-9]*$/;
 
 const targetId = z.string().min(1).max(128);
@@ -67,27 +67,6 @@ function parseParams<M extends Method>(method: M, params: unknown): z.infer<(typ
     ErrorCode.badRequest,
     `Invalid parameters for ${method}: check ${fields.join(", ")}.`,
   );
-}
-
-function normalizeUrl(url: string): string {
-  if (url === "about:blank") return url;
-
-  let parsed: URL;
-
-  try {
-    parsed = new URL(url);
-  } catch {
-    throw new RpcError(ErrorCode.unsupportedUrl, "The URL is not valid.");
-  }
-
-  if (!SAFE_URL_PROTOCOLS.has(parsed.protocol)) {
-    throw new RpcError(
-      ErrorCode.unsupportedUrl,
-      "Only http, https and about:blank URLs can be opened.",
-    );
-  }
-
-  return parsed.href;
 }
 
 export function createRequestHandler(context: HandlerContext): RequestHandler {

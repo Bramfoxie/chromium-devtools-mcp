@@ -177,10 +177,12 @@ describe("tabs through the daemon", () => {
     await client.request("tab.create");
     await client.request("tab.create", { url: "https://example.org/a" });
     await client.request("tab.create", { url: "http://example.org/b" });
+    await client.request("tab.create", { url: "ABOUT:BLANK" });
     expect(backend.log).toEqual([
       "createTarget tab1 default about:blank",
       "createTarget tab2 default https://example.org/a",
       "createTarget tab3 default http://example.org/b",
+      "createTarget tab4 default about:blank",
     ]);
   });
 
@@ -283,7 +285,7 @@ describe("commands and events", () => {
 
     if (session) session.failure = new CdpProtocolError("Page.navigate", -32000, "Cannot navigate");
 
-    const error = await failure(client.request("cdp.send", { targetId, method: "Page.navigate" }));
+    const error = await failure(client.request("cdp.send", { targetId, method: "Page.reload" }));
 
     expect(error.code).toBe(ErrorCode.cdpError);
     expect(error.message).toContain("Cannot navigate");

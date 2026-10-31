@@ -2,27 +2,9 @@ import { CdpClosedError, CdpProtocolError, CdpTimeoutError } from "../cdp/errors
 import type { BackendSession, BrowserBackend, TargetInfo } from "./browser-backend.js";
 import { RpcError } from "./errors.js";
 import { describeError, logDaemon } from "./log.js";
+import { checkCall, checkEvent } from "./method-policy.js";
 import { ErrorCode } from "./protocol.js";
 
-const ALLOWED_DOMAINS = new Set([
-  "Accessibility",
-  "CSS",
-  "Console",
-  "DOM",
-  "DOMDebugger",
-  "DOMSnapshot",
-  "DOMStorage",
-  "Emulation",
-  "Fetch",
-  "IO",
-  "Input",
-  "Log",
-  "Network",
-  "Page",
-  "Performance",
-  "Runtime",
-]);
-const FOCUS_METHODS = new Set(["Page.bringToFront"]);
 const DETACH_GRACE_MS = 2000;
 const MAX_REMEMBERED_DESTROYED = 512;
 
@@ -201,20 +183,20 @@ export class ClientSession {
   async send(
     targetId: string,
     method: string,
-    params: object | undefined,
+    params: Record<string, unknown> | undefined,
     timeoutMs?: number,
   ): Promise<unknown> {
     this.ensureOpen();
     const tab = this.owned(targetId);
 
-    this.checkMethod(method);
+    const checked = checkCall(method, params, this.options);
 
     try {
       const session = await this.attached(targetId, tab);
 
       this.assertCurrent(targetId, tab);
 
-      return await session.send(method, params, timeoutMs);
+      return await session.send(method, checked, timeoutMs);
     } catch (error) {
       throw translate(error);
     }
@@ -224,6 +206,7 @@ export class ClientSession {
     this.ensureOpen();
     const tab = this.owned(targetId);
 
+    checkEvent(event);
     if (tab.subscriptions.has(event)) return;
 
     try {
@@ -342,25 +325,6 @@ export class ClientSession {
     }
 
     throw new RpcError(ErrorCode.notFound, "No such tab in this session.");
-  }
-
-  private checkMethod(method: string): void {
-    const dot = method.indexOf(".");
-    const domain = dot === -1 ? method : method.slice(0, dot);
-
-    if (!ALLOWED_DOMAINS.has(domain)) {
-      throw new RpcError(
-        ErrorCode.forbiddenMethod,
-        `${method} is not available through a tab. Use the tab operations of the daemon instead.`,
-      );
-    }
-
-    if (FOCUS_METHODS.has(method) && !this.options.allowFocus) {
-      throw new RpcError(
-        ErrorCode.forbiddenMethod,
-        `${method} would bring the window to the front. Enable allowFocus in the config to allow it.`,
-      );
-    }
   }
 
   private attached(targetId: string, tab: OwnedTab): Promise<BackendSession> {
