@@ -5,7 +5,13 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { pathFor } from "../browser/platform-path.js";
 import type { Config } from "../config/index.js";
-import { connectToDaemon, currentLayout, DaemonError, type DaemonLayout } from "../daemon/index.js";
+import {
+  connectToDaemon,
+  currentLayout,
+  DaemonError,
+  daemonIdentity,
+  type DaemonLayout,
+} from "../daemon/index.js";
 import { describeError, logDaemon } from "../daemon/log.js";
 import { DaemonLink, type LinkDeps } from "./daemon-link.js";
 import { spawnDaemonProcess } from "./spawn-daemon.js";
@@ -63,7 +69,7 @@ export function createDaemonLink(config: Config, flags: string[]): DaemonLink {
     pollIntervalMs: POLL_INTERVAL_MS,
   };
 
-  return new DaemonLink({ browser: config.browser, mode: config.mode }, deps);
+  return new DaemonLink({ identity: daemonIdentity(config) }, deps);
 }
 
 export function createMcpServer(version: string): McpServer {

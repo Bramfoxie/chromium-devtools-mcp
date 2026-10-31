@@ -34,12 +34,18 @@ export async function makeLayout(harness: Harness): Promise<DaemonLayout> {
   };
 }
 
+export interface RecordedStops {
+  count         : number;
+  contextsAtStop: number[];
+}
+
 export async function startFakeBrowser(harness: Harness) {
   const browser = new FakeBrowser();
   const url = await browser.start();
 
   harness.track(() => browser.stop());
   const stops = { count: 0 };
+  const recorded: RecordedStops = { count: 0, contextsAtStop: [] };
   const connect: BrowserConnector = async () => {
     const client = await CdpClient.connect({ url, requestTimeoutMs: 2000 });
 
@@ -47,10 +53,12 @@ export async function startFakeBrowser(harness: Harness) {
       client,
       stop: async () => {
         stops.count += 1;
+        recorded.count += 1;
+        recorded.contextsAtStop.push(browser.contexts.size);
         await client.close();
       },
     };
   };
 
-  return { browser, stops, connect };
+  return { browser, stops, recorded, connect };
 }

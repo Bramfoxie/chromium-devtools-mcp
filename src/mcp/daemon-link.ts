@@ -1,4 +1,5 @@
 import {
+  type DaemonIdentity,
   DaemonError,
   DaemonNotRunningError,
   ErrorCode,
@@ -19,7 +20,7 @@ export interface StartedDaemon {
 }
 
 export interface LinkDeps {
-  connect       : (expect: { browser: string; mode: string }) => Promise<IpcClient>;
+  connect       : (expect: DaemonIdentity) => Promise<IpcClient>;
   startDaemon   : () => Promise<StartedDaemon>;
   sleep         : (ms: number) => Promise<void>;
   now           : () => number;
@@ -29,8 +30,7 @@ export interface LinkDeps {
 }
 
 export interface LinkConfig {
-  browser  : string;
-  mode     : string;
+  identity : DaemonIdentity;
   isolated?: boolean;
 }
 
@@ -166,7 +166,7 @@ export class DaemonLink {
   }
 
   private async connectOrStart(): Promise<IpcClient> {
-    const expect = { browser: this.config.browser, mode: this.config.mode };
+    const expect = this.config.identity;
 
     try {
       return await this.deps.connect(expect);

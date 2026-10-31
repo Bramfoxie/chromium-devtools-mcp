@@ -1,32 +1,33 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
-import os from "node:os";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Config } from "../src/config/index.js";
-import { CdpClient } from "../src/cdp/index.js";
 import {
   AlreadyRunningError,
   type BrowserConnector,
   connectToDaemon,
   DaemonConfigMismatchError,
   DaemonError,
+  type DaemonIdentity,
+  daemonIdentity,
   DaemonNotRunningError,
   type DaemonLayout,
   type DaemonOutcome,
   ErrorCode,
   IpcClient,
   RpcError,
+  approvalMessage,
   runDaemon,
   type RunningDaemon,
 } from "../src/daemon/index.js";
-import { FakeBrowser } from "./helpers/fake-browser.js";
+import { makeLayout, startFakeBrowser } from "./helpers/daemon-env.js";
 import { createSocketHarness } from "./helpers/daemon-socket.js";
 
 const harness = createSocketHarness();
 
 afterEach(async () => {
-  vi.restoreAllMocks();
   await harness.dispose();
+  vi.restoreAllMocks();
 });
 
 const config: Config = {
@@ -38,48 +39,6 @@ const config: Config = {
   allowFocus: false,
   safety    : { readOnly: false, allowedDomains: [], confirmDangerous: false },
 };
-
-async function makeLayout(): Promise<DaemonLayout> {
-  const options = await harness.options();
-  const dir = await mkdtemp(path.join(os.tmpdir(), "cdm-token-"));
-
-  harness.track(() => rm(dir, { recursive: true, force: true }));
-
-  return {
-    tokenFile : path.join(dir, "daemon.token"),
-    platform  : options.platform,
-    uid       : options.uid,
-    socketPath: () => options.socketPath,
-    instance  : () => options,
-  };
-}
-
-interface Recorded {
-  stops         : number;
-  contextsAtStop: number[];
-}
-
-async function startFakeBrowser() {
-  const browser = new FakeBrowser();
-  const url = await browser.start();
-
-  harness.track(() => browser.stop());
-  const recorded: Recorded = { stops: 0, contextsAtStop: [] };
-  const connect: BrowserConnector = async () => {
-    const client = await CdpClient.connect({ url, requestTimeoutMs: 2000 });
-
-    return {
-      client,
-      stop: async () => {
-        recorded.stops += 1;
-        recorded.contextsAtStop.push(browser.contexts.size);
-        await client.close();
-      },
-    };
-  };
-
-  return { browser, recorded, connect };
-}
 
 async function start(
   layout: DaemonLayout,
@@ -101,7 +60,7 @@ async function start(
 async function connect(
   layout: DaemonLayout,
   name = "test",
-  expect?: { browser: string; mode: string },
+  expect?: DaemonIdentity,
 ) {
   const client = await connectToDaemon({ layout, clientName: name, expect });
 
@@ -127,8 +86,8 @@ async function settled(running: RunningDaemon): Promise<DaemonOutcome | "pending
 
 describe("starting and serving", () => {
   it("becomes ready, serves isolated sessions and cleans up when the client leaves", async () => {
-    const layout = await makeLayout();
-    const { browser, connect: connector } = await startFakeBrowser();
+    const layout = await makeLayout(harness);
+    const { browser, connect: connector } = await startFakeBrowser(harness);
 
     await start(layout, connector);
     const client = await connect(layout);
@@ -145,8 +104,8 @@ describe("starting and serving", () => {
   });
 
   it("keeps the clients of one daemon apart", async () => {
-    const layout = await makeLayout();
-    const { connect: connector } = await startFakeBrowser();
+    const layout = await makeLayout(harness);
+    const { connect: connector } = await startFakeBrowser(harness);
 
     await start(layout, connector);
     const alice = await connect(layout, "alice");
@@ -164,8 +123,8 @@ describe("starting and serving", () => {
   });
 
   it("creates the token once and reuses it on the next start", async () => {
-    const layout = await makeLayout();
-    const { connect: connector } = await startFakeBrowser();
+    const layout = await makeLayout(harness);
+    const { connect: connector } = await startFakeBrowser(harness);
     const first = await start(layout, connector, { idleTimeoutMs: 20 });
     const token = (await readFile(layout.tokenFile, "utf8")).trim();
 
@@ -178,8 +137,8 @@ describe("starting and serving", () => {
   });
 
   it("leaves no timer behind when another daemon already runs", async () => {
-    const layout = await makeLayout();
-    const { connect: connector } = await startFakeBrowser();
+    const layout = await makeLayout(harness);
+    const { connect: connector } = await startFakeBrowser(harness);
 
     await start(layout, connector, { idleTimeoutMs: 60_000 });
     await ready(await connect(layout));
@@ -209,7 +168,7 @@ describe("starting and serving", () => {
       const daemon = new Daemon({
         token        : "t",
         allowFocus   : false,
-        identity     : { browser: "chrome", mode: "attach" },
+        identity     : { browser: "chrome", mode: "attach", debugPort: 9222, allowFocus: false },
         idleTimeoutMs: 50,
         onIdle       : () => {
           throw new Error("must not fire");
@@ -225,8 +184,8 @@ describe("starting and serving", () => {
   });
 
   it("refuses a second daemon for the same user and leaves the first one working", async () => {
-    const layout = await makeLayout();
-    const { connect: connector } = await startFakeBrowser();
+    const layout = await makeLayout(harness);
+    const { connect: connector } = await startFakeBrowser(harness);
 
     await start(layout, connector);
     await expect(
@@ -235,6 +194,21 @@ describe("starting and serving", () => {
     const client = await connect(layout);
 
     await ready(client);
+  });
+
+  it("refuses to overwrite a missing token when the socket is alive", async () => {
+    const layout: DaemonLayout = { ...(await makeLayout(harness)), platform: "linux" };
+    const { connect: connector } = await startFakeBrowser(harness);
+
+    await expect(
+      runDaemon(config, {
+        layout,
+        connectBrowser: connector,
+        idleTimeoutMs : 60_000,
+        probe         : async () => "alive",
+      }),
+    ).rejects.toBeInstanceOf(AlreadyRunningError);
+    await expect(readFile(layout.tokenFile, "utf8")).rejects.toThrow();
   });
 });
 
@@ -259,8 +233,8 @@ describe("waiting for the browser", () => {
   }
 
   it("reports the starting state and refuses sessions until the browser is ready", async () => {
-    const layout = await makeLayout();
-    const { connect: connector } = await startFakeBrowser();
+    const layout = await makeLayout(harness);
+    const { connect: connector } = await startFakeBrowser(harness);
     const gate = gated();
 
     await start(layout, gate.wrap(connector));
@@ -280,8 +254,8 @@ describe("waiting for the browser", () => {
   });
 
   it("hands the setup instructions to the client while the browser is not enabled", async () => {
-    const layout = await makeLayout();
-    const { connect: connector } = await startFakeBrowser();
+    const layout = await makeLayout(harness);
+    const { connect: connector } = await startFakeBrowser(harness);
     const gate = gated();
 
     await start(layout, gate.wrap(connector));
@@ -305,21 +279,35 @@ describe("waiting for the browser", () => {
     ).toBeUndefined();
   });
 
-  it("keeps waiting for the browser longer than the idle timeout while nobody is connected", async () => {
-    const layout = await makeLayout();
-    const { connect: connector } = await startFakeBrowser();
+  it("stops when nobody is connected while it waits for the browser", async () => {
+    const layout = await makeLayout(harness);
+    const { connect: connector } = await startFakeBrowser(harness);
     const gate = gated();
     const running = await start(layout, gate.wrap(connector), { idleTimeoutMs: 80 });
+
+    gate.announce("Open chrome://inspect and turn on remote debugging.");
+    expect((await running.done).reason).toBe("idle");
+    gate.release();
+  });
+
+  it("keeps waiting for the browser while a client is connected", async () => {
+    const layout = await makeLayout(harness);
+    const { connect: connector } = await startFakeBrowser(harness);
+    const gate = gated();
+    const running = await start(layout, gate.wrap(connector), { idleTimeoutMs: 80 });
+    const client = await connect(layout);
 
     gate.announce("Open chrome://inspect and turn on remote debugging.");
     await new Promise((resolve) => setTimeout(resolve, 300));
     expect(await settled(running)).toBe("pending");
     gate.release();
+    await ready(client);
+    await client.close();
     expect((await running.done).reason).toBe("idle");
   });
 
   it("aborts the wait for the browser on stop", async () => {
-    const layout = await makeLayout();
+    const layout = await makeLayout(harness);
     let aborted = false;
     const connector: BrowserConnector = (_cfg, _hooks, signal) =>
       new Promise((_resolve, reject) => {
@@ -335,18 +323,32 @@ describe("waiting for the browser", () => {
   });
 
   it("stops a browser that finished starting after the daemon was stopped", async () => {
-    const layout = await makeLayout();
-    const { connect: inner, recorded } = await startFakeBrowser();
+    const layout = await makeLayout(harness);
+    const { connect: inner, recorded } = await startFakeBrowser(harness);
     const gate = gated();
     const running = await start(layout, gate.wrap(inner));
 
     await running.stop();
     gate.release();
-    await vi.waitFor(() => expect(recorded.stops).toBe(1));
+    await vi.waitFor(() => expect(recorded.count).toBe(1));
+  });
+
+  it("stops the browser exactly once when stop races backend creation", async () => {
+    const layout = await makeLayout(harness);
+    const { browser, recorded, connect: inner } = await startFakeBrowser(harness);
+
+    browser.silent.add("Target.getBrowserContexts");
+    const running = await start(layout, inner);
+
+    await vi.waitFor(() => {
+      expect(browser.calls.some((call) => call.method === "Target.getBrowserContexts")).toBe(true);
+    });
+    await running.stop();
+    expect(recorded.count).toBe(1);
   });
 
   it("fails and frees the socket when the browser cannot be reached", async () => {
-    const layout = await makeLayout();
+    const layout = await makeLayout(harness);
     const connector: BrowserConnector = async () => {
       throw new Error("browser refused");
     };
@@ -355,28 +357,28 @@ describe("waiting for the browser", () => {
 
     expect(outcome.reason).toBe("failed");
     expect(outcome.error?.message).toBe("browser refused");
-    const { connect: working } = await startFakeBrowser();
+    const { connect: working } = await startFakeBrowser(harness);
     const next = await start(layout, working);
 
     await next.stop();
   });
 
   it("fails when the browser does not report its default context", async () => {
-    const layout = await makeLayout();
-    const { browser, connect: connector, recorded } = await startFakeBrowser();
+    const layout = await makeLayout(harness);
+    const { browser, connect: connector, recorded } = await startFakeBrowser(harness);
 
     browser.reportDefaultContext = false;
     const running = await start(layout, connector);
 
     expect((await running.done).reason).toBe("failed");
-    expect(recorded.stops).toBe(1);
+    expect(recorded.count).toBe(1);
   });
 });
 
 describe("stopping", () => {
   it("closes the sessions before the browser and is idempotent", async () => {
-    const layout = await makeLayout();
-    const { browser, recorded, connect: connector } = await startFakeBrowser();
+    const layout = await makeLayout(harness);
+    const { browser, recorded, connect: connector } = await startFakeBrowser(harness);
     const running = await start(layout, connector);
     const client = await connect(layout);
 
@@ -393,8 +395,8 @@ describe("stopping", () => {
   });
 
   it("leaves no timer behind when a client is still connected during the stop", async () => {
-    const layout = await makeLayout();
-    const { connect: connector } = await startFakeBrowser();
+    const layout = await makeLayout(harness);
+    const { connect: connector } = await startFakeBrowser(harness);
     const running = await start(layout, connector, { idleTimeoutMs: 100 });
     const client = await connect(layout);
 
@@ -411,8 +413,8 @@ describe("stopping", () => {
   });
 
   it("frees the socket for a new daemon", async () => {
-    const layout = await makeLayout();
-    const { connect: connector } = await startFakeBrowser();
+    const layout = await makeLayout(harness);
+    const { connect: connector } = await startFakeBrowser(harness);
     const first = await start(layout, connector);
 
     await first.stop();
@@ -424,8 +426,8 @@ describe("stopping", () => {
   });
 
   it("stops when the browser connection is lost", async () => {
-    const layout = await makeLayout();
-    const { browser, connect: connector } = await startFakeBrowser();
+    const layout = await makeLayout(harness);
+    const { browser, connect: connector } = await startFakeBrowser(harness);
     const running = await start(layout, connector);
     const client = await connect(layout);
 
@@ -448,8 +450,8 @@ async function settledClose(client: IpcClient): Promise<boolean> {
 
 describe("idle shutdown", () => {
   it("stops after the last client leaves", async () => {
-    const layout = await makeLayout();
-    const { recorded, connect: connector } = await startFakeBrowser();
+    const layout = await makeLayout(harness);
+    const { recorded, connect: connector } = await startFakeBrowser(harness);
     const running = await start(layout, connector, { idleTimeoutMs: 80 });
     const client = await connect(layout);
 
@@ -459,12 +461,12 @@ describe("idle shutdown", () => {
     expect(await settled(running)).toBe("pending");
     await client.close();
     expect((await running.done).reason).toBe("idle");
-    expect(recorded.stops).toBe(1);
+    expect(recorded.count).toBe(1);
   });
 
   it("stays alive while a second client is connected and counts again after a reconnect", async () => {
-    const layout = await makeLayout();
-    const { connect: connector } = await startFakeBrowser();
+    const layout = await makeLayout(harness);
+    const { connect: connector } = await startFakeBrowser(harness);
     const running = await start(layout, connector, { idleTimeoutMs: 100 });
     const first = await connect(layout, "first");
     const second = await connect(layout, "second");
@@ -473,9 +475,9 @@ describe("idle shutdown", () => {
     await first.close();
     await new Promise((resolve) => setTimeout(resolve, 250));
     expect(await settled(running)).toBe("pending");
-    await second.close();
     const third = await connect(layout, "third");
 
+    await second.close();
     await new Promise((resolve) => setTimeout(resolve, 250));
     expect(await settled(running)).toBe("pending");
     await third.close();
@@ -483,16 +485,16 @@ describe("idle shutdown", () => {
   });
 
   it("stops when nobody ever connects", async () => {
-    const layout = await makeLayout();
-    const { connect: connector } = await startFakeBrowser();
+    const layout = await makeLayout(harness);
+    const { connect: connector } = await startFakeBrowser(harness);
     const running = await start(layout, connector, { idleTimeoutMs: 60 });
 
     expect((await running.done).reason).toBe("idle");
   });
 
   it("does not count a connection that never authenticated", async () => {
-    const layout = await makeLayout();
-    const { connect: connector } = await startFakeBrowser();
+    const layout = await makeLayout(harness);
+    const { connect: connector } = await startFakeBrowser(harness);
     const running = await start(layout, connector, { idleTimeoutMs: 80 });
     const net = await import("node:net");
     const socket = net.connect(layout.socketPath("x"));
@@ -504,13 +506,35 @@ describe("idle shutdown", () => {
 });
 
 describe("daemon status", () => {
+  it("survives a throwing onIdle without crashing the daemon", async () => {
+    const { Daemon } = await import("../src/daemon/index.js");
+    const { FakeBackend } = await import("./helpers/fake-backend.js");
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const daemon = new Daemon({
+      token        : "t",
+      allowFocus   : false,
+      identity     : { browser: "chrome", mode: "attach", debugPort: 9222, allowFocus: false },
+      idleTimeoutMs: 20,
+      onIdle       : () => {
+        throw new Error("idle boom");
+      },
+    });
+
+    daemon.setBackend(new FakeBackend());
+    await vi.waitFor(() =>
+      expect(stderr).toHaveBeenCalledWith(expect.stringContaining("onIdle failed")),
+    );
+    expect(daemon.status().state).toBe("ready");
+    await daemon.shutdown();
+  });
+
   it("does not fall back to waiting once the backend is attached", async () => {
     const { Daemon } = await import("../src/daemon/index.js");
     const { FakeBackend } = await import("./helpers/fake-backend.js");
     const daemon = new Daemon({
       token     : "t",
       allowFocus: false,
-      identity  : { browser: "chrome", mode: "attach" },
+      identity  : { browser: "chrome", mode: "attach", debugPort: 9222, allowFocus: false },
     });
 
     expect(daemon.status()).toEqual({ state: "starting", browser: "chrome", mode: "attach" });
@@ -527,7 +551,7 @@ describe("daemon status", () => {
 
 describe("connecting to the daemon", () => {
   it("fails clearly when no daemon was ever started", async () => {
-    const layout = await makeLayout();
+    const layout = await makeLayout(harness);
 
     await expect(connectToDaemon({ layout, clientName: "x" })).rejects.toBeInstanceOf(
       DaemonNotRunningError,
@@ -535,7 +559,7 @@ describe("connecting to the daemon", () => {
   });
 
   it("wraps an unreadable token file in a DaemonError with a hint", async () => {
-    const layout = await makeLayout();
+    const layout = await makeLayout(harness);
     const directoryAsToken = { ...layout, tokenFile: path.dirname(layout.tokenFile) };
     const failure = await connectToDaemon({ layout: directoryAsToken, clientName: "x" }).catch(
       (error: unknown) => error,
@@ -546,8 +570,8 @@ describe("connecting to the daemon", () => {
   });
 
   it("fails clearly when the token is stale and nothing listens", async () => {
-    const layout = await makeLayout();
-    const { connect: connector } = await startFakeBrowser();
+    const layout = await makeLayout(harness);
+    const { connect: connector } = await startFakeBrowser(harness);
     const running = await start(layout, connector);
 
     await running.stop();
@@ -557,24 +581,25 @@ describe("connecting to the daemon", () => {
   });
 
   it("accepts a client whose expectation matches the daemon", async () => {
-    const layout = await makeLayout();
-    const { connect: connector } = await startFakeBrowser();
+    const layout = await makeLayout(harness);
+    const { connect: connector } = await startFakeBrowser(harness);
 
     await start(layout, connector);
-    const client = await connect(layout, "ok", { browser: "chrome", mode: "managed" });
+    const client = await connect(layout, "ok", daemonIdentity(config));
 
-    expect(client.helloResult).toMatchObject({
-      ok    : true,
-      daemon: { browser: "chrome", mode: "managed" },
-    });
+    expect(client.helloResult).toEqual({ ok: true, daemon: daemonIdentity(config) });
   });
 
   it.each([
-    [{ browser: "arc", mode: "managed" }, "browser arc in managed mode"],
-    [{ browser: "chrome", mode: "attach" }, "browser chrome in attach mode"],
-  ])("refuses a client that expects %j", async (expected, text) => {
-    const layout = await makeLayout();
-    const { connect: connector } = await startFakeBrowser();
+    [daemonIdentity({ ...config, browser: "firefox" as never }), "browser chrome", "browser firefox"],
+    [daemonIdentity({ ...config, mode: "attach" }), "mode managed", "mode attach"],
+    [daemonIdentity({ ...config, debugPort: 9333 }), "debugPort 9222", "debugPort 9333"],
+    [daemonIdentity({ ...config, allowFocus: true }), "allowFocus false", "allowFocus true"],
+    [daemonIdentity({ ...config, headless: false }), "headless true", "headless false"],
+    [daemonIdentity({ ...config, profileDir: "/other" }), "profileDir /unused", "profileDir /other"],
+  ])("refuses a client that expects %j", async (expected, running, text) => {
+    const layout = await makeLayout(harness);
+    const { connect: connector } = await startFakeBrowser(harness);
 
     await start(layout, connector);
     const failure = await connectToDaemon({ layout, clientName: "x", expect: expected }).catch(
@@ -582,20 +607,27 @@ describe("connecting to the daemon", () => {
     );
 
     expect(failure).toBeInstanceOf(DaemonConfigMismatchError);
-    expect((failure as Error).message).toContain("browser chrome in managed mode");
-    expect((failure as Error).message).toContain(text);
+    expect((failure as Error).message).toContain(`uses ${running}`);
+    expect((failure as Error).message).toContain(`expects ${text}`);
   });
 
   it("closes the connection of a client that was refused", async () => {
-    const layout = await makeLayout();
-    const { connect: connector } = await startFakeBrowser();
+    const layout = await makeLayout(harness);
+    const { connect: connector } = await startFakeBrowser(harness);
     const running = await start(layout, connector, { idleTimeoutMs: 100 });
 
     await connectToDaemon({
       layout,
       clientName: "x",
-      expect    : { browser: "arc", mode: "attach" },
+      expect    : daemonIdentity({ ...config, browser: "firefox" as never }),
     }).catch(() => undefined);
     expect((await running.done).reason).toBe("idle");
+  });
+});
+
+describe("approvalMessage", () => {
+  it("asks the user to allow the connection in Chrome", () => {
+    expect(approvalMessage()).toContain("If Chrome asks whether to allow remote debugging");
+    expect(approvalMessage()).toContain("Connecting to Chrome.");
   });
 });

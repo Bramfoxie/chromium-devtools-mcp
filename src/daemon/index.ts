@@ -1,4 +1,14 @@
-export { AlreadyRunningError, DaemonError, errorCode } from "./errors.js";
+export {
+  AlreadyRunningError,
+  DaemonConfigMismatchError,
+  DaemonError,
+  DaemonNotRunningError,
+  errorCode,
+  IpcClosedError,
+  IpcTimeoutError,
+  ProtocolViolationError,
+  RpcError,
+} from "./errors.js";
 export {
   acquireInstance,
   type InstanceDeps,
@@ -18,7 +28,6 @@ export {
 } from "./paths.js";
 export { type DirIO, type DirStat, ensurePrivateDir } from "./private-dir.js";
 export { ensureToken, generateToken, readToken, tokensMatch } from "./token.js";
-export { IpcClosedError, IpcTimeoutError, ProtocolViolationError, RpcError } from "./errors.js";
 export { IpcClient, type IpcConnectOptions, type IpcEventHandler } from "./client.js";
 export {
   encodeMessage,
@@ -51,13 +60,22 @@ export {
 } from "./sessions.js";
 export { CdpBackend } from "./cdp-backend.js";
 export { connectToDaemon, type ConnectToDaemonOptions } from "./daemon-client.js";
-export { DaemonConfigMismatchError, DaemonNotRunningError } from "./errors.js";
 export type { DaemonState, DaemonStatus } from "./handler.js";
 export { currentLayout, type DaemonLayout } from "./layout.js";
 export {
+  type DaemonIdentity,
+  daemonIdentity,
+  describeIdentity,
+  differingFields,
+  type IdentityField,
+} from "./identity.js";
+export {
+  approvalMessage,
   type BrowserConnector,
   type BrowserHandle,
   type ConnectHooks,
+  type ConnectorDeps,
+  createConnector,
   type DaemonOutcome,
   type RunDeps,
   runDaemon,

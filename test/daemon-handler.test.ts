@@ -26,7 +26,7 @@ async function start(allowFocus = false) {
   const daemon = new Daemon({
     token,
     allowFocus,
-    identity: { browser: "chrome", mode: "managed" },
+    identity: { browser: "chrome", mode: "managed", debugPort: 9222, allowFocus: false },
   });
 
   daemon.setBackend(backend);

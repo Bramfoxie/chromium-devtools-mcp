@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  type DaemonIdentity,
   DaemonConfigMismatchError,
   DaemonError,
   DaemonNotRunningError,
@@ -61,9 +62,16 @@ function fakeClock() {
   };
 }
 
+const identity: DaemonIdentity = {
+  browser   : "chrome",
+  mode      : "managed",
+  debugPort : 9222,
+  allowFocus: false,
+};
+
 function link(overrides: Partial<LinkDeps> = {}, isolated?: boolean) {
   const starts: number[] = [];
-  const connects: Array<{ browser: string; mode: string }> = [];
+  const connects: DaemonIdentity[] = [];
   const deps: LinkDeps = {
     connect: async (expect) => {
       connects.push(expect);
@@ -84,7 +92,7 @@ function link(overrides: Partial<LinkDeps> = {}, isolated?: boolean) {
   };
 
   return {
-    link: new DaemonLink({ browser: "chrome", mode: "managed", isolated }, deps),
+    link: new DaemonLink({ identity, isolated }, deps),
     starts,
     connects,
   };
@@ -103,7 +111,7 @@ describe("connecting to a running daemon", () => {
   });
 
   it("tells the daemon which browser and mode it expects", async () => {
-    const seen: Array<{ browser: string; mode: string }> = [];
+    const seen: DaemonIdentity[] = [];
     const { link: l } = link({
       connect: async (expect) => {
         seen.push(expect);
@@ -113,7 +121,7 @@ describe("connecting to a running daemon", () => {
     });
 
     await l.request("x");
-    expect(seen).toEqual([{ browser: "chrome", mode: "managed" }]);
+    expect(seen).toEqual([identity]);
   });
 
   it.each([

@@ -1,14 +1,20 @@
 import { z } from "zod";
 import { IpcClient } from "./client.js";
-import { DaemonConfigMismatchError, DaemonError, DaemonNotRunningError } from "./errors.js";
+import {
+  DaemonConfigMismatchError,
+  DaemonError,
+  DaemonNotRunningError,
+  errorCode,
+} from "./errors.js";
+import { type DaemonIdentity, describeIdentity, differingFields, identitySchema } from "./identity.js";
 import { currentLayout, type DaemonLayout } from "./layout.js";
 import { readToken } from "./token.js";
 
-const identitySchema = z.object({ daemon: z.object({ browser: z.string(), mode: z.string() }) });
+const helloSchema = z.object({ daemon: identitySchema });
 
 export interface ConnectToDaemonOptions {
   clientName       : string;
-  expect?          : { browser: string; mode: string };
+  expect?          : DaemonIdentity;
   layout?          : DaemonLayout;
   connectTimeoutMs?: number;
   requestTimeoutMs?: number;
@@ -22,7 +28,7 @@ export async function connectToDaemon(options: ConnectToDaemonOptions): Promise<
     token = await readToken(layout.tokenFile);
   } catch (error) {
     throw new DaemonError(
-      `Cannot read the daemon token file ${layout.tokenFile} (${(error as NodeJS.ErrnoException).code ?? "unknown error"}). Check its permissions.`,
+      `Cannot read the daemon token file ${layout.tokenFile} (${errorCode(error) ?? "unknown error"}). Check its permissions.`,
     );
   }
 
@@ -39,20 +45,15 @@ export async function connectToDaemon(options: ConnectToDaemonOptions): Promise<
 
   if (!expected) return client;
 
-  const running = identitySchema.safeParse(client.helloResult);
-  const same =
-    running.success &&
-    running.data.daemon.browser === expected.browser &&
-    running.data.daemon.mode === expected.mode;
+  const running = helloSchema.safeParse(client.helloResult);
+  const fields = running.success ? differingFields(running.data.daemon, expected) : [];
 
-  if (same) return client;
+  if (running.success && fields.length === 0) return client;
 
   await client.close();
 
   throw new DaemonConfigMismatchError(
-    running.success
-      ? `browser ${running.data.daemon.browser} in ${running.data.daemon.mode} mode`
-      : "an unknown configuration",
-    `browser ${expected.browser} in ${expected.mode} mode`,
+    running.success ? describeIdentity(running.data.daemon, fields) : "an unknown configuration",
+    running.success ? describeIdentity(expected, fields) : describeIdentity(expected),
   );
 }

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   connectToDaemon,
   DaemonConfigMismatchError,
+  daemonIdentity,
   type BrowserConnector,
   type DaemonLayout,
   runDaemon,
@@ -39,9 +40,13 @@ function inProcessDaemon(layout: DaemonLayout, connectBrowser: BrowserConnector)
   return { started, startDaemon };
 }
 
-function makeLink(layout: DaemonLayout, startDaemon: LinkDeps["startDaemon"], mode = "managed") {
+function makeLink(
+  layout: DaemonLayout,
+  startDaemon: LinkDeps["startDaemon"],
+  mode: "attach" | "managed" = "managed",
+) {
   const link = new DaemonLink(
-    { browser: "chrome", mode },
+    { identity: daemonIdentity({ ...managedConfig, mode }) },
     {
       connect       : (expect) => connectToDaemon({ clientName: "mcp-test", expect, layout }),
       startDaemon,
