@@ -4,85 +4,85 @@ import { checkCall, checkEvent, ErrorCode, normalizeUrl, RpcError } from "../src
 const off = { allowFocus: false };
 
 function codeOf(action: () => void): string | undefined {
-  try {
-    action();
-  } catch (error) {
-    return error instanceof RpcError ? error.code : "not an RpcError";
-  }
+    try {
+        action();
+    } catch (error) {
+        return error instanceof RpcError ? error.code : "not an RpcError";
+    }
 
-  return undefined;
+    return undefined;
 }
 
 describe("normalizeUrl", () => {
-  it("accepts http, https and about:blank", () => {
-    expect(normalizeUrl("https://a.example")).toBe("https://a.example/");
-    expect(normalizeUrl("http://a.example/x?y")).toBe("http://a.example/x?y");
-    expect(normalizeUrl("ABOUT:BLANK")).toBe("about:blank");
-  });
+    it("accepts http, https and about:blank", () => {
+        expect(normalizeUrl("https://a.example")).toBe("https://a.example/");
+        expect(normalizeUrl("http://a.example/x?y")).toBe("http://a.example/x?y");
+        expect(normalizeUrl("ABOUT:BLANK")).toBe("about:blank");
+    });
 
-  it.each(["file:///etc/hosts", "chrome://settings", "javascript:alert(1)", "data:text/html,x", "nope"])(
-    "rejects %s",
-    (url) => {
-      expect(codeOf(() => normalizeUrl(url))).toBe(ErrorCode.unsupportedUrl);
-    },
-  );
+    it.each(["file:///etc/hosts", "chrome://settings", "javascript:alert(1)", "data:text/html,x", "nope"])(
+        "rejects %s",
+        (url) => {
+            expect(codeOf(() => normalizeUrl(url))).toBe(ErrorCode.unsupportedUrl);
+        },
+    );
 });
 
 describe("checkCall", () => {
-  it("allows ordinary tab commands", () => {
-    expect(codeOf(() => checkCall("Runtime.evaluate", { expression: "1" }, off))).toBeUndefined();
-    expect(codeOf(() => checkCall("Page.reload", undefined, off))).toBeUndefined();
-  });
-
-  it.each(["Target.getTargets", "Browser.close", "Storage.getCookies", "SystemInfo.getInfo"])(
-    "refuses the domain of %s",
-    (method) => {
-      expect(codeOf(() => checkCall(method, undefined, off))).toBe(ErrorCode.forbiddenMethod);
-    },
-  );
-
-  it.each(["Page.setDownloadBehavior", "Network.getAllCookies"])("refuses %s", (method) => {
-    expect(codeOf(() => checkCall(method, undefined, { allowFocus: true }))).toBe(
-      ErrorCode.forbiddenMethod,
-    );
-  });
-
-  it("refuses bringing the window to the front unless allowFocus is on", () => {
-    expect(codeOf(() => checkCall("Page.bringToFront", undefined, off))).toBe(
-      ErrorCode.forbiddenMethod,
-    );
-    expect(
-      codeOf(() => checkCall("Page.bringToFront", undefined, { allowFocus: true })),
-    ).toBeUndefined();
-  });
-
-  it("hands Page.navigate the normalized URL and keeps other params", () => {
-    expect(checkCall("Page.navigate", { url: " HTTPS://A.example ", frameId: "f" }, off)).toEqual({
-      url    : "https://a.example/",
-      frameId: "f",
+    it("allows ordinary tab commands", () => {
+        expect(codeOf(() => checkCall("Runtime.evaluate", { expression: "1" }, off))).toBeUndefined();
+        expect(codeOf(() => checkCall("Page.reload", undefined, off))).toBeUndefined();
     });
-    expect(checkCall("Runtime.evaluate", { expression: "1" }, off)).toEqual({ expression: "1" });
-    expect(checkCall("Page.reload", undefined, off)).toBeUndefined();
-  });
 
-  it("lets Page.navigate open only http, https and about:blank", () => {
-    expect(codeOf(() => checkCall("Page.navigate", { url: "https://a.example/" }, off))).toBe(
-      undefined,
+    it.each(["Target.getTargets", "Browser.close", "Storage.getCookies", "SystemInfo.getInfo"])(
+        "refuses the domain of %s",
+        (method) => {
+            expect(codeOf(() => checkCall(method, undefined, off))).toBe(ErrorCode.forbiddenMethod);
+        },
     );
-    expect(codeOf(() => checkCall("Page.navigate", { url: "file:///etc/hosts" }, off))).toBe(
-      ErrorCode.unsupportedUrl,
-    );
-    expect(codeOf(() => checkCall("Page.navigate", { url: "chrome://settings" }, off))).toBe(
-      ErrorCode.unsupportedUrl,
-    );
-    expect(codeOf(() => checkCall("Page.navigate", undefined, off))).toBe(ErrorCode.badRequest);
-    expect(codeOf(() => checkCall("Page.navigate", { url: 5 }, off))).toBe(ErrorCode.badRequest);
-  });
+
+    it.each(["Page.setDownloadBehavior", "Network.getAllCookies"])("refuses %s", (method) => {
+        expect(codeOf(() => checkCall(method, undefined, { allowFocus: true }))).toBe(
+            ErrorCode.forbiddenMethod,
+        );
+    });
+
+    it("refuses bringing the window to the front unless allowFocus is on", () => {
+        expect(codeOf(() => checkCall("Page.bringToFront", undefined, off))).toBe(
+            ErrorCode.forbiddenMethod,
+        );
+        expect(
+            codeOf(() => checkCall("Page.bringToFront", undefined, { allowFocus: true })),
+        ).toBeUndefined();
+    });
+
+    it("hands Page.navigate the normalized URL and keeps other params", () => {
+        expect(checkCall("Page.navigate", { url: " HTTPS://A.example ", frameId: "f" }, off)).toEqual({
+            url    : "https://a.example/",
+            frameId: "f",
+        });
+        expect(checkCall("Runtime.evaluate", { expression: "1" }, off)).toEqual({ expression: "1" });
+        expect(checkCall("Page.reload", undefined, off)).toBeUndefined();
+    });
+
+    it("lets Page.navigate open only http, https and about:blank", () => {
+        expect(codeOf(() => checkCall("Page.navigate", { url: "https://a.example/" }, off))).toBe(
+            undefined,
+        );
+        expect(codeOf(() => checkCall("Page.navigate", { url: "file:///etc/hosts" }, off))).toBe(
+            ErrorCode.unsupportedUrl,
+        );
+        expect(codeOf(() => checkCall("Page.navigate", { url: "chrome://settings" }, off))).toBe(
+            ErrorCode.unsupportedUrl,
+        );
+        expect(codeOf(() => checkCall("Page.navigate", undefined, off))).toBe(ErrorCode.badRequest);
+        expect(codeOf(() => checkCall("Page.navigate", { url: 5 }, off))).toBe(ErrorCode.badRequest);
+    });
 });
 
 describe("checkEvent", () => {
-  it("allows events of tab domains and refuses the rest", () => {
-    expect(codeOf(() => checkEvent("Network.requestWillBeSent"))).toBeUndefined();
-    expect(codeOf(() => checkEvent("Target.targetCreated"))).toBe(ErrorCode.forbiddenMethod);
-  });
+    it("allows events of tab domains and refuses the rest", () => {
+        expect(codeOf(() => checkEvent("Network.requestWillBeSent"))).toBeUndefined();
+        expect(codeOf(() => checkEvent("Target.targetCreated"))).toBe(ErrorCode.forbiddenMethod);
+    });
 });

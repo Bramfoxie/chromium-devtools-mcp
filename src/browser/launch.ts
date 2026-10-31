@@ -9,205 +9,205 @@ const MAX_BUFFERED_STDERR = 64 * 1024;
 export type ManagedConfig = Pick<Config, "browser" | "headless" | "profileDir" | "debugPort">;
 
 export interface ChildHandle {
-  kill(signal: "SIGTERM" | "SIGKILL"): boolean;
-  detach(): void;
-  onStderr(handler: (chunk: string) => void): void;
-  onExit(handler: (reason: string) => void): void;
-  onError(handler: (message: string) => void): void;
+    kill(signal: "SIGTERM" | "SIGKILL"): boolean;
+    detach(): void;
+    onStderr(handler: (chunk: string) => void): void;
+    onExit(handler: (reason: string) => void): void;
+    onError(handler: (message: string) => void): void;
 }
 
 export interface LaunchDeps {
-  findExecutable: (browser: BrowserName) => string;
-  spawn         : (command: string, args: string[]) => ChildHandle;
-  startTimeoutMs: number;
-  stopGraceMs   : number;
+    findExecutable: (browser: BrowserName) => string;
+    spawn         : (command: string, args: string[]) => ChildHandle;
+    startTimeoutMs: number;
+    stopGraceMs   : number;
 }
 
 export interface ManagedBrowser {
-  readonly port        : number;
-  readonly webSocketUrl: string;
-  stop(): Promise<void>;
-  // Lets the browser outlive this process; it can no longer be stopped afterwards.
-  release(): void;
+    readonly port        : number;
+    readonly webSocketUrl: string;
+    stop(): Promise<void>;
+    // Lets the browser outlive this process; it can no longer be stopped afterwards.
+    release(): void;
 }
 
 export class BrowserLaunchError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "BrowserLaunchError";
-  }
+    constructor(message: string) {
+        super(message);
+        this.name = "BrowserLaunchError";
+    }
 }
 
 export function buildLaunchArgs(config: ManagedConfig): string[] {
-  const args = [
-    `--remote-debugging-port=${config.debugPort}`,
-    `--user-data-dir=${config.profileDir}`,
-    "--no-first-run",
-    "--no-default-browser-check",
-  ];
+    const args = [
+        `--remote-debugging-port=${config.debugPort}`,
+        `--user-data-dir=${config.profileDir}`,
+        "--no-first-run",
+        "--no-default-browser-check",
+    ];
 
-  if (config.headless) args.push("--headless=new");
+    if (config.headless) args.push("--headless=new");
 
-  return args;
+    return args;
 }
 
 export function parseListeningUrl(
-  output: string,
+    output: string,
 ): { port: number; webSocketUrl: string } | undefined {
-  const match = LISTENING_PATTERN.exec(output);
+    const match = LISTENING_PATTERN.exec(output);
 
-  if (!match?.[1]) return undefined;
+    if (!match?.[1]) return undefined;
 
-  try {
-    const port = Number(new URL(match[1]).port);
+    try {
+        const port = Number(new URL(match[1]).port);
 
-    return Number.isInteger(port) && port > 0 ? { port, webSocketUrl: match[1] } : undefined;
-  } catch {
-    return undefined;
-  }
+        return Number.isInteger(port) && port > 0 ? { port, webSocketUrl: match[1] } : undefined;
+    } catch {
+        return undefined;
+    }
 }
 
 export function spawnProcess(command: string, args: string[]): ChildHandle {
-  const child = nodeSpawn(command, args, { stdio: ["ignore", "ignore", "pipe"] });
+    const child = nodeSpawn(command, args, { stdio: ["ignore", "ignore", "pipe"] });
 
-  return {
-    kill  : (signal) => child.kill(signal),
-    detach: () => {
-      (child.stderr as Socket).unref();
-      child.unref();
-    },
-    onStderr: (handler) => {
-      child.stderr.setEncoding("utf8");
-      child.stderr.on("data", handler);
-    },
-    onExit: (handler) => {
-      child.once("exit", (code, signal) =>
-        handler(signal ? `terminated by ${signal}` : `exited with code ${code}`),
-      );
-    },
-    onError: (handler) => {
-      child.on("error", (error) => handler(error.message));
-    },
-  };
+    return {
+        kill  : (signal) => child.kill(signal),
+        detach: () => {
+            (child.stderr as Socket).unref();
+            child.unref();
+        },
+        onStderr: (handler) => {
+            child.stderr.setEncoding("utf8");
+            child.stderr.on("data", handler);
+        },
+        onExit: (handler) => {
+            child.once("exit", (code, signal) =>
+                handler(signal ? `terminated by ${signal}` : `exited with code ${code}`),
+            );
+        },
+        onError: (handler) => {
+            child.on("error", (error) => handler(error.message));
+        },
+    };
 }
 
 const defaultDeps: LaunchDeps = {
-  findExecutable: (browser) => findBrowserExecutable(browser),
-  spawn         : spawnProcess,
-  startTimeoutMs: 15_000,
-  stopGraceMs   : 5_000,
+    findExecutable: (browser) => findBrowserExecutable(browser),
+    spawn         : spawnProcess,
+    startTimeoutMs: 15_000,
+    stopGraceMs   : 5_000,
 };
 
 function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+    return error instanceof Error ? error.message : String(error);
 }
 
 export async function launchManaged(
-  config: ManagedConfig,
-  overrides: Partial<LaunchDeps> = {},
+    config: ManagedConfig,
+    overrides: Partial<LaunchDeps> = {},
 ): Promise<ManagedBrowser> {
-  const deps: LaunchDeps = { ...defaultDeps, ...overrides };
-  const executable = deps.findExecutable(config.browser);
-  const startFailure = (detail: string) =>
-    new BrowserLaunchError(
-      `failed to start ${executable}: ${detail}. Check that the file exists and is executable.`,
-    );
-  let child: ChildHandle;
-
-  try {
-    child = deps.spawn(executable, buildLaunchArgs(config));
-  } catch (error) {
-    throw startFailure(messageOf(error));
-  }
-
-  return new Promise<ManagedBrowser>((resolve, reject) => {
-    let settled = false;
-    let exitReason: string | undefined;
-    let buffered = "";
-    let stopping: Promise<void> | undefined;
-    let markExited: () => void = () => undefined;
-    const exited = new Promise<void>((done) => {
-      markExited = done;
-    });
-
-    const timer = setTimeout(() => {
-      if (settled) return;
-
-      settled = true;
-      child.kill("SIGTERM");
-      void terminate(child, exited, deps.stopGraceMs).then(() =>
-        reject(
-          new BrowserLaunchError(
-            `${config.browser} did not expose remote debugging within ${deps.startTimeoutMs} ms. ` +
-              `Check that the profile directory ${config.profileDir} is writable and that port ${config.debugPort} is free.`,
-          ),
-        ),
-      );
-    }, deps.startTimeoutMs);
-
-    const stop = () =>
-      (stopping ??= (async () => {
-        if (exitReason !== undefined) return;
-
-        child.kill("SIGTERM");
-        await terminate(child, exited, deps.stopGraceMs);
-      })());
-
-    child.onStderr((chunk) => {
-      if (settled) return;
-
-      buffered = (buffered + chunk).slice(-MAX_BUFFERED_STDERR);
-      const endpoint = parseListeningUrl(buffered);
-
-      if (!endpoint) return;
-
-      settled = true;
-      buffered = "";
-      clearTimeout(timer);
-      resolve({ ...endpoint, stop, release: () => child.detach() });
-    });
-
-    child.onError((message) => {
-      if (settled) return;
-
-      settled = true;
-      clearTimeout(timer);
-      markExited();
-      reject(startFailure(message));
-    });
-
-    child.onExit((reason) => {
-      exitReason ??= reason;
-      markExited();
-      if (settled) return;
-
-      settled = true;
-      clearTimeout(timer);
-      reject(
+    const deps: LaunchDeps = { ...defaultDeps, ...overrides };
+    const executable = deps.findExecutable(config.browser);
+    const startFailure = (detail: string) =>
         new BrowserLaunchError(
-          `${config.browser} ${reason} before remote debugging was ready. ` +
+            `failed to start ${executable}: ${detail}. Check that the file exists and is executable.`,
+        );
+    let child: ChildHandle;
+
+    try {
+        child = deps.spawn(executable, buildLaunchArgs(config));
+    } catch (error) {
+        throw startFailure(messageOf(error));
+    }
+
+    return new Promise<ManagedBrowser>((resolve, reject) => {
+        let settled = false;
+        let exitReason: string | undefined;
+        let buffered = "";
+        let stopping: Promise<void> | undefined;
+        let markExited: () => void = () => undefined;
+        const exited = new Promise<void>((done) => {
+            markExited = done;
+        });
+
+        const timer = setTimeout(() => {
+            if (settled) return;
+
+            settled = true;
+            child.kill("SIGTERM");
+            void terminate(child, exited, deps.stopGraceMs).then(() =>
+                reject(
+                    new BrowserLaunchError(
+                        `${config.browser} did not expose remote debugging within ${deps.startTimeoutMs} ms. ` +
+              `Check that the profile directory ${config.profileDir} is writable and that port ${config.debugPort} is free.`,
+                    ),
+                ),
+            );
+        }, deps.startTimeoutMs);
+
+        const stop = () =>
+            (stopping ??= (async () => {
+                if (exitReason !== undefined) return;
+
+                child.kill("SIGTERM");
+                await terminate(child, exited, deps.stopGraceMs);
+            })());
+
+        child.onStderr((chunk) => {
+            if (settled) return;
+
+            buffered = (buffered + chunk).slice(-MAX_BUFFERED_STDERR);
+            const endpoint = parseListeningUrl(buffered);
+
+            if (!endpoint) return;
+
+            settled = true;
+            buffered = "";
+            clearTimeout(timer);
+            resolve({ ...endpoint, stop, release: () => child.detach() });
+        });
+
+        child.onError((message) => {
+            if (settled) return;
+
+            settled = true;
+            clearTimeout(timer);
+            markExited();
+            reject(startFailure(message));
+        });
+
+        child.onExit((reason) => {
+            exitReason ??= reason;
+            markExited();
+            if (settled) return;
+
+            settled = true;
+            clearTimeout(timer);
+            reject(
+                new BrowserLaunchError(
+                    `${config.browser} ${reason} before remote debugging was ready. ` +
             `Another browser instance may already use the profile ${config.profileDir} or the port ${config.debugPort}: close it or set another profileDir or debugPort.`,
-        ),
-      );
+                ),
+            );
+        });
     });
-  });
 }
 
 async function settlesWithin(promise: Promise<void>, ms: number): Promise<boolean> {
-  let timer: NodeJS.Timeout | undefined;
-  const timedOut = new Promise<false>((resolve) => {
-    timer = setTimeout(() => resolve(false), ms);
-  });
-  const result = await Promise.race([promise.then(() => true as const), timedOut]);
+    let timer: NodeJS.Timeout | undefined;
+    const timedOut = new Promise<false>((resolve) => {
+        timer = setTimeout(() => resolve(false), ms);
+    });
+    const result = await Promise.race([promise.then(() => true as const), timedOut]);
 
-  clearTimeout(timer);
+    clearTimeout(timer);
 
-  return result;
+    return result;
 }
 
 async function terminate(child: ChildHandle, exited: Promise<void>, graceMs: number) {
-  if (await settlesWithin(exited, graceMs)) return;
+    if (await settlesWithin(exited, graceMs)) return;
 
-  child.kill("SIGKILL");
-  await settlesWithin(exited, graceMs);
+    child.kill("SIGKILL");
+    await settlesWithin(exited, graceMs);
 }

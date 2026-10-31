@@ -4,33 +4,35 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("node:fs/promises", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("node:fs/promises")>();
+    const actual = await importOriginal<typeof import("node:fs/promises")>();
 
-  return {
-    ...actual,
-    link: vi.fn(async () => {
-      throw Object.assign(new Error("operation not permitted"), { code: "EPERM" });
-    }),
-  };
+    return {
+        ...actual,
+        link: vi.fn(async () => {
+            throw Object.assign(new Error("operation not permitted"), { code: "EPERM" });
+        }),
+    };
 });
 
 const { ensureToken } = await import("../src/daemon/token.js");
 const dirs: string[] = [];
 
 afterEach(async () => {
-  for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true });
+    for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true });
 });
 
 describe("ensureToken when publishing fails", () => {
-  it("rethrows the error and removes its temporary file", async () => {
-    const dir = await mkdtemp(path.join(os.tmpdir(), "cdm-token-"));
+    it("rethrows the error and removes its temporary file", async () => {
+        const dir = await mkdtemp(path.join(os.tmpdir(), "cdm-token-"));
 
-    dirs.push(dir);
-    const file = path.join(dir, "daemon.token");
+        dirs.push(dir);
+        const file = path.join(dir, "daemon.token");
 
-    await expect(ensureToken(file, process.platform, process.getuid?.())).rejects.toMatchObject({
-      code: "EPERM",
+        const pending = ensureToken(file, process.platform, process.getuid?.());
+
+        await expect(pending).rejects.toMatchObject({
+            code: "EPERM",
+        });
+        expect(await readdir(dir)).toEqual([]);
     });
-    expect(await readdir(dir)).toEqual([]);
-  });
 });
