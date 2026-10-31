@@ -34,7 +34,7 @@ export class IpcClient {
     private hello                : unknown;
 
     private constructor(
-        private readonly socket: net.Socket,
+        private readonly socket          : net.Socket,
         private readonly requestTimeoutMs: number,
     ) {
         this.closedSignal = new Promise((resolve) => socket.once("close", () => resolve()));
@@ -81,7 +81,7 @@ export class IpcClient {
     }
 
     request(
-        method: string,
+        method : string,
         params?: unknown,
         options: { timeoutMs?: number } = {},
     ): Promise<unknown> {

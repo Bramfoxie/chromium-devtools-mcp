@@ -29,7 +29,7 @@ export interface IncomingRequest {
 }
 
 export type RequestHandler = (
-    request: IncomingRequest,
+    request   : IncomingRequest,
     connection: ClientConnection,
 ) => Promise<unknown>;
 

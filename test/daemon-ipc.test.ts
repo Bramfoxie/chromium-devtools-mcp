@@ -65,7 +65,7 @@ async function startServer(overrides: Partial<AcceptOptions> = {}) {
 }
 
 async function connectClient(
-    server: Awaited<ReturnType<typeof startServer>>,
+    server           : Awaited<ReturnType<typeof startServer>>,
     requestTimeoutMs?: number,
 ) {
     const client = await IpcClient.connect({

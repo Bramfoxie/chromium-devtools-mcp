@@ -9,6 +9,7 @@ export {
     ProtocolViolationError,
     RpcError,
 } from "./errors.js";
+
 export {
     acquireInstance,
     type InstanceDeps,
@@ -17,6 +18,7 @@ export {
     type InstanceOptions,
     type ListeningServer,
 } from "./lock.js";
+
 export {
     currentPathContext,
     currentUsername,
@@ -26,9 +28,13 @@ export {
     socketPath,
     tokenPath,
 } from "./paths.js";
+
 export { type DirIO, type DirStat, ensurePrivateDir } from "./private-dir.js";
+
 export { ensureToken, generateToken, readToken, tokensMatch } from "./token.js";
+
 export { IpcClient, type IpcConnectOptions, type IpcEventHandler } from "./client.js";
+
 export {
     encodeMessage,
     ErrorCode,
@@ -39,6 +45,7 @@ export {
     type Response,
     type ServerEvent,
 } from "./protocol.js";
+
 export {
     acceptConnection,
     type AcceptOptions,
@@ -46,10 +53,15 @@ export {
     type IncomingRequest,
     type RequestHandler,
 } from "./server.js";
+
 export type { BackendSession, BrowserBackend, TargetInfo } from "./browser-backend.js";
+
 export { Daemon, type DaemonOptions } from "./daemon.js";
+
 export { createRequestHandler } from "./handler.js";
+
 export { checkCall, checkEvent, normalizeUrl, type PolicyOptions } from "./method-policy.js";
+
 export {
     ClientSession,
     type Emit,
@@ -58,10 +70,15 @@ export {
     type TabInfo,
     type TabScope,
 } from "./sessions.js";
+
 export { CdpBackend } from "./cdp-backend.js";
+
 export { connectToDaemon, type ConnectToDaemonOptions } from "./daemon-client.js";
+
 export type { DaemonState, DaemonStatus } from "./handler.js";
+
 export { currentLayout, type DaemonLayout } from "./layout.js";
+
 export {
     type DaemonIdentity,
     daemonIdentity,
@@ -69,6 +86,7 @@ export {
     differingFields,
     type IdentityField,
 } from "./identity.js";
+
 export {
     approvalMessage,
     type BrowserConnector,

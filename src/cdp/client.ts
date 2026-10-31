@@ -77,7 +77,7 @@ export class CdpClient {
     private readonly closeHandlers = new Set<() => void>();
 
     private constructor(
-        private readonly transport: Transport,
+        private readonly transport       : Transport,
         private readonly requestTimeoutMs: number,
     ) {
         transport.onMessage((data) => this.handleMessage(data));

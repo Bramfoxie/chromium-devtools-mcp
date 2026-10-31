@@ -38,7 +38,7 @@ export function differingFields(a: DaemonIdentity, b: DaemonIdentity): IdentityF
 
 export function describeIdentity(
     identity: DaemonIdentity,
-    fields: readonly IdentityField[] = FIELDS,
+    fields  : readonly IdentityField[] = FIELDS,
 ): string {
     return fields.map((field) => `${field} ${String(identity[field] ?? "unset")}`).join(", ");
 }

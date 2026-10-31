@@ -26,10 +26,10 @@ export async function readToken(file: string): Promise<string | undefined> {
 }
 
 export async function ensureToken(
-    file: string,
+    file    : string,
     platform: NodeJS.Platform,
-    uid: number | undefined,
-    options: { lockWaitMs?: number } = {},
+    uid     : number | undefined,
+    options : { lockWaitMs?: number } = {},
 ): Promise<string> {
     const existing = await readToken(file);
 

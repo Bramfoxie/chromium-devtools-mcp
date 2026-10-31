@@ -46,7 +46,7 @@ export interface ConnectHooks {
 
 export type BrowserConnector = (
     config: Config,
-    hooks: ConnectHooks,
+    hooks : ConnectHooks,
     signal: AbortSignal,
 ) => Promise<BrowserHandle>;
 
@@ -113,7 +113,7 @@ async function closeLeftoverPages(client: CdpClient): Promise<void> {
 // Reuses a browser left on the managed profile; never closes it.
 async function adoptManaged(
     config: Config,
-    deps: ConnectorDeps,
+    deps  : ConnectorDeps,
 ): Promise<BrowserHandle | undefined> {
     const running = await deps
         .findRunning(config.profileDir, config.debugPort)
@@ -214,7 +214,7 @@ async function quietly(what: string, action: () => Promise<unknown> | undefined)
 }
 
 export async function runDaemon(
-    config: Config,
+    config   : Config,
     overrides: Partial<RunDeps> = {},
 ): Promise<RunningDaemon> {
     const deps: RunDeps = {

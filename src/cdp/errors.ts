@@ -8,8 +8,8 @@ export class CdpError extends Error {
 export class CdpProtocolError extends CdpError {
     constructor(
         readonly method: string,
-        readonly code: number | undefined,
-        detail: string,
+        readonly code  : number | undefined,
+        detail         : string,
     ) {
         super(
             `CDP method ${method} failed${code === undefined ? "" : ` with code ${code}`}: ${detail}. ` +
@@ -21,7 +21,7 @@ export class CdpProtocolError extends CdpError {
 
 export class CdpTimeoutError extends CdpError {
     constructor(
-        readonly method: string,
+        readonly method   : string,
         readonly timeoutMs: number,
     ) {
         super(

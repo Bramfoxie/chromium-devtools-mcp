@@ -69,8 +69,8 @@ export interface LinkFactoryOptions {
 }
 
 export function createDaemonLink(
-    config: Config,
-    flags: string[],
+    config : Config,
+    flags  : string[],
     options: LinkFactoryOptions = {},
 ): DaemonLink {
     const layout = options.layout ?? currentLayout();
@@ -116,8 +116,8 @@ export function createMcpServer(version: string): McpServer {
 }
 
 export async function runMcpServer(
-    config: Config,
-    flags: string[],
+    config : Config,
+    flags  : string[],
     options: McpOptions = {},
 ): Promise<RunningMcp> {
     const link = options.link ?? createDaemonLink(config, flags);

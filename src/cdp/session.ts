@@ -3,8 +3,8 @@ import type { CdpClient, EventHandler, SessionSendOptions } from "./client.js";
 export class CdpSession {
     constructor(
         private readonly client: CdpClient,
-        readonly sessionId: string,
-        readonly targetId: string,
+        readonly sessionId     : string,
+        readonly targetId      : string,
     ) {}
 
     send(method: string, params?: object, options: SessionSendOptions = {}): Promise<unknown> {

@@ -31,8 +31,8 @@ class FakeIpc {
     constructor(private readonly handler: Handler = () => ({})) {}
 
     async request(
-        method: string,
-        params?: unknown,
+        method  : string,
+        params? : unknown,
         options?: { timeoutMs?: number },
     ): Promise<unknown> {
         if (this.closed) throw new IpcClosedError("closed");

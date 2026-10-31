@@ -33,7 +33,7 @@ export class ProtocolViolationError extends DaemonError {
 export class RpcError extends DaemonError {
     constructor(
         readonly code: string,
-        message: string,
+        message      : string,
     ) {
         super(message);
         this.name = "RpcError";
@@ -42,7 +42,7 @@ export class RpcError extends DaemonError {
 
 export class IpcTimeoutError extends DaemonError {
     constructor(
-        readonly method: string,
+        readonly method   : string,
         readonly timeoutMs: number,
     ) {
         super(

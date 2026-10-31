@@ -41,9 +41,9 @@ const config: Config = {
 };
 
 async function start(
-    layout: DaemonLayout,
+    layout        : DaemonLayout,
     connectBrowser: BrowserConnector,
-    overrides: { idleTimeoutMs?: number; cfg?: Config } = {},
+    overrides     : { idleTimeoutMs?: number; cfg?: Config } = {},
 ): Promise<RunningDaemon> {
     vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     const running = await runDaemon(overrides.cfg ?? config, {
@@ -58,7 +58,7 @@ async function start(
 }
 
 async function connect(
-    layout: DaemonLayout,
+    layout : DaemonLayout,
     name = "test",
     expect?: DaemonIdentity,
 ) {

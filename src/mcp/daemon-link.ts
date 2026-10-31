@@ -53,12 +53,12 @@ export class DaemonLink {
 
     constructor(
         private readonly config: LinkConfig,
-        private readonly deps: LinkDeps,
+        private readonly deps  : LinkDeps,
     ) {}
 
     async request(
-        method: string,
-        params?: unknown,
+        method  : string,
+        params? : unknown,
         options?: { timeoutMs?: number },
     ): Promise<unknown> {
         const client = await this.ready();

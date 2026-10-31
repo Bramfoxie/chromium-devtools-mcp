@@ -5,8 +5,11 @@ export {
     type SendOptions,
     type SessionSendOptions,
 } from "./client.js";
+
 export { CdpClosedError, CdpError, CdpProtocolError, CdpTimeoutError } from "./errors.js";
+
 export { CdpSession } from "./session.js";
+
 export {
     createWsTransportFactory,
     type Transport,

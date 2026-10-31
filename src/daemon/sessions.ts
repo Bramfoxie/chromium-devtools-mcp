@@ -76,11 +76,11 @@ export class ClientSession {
     private isClosed = false;
 
     constructor(
-        private readonly backend: BrowserBackend,
+        private readonly backend : BrowserBackend,
         private readonly registry: Ownership,
-        private readonly emit: Emit,
-        private readonly options: SessionOptions,
-        readonly contextId: string | undefined,
+        private readonly emit    : Emit,
+        private readonly options : SessionOptions,
+        readonly contextId       : string | undefined,
     ) {}
 
     get isolated(): boolean {
@@ -185,9 +185,9 @@ export class ClientSession {
     }
 
     async send(
-        targetId: string,
-        method: string,
-        params: Record<string, unknown> | undefined,
+        targetId  : string,
+        method    : string,
+        params    : Record<string, unknown> | undefined,
         timeoutMs?: number,
     ): Promise<unknown> {
         this.ensureOpen();

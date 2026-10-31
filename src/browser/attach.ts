@@ -76,8 +76,8 @@ function browserWebSocketUrl(version: unknown, port: number): string | undefined
 }
 
 async function endpointInDir(
-    deps: Pick<AttachDeps, "context" | "readFile" | "isPortOpen">,
-    dir: string,
+    deps   : Pick<AttachDeps, "context" | "readFile" | "isPortOpen">,
+    dir    : string,
     signal?: AbortSignal,
 ): Promise<AttachEndpoint | undefined> {
     let content: string | undefined;
@@ -99,7 +99,7 @@ async function endpointInDir(
 }
 
 async function portFileEndpoint(
-    deps: AttachDeps,
+    deps   : AttachDeps,
     browser: BrowserName,
     signal?: AbortSignal,
 ): Promise<AttachEndpoint | undefined> {
@@ -108,7 +108,7 @@ async function portFileEndpoint(
 
 // Finds a browser already running on the user data directory.
 export async function runningInProfile(
-    dir: string,
+    dir      : string,
     debugPort: number,
     overrides: Partial<
         Pick<AttachDeps, "context" | "readFile" | "hasFile" | "isPortOpen" | "fetchVersion">
@@ -143,8 +143,8 @@ async function profileLocked(deps: AttachDeps, dir: string): Promise<boolean> {
 }
 
 export async function resolveAttachEndpoint(
-    config: AttachConfig,
-    deps: AttachDeps,
+    config : AttachConfig,
+    deps   : AttachDeps,
     signal?: AbortSignal,
 ): Promise<AttachEndpoint | undefined> {
     const fromFile = await portFileEndpoint(deps, config.browser, signal);
@@ -176,9 +176,9 @@ export function setupInstructions(config: AttachConfig): string {
 }
 
 export async function attachBrowser(
-    config: AttachConfig,
+    config   : AttachConfig,
     overrides: Partial<AttachDeps> = {},
-    signal?: AbortSignal,
+    signal?  : AbortSignal,
 ): Promise<AttachEndpoint> {
     const deps: AttachDeps = { ...defaultAttachDeps(), ...overrides };
     let instructed = false;
@@ -260,7 +260,7 @@ export function probePort(port: number, signal?: AbortSignal): Promise<boolean> 
 }
 
 export async function fetchVersion(
-    port: number,
+    port   : number,
     signal?: AbortSignal,
     timeoutMs = VERSION_TIMEOUT_MS,
 ): Promise<unknown> {

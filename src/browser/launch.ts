@@ -103,7 +103,7 @@ function messageOf(error: unknown): string {
 }
 
 export async function launchManaged(
-    config: ManagedConfig,
+    config   : ManagedConfig,
     overrides: Partial<LaunchDeps> = {},
 ): Promise<ManagedBrowser> {
     const deps: LaunchDeps = { ...defaultDeps, ...overrides };

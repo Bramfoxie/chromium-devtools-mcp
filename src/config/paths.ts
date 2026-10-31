@@ -14,7 +14,7 @@ export function pathFor(platform: NodeJS.Platform): typeof path.posix {
 
 // Empty and relative values are ignored.
 export function baseDir(
-    value: string | undefined,
+    value   : string | undefined,
     fallback: string,
     platform: NodeJS.Platform,
 ): string {

@@ -8,9 +8,9 @@ const PROBE_TIMEOUT_MS = 1000;
 const STALE_LOCK_MS = 5000;
 
 function listenOnSocket(
-    path: string,
+    path        : string,
     onConnection: (socket: net.Socket) => void,
-    restrict: boolean,
+    restrict    : boolean,
 ): Promise<ListeningServer> {
     return new Promise((resolve, reject) => {
         const sockets = new Set<net.Socket>();

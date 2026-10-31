@@ -28,9 +28,9 @@ class FakeClient {
     closed = false;
 
     constructor(
-        readonly url: string,
+        readonly url              : string,
         private readonly userAgent: string | null = HEADLESS_AGENT,
-        private readonly targets: Array<{ type: string; targetId: string }> = [],
+        private readonly targets  : Array<{ type: string; targetId: string }> = [],
     ) {}
 
     async send(method: string, params?: unknown): Promise<unknown> {

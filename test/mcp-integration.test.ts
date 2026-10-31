@@ -43,9 +43,9 @@ function inProcessDaemon(layout: DaemonLayout, connectBrowser: BrowserConnector)
 }
 
 function makeLink(
-    layout: DaemonLayout,
+    layout     : DaemonLayout,
     startDaemon: LinkDeps["startDaemon"],
-    mode: "attach" | "managed" = "managed",
+    mode       : "attach" | "managed" = "managed",
 ) {
     const link = new DaemonLink(
         { identity: daemonIdentity({ ...managedConfig, mode }) },

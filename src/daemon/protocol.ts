@@ -53,8 +53,11 @@ export const helloParamsSchema = z.strictObject({
 export const serverMessageSchema = z.union([responseSchema, eventSchema]);
 
 export type Request = z.infer<typeof requestSchema>;
+
 export type Response = z.infer<typeof responseSchema>;
+
 export type ServerEvent = z.infer<typeof eventSchema>;
+
 export type HelloParams = z.infer<typeof helloParamsSchema>;
 
 export function encodeMessage(message: unknown): string {

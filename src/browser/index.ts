@@ -6,6 +6,7 @@ export {
     type DiscoveryOptions,
     findBrowserExecutable,
 } from "./discovery.js";
+
 export {
     BrowserLaunchError,
     buildLaunchArgs,
@@ -16,6 +17,7 @@ export {
     type ManagedConfig,
     parseListeningUrl,
 } from "./launch.js";
+
 export {
     AttachError,
     attachBrowser,

@@ -75,9 +75,9 @@ export function createWsTransportFactory(handshakeTimeoutMs: number): TransportF
 export const wsTransportFactory: TransportFactory = createWsTransportFactory(HANDSHAKE_TIMEOUT_MS);
 
 function connectSocket(
-    url: string,
+    url               : string,
     handshakeTimeoutMs: number,
-    signal?: AbortSignal,
+    signal?           : AbortSignal,
 ): Promise<Transport> {
     return new Promise((resolve, reject) => {
         const fail = (detail: string) =>

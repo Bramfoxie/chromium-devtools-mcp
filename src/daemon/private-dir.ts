@@ -39,10 +39,10 @@ export const realDirIO: DirIO = {
 };
 
 export async function ensurePrivateDir(
-    dir: string,
+    dir     : string,
     platform: NodeJS.Platform,
-    uid: number | undefined,
-    io: DirIO = realDirIO,
+    uid     : number | undefined,
+    io      : DirIO = realDirIO,
 ): Promise<void> {
     await io.mkdir(dir);
     if (platform === "win32") return;

@@ -13,9 +13,9 @@ export interface ListeningServer {
 
 export interface InstanceIO {
     listen: (
-        path: string,
+        path        : string,
         onConnection: (socket: net.Socket) => void,
-        restrict: boolean,
+        restrict    : boolean,
     ) => Promise<ListeningServer>;
     probe       : (path: string) => Promise<"alive" | "stale">;
     removeSocket: (path: string) => Promise<void>;
@@ -44,9 +44,9 @@ function isAddressInUse(error: unknown): boolean {
 }
 
 export async function acquireInstance(
-    options: InstanceOptions,
+    options     : InstanceOptions,
     onConnection: (socket: net.Socket) => void,
-    overrides: Partial<InstanceDeps> = {},
+    overrides   : Partial<InstanceDeps> = {},
 ): Promise<InstanceHandle> {
     const io = overrides.io ?? realInstanceIO;
     const ensureDir =

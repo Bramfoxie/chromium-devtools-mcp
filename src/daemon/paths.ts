@@ -15,7 +15,7 @@ export interface DaemonPathContext {
 }
 
 export function currentUsername(
-    env: NodeJS.ProcessEnv,
+    env   : NodeJS.ProcessEnv,
     lookup: () => { username: string } = () => os.userInfo(),
 ): string {
     try {

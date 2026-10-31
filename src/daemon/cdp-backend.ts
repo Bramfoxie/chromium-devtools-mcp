@@ -37,7 +37,7 @@ function wrapSession(session: CdpSession): BackendSession {
 
 export class CdpBackend implements BrowserBackend {
     private constructor(
-        private readonly client: CdpClient,
+        private readonly client          : CdpClient,
         private readonly defaultContextId: string,
     ) {}
 

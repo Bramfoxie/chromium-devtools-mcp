@@ -68,8 +68,8 @@ export function checkEvent(event: string): void {
 
 // Returns the params to send to the browser; Page.navigate gets the normalized URL.
 export function checkCall(
-    method: string,
-    params: Record<string, unknown> | undefined,
+    method : string,
+    params : Record<string, unknown> | undefined,
     options: PolicyOptions,
 ): Record<string, unknown> | undefined {
     checkEvent(method);

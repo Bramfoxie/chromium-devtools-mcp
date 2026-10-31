@@ -13,7 +13,7 @@ export class FakeSession implements BackendSession {
     private readonly handlers = new Map<string, Set<(params: unknown) => void>>();
 
     constructor(
-        readonly targetId: string,
+        readonly targetId   : string,
         private readonly log: string[],
     ) {}
 
