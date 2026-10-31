@@ -1,3 +1,4 @@
+import os from "node:os";
 import { describe, expect, it } from "vitest";
 import { ConfigError, configFilePath, defaultProfileDir, loadConfig } from "../src/config/index.js";
 
@@ -162,6 +163,110 @@ describe("validation", () => {
       loadConfig({ ...withFile(undefined), env: { CHROMIUM_DEVTOOLS_MCP_HEADLESS: "maybe" } }),
     ).toThrow(/headless/);
   });
+
+  it("rejects unknown keys under safety", () => {
+    expect(() =>
+      loadConfig(withFile(JSON.stringify({ safety: { redOnly: true } }))),
+    ).toThrow(ConfigError);
+  });
+
+  it.each([
+    ['{"debugPort": "9333"}', "debugPort"],
+    ['{"headless": 1}', "headless"],
+    ['{"browser": null}', "browser"],
+  ])("rejects a mistyped value %s", (content, field) => {
+    expect(() => loadConfig(withFile(content))).toThrow(new RegExp(field));
+  });
+
+  it("rejects a fractional port", () => {
+    expect(() => loadConfig({ ...withFile(undefined), argv: ["--debug-port=9222.5"] })).toThrow(
+      /debugPort/,
+    );
+  });
+
+  it("reports a read failure that is not a missing file", () => {
+    expect(() =>
+      loadConfig({
+        argv    : [],
+        env     : { CHROMIUM_DEVTOOLS_MCP_CONFIG: os.tmpdir() },
+        platform: process.platform,
+        homedir : os.homedir(),
+      }),
+    ).toThrow(/cannot read config file/);
+  });
+
+  it("fails when the overridden config file is missing but honors defaults otherwise", () => {
+    expect(() =>
+      loadConfig({
+        ...base,
+        env     : { CHROMIUM_DEVTOOLS_MCP_CONFIG: "/custom/config.json" },
+        readFile: () => undefined,
+      }),
+    ).toThrow(/\/custom\/config.json does not exist/);
+    expect(loadConfig(withFile(undefined)).browser).toBe("chrome");
+  });
+
+  it("accepts cased and padded booleans and rejects unknown words", () => {
+    const config = loadConfig({
+      ...withFile(undefined),
+      env: { CHROMIUM_DEVTOOLS_MCP_HEADLESS: "  TRUE ", CHROMIUM_DEVTOOLS_MCP_READ_ONLY: " 1 " },
+    });
+
+    expect(config.headless).toBe(true);
+    expect(config.safety.readOnly).toBe(true);
+
+    for (const value of ["yes", "on"]) {
+      expect(() =>
+        loadConfig({ ...withFile(undefined), env: { CHROMIUM_DEVTOOLS_MCP_HEADLESS: value } }),
+      ).toThrow(/headless/);
+    }
+  });
+
+  it("treats empty env values as unset and trims domain lists", () => {
+    const config = loadConfig({
+      ...withFile(JSON.stringify({ safety: { allowedDomains: ["file.com"] } })),
+      env: {
+        CHROMIUM_DEVTOOLS_MCP_BROWSER        : "",
+        CHROMIUM_DEVTOOLS_MCP_ALLOWED_DOMAINS: "   ",
+        CHROMIUM_DEVTOOLS_MCP_HEADLESS       : " \t ",
+      },
+    });
+
+    expect(config.browser).toBe("chrome");
+    expect(config.headless).toBe(false);
+    expect(config.safety.allowedDomains).toEqual(["file.com"]);
+
+    const listed = loadConfig({
+      ...withFile(undefined),
+      env: { CHROMIUM_DEVTOOLS_MCP_ALLOWED_DOMAINS: "a.com,, b.com" },
+    });
+
+    expect(listed.safety.allowedDomains).toEqual(["a.com", "b.com"]);
+  });
+
+  it("accepts every negative boolean flag", () => {
+    const config = loadConfig({
+      ...withFile(undefined),
+      argv: ["--no-allow-focus", "--no-read-only", "--no-confirm-dangerous"],
+    });
+
+    expect(config.allowFocus).toBe(false);
+    expect(config.safety.readOnly).toBe(false);
+    expect(config.safety.confirmDangerous).toBe(false);
+  });
+
+  it("falls back to XDG paths on unknown platforms", () => {
+    const config = loadConfig({
+      ...withFile(undefined),
+      platform: "freebsd" as never,
+      argv    : [],
+    });
+
+    expect(config.profileDir).toBe("/home/u/.local/share/chromium-devtools-mcp/profile");
+    expect(
+      configFilePath({ env: {}, platform: "freebsd" as never, homedir: "/home/u" }),
+    ).toBe("/home/u/.config/chromium-devtools-mcp/config.json");
+  });
 });
 
 describe("paths", () => {
@@ -183,6 +288,28 @@ describe("paths", () => {
     ).toBe("D:\\Data\\chromium-devtools-mcp\\config.json");
   });
 
+  it.each(["", "relative/dir"])("ignores a base directory variable set to %j", (value) => {
+    const env = {
+      XDG_CONFIG_HOME: value,
+      XDG_DATA_HOME  : value,
+      APPDATA        : value,
+      LOCALAPPDATA   : value,
+    };
+
+    expect(configFilePath({ env, platform: "linux", homedir: "/home/u" })).toBe(
+      "/home/u/.config/chromium-devtools-mcp/config.json",
+    );
+    expect(defaultProfileDir({ env, platform: "linux", homedir: "/home/u" })).toBe(
+      "/home/u/.local/share/chromium-devtools-mcp/profile",
+    );
+    expect(configFilePath({ env, platform: "win32", homedir: "C:\\Users\\u" })).toBe(
+      "C:\\Users\\u\\AppData\\Roaming\\chromium-devtools-mcp\\config.json",
+    );
+    expect(defaultProfileDir({ env, platform: "win32", homedir: "C:\\Users\\u" })).toBe(
+      "C:\\Users\\u\\AppData\\Local\\chromium-devtools-mcp\\profile",
+    );
+  });
+
   it("honors the config path override", () => {
     const env = { CHROMIUM_DEVTOOLS_MCP_CONFIG: "/custom/config.json" };
 
@@ -198,5 +325,60 @@ describe("paths", () => {
     expect(defaultProfileDir({ env: {}, platform: "win32", homedir: "C:\\Users\\u" })).toBe(
       "C:\\Users\\u\\AppData\\Local\\chromium-devtools-mcp\\profile",
     );
+    expect(defaultProfileDir({ env: {}, platform: "linux", homedir: "/home/u" })).toBe(
+      "/home/u/.local/share/chromium-devtools-mcp/profile",
+    );
+  });
+
+  it("resolves the default profile directory with platform overrides", () => {
+    expect(
+      defaultProfileDir({ env: { XDG_DATA_HOME: "/x" }, platform: "linux", homedir: "/home/u" }),
+    ).toBe("/x/chromium-devtools-mcp/profile");
+    expect(
+      defaultProfileDir({
+        env     : { LOCALAPPDATA: "D:\\Data" },
+        platform: "win32",
+        homedir : "C:\\Users\\u",
+      }),
+    ).toBe("D:\\Data\\chromium-devtools-mcp\\profile");
+    expect(
+      defaultProfileDir({
+        env     : { XDG_DATA_HOME: "/x" },
+        platform: "darwin",
+        homedir : "/Users/u",
+      }),
+    ).toBe("/Users/u/Library/Application Support/chromium-devtools-mcp/profile");
+  });
+
+  it("reads the file at the platform config path", () => {
+    const cases = [
+      {
+        context : { env: {}, platform: "linux" as const, homedir: "/home/u" },
+        expected: "/home/u/.config/chromium-devtools-mcp/config.json",
+      },
+      {
+        context : { env: {}, platform: "darwin" as const, homedir: "/Users/u" },
+        expected: "/Users/u/.config/chromium-devtools-mcp/config.json",
+      },
+      {
+        context : { env: {}, platform: "win32" as const, homedir: "C:\\Users\\u" },
+        expected: "C:\\Users\\u\\AppData\\Roaming\\chromium-devtools-mcp\\config.json",
+      },
+    ];
+
+    for (const { context, expected } of cases) {
+      let seen: string | undefined;
+
+      loadConfig({
+        ...context,
+        argv    : [],
+        readFile: (file) => {
+          seen = file;
+
+          return undefined;
+        },
+      });
+      expect(seen).toBe(expected);
+    }
   });
 });

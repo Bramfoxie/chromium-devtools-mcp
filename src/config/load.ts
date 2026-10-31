@@ -70,7 +70,11 @@ function compact(layer: Layer): Layer {
 }
 
 function envLayer(env: NodeJS.ProcessEnv): Layer {
-  const get = (name: string) => env[`CHROMIUM_DEVTOOLS_MCP_${name}`];
+  const get = (name: string) => {
+    const value = env[`CHROMIUM_DEVTOOLS_MCP_${name}`];
+
+    return value === undefined || value.trim() === "" ? undefined : value;
+  };
   const bool = (name: string) => {
     const value = get(name);
 
@@ -172,6 +176,12 @@ export function loadConfig(options: LoadOptions = {}): Config {
   };
   const read = options.readFile ?? readIfExists;
   const file = configFilePath(ctx);
+  const override = ctx.env.CHROMIUM_DEVTOOLS_MCP_CONFIG;
+  const content = read(file);
+
+  if (content === undefined && override) {
+    throw new ConfigError(`config file ${file} does not exist (from CHROMIUM_DEVTOOLS_MCP_CONFIG)`);
+  }
 
   const defaults: Layer = {
     browser   : "chrome",
@@ -184,7 +194,7 @@ export function loadConfig(options: LoadOptions = {}): Config {
   };
 
   const layers = [
-    fileLayer(file, read(file)),
+    fileLayer(file, content),
     envLayer(ctx.env),
     argvLayer(options.argv ?? process.argv.slice(2)),
   ];

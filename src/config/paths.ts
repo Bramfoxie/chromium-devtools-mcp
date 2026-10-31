@@ -1,6 +1,6 @@
 import path from "node:path";
 
-const APP_NAME = "chromium-devtools-mcp";
+export const APP_NAME = "chromium-devtools-mcp";
 
 export interface PathContext {
   env     : NodeJS.ProcessEnv;
@@ -8,8 +8,17 @@ export interface PathContext {
   homedir : string;
 }
 
-function pathFor(platform: NodeJS.Platform): typeof path.posix {
+export function pathFor(platform: NodeJS.Platform): typeof path.posix {
   return platform === "win32" ? path.win32 : path.posix;
+}
+
+// Empty and relative values are ignored, as the XDG base directory spec requires.
+export function baseDir(
+  value: string | undefined,
+  fallback: string,
+  platform: NodeJS.Platform,
+): string {
+  return value && pathFor(platform).isAbsolute(value) ? value : fallback;
 }
 
 export function configFilePath({ env, platform, homedir }: PathContext): string {
@@ -19,12 +28,12 @@ export function configFilePath({ env, platform, homedir }: PathContext): string 
   if (override) return override;
 
   if (platform === "win32") {
-    const base = env.APPDATA ?? p.join(homedir, "AppData", "Roaming");
+    const base = baseDir(env.APPDATA, p.join(homedir, "AppData", "Roaming"), platform);
 
     return p.join(base, APP_NAME, "config.json");
   }
 
-  const base = env.XDG_CONFIG_HOME ?? p.join(homedir, ".config");
+  const base = baseDir(env.XDG_CONFIG_HOME, p.join(homedir, ".config"), platform);
 
   return p.join(base, APP_NAME, "config.json");
 }
@@ -33,7 +42,7 @@ export function defaultProfileDir({ env, platform, homedir }: PathContext): stri
   const p = pathFor(platform);
 
   if (platform === "win32") {
-    const base = env.LOCALAPPDATA ?? p.join(homedir, "AppData", "Local");
+    const base = baseDir(env.LOCALAPPDATA, p.join(homedir, "AppData", "Local"), platform);
 
     return p.join(base, APP_NAME, "profile");
   }
@@ -42,7 +51,7 @@ export function defaultProfileDir({ env, platform, homedir }: PathContext): stri
     return p.join(homedir, "Library", "Application Support", APP_NAME, "profile");
   }
 
-  const base = env.XDG_DATA_HOME ?? p.join(homedir, ".local", "share");
+  const base = baseDir(env.XDG_DATA_HOME, p.join(homedir, ".local", "share"), platform);
 
   return p.join(base, APP_NAME, "profile");
 }

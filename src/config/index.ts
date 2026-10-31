@@ -1,3 +1,3 @@
 export { loadConfig, type LoadOptions } from "./load.js";
-export { configFilePath, defaultProfileDir } from "./paths.js";
-export { type Config, ConfigError, configSchema } from "./schema.js";
+export { APP_NAME, baseDir, configFilePath, defaultProfileDir, pathFor, type PathContext } from "./paths.js";
+export { browsers, modes, type Config, ConfigError, configSchema } from "./schema.js";
