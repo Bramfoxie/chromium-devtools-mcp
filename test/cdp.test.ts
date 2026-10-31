@@ -679,6 +679,30 @@ describe("handshake timeout", () => {
   });
 });
 
+describe("cancelling a connection attempt", () => {
+  it("rejects a pending handshake as soon as the signal aborts", async () => {
+    const server = net.createServer((socket) => rawSockets.push(socket));
+
+    rawServers.push(server);
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const url = `ws://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const controller = new AbortController();
+    const pending = createWsTransportFactory(60_000)(url, controller.signal).catch(
+      (error: unknown) => error,
+    );
+
+    setTimeout(() => controller.abort(), 30);
+    const failure = await pending;
+
+    expect(failure).toBeInstanceOf(CdpClosedError);
+    expect((failure as Error).message).toContain("cancelled");
+    await expect(createWsTransportFactory(60_000)(url, controller.signal)).rejects.toThrow(
+      /cancelled/,
+    );
+  });
+});
+
 describe("close ordering", () => {
   it("waits for the transport to finish closing", async () => {
     let release: () => void = () => undefined;

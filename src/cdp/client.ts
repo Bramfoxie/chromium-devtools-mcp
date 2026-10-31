@@ -8,6 +8,7 @@ const MAX_TIMEOUT_MS = 2_147_483_647;
 export interface ConnectOptions {
   url              : string;
   createTransport? : TransportFactory;
+  signal?          : AbortSignal;
   requestTimeoutMs?: number;
 }
 
@@ -88,7 +89,7 @@ export class CdpClient {
 
     checkTimeout(requestTimeoutMs, "requestTimeoutMs");
     const createTransport = options.createTransport ?? wsTransportFactory;
-    const transport = await createTransport(options.url);
+    const transport = await createTransport(options.url, options.signal);
 
     return new CdpClient(transport, requestTimeoutMs);
   }

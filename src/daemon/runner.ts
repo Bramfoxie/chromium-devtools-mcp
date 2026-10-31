@@ -1,6 +1,11 @@
-import { type AttachEndpoint, attachBrowser, runningInProfile } from "../browser/attach.js";
+import {
+  abortableSleep,
+  type AttachEndpoint,
+  attachBrowser,
+  runningInProfile,
+} from "../browser/attach.js";
 import { BrowserLaunchError, launchManaged } from "../browser/launch.js";
-import { CdpClient } from "../cdp/index.js";
+import { CdpClient, createWsTransportFactory } from "../cdp/index.js";
 import type { Config } from "../config/index.js";
 import { CdpBackend } from "./cdp-backend.js";
 import { Daemon } from "./daemon.js";
@@ -13,6 +18,8 @@ import { realInstanceIO } from "./socket-io.js";
 import { ensureToken, readToken } from "./token.js";
 
 const DEFAULT_IDLE_TIMEOUT_MS = 30_000;
+const APPROVAL_HANDSHAKE_MS = 120_000;
+const RETRY_MS = 1000;
 
 export type StopReason = "requested" | "idle" | "browser_disconnected" | "failed";
 
@@ -59,7 +66,8 @@ export interface ConnectorDeps {
   launch     : typeof launchManaged;
   attach     : typeof attachBrowser;
   findRunning: (profileDir: string, debugPort: number) => Promise<AttachEndpoint | undefined>;
-  connect    : (url: string) => Promise<CdpClient>;
+  connect    : (url: string, handshakeMs?: number, signal?: AbortSignal) => Promise<CdpClient>;
+  sleep      : (ms: number, signal?: AbortSignal) => Promise<void>;
 }
 
 const HEADLESS_AGENT = /HeadlessChrome/;
@@ -68,7 +76,15 @@ const defaultConnectorDeps: ConnectorDeps = {
   launch     : launchManaged,
   attach     : attachBrowser,
   findRunning: (profileDir, debugPort) => runningInProfile(profileDir, debugPort),
-  connect    : (url) => CdpClient.connect({ url }),
+  connect    : (url, handshakeMs, signal) =>
+    CdpClient.connect({
+      url,
+      signal,
+      ...(handshakeMs === undefined
+        ? {}
+        : { createTransport: createWsTransportFactory(handshakeMs) }),
+    }),
+  sleep: abortableSleep,
 };
 
 async function isHeadless(client: CdpClient): Promise<boolean | undefined> {
@@ -166,13 +182,22 @@ export function createConnector(overrides: Partial<ConnectorDeps> = {}): Browser
   return async (config, hooks, signal) => {
     if (config.mode === "managed") return connectManaged(config, deps);
 
-    const endpoint = await deps.attach(config, { onWaiting: hooks.onWaiting }, signal);
+    for (;;) {
+      const endpoint = await deps.attach(config, { onWaiting: hooks.onWaiting }, signal);
 
-    if (endpoint.source === "port-file") hooks.onWaiting(approvalMessage());
+      if (endpoint.source === "port-file") hooks.onWaiting(approvalMessage());
 
-    const client = await deps.connect(endpoint.webSocketUrl);
+      try {
+        const client = await deps.connect(endpoint.webSocketUrl, APPROVAL_HANDSHAKE_MS, signal);
 
-    return { client, stop: () => client.close() };
+        return { client, stop: () => client.close() };
+      } catch (error) {
+        if (signal.aborted) throw error;
+
+        logDaemon(`could not connect to the browser yet, retrying: ${describeError(error)}`);
+        await deps.sleep(RETRY_MS, signal);
+      }
+    }
   };
 }
 

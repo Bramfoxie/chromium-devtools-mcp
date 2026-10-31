@@ -13,7 +13,7 @@ export interface Transport {
   onClose(handler: (reason: string) => void): void;
 }
 
-export type TransportFactory = (url: string) => Promise<Transport>;
+export type TransportFactory = (url: string, signal?: AbortSignal) => Promise<Transport>;
 
 function rawToString(data: WebSocket.RawData): string {
   if (Buffer.isBuffer(data)) return data.toString("utf8");
@@ -69,12 +69,16 @@ function wrap(socket: WebSocket): Transport {
 }
 
 export function createWsTransportFactory(handshakeTimeoutMs: number): TransportFactory {
-  return (url) => connectSocket(url, handshakeTimeoutMs);
+  return (url, signal) => connectSocket(url, handshakeTimeoutMs, signal);
 }
 
 export const wsTransportFactory: TransportFactory = createWsTransportFactory(HANDSHAKE_TIMEOUT_MS);
 
-function connectSocket(url: string, handshakeTimeoutMs: number): Promise<Transport> {
+function connectSocket(
+  url: string,
+  handshakeTimeoutMs: number,
+  signal?: AbortSignal,
+): Promise<Transport> {
   return new Promise((resolve, reject) => {
     const fail = (detail: string) =>
       reject(
@@ -98,13 +102,27 @@ function connectSocket(url: string, handshakeTimeoutMs: number): Promise<Transpo
       return;
     }
 
+    const onAbort = () => {
+      fail("the connection attempt was cancelled");
+      socket.terminate();
+    };
     const onError = (error: Error) => {
+      signal?.removeEventListener("abort", onAbort);
       fail(error.message);
       socket.terminate();
     };
 
     socket.on("error", onError);
+
+    if (signal?.aborted) {
+      onAbort();
+
+      return;
+    }
+
+    signal?.addEventListener("abort", onAbort, { once: true });
     socket.once("open", () => {
+      signal?.removeEventListener("abort", onAbort);
       socket.off("error", onError);
       resolve(wrap(socket));
     });

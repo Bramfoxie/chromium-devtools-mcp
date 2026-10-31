@@ -67,6 +67,7 @@ function setup(overrides: Partial<ConnectorDeps> = {}, agent: string | null = HE
     }),
     attach     : vi.fn(async () => running),
     findRunning: vi.fn(async () => undefined),
+    sleep      : async () => undefined,
     connect    : async (url) => {
       const client = new FakeClient(url, agent);
 
@@ -235,6 +236,40 @@ describe("attach mode", () => {
     await handle.stop();
     expect(clients[0]?.closed).toBe(true);
     expect(clients[0]?.sent).toEqual([]);
+  });
+
+  it("keeps waiting when the browser endpoint does not accept the connection yet", async () => {
+    vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const timeouts: Array<number | undefined> = [];
+    let attempts = 0;
+    const { deps, connector } = setup({
+      connect: async (url, handshakeTimeoutMs) => {
+        timeouts.push(handshakeTimeoutMs);
+        attempts += 1;
+        if (attempts < 3) throw new Error("not approved yet");
+
+        return new FakeClient(url) as unknown as CdpClient;
+      },
+    });
+
+    await connector(attachConfig, hooks, signal);
+    expect(attempts).toBe(3);
+    expect(deps.attach).toHaveBeenCalledTimes(3);
+    expect(timeouts.every((ms) => ms !== undefined && ms >= 60_000)).toBe(true);
+  });
+
+  it("gives up retrying once the daemon is stopping", async () => {
+    vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const controller = new AbortController();
+    const { connector } = setup({
+      connect: async () => {
+        controller.abort();
+
+        throw new Error("refused");
+      },
+    });
+
+    await expect(connector(attachConfig, hooks, controller.signal)).rejects.toThrow("refused");
   });
 
   it("does not ask for approval on the debug port", async () => {
