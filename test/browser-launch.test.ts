@@ -22,6 +22,7 @@ const listening = "DevTools listening on ws://127.0.0.1:9222/devtools/browser/ab
 
 class FakeChild implements ChildHandle {
   signals               : string[] = [];
+  detached = false;
   private stderrHandlers: Array<(chunk: string) => void> = [];
   private exitHandlers  : Array<(reason: string) => void> = [];
   private errorHandlers : Array<(message: string) => void> = [];
@@ -33,6 +34,10 @@ class FakeChild implements ChildHandle {
     if (this.dieOn.includes(signal)) this.exit(`terminated by ${signal}`);
 
     return true;
+  }
+
+  detach(): void {
+    this.detached = true;
   }
 
   onStderr(handler: (chunk: string) => void): void {
@@ -311,6 +316,15 @@ describe("stop", () => {
 
     await browser.stop();
     expect(child.signals).toEqual(["SIGTERM"]);
+  });
+
+  it("detaches from the browser on release without signalling it", async () => {
+    const child = new FakeChild();
+    const browser = await started(child);
+
+    browser.release();
+    expect(child.detached).toBe(true);
+    expect(child.signals).toEqual([]);
   });
 
   it("escalates to SIGKILL when SIGTERM is ignored", async () => {

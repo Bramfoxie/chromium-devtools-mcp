@@ -1,4 +1,5 @@
 import { spawn as nodeSpawn } from "node:child_process";
+import type { Socket } from "node:net";
 import type { Config } from "../config/index.js";
 import { type BrowserName, findBrowserExecutable } from "./discovery.js";
 
@@ -9,6 +10,7 @@ export type ManagedConfig = Pick<Config, "browser" | "headless" | "profileDir" |
 
 export interface ChildHandle {
   kill(signal: "SIGTERM" | "SIGKILL"): boolean;
+  detach(): void;
   onStderr(handler: (chunk: string) => void): void;
   onExit(handler: (reason: string) => void): void;
   onError(handler: (message: string) => void): void;
@@ -25,6 +27,8 @@ export interface ManagedBrowser {
   readonly port        : number;
   readonly webSocketUrl: string;
   stop(): Promise<void>;
+  // Lets the browser outlive this process; it can no longer be stopped afterwards.
+  release(): void;
 }
 
 export class BrowserLaunchError extends Error {
@@ -67,7 +71,11 @@ export function spawnProcess(command: string, args: string[]): ChildHandle {
   const child = nodeSpawn(command, args, { stdio: ["ignore", "ignore", "pipe"] });
 
   return {
-    kill    : (signal) => child.kill(signal),
+    kill  : (signal) => child.kill(signal),
+    detach: () => {
+      (child.stderr as Socket).unref();
+      child.unref();
+    },
     onStderr: (handler) => {
       child.stderr.setEncoding("utf8");
       child.stderr.on("data", handler);
@@ -156,7 +164,7 @@ export async function launchManaged(
       settled = true;
       buffered = "";
       clearTimeout(timer);
-      resolve({ ...endpoint, stop });
+      resolve({ ...endpoint, stop, release: () => child.detach() });
     });
 
     child.onError((message) => {

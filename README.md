@@ -52,6 +52,7 @@ Until the browser allows it, the daemon prints these instructions, returns them 
 The MCP server connects to one daemon per user and starts it when it is absent. The daemon owns the browser connection and gives every MCP client its own session.
 
 - It exits 30 seconds after its last client disconnects, also while it is still waiting for the browser.
+- When it exits on idle, a managed browser with a window stays open and the next daemon reuses it. A headless managed browser is closed, and so is any managed browser when the daemon is stopped on request.
 - Clients must agree on `browser`, `mode`, `debugPort` and `allowFocus`, and in managed mode also on `headless` and `profileDir`. A client with different settings gets an error that names the differing fields; stop the daemon or align the settings.
 - Its log is `daemon.log` in the data directory of the package: `~/Library/Application Support/chromium-devtools-mcp/daemon.log` on macOS, `~/.local/share/chromium-devtools-mcp/daemon.log` on Linux and `%LOCALAPPDATA%\chromium-devtools-mcp\daemon.log` on Windows. The access token `daemon.token` lives in the same directory and is readable only by you.
 - Tabs can open only `http`, `https` and `about:blank` URLs.

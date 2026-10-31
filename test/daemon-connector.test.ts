@@ -54,6 +54,7 @@ function setup(overrides: Partial<ConnectorDeps> = {}, agent: string | null = HE
     port        : 9222,
     webSocketUrl: "ws://127.0.0.1:9222/devtools/browser/new",
     stop        : async () => void order.push("browser stopped"),
+    release     : () => void order.push("browser released"),
   };
   const deps: ConnectorDeps = {
     launch: vi.fn(async () => {
@@ -159,6 +160,24 @@ describe("managed mode", () => {
     await connector(config, hooks, signal);
     expect(deps.launch).toHaveBeenCalledTimes(1);
     expect(urls).toEqual([running.webSocketUrl, "ws://127.0.0.1:9222/devtools/browser/new"]);
+  });
+});
+
+describe("releasing a managed browser", () => {
+  it("lets a browser with a window outlive the daemon", async () => {
+    const { clients, order, connector } = setup();
+    const handle = await connector({ ...config, headless: false }, hooks, signal);
+
+    await handle.release?.();
+    expect(clients[0]?.closed).toBe(true);
+    expect(order).toEqual(["launched", "browser released"]);
+  });
+
+  it("always stops a headless browser", async () => {
+    const { connector } = setup();
+    const handle = await connector({ ...config, headless: true }, hooks, signal);
+
+    expect(handle.release).toBeUndefined();
   });
 });
 

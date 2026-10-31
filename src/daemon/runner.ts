@@ -29,6 +29,8 @@ export interface RunningDaemon {
 export interface BrowserHandle {
   client: CdpClient;
   stop(): Promise<void>;
+  // Present when the browser should stay open after an idle stop.
+  release?(): Promise<void>;
 }
 
 export interface ConnectHooks {
@@ -126,6 +128,14 @@ async function connectManaged(config: Config, deps: ConnectorDeps): Promise<Brow
         await client.close();
         await launched.stop();
       },
+      ...(config.headless
+        ? {}
+        : {
+          release: async () => {
+            await client.close();
+            launched.release();
+          },
+        }),
     };
   } catch (error) {
     await launched.stop().catch(() => undefined);
@@ -204,7 +214,9 @@ export async function runDaemon(
     stopping ??= (async () => {
       controller.abort();
       await quietly("close the sessions", () => daemon.shutdown());
-      await quietly("stop the browser", () => browser?.stop());
+      await quietly("stop the browser", () =>
+        reason === "idle" && browser?.release ? browser.release() : browser?.stop(),
+      );
       await quietly("release the daemon socket", () => instance.release());
       const outcome: DaemonOutcome = error ? { reason, error } : { reason };
 

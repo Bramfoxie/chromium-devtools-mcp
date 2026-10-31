@@ -448,6 +448,47 @@ async function settledClose(client: IpcClient): Promise<boolean> {
   return true;
 }
 
+describe("idle shutdown of a browser with a window", () => {
+  function windowed(connector: BrowserConnector) {
+    const calls: string[] = [];
+    const wrapped: BrowserConnector = async (...args) => {
+      const handle = await connector(...args);
+
+      return {
+        client : handle.client,
+        stop   : async () => void (calls.push("stop"), await handle.stop()),
+        release: async () => void (calls.push("release"), await handle.stop()),
+      };
+    };
+
+    return { calls, wrapped };
+  }
+
+  it("releases the browser instead of stopping it", async () => {
+    const layout = await makeLayout(harness);
+    const { connect: connector } = await startFakeBrowser(harness);
+    const { calls, wrapped } = windowed(connector);
+    const running = await start(layout, wrapped, { idleTimeoutMs: 80 });
+    const client = await connect(layout);
+
+    await ready(client);
+    await client.close();
+    expect((await running.done).reason).toBe("idle");
+    expect(calls).toEqual(["release"]);
+  });
+
+  it("still stops the browser on an explicit request", async () => {
+    const layout = await makeLayout(harness);
+    const { connect: connector } = await startFakeBrowser(harness);
+    const { calls, wrapped } = windowed(connector);
+    const running = await start(layout, wrapped);
+
+    await ready(await connect(layout));
+    await running.stop();
+    expect(calls).toEqual(["stop"]);
+  });
+});
+
 describe("idle shutdown", () => {
   it("stops after the last client leaves", async () => {
     const layout = await makeLayout(harness);
