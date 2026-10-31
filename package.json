@@ -16,7 +16,6 @@
   "bin": {
     "chromium-devtools-mcp": "dist/cli.js"
   },
-  "main": "dist/index.js",
   "files": [
     "dist"
   ],
