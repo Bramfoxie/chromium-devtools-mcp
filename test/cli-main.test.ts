@@ -1,17 +1,25 @@
 import { describe, expect, it, vi } from "vitest";
 import { main } from "../src/cli-main.js";
-import { ConfigError } from "../src/config/index.js";
+import { type Config, ConfigError, loadConfig } from "../src/config/index.js";
 import {
   AlreadyRunningError,
   type DaemonOutcome,
   type RunningDaemon,
 } from "../src/daemon/index.js";
 
+function cannedConfig(patch: Partial<Config> = {}): Config {
+  return {
+    ...loadConfig({ argv: [], env: {}, platform: "linux", homedir: "/home/u", readFile: () => undefined }),
+    ...patch,
+  };
+}
+
 function harness(overrides: Parameters<typeof main>[1] = {}) {
   const output: string[] = [];
   const handlers = new Map<string, () => void>();
   const served: Array<{ config: unknown; flags: string[]; stops: number }> = [];
   const base: NonNullable<Parameters<typeof main>[1]> = {
+    load : () => cannedConfig(),
     serve: async (config, flags) => {
       const entry = { config, flags, stops: 0 };
 
@@ -61,6 +69,17 @@ describe("usage", () => {
     expect(output.join("")).toContain("Usage:");
     expect(served).toEqual([]);
   });
+
+  it("honors help in any position and mentions it in the usage", async () => {
+    const load = vi.fn(() => cannedConfig());
+    const { output, run, served } = harness({ load });
+
+    expect(await run(["daemon", "--help"])).toBe(0);
+    expect(await run(["--mode", "managed", "-h"])).toBe(0);
+    expect(load).not.toHaveBeenCalled();
+    expect(served).toEqual([]);
+    expect(output.join("")).toContain("--help");
+  });
 });
 
 describe("MCP server mode", () => {
@@ -72,12 +91,22 @@ describe("MCP server mode", () => {
     expect(served[0]?.flags).toEqual([]);
   });
 
-  it("serves when only flags are given and hands the flags on for the daemon", async () => {
+  it("hands the flags on for the daemon", async () => {
     const { run, served } = harness();
 
     expect(await run(["--mode", "managed", "--headless"])).toBe(0);
     expect(served[0]?.flags).toEqual(["--mode", "managed", "--headless"]);
+  });
+
+  it("parses the real flags through the real loader in isolation", async () => {
+    const { output, run, served } = harness({
+      load: (options) =>
+        loadConfig({ ...options, env: {}, platform: "linux", homedir: "/home/u", readFile: () => undefined }),
+    });
+
+    expect(await run(["--mode", "managed", "--headless"])).toBe(0);
     expect(served[0]?.config).toMatchObject({ mode: "managed", headless: true });
+    expect(output.join("")).toBe("");
   });
 
   it("stops the MCP server on SIGINT, SIGTERM and SIGHUP", async () => {
@@ -108,11 +137,46 @@ describe("MCP server mode", () => {
     expect(await pending).toBe(0);
   });
 
-  it("refuses a mistyped flag and does not serve", async () => {
-    const { output, run, served } = harness();
+  it("reports a broken configuration with the usage and exits with 2", async () => {
+    const { output, run, served } = harness({
+      load: () => {
+        throw new ConfigError("invalid configuration: mode: bad");
+      },
+    });
+
+    expect(await run([])).toBe(2);
+    expect(output.join("")).toContain("invalid configuration: mode: bad");
+    expect(output.join("")).toContain("Usage:");
+    expect(served).toEqual([]);
+  });
+
+  it("refuses a mistyped flag through the real loader and does not serve", async () => {
+    const { output, run, served } = harness({
+      load: (options) =>
+        loadConfig({
+          ...options,
+          env     : {},
+          platform: "linux",
+          homedir : "/home/u",
+          readFile: () => undefined,
+        }),
+    });
 
     expect(await run(["--readonly"])).toBe(2);
     expect(output.join("")).toContain("Unknown option '--readonly'");
+    expect(output.join("")).toContain("Usage:");
+    expect(served).toEqual([]);
+  });
+
+  it("reports a loader failure that is not a config error", async () => {
+    const { output, run, served } = harness({
+      load: () => {
+        throw new Error("disk on fire");
+      },
+    });
+
+    expect(await run([])).toBe(2);
+    expect(output.join("")).toContain("disk on fire");
     expect(served).toEqual([]);
   });
 
@@ -130,7 +194,7 @@ describe("MCP server mode", () => {
 
 describe("daemon command", () => {
   it("passes the flags after the command to the config loader", async () => {
-    const load = vi.fn(() => ({ marker: true }) as never);
+    const load = vi.fn(() => cannedConfig());
     const { run } = harness({ load, run: async () => fakeRunning({ reason: "idle" }) });
 
     await run(["daemon", "--mode", "managed", "--headless"]);
@@ -152,23 +216,18 @@ describe("daemon command", () => {
     expect(output.join("")).toContain("Usage:");
   });
 
-  it("refuses a mistyped flag with the real loader and does not start", async () => {
+  it("reports a loader failure that is not a config error", async () => {
     const run = vi.fn();
-    const output: string[] = [];
-    const code = await main(["daemon", "--readonly"], {
-      run,
-      write   : (text) => void output.push(text),
-      onSignal: () => undefined,
-    });
+    const { output, run: go } = harness({ load: () => { throw new Error("disk on fire"); }, run });
 
-    expect(code).toBe(2);
+    expect(await go(["daemon"])).toBe(2);
+    expect(output.join("")).toContain("disk on fire");
     expect(run).not.toHaveBeenCalled();
-    expect(output.join("")).toContain("Unknown option '--readonly'");
   });
 
   it("treats an already running daemon as success", async () => {
     const { output, run } = harness({
-      load: () => ({}) as never,
+      load: () => cannedConfig(),
       run : async () => {
         throw new AlreadyRunningError("/tmp/x.sock");
       },
@@ -180,7 +239,7 @@ describe("daemon command", () => {
 
   it("fails with 1 when the daemon cannot start", async () => {
     const { output, run } = harness({
-      load: () => ({}) as never,
+      load: () => cannedConfig(),
       run : async () => {
         throw new Error("socket path is too long");
       },
@@ -194,7 +253,7 @@ describe("daemon command", () => {
     "exits with 0 after a %s stop",
     async (reason) => {
       const { run } = harness({
-        load: () => ({}) as never,
+        load: () => cannedConfig(),
         run : async () => fakeRunning({ reason }),
       });
 
@@ -204,7 +263,7 @@ describe("daemon command", () => {
 
   it("exits with 1 and prints the error when the daemon failed", async () => {
     const { output, run } = harness({
-      load: () => ({}) as never,
+      load: () => cannedConfig(),
       run : async () => fakeRunning({ reason: "failed", error: new Error("browser refused") }),
     });
 
@@ -214,7 +273,7 @@ describe("daemon command", () => {
 
   it("stops the daemon on SIGINT, SIGTERM and SIGHUP", async () => {
     const running = fakeRunning({ reason: "requested" });
-    const { handlers, run } = harness({ load: () => ({}) as never, run: async () => running });
+    const { handlers, run } = harness({ load: () => cannedConfig(), run: async () => running });
 
     await run(["daemon"]);
     expect([...handlers.keys()].sort()).toEqual(["SIGHUP", "SIGINT", "SIGTERM"]);
@@ -222,5 +281,23 @@ describe("daemon command", () => {
     handlers.get("SIGTERM")?.();
     handlers.get("SIGHUP")?.();
     expect(running.stops).toBe(3);
+  });
+});
+
+describe("config file errors", () => {
+  it("fails when the configured file is missing", async () => {
+    const { output, run, served } = harness({
+      load: () => loadConfig({
+        argv    : [],
+        env     : { CHROMIUM_DEVTOOLS_MCP_CONFIG: "/custom/config.json" },
+        platform: "linux",
+        homedir : "/home/u",
+        readFile: () => undefined,
+      }),
+    });
+
+    expect(await run([])).toBe(2);
+    expect(output.join("")).toContain("/custom/config.json does not exist");
+    expect(served).toEqual([]);
   });
 });
