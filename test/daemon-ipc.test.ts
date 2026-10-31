@@ -320,6 +320,21 @@ describe("requests", () => {
     await expect(client.request("echo", "ok")).resolves.toBe("ok");
   });
 
+  it("waits for a request that declares a longer timeout than the default", async () => {
+    const server = await startServer();
+    const client = await connectClient(server, 40);
+
+    await expect(client.request("slow", { ms: 120, value: "late" })).rejects.toBeInstanceOf(
+      IpcTimeoutError,
+    );
+    await expect(
+      client.request("slow", { ms: 120, value: "done", timeoutMs: 500 }),
+    ).resolves.toBe("done");
+    await expect(
+      client.request("slow", { ms: 120, value: "x", timeoutMs: 500 }, { timeoutMs: 20 }),
+    ).rejects.toMatchObject({ timeoutMs: 20 });
+  });
+
   it("times out a request and honors a per-request timeout", async () => {
     const server = await startServer();
     const client = await connectClient(server, 40);

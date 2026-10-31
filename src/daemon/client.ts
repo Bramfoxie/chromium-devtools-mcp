@@ -5,6 +5,7 @@ import { encodeMessage, LineDecoder, parseLine, serverMessageSchema } from "./pr
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 const DEFAULT_CONNECT_TIMEOUT_MS = 5000;
+const DECLARED_TIMEOUT_MARGIN_MS = 5000;
 
 export interface IpcConnectOptions {
   socketPath       : string;
@@ -88,7 +89,7 @@ export class IpcClient {
     }
 
     const id = this.nextId++;
-    const timeoutMs = options.timeoutMs ?? this.requestTimeoutMs;
+    const timeoutMs = options.timeoutMs ?? this.timeoutFor(params);
     let line: string;
 
     try {
@@ -106,6 +107,15 @@ export class IpcClient {
       this.pending.set(id, { method, resolve, reject, timer });
       this.socket.write(line);
     });
+  }
+
+  // A declared timeoutMs, as in cdp.send, sets the wait plus a margin.
+  private timeoutFor(params: unknown): number {
+    const declared = (params as { timeoutMs?: unknown } | null | undefined)?.timeoutMs;
+
+    return typeof declared === "number" && Number.isFinite(declared)
+      ? Math.max(this.requestTimeoutMs, declared + DECLARED_TIMEOUT_MARGIN_MS)
+      : this.requestTimeoutMs;
   }
 
   // Subscribing after close silently returns a no-op; the handler never fires.
