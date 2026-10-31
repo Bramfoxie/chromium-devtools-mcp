@@ -106,7 +106,12 @@ export function createDaemonLink(
 }
 
 export function createMcpServer(version: string): McpServer {
-  return new McpServer({ name: SERVER_NAME, version });
+  const server = new McpServer({ name: SERVER_NAME, version });
+
+  // Registering and removing a tool makes the SDK answer tools/list with an empty list.
+  server.registerTool("placeholder", {}, () => ({ content: [] })).remove();
+
+  return server;
 }
 
 export async function runMcpServer(

@@ -112,6 +112,33 @@ describe("createMcpServer", () => {
     await client.close();
     await server.close();
   });
+
+  it("lists an empty set of tools until tools are registered", async () => {
+    const server = createMcpServer("1.0.0");
+    const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: "test-client", version: "1.0.0" });
+
+    await Promise.all([server.connect(serverSide), client.connect(clientSide)]);
+    expect(client.getServerCapabilities()).toMatchObject({ tools: {} });
+    expect(await client.listTools()).toEqual({ tools: [] });
+    await client.close();
+    await server.close();
+  });
+
+  it("serves a tool registered later", async () => {
+    const server = createMcpServer("1.0.0");
+
+    server.registerTool("ping", { description: "Answers pong." }, () => ({
+      content: [{ type: "text" as const, text: "pong" }],
+    }));
+    const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: "test-client", version: "1.0.0" });
+
+    await Promise.all([server.connect(serverSide), client.connect(clientSide)]);
+    expect((await client.listTools()).tools.map((tool) => tool.name)).toEqual(["ping"]);
+    await client.close();
+    await server.close();
+  });
 });
 
 describe("daemonLogFile", () => {
