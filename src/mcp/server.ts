@@ -3,8 +3,7 @@ import type { Readable, Writable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { pathFor } from "../browser/platform-path.js";
-import type { Config } from "../config/index.js";
+import { pathFor, type Config } from "../config/index.js";
 import {
   connectToDaemon,
   currentLayout,
@@ -19,6 +18,7 @@ import { spawnDaemonProcess } from "./spawn-daemon.js";
 const SERVER_NAME = "chromium-devtools-mcp";
 const START_TIMEOUT_MS = 10_000;
 const POLL_INTERVAL_MS = 100;
+const CONNECT_TIMEOUT_MS = 1000;
 
 export interface RunningMcp {
   done: Promise<void>;
@@ -32,14 +32,18 @@ export interface McpOptions {
   version?: string;
 }
 
-export function packageVersion(): string {
-  const file = fileURLToPath(new URL("../../package.json", import.meta.url));
-  const parsed: unknown = JSON.parse(readFileSync(file, "utf8"));
-  const version = (parsed as { version?: unknown }).version;
+export function readPackageVersion(file: string, read: (file: string) => string): string {
+  const version = (JSON.parse(read(file)) as { version?: unknown }).version;
 
-  if (typeof version !== "string") throw new DaemonError("package.json has no version");
+  if (typeof version !== "string") throw new DaemonError(`${file} has no version`);
 
   return version;
+}
+
+export function packageVersion(): string {
+  const file = fileURLToPath(new URL("../../package.json", import.meta.url));
+
+  return readPackageVersion(file, (name) => readFileSync(name, "utf8"));
 }
 
 export function daemonLogFile(layout: DaemonLayout): string {
@@ -48,22 +52,51 @@ export function daemonLogFile(layout: DaemonLayout): string {
   return p.join(p.dirname(layout.tokenFile), "daemon.log");
 }
 
-export function createDaemonLink(config: Config, flags: string[]): DaemonLink {
-  const layout = currentLayout();
-  const logFile = daemonLogFile(layout);
+export function daemonScriptPath(here: string = import.meta.url): string {
+  return fileURLToPath(new URL("../cli.js", here));
+}
+
+export interface LinkFactoryOptions {
+  layout?     : DaemonLayout;
+  execPath?   : string;
+  script?     : string;
+  spawn?      : typeof spawnDaemonProcess;
+  sleep?      : (ms: number) => Promise<void>;
+  now?        : () => number;
+  connect?    : LinkDeps["connect"];
+  startDaemon?: LinkDeps["startDaemon"];
+  logFile?    : string;
+}
+
+export function createDaemonLink(
+  config: Config,
+  flags: string[],
+  options: LinkFactoryOptions = {},
+): DaemonLink {
+  const layout = options.layout ?? currentLayout();
+  const logFile = options.logFile ?? daemonLogFile(layout);
+  const spawn = options.spawn ?? spawnDaemonProcess;
   const deps: LinkDeps = {
-    connect    : (expect) => connectToDaemon({ clientName: SERVER_NAME, expect, layout }),
-    startDaemon: () =>
-      spawnDaemonProcess({
-        execPath: process.execPath,
-        script  : fileURLToPath(new URL("../cli.js", import.meta.url)),
-        flags,
-        logFile,
-        platform: layout.platform,
-        uid     : layout.uid,
-      }),
-    sleep         : (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
-    now           : () => Date.now(),
+    connect: options.connect ??
+      ((expect) =>
+        connectToDaemon({
+          clientName      : SERVER_NAME,
+          expect,
+          layout,
+          connectTimeoutMs: CONNECT_TIMEOUT_MS,
+        })),
+    startDaemon: options.startDaemon ??
+      (() =>
+        spawn({
+          execPath: options.execPath ?? process.execPath,
+          script  : options.script ?? daemonScriptPath(),
+          flags,
+          logFile,
+          platform: layout.platform,
+          uid     : layout.uid,
+        })),
+    sleep         : options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms))),
+    now           : options.now ?? (() => Date.now()),
     logFile,
     startTimeoutMs: START_TIMEOUT_MS,
     pollIntervalMs: POLL_INTERVAL_MS,
@@ -94,10 +127,12 @@ export async function runMcpServer(
   const stop = (): Promise<void> => {
     if (begun) return stopping ?? Promise.resolve();
 
+    // Set before the async body runs: server.close() fires onclose synchronously.
     begun = true;
     stopping = (async () => {
       stdin.off("end", onInputEnd);
       stdin.off("close", onInputEnd);
+      stdout.off("error", onOutputError);
 
       try {
         await server.close();
@@ -117,11 +152,20 @@ export async function runMcpServer(
     return stopping;
   };
   const onInputEnd = () => void stop();
+  const onOutputError = () => void stop();
 
   server.server.onclose = () => void stop();
   stdin.once("end", onInputEnd);
   stdin.once("close", onInputEnd);
-  await server.connect(new StdioServerTransport(stdin, stdout));
+  stdout.once("error", onOutputError);
+
+  try {
+    await server.connect(new StdioServerTransport(stdin, stdout));
+  } catch (error) {
+    await stop();
+
+    throw error;
+  }
 
   return { done, stop };
 }

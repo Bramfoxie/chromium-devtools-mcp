@@ -1,9 +1,10 @@
 import { EventEmitter } from "node:events";
-import { mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { spawn as nodeSpawn } from "node:child_process";
 import { afterEach, describe, expect, it } from "vitest";
+import { DaemonError } from "../src/daemon/index.js";
 import { spawnDaemonProcess } from "../src/mcp/index.js";
 
 const dirs: string[] = [];
@@ -155,5 +156,23 @@ describe("spawnDaemonProcess", () => {
     await expect(
       spawnDaemonProcess({ execPath: "n", script: "s", flags: [], logFile, spawn }),
     ).rejects.toThrow("spawn exploded");
+  });
+
+  it("wraps an unreadable log location in a DaemonError that names the file", async () => {
+    const logFile = await tempLog();
+    const { spawn } = fakeSpawn();
+
+    await mkdir(path.dirname(logFile), { recursive: true });
+    await mkdir(path.join(path.dirname(logFile), "daemon.log"));
+    const failure = await spawnDaemonProcess({
+      execPath: "n",
+      script  : "s",
+      flags   : [],
+      logFile,
+      spawn,
+    }).catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(DaemonError);
+    expect((failure as Error).message).toContain("daemon.log");
   });
 });

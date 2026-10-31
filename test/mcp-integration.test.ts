@@ -15,13 +15,15 @@ import { createSocketHarness } from "./helpers/daemon-socket.js";
 const harness = createSocketHarness();
 
 afterEach(async () => {
-  vi.restoreAllMocks();
   await harness.dispose();
+  vi.restoreAllMocks();
 });
 
 function inProcessDaemon(layout: DaemonLayout, connectBrowser: BrowserConnector) {
   const started: RunningDaemon[] = [];
+  const calls = { count: 0 };
   const startDaemon: LinkDeps["startDaemon"] = async () => {
+    calls.count += 1;
     vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     const running = await runDaemon(managedConfig, {
       layout,
@@ -37,7 +39,7 @@ function inProcessDaemon(layout: DaemonLayout, connectBrowser: BrowserConnector)
     return { exited: running ? running.done.then(() => undefined) : Promise.resolve() };
   };
 
-  return { started, startDaemon };
+  return { started, calls, startDaemon };
 }
 
 function makeLink(
@@ -82,7 +84,7 @@ describe("link to a real daemon", () => {
   it("reuses a daemon that is already running", async () => {
     const layout = await makeLayout(harness);
     const { connect } = await startFakeBrowser(harness);
-    const { started, startDaemon } = inProcessDaemon(layout, connect);
+    const { started, calls, startDaemon } = inProcessDaemon(layout, connect);
     const first = makeLink(layout, startDaemon);
 
     await first.request("tab.list");
@@ -90,6 +92,7 @@ describe("link to a real daemon", () => {
 
     await second.request("tab.list");
     expect(started).toHaveLength(1);
+    expect(calls.count).toBe(1);
   });
 
   it("keeps the sessions of two links apart", async () => {
@@ -108,13 +111,14 @@ describe("link to a real daemon", () => {
   it("refuses a link whose browser mode differs from the running daemon", async () => {
     const layout = await makeLayout(harness);
     const { connect } = await startFakeBrowser(harness);
-    const { started, startDaemon } = inProcessDaemon(layout, connect);
+    const { started, calls, startDaemon } = inProcessDaemon(layout, connect);
 
     await makeLink(layout, startDaemon).request("tab.list");
     const other = makeLink(layout, startDaemon, "attach");
 
     await expect(other.request("tab.list")).rejects.toBeInstanceOf(DaemonConfigMismatchError);
     expect(started).toHaveLength(1);
+    expect(calls.count).toBe(1);
   });
 
   it("recovers on the next request after the daemon went away", async () => {
@@ -125,9 +129,12 @@ describe("link to a real daemon", () => {
 
     await link.request("tab.list");
     await started[0]?.stop();
-    await vi.waitFor(async () => {
-      await expect(link.request("tab.list")).resolves.toBeDefined();
-    });
+    await vi.waitFor(
+      async () => {
+        await expect(link.request("tab.list")).resolves.toBeDefined();
+      },
+      { timeout: 10_000 },
+    );
     expect(started.length).toBeGreaterThanOrEqual(2);
   });
 
@@ -149,8 +156,11 @@ describe("link to a real daemon", () => {
     expect(failure).toBeInstanceOf(DaemonNotReadyError);
     expect((failure as Error).message).toContain("chrome://inspect");
     release();
-    await vi.waitFor(async () => {
-      await expect(link.request("tab.list")).resolves.toEqual({ tabs: [] });
-    });
+    await vi.waitFor(
+      async () => {
+        await expect(link.request("tab.list")).resolves.toEqual({ tabs: [] });
+      },
+      { timeout: 10_000 },
+    );
   });
 });

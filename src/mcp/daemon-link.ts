@@ -5,6 +5,7 @@ import {
   ErrorCode,
   type IpcClient,
   IpcClosedError,
+  IpcTimeoutError,
   RpcError,
 } from "../daemon/index.js";
 
@@ -37,7 +38,11 @@ export interface LinkConfig {
 const MAX_STARTS = 3;
 
 function isUnreachable(error: unknown): boolean {
-  return error instanceof DaemonNotRunningError || error instanceof IpcClosedError;
+  return (
+    error instanceof DaemonNotRunningError ||
+    error instanceof IpcClosedError ||
+    error instanceof IpcTimeoutError
+  );
 }
 
 export class DaemonLink {
@@ -107,6 +112,12 @@ export class DaemonLink {
         await client.close();
       }
 
+      if (error instanceof IpcClosedError && !this.closed) {
+        throw new DaemonError(
+          `The daemon stopped while opening a session. See ${this.deps.logFile} for its messages.`,
+        );
+      }
+
       throw error;
     }
 
@@ -125,6 +136,8 @@ export class DaemonLink {
     const deadline = this.deps.now() + this.deps.startTimeoutMs;
 
     for (;;) {
+      if (this.closed) throw new IpcClosedError("the link was closed");
+
       try {
         await client.request("session.open", { isolated: this.config.isolated ?? false });
 
@@ -139,20 +152,25 @@ export class DaemonLink {
         }
 
         await this.deps.sleep(this.deps.pollIntervalMs);
+        if (this.closed) throw new IpcClosedError("the link was closed");
       }
     }
   }
 
   private async status(client: IpcClient): Promise<{ state: string } | undefined> {
-    try {
-      const status = await client.request("daemon.status");
+    let status: unknown;
 
-      return typeof (status as { state?: unknown })?.state === "string"
-        ? (status as { state: string })
-        : undefined;
-    } catch {
+    try {
+      status = await client.request("daemon.status");
+    } catch (error) {
+      if (error instanceof IpcClosedError || error instanceof IpcTimeoutError) throw error;
+
       return undefined;
     }
+
+    const state = (status as { state?: unknown } | null)?.state;
+
+    return typeof state === "string" ? { state } : undefined;
   }
 
   private async start(): Promise<StartedDaemon> {
@@ -190,15 +208,21 @@ export class DaemonLink {
 
     watch(first);
     let starts = 1;
+    let lastError: string | undefined;
     const deadline = this.deps.now() + this.deps.startTimeoutMs;
 
     while (this.deps.now() < deadline) {
+      if (this.closed) throw new IpcClosedError("the link was closed");
+
       await this.deps.sleep(this.deps.pollIntervalMs);
+      if (this.closed) throw new IpcClosedError("the link was closed");
 
       try {
         return await this.deps.connect(expect);
       } catch (error) {
         if (!isUnreachable(error)) throw error;
+
+        lastError = error instanceof Error ? error.message : String(error);
       }
 
       if (exited && starts < MAX_STARTS) {
@@ -208,7 +232,8 @@ export class DaemonLink {
     }
 
     throw new DaemonError(
-      `The daemon did not start within ${this.deps.startTimeoutMs} ms. See ${this.deps.logFile} for its messages.`,
+      `The daemon did not start within ${this.deps.startTimeoutMs} ms. See ${this.deps.logFile} for its messages.` +
+        (lastError ? ` Last error: ${lastError}` : ""),
     );
   }
 }

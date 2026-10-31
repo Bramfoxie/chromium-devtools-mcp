@@ -1,17 +1,31 @@
 import { readFileSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { PassThrough } from "node:stream";
-import { describe, expect, it, vi } from "vitest";
-import type { DaemonLayout } from "../src/daemon/index.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  DaemonNotRunningError,
+  daemonIdentity,
+  type DaemonLayout,
+} from "../src/daemon/index.js";
 import {
   type DaemonLink,
+  createDaemonLink,
   createMcpServer,
   daemonLogFile,
+  daemonScriptPath,
   packageVersion,
+  readPackageVersion,
   runMcpServer,
 } from "../src/mcp/index.js";
 import { managedConfig } from "./helpers/daemon-env.js";
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe("packageVersion", () => {
   it("reads the version of package.json", () => {
@@ -19,6 +33,68 @@ describe("packageVersion", () => {
       .version;
 
     expect(packageVersion()).toBe(expected);
+  });
+
+  it("reads the version from the given file and names it when missing", () => {
+    expect(readPackageVersion("/pkg/package.json", () => '{"version": "3.2.1"}')).toBe("3.2.1");
+    expect(() => readPackageVersion("/pkg/package.json", () => "{}")).toThrow(
+      /\/pkg\/package\.json has no version/,
+    );
+  });
+});
+
+describe("daemonScriptPath", () => {
+  it("points at cli.js next to the server module", () => {
+    const dist = path.join(os.tmpdir(), "app", "dist");
+    const script = daemonScriptPath(pathToFileURL(path.join(dist, "mcp", "server.js")).href);
+
+    expect(script).toBe(path.join(dist, "cli.js"));
+  });
+});
+
+describe("createDaemonLink", () => {
+  const layout = (platform: NodeJS.Platform, tokenFile: string): DaemonLayout => ({
+    tokenFile,
+    platform,
+    uid       : undefined,
+    socketPath: () => "",
+    instance  : () => ({ socketPath: "", runtimeDir: undefined, platform, uid: undefined }),
+  });
+
+  it("passes the identity to the connector and the flags, paths and layout to the spawner", async () => {
+    const connects: unknown[] = [];
+    const spawns: unknown[] = [];
+    const config = { ...managedConfig, browser: "chrome" as const };
+    const link = createDaemonLink(config, ["--mode", "managed"], {
+      layout  : layout("linux", "/home/u/.local/share/chromium-devtools-mcp/daemon.token"),
+      execPath: "/usr/bin/node",
+      script  : "/pkg/dist/cli.js",
+      connect : async (expect) => {
+        connects.push(expect);
+
+        throw new DaemonNotRunningError();
+      },
+      spawn: async (options) => {
+        spawns.push(options);
+
+        throw new Error("no spawn");
+      },
+      now  : () => 0,
+      sleep: async () => undefined,
+    });
+
+    await expect(link.request("x")).rejects.toThrow("no spawn");
+    expect(connects).toEqual([daemonIdentity(config)]);
+    expect(spawns).toEqual([
+      {
+        execPath: "/usr/bin/node",
+        script  : "/pkg/dist/cli.js",
+        flags   : ["--mode", "managed"],
+        logFile : "/home/u/.local/share/chromium-devtools-mcp/daemon.log",
+        platform: "linux",
+        uid     : undefined,
+      },
+    ]);
   });
 });
 
@@ -157,14 +233,14 @@ describe("runMcpServer", () => {
     expect(stderr.mock.calls.map((call) => String(call[0])).join("")).toContain(
       "could not close the daemon link",
     );
-    stderr.mockRestore();
   });
 
-  it("does not start the daemon just because the server started", async () => {
-    const { link, start } = setup();
+  it("stops when the output stream errors", async () => {
+    const { stdout, link, start } = setup();
     const running = await start();
 
-    expect(Object.keys(link)).toEqual(["close"]);
-    await running.stop();
+    stdout.emit("error", new Error("EPIPE"));
+    await running.done;
+    expect(link.close).toHaveBeenCalledTimes(1);
   });
 });
