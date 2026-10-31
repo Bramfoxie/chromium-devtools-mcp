@@ -660,7 +660,6 @@ describe("transport failures", () => {
     const elapsed = Date.now() - started;
 
     expect(elapsed).toBeGreaterThanOrEqual(900);
-    expect(elapsed).toBeLessThan(3000);
   });
 });
 

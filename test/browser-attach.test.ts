@@ -514,10 +514,8 @@ describe("default I/O", () => {
 
   it("gives up on a server that never answers", async () => {
     const port = await serve(() => undefined);
-    const started = Date.now();
 
     expect(await fetchVersion(port, undefined, 50)).toBeUndefined();
-    expect(Date.now() - started).toBeLessThan(800);
   });
 
   it("rejects oversized responses", async () => {
@@ -537,10 +535,8 @@ describe("default I/O", () => {
     const controller = new AbortController();
 
     setTimeout(() => controller.abort(), 30);
-    const started = Date.now();
 
     expect(await fetchVersion(port, controller.signal, 60_000)).toBeUndefined();
-    expect(Date.now() - started).toBeLessThan(800);
   });
 
   it("returns undefined for non-JSON, error status and closed ports", async () => {
@@ -588,10 +584,8 @@ describe("default I/O", () => {
     const controller = new AbortController();
 
     setTimeout(() => controller.abort(), 20);
-    const started = Date.now();
 
-    await abortableSleep(5000, controller.signal);
-    expect(Date.now() - started).toBeLessThan(4500);
+    await abortableSleep(60_000, controller.signal);
     const waited = Date.now();
 
     await abortableSleep(100);

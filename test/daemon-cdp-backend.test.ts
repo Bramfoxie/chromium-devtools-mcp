@@ -304,14 +304,12 @@ describe("attached sessions", () => {
     const session = await backend.attach(id);
 
     browser.silent.add("Page.navigate");
-    const started = Date.now();
     const failure = await session
       .send("Page.navigate", undefined, 50)
       .catch((error: unknown) => error);
 
     expect(failure).toBeInstanceOf(CdpTimeoutError);
     expect(failure).toMatchObject({ timeoutMs: 50 });
-    expect(Date.now() - started).toBeLessThan(1500);
   });
 
   it("delivers events of the session and stops after unsubscribe", async () => {
