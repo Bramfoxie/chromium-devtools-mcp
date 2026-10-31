@@ -49,7 +49,7 @@ Until the browser allows it, the daemon prints these instructions, returns them 
 
 ## Daemon
 
-The MCP server connects to one daemon per user and starts it when it is absent. The daemon owns the browser connection and gives every MCP client its own session.
+The MCP server connects to one daemon per user and data directory and starts it when it is absent. Clients that run with a different `HOME` or `XDG_DATA_HOME` get their own daemon. The daemon owns the browser connection and gives every MCP client its own session.
 
 - It exits 30 seconds after its last client disconnects, also while it is still waiting for the browser.
 - When it exits on idle, a managed browser with a window stays open and the next daemon reuses it. A headless managed browser is closed, and so is any managed browser when the daemon is stopped on request.

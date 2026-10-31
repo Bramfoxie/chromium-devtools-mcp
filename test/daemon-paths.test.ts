@@ -35,8 +35,19 @@ const windows: DaemonPathContext = {
 describe("socketPath and runtimeDir", () => {
   it("uses a per-user directory under /tmp on macOS and Linux", () => {
     expect(runtimeDir(linux)).toBe("/tmp/chromium-devtools-mcp-1000");
-    expect(socketPath(linux, token)).toBe("/tmp/chromium-devtools-mcp-1000/daemon.sock");
-    expect(socketPath(mac, token)).toBe("/tmp/chromium-devtools-mcp-501/daemon.sock");
+    expect(socketPath(linux, token)).toMatch(
+      /^\/tmp\/chromium-devtools-mcp-1000\/daemon-[0-9a-f]{8}\.sock$/,
+    );
+    expect(socketPath(mac, token)).toMatch(
+      /^\/tmp\/chromium-devtools-mcp-501\/daemon-[0-9a-f]{8}\.sock$/,
+    );
+  });
+
+  it("keeps clients with different data directories apart", () => {
+    const other = { ...linux, env: { XDG_DATA_HOME: "/data/other" } };
+
+    expect(socketPath(other, token)).not.toBe(socketPath(linux, token));
+    expect(socketPath({ ...linux, env: { ...other.env } }, token)).toBe(socketPath(other, token));
   });
 
   it("does not depend on TMPDIR or XDG_RUNTIME_DIR", () => {
@@ -47,8 +58,8 @@ describe("socketPath and runtimeDir", () => {
   });
 
   it("falls back to the user name when the uid is unknown", () => {
-    expect(socketPath({ ...linux, uid: undefined }, token)).toBe(
-      "/tmp/chromium-devtools-mcp-u/daemon.sock",
+    expect(socketPath({ ...linux, uid: undefined }, token)).toMatch(
+      /^\/tmp\/chromium-devtools-mcp-u\/daemon-[0-9a-f]{8}\.sock$/,
     );
   });
 

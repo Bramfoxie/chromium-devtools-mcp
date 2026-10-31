@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import os from "node:os";
 import { APP_NAME, defaultProfileDir, pathFor } from "../config/index.js";
-const SOCKET_FILE = "daemon.sock";
+const SOCKET_KEY_LENGTH = 8;
 const TOKEN_FILE = "daemon.token";
 const UNIX_RUNTIME_ROOT = "/tmp";
 const PIPE_SUFFIX_LENGTH = 16;
@@ -44,7 +44,14 @@ export function runtimeDir({ platform, uid, username }: DaemonPathContext): stri
 export function socketPath(context: DaemonPathContext, token: string): string {
   const dir = runtimeDir(context);
 
-  if (dir !== undefined) return pathFor(context.platform).join(dir, SOCKET_FILE);
+  if (dir !== undefined) {
+    const key = createHash("sha256")
+      .update(tokenPath(context))
+      .digest("hex")
+      .slice(0, SOCKET_KEY_LENGTH);
+
+    return pathFor(context.platform).join(dir, `daemon-${key}.sock`);
+  }
 
   const user = context.username.replace(/[\\/]/g, "_");
   const secret = createHash("sha256").update(token).digest("hex").slice(0, PIPE_SUFFIX_LENGTH);
