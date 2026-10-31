@@ -448,6 +448,23 @@ async function settledClose(client: IpcClient): Promise<boolean> {
   return true;
 }
 
+describe("browser failure", () => {
+  it("reports the failure once, through the outcome", async () => {
+    const layout = await makeLayout(harness);
+    const connector: BrowserConnector = async () => {
+      throw new Error("browser refused");
+    };
+    const running = await start(layout, connector);
+    const outcome = await running.done;
+
+    expect(outcome.reason).toBe("failed");
+    expect(outcome.error?.message).toBe("browser refused");
+    const logged = vi.mocked(process.stderr.write).mock.calls.map(([text]) => String(text));
+
+    expect(logged.some((line) => line.includes("browser refused"))).toBe(false);
+  });
+});
+
 describe("idle shutdown of a browser with a window", () => {
   function windowed(connector: BrowserConnector) {
     const calls: string[] = [];

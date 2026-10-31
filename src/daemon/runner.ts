@@ -258,7 +258,6 @@ export async function runDaemon(
     } catch (error) {
       if (stopping) return;
 
-      logDaemon(`could not reach the browser: ${describeError(error)}`);
       await stop("failed", error instanceof Error ? error : new Error(String(error)));
     }
   })();
