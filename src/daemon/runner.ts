@@ -149,6 +149,7 @@ async function connectManaged(config: Config, deps: ConnectorDeps): Promise<Brow
 
   if (adopted) return adopted;
 
+  logDaemon(`Starting a managed browser on ${config.profileDir}.`);
   const launched = await deps.launch(config);
 
   try {

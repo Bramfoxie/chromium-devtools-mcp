@@ -114,6 +114,16 @@ describe("managed mode", () => {
     expect(order).toEqual(["launched", "browser stopped"]);
   });
 
+  it("logs before launching a browser so a slow start is not mistaken for a hang", async () => {
+    const write = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const { connector } = setup();
+
+    await connector(config, hooks, signal);
+    expect(write.mock.calls.map(([text]) => String(text)).join("")).toContain(
+      "Starting a managed browser on /data/profile.",
+    );
+  });
+
   it("reuses a browser left on the profile in the same headless mode and never closes it", async () => {
     vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     const { deps, clients, connector } = setup({ findRunning: vi.fn(async () => running) });
