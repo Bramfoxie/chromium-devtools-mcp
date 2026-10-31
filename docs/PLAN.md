@@ -13,7 +13,7 @@ Each step is a separate commit.
 
 5. Config loader: file, env and CLI overrides, schema validation.
 6. CDP client: WebSocket transport, request/response, events, sessions.
-7. Browser discovery for Chrome and Arc on all three OS.
+7. Browser discovery for Chrome on all three OS.
 8. Managed mode: persistent profile launch, headless flag.
 9. Attach mode: connect to the running browser, detect disabled remote debugging, print instructions, wait and retry.
 10. Daemon: single instance lock, local IPC, client sessions, isolated contexts.
@@ -22,16 +22,16 @@ Each step is a separate commit.
 ## 2. Tools (v1)
 
 12. Tabs: list_tabs, list_sessions, select_tab, new_tab, close_tab, page_info.
-13. Navigation and inspection: page_navigate, js_evaluate, dom_query, dom_snapshot with uid, css_inspect.
+13. Navigation and inspection: page_navigate, js_evaluate, dom_query, dom_snapshot with uid, css_inspect. Requires a large-payload strategy first: the daemon protocol caps messages at 1 MiB, while dom_snapshot, js_evaluate, screenshot and page_pdf outputs can be larger. Decide between chunked responses, event streaming, pagination or a higher limit with truncation markers.
 14. Input: click, input_click, input_hover, input_type, input_key, input_scroll, input_select, input_upload.
-15. Observation: console_logs, network_requests, network_response_body, screenshot, page_pdf, page_metrics.
+15. Observation: console_logs, network_requests, network_response_body, screenshot, page_pdf, page_metrics. Uses the large-payload strategy from step 13.
 16. Emulation: list_devices, emulate_device, emulate_media, emulate_network, emulate_locale.
 17. Control: page_wait, page_dialogs, storage_read, storage_write, network_mock.
 18. Shadow DOM and iframe piercing across DOM tools.
 
 ## 3. Safety
 
-19. Read-only mode, domain allowlist, confirmation of dangerous actions.
+19. Read-only mode, domain allowlist, confirmation of dangerous actions. Gate the cdp.send methods that reach beyond the page under these options: DOM.setFileInputFiles (attaches local files) and cookie access (Network.getCookies with urls).
 
 ## 4. Installer
 
@@ -40,7 +40,7 @@ Each step is a separate commit.
 ## 5. Release
 
 21. Integration tests with a real browser in CI.
-22. npm publish workflow on tag.
+22. First npm release through the existing release workflow: bump the version in develop and merge into master.
 
 ## Later
 
