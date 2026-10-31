@@ -64,7 +64,7 @@ const chrome: BrowserSpec = {
   },
 
   attachSteps: (debugPort) => [
-    'Option 1 (Chrome 144 or newer): in the Chrome window you want to control, open chrome://inspect/#remote-debugging and turn on "Allow remote debugging for this browser instance". Chrome asks you to approve each connection.',
+    'Option 1 (Chrome 144 or newer): in the Chrome window you want to control, open chrome://inspect/#remote-debugging and turn on "Allow remote debugging for this browser instance". Chrome may ask you to approve a connection.',
     `Option 2: quit Chrome and start it with --remote-debugging-port=${debugPort} and --user-data-dir pointing to a non-default directory. Since Chrome 136 the port flag is ignored on the default profile, so the separate directory is required. This uses a separate profile, not your everyday one.`,
   ],
 };
