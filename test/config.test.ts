@@ -382,3 +382,30 @@ describe("paths", () => {
     }
   });
 });
+
+describe("profileDir", () => {
+  it.each(["./p", "rel/dir", "~/profile", "profile"])("rejects the relative path %s", (value) => {
+    expect(() => loadConfig({ ...withFile(undefined), argv: [`--profile-dir=${value}`] })).toThrow(
+      /profileDir: must be an absolute path/,
+    );
+  });
+
+  it("rejects a relative path from the file and from the environment", () => {
+    expect(() => loadConfig(withFile(JSON.stringify({ profileDir: "p" })))).toThrow(/profileDir/);
+    expect(() =>
+      loadConfig({ ...withFile(undefined), env: { CHROMIUM_DEVTOOLS_MCP_PROFILE_DIR: "~/p" } }),
+    ).toThrow(/profileDir/);
+  });
+
+  it("accepts absolute paths of the platform", () => {
+    const posix = loadConfig({ ...withFile(undefined), argv: ["--profile-dir=/data/p"] });
+    const win = loadConfig({
+      ...withFile(undefined),
+      platform: "win32",
+      argv    : ["--profile-dir=C:\\data\\p"],
+    });
+
+    expect(posix.profileDir).toBe("/data/p");
+    expect(win.profileDir).toBe("C:\\data\\p");
+  });
+});

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import os from "node:os";
 import { parseArgs } from "node:util";
-import { configFilePath, defaultProfileDir, type PathContext } from "./paths.js";
+import { configFilePath, defaultProfileDir, pathFor, type PathContext } from "./paths.js";
 import { type Config, ConfigError, configSchema } from "./schema.js";
 
 type Layer = { [key: string]: unknown; safety?: Record<string, unknown> };
@@ -202,7 +202,15 @@ export function loadConfig(options: LoadOptions = {}): Config {
 
   const result = configSchema.safeParse(merged);
 
-  if (result.success) return result.data;
+  if (result.success) {
+    if (!pathFor(ctx.platform).isAbsolute(result.data.profileDir)) {
+      throw new ConfigError(
+        `invalid configuration: profileDir: must be an absolute path, got ${JSON.stringify(result.data.profileDir)}. A leading ~ is not expanded.`,
+      );
+    }
+
+    return result.data;
+  }
 
   const details = result.error.issues
     .map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`)
