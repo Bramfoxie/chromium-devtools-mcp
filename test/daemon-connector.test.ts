@@ -30,10 +30,13 @@ class FakeClient {
   constructor(
     readonly url: string,
     private readonly userAgent: string | null = HEADLESS_AGENT,
+    private readonly targets: Array<{ type: string; targetId: string }> = [],
   ) {}
 
-  async send(method: string): Promise<unknown> {
-    this.sent.push(method);
+  async send(method: string, params?: unknown): Promise<unknown> {
+    this.sent.push(params === undefined ? method : `${method} ${JSON.stringify(params)}`);
+
+    if (method === "Target.getTargets") return { targetInfos: this.targets };
 
     if (method !== "Browser.getVersion") return {};
 
@@ -118,8 +121,46 @@ describe("managed mode", () => {
     expect(deps.launch).not.toHaveBeenCalled();
     expect(clients.map((client) => client.url)).toEqual([running.webSocketUrl]);
     await handle.stop();
-    expect(clients[0]?.sent).toEqual(["Browser.getVersion"]);
+    expect(clients[0]?.sent).toEqual(["Browser.getVersion", "Target.getTargets"]);
     expect(clients[0]?.closed).toBe(true);
+  });
+
+  it("closes the pages a dead daemon left in a headless browser and nothing else", async () => {
+    vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const targets = [
+      { type: "page", targetId: "p1" },
+      { type: "service_worker", targetId: "w1" },
+      { type: "page", targetId: "p2" },
+    ];
+    const { connector, clients } = setup({
+      findRunning: vi.fn(async () => running),
+      connect    : async (url) => {
+        const client = new FakeClient(url, HEADLESS_AGENT, targets);
+
+        clients.push(client);
+
+        return client as unknown as CdpClient;
+      },
+    });
+
+    await connector(config, hooks, signal);
+    expect(clients[0]?.sent).toEqual([
+      "Browser.getVersion",
+      "Target.getTargets",
+      'Target.closeTarget {"targetId":"p1"}',
+      'Target.closeTarget {"targetId":"p2"}',
+    ]);
+  });
+
+  it("leaves the pages of a browser with a window alone", async () => {
+    vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const { clients, connector } = setup(
+      { findRunning: vi.fn(async () => running) },
+      WINDOW_AGENT,
+    );
+
+    await connector({ ...config, headless: false }, hooks, signal);
+    expect(clients[0]?.sent).toEqual(["Browser.getVersion"]);
   });
 
   it("refuses a browser left in the other headless mode and leaves it running", async () => {

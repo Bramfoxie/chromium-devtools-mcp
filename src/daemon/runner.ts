@@ -78,6 +78,22 @@ async function isHeadless(client: CdpClient): Promise<boolean | undefined> {
   return typeof agent === "string" ? HEADLESS_AGENT.test(agent) : undefined;
 }
 
+// Closes the pages a dead daemon left in a headless browser; nobody can be using them.
+async function closeLeftoverPages(client: CdpClient): Promise<void> {
+  const result = await client.send("Target.getTargets").catch(() => undefined);
+  const infos = (result as { targetInfos?: unknown } | undefined)?.targetInfos;
+
+  if (!Array.isArray(infos)) return;
+
+  await Promise.all(
+    infos.map((info: { type?: unknown; targetId?: unknown }) =>
+      info.type === "page" && typeof info.targetId === "string"
+        ? client.send("Target.closeTarget", { targetId: info.targetId }).catch(() => undefined)
+        : undefined,
+    ),
+  );
+}
+
 // Reuses a browser left on the managed profile; never closes it.
 async function adoptManaged(
   config: Config,
@@ -97,6 +113,7 @@ async function adoptManaged(
 
   if (headless === config.headless) {
     logDaemon(`Reusing the managed browser that already runs on port ${running.port}.`);
+    if (config.headless) await closeLeftoverPages(client);
 
     return { client, stop: () => client.close() };
   }
