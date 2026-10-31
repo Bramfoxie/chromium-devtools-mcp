@@ -52,7 +52,7 @@ Until the browser allows it, the daemon prints these instructions, returns them 
 The MCP server connects to one daemon per user and data directory and starts it when it is absent. Clients that run with a different `HOME` or `XDG_DATA_HOME` get their own daemon. The daemon owns the browser connection and gives every MCP client its own session.
 
 - It exits 30 seconds after its last client disconnects, also while it is still waiting for the browser.
-- When it exits on idle, a managed browser with a window stays open and the next daemon reuses it. A headless managed browser is closed, and so is any managed browser when the daemon is stopped on request.
+- When it exits on idle, a managed browser with a window stays open and the next daemon reuses it. A headless managed browser is closed on idle, and any managed browser is closed when the daemon is stopped on request. Both apply only to a browser this daemon launched: a browser the daemon reused from an earlier run is only disconnected and keeps running.
 - On Windows a managed browser is a child of the daemon and closes when the daemon exits, so it is not kept open on idle and is not reused after a daemon crash.
 - Starting a managed browser with a window can briefly take the keyboard focus, because the operating system activates a new window. Everything the daemon does afterwards, such as opening, navigating and closing tabs, leaves the focus alone.
 - Clients must agree on `browser`, `mode`, `debugPort` and `allowFocus`, and in managed mode also on `headless` and `profileDir`. A client with different settings gets an error that names the differing fields; stop the daemon or align the settings.
