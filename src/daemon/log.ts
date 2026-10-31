@@ -1,3 +1,5 @@
+import type { Writable } from "node:stream";
+
 const MAX_LOGGED_CHARS = 200;
 
 export function logDaemon(message: string): void {
@@ -12,4 +14,9 @@ export function quoted(text: string): string {
 
 export function describeError(error: unknown): string {
   return quoted(error instanceof Error ? error.message : String(error));
+}
+
+// A closed stderr must not crash the process through an unhandled stream error.
+export function ignoreStreamErrors(stream: Pick<Writable, "on"> = process.stderr): void {
+  stream.on("error", () => undefined);
 }
