@@ -212,6 +212,10 @@ export const domSnapshot = defineTool({
             );
 
             backendNodeId = root.backendNodeId;
+
+            await context.access.send(targetId, "Runtime.releaseObject", {
+                objectId: root.objectId,
+            }).catch(() => undefined);
         }
 
         const tree: unknown = backendNodeId === undefined

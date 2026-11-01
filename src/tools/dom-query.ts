@@ -797,16 +797,21 @@ async function chainedMatches(
         let text = "";
 
         if (resolved.success && resolved.data.object.objectId !== undefined) {
+            const objectId = resolved.data.object.objectId;
             const read = chainedTextSchema.safeParse(
                 await context.access.send(targetId, "Runtime.callFunctionOn", {
                     functionDeclaration: CHAINED_TEXT_EXPRESSION,
-                    objectId           : resolved.data.object.objectId,
-                    arguments          : [{ objectId: resolved.data.object.objectId }],
+                    objectId           : objectId,
+                    arguments          : [{ objectId: objectId }],
                     returnByValue      : true,
                 }).catch(() => undefined),
             );
 
             text = read.success ? (read.data.result.value ?? "") : "";
+
+            await context.access.send(targetId, "Runtime.releaseObject", {
+                objectId,
+            }).catch(() => undefined);
         }
 
         if (filter !== undefined && !text.toLowerCase().includes(filter.toLowerCase())) continue;

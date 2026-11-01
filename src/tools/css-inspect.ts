@@ -297,6 +297,11 @@ export const cssInspect = defineTool({
             args.target,
             { frames: context.frames },
         );
+
+        await context.access.send(targetId, "Runtime.releaseObject", {
+            objectId: element.objectId,
+        }).catch(() => undefined);
+
         const wanted = args.properties ?? DEFAULT_CSS_PROPERTIES;
         const includeMatchedRules = args.includeMatchedRules ?? true;
         const maxRules = args.maxRules ?? CSS_MAX_RULES_DEFAULT;

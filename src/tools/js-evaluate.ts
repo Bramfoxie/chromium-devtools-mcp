@@ -223,6 +223,9 @@ export const jsEvaluate = defineTool({
 
         const exception = parsed.data.exceptionDetails;
 
+        const resultObjectId = parsed.data.result.objectId;
+        const exceptionObjectId = parsed.data.exceptionDetails?.exception?.objectId;
+
         if (exception !== undefined) {
             const stack = formatExceptionStack(exception);
 
@@ -232,6 +235,18 @@ export const jsEvaluate = defineTool({
             const column = exception.columnNumber === undefined
                 ? {}
                 : { columnNumber: exception.columnNumber };
+
+            if (resultObjectId !== undefined) {
+                await context.access.send(targetId, "Runtime.releaseObject", {
+                    objectId: resultObjectId,
+                }).catch(() => undefined);
+            }
+
+            if (exceptionObjectId !== undefined) {
+                await context.access.send(targetId, "Runtime.releaseObject", {
+                    objectId: exceptionObjectId,
+                }).catch(() => undefined);
+            }
 
             return {
                 ok       : false as const,
@@ -244,7 +259,7 @@ export const jsEvaluate = defineTool({
             };
         }
 
-        const objectId = parsed.data.result.objectId;
+        const objectId = resultObjectId;
         const shaped = shapeRemoteValue(parsed.data.result, maxChars);
 
         if (objectId !== undefined) {

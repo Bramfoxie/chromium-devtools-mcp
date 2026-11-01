@@ -183,6 +183,7 @@ describe("dom_snapshot", () => {
         expect(seen).toEqual([{ backendNodeId: 7, fetchRelatives: true }]);
         expect(fake.sent.map((call) => call.method)).toEqual([
             "DOM.resolveNode",
+            "Runtime.releaseObject",
             "Accessibility.getPartialAXTree",
             "DOM.getDocument",
         ]);

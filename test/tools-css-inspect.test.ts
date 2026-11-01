@@ -201,6 +201,7 @@ describe("css_inspect", () => {
         });
         expect(fake.sent.map((call) => call.method)).toEqual([
             "DOM.resolveNode",
+            "Runtime.releaseObject",
             "DOM.describeNode",
             "DOM.enable",
             "CSS.enable",
