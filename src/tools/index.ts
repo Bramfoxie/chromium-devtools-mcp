@@ -39,6 +39,19 @@ export {
 
 export { pageDetails, pageInfo, pageInfoExpression } from "./page-info.js";
 
+export {
+    NAVIGATE_DEFAULT_TIMEOUT_MS,
+    NAVIGATE_MAX_TIMEOUT_MS,
+    type NavigationWaitEvent,
+    type NavigationWaitState,
+    navigationWaitReduce,
+    navigationWaitStart,
+    PAGE_STATE_EXPRESSION,
+    pageNavigate,
+    waitUntilSchema,
+    type WaitUntil,
+} from "./page-navigate.js";
+
 export { closeTab, listSessions, listTabs, newTab, selectTab, selectionOf } from "./tabs.js";
 
 export {

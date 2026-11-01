@@ -35,7 +35,7 @@ const readOnly: Config = {
 };
 
 describe("tool declarations", () => {
-    it("declares six tools with unique names, descriptions and access", () => {
+    it("declares seven tools with unique names, descriptions and access", () => {
         expect(allTools.map((tool) => tool.name)).toEqual([
             "list_tabs",
             "list_sessions",
@@ -43,6 +43,7 @@ describe("tool declarations", () => {
             "new_tab",
             "close_tab",
             "page_info",
+            "page_navigate",
         ]);
 
         for (const tool of allTools) {
@@ -51,10 +52,15 @@ describe("tool declarations", () => {
         }
     });
 
-    it("marks exactly the tab changing tools as mutate", () => {
+    it("marks exactly the state changing tools as mutate", () => {
         const mutate = allTools.filter((tool) => tool.access === "mutate").map((tool) => tool.name);
 
-        expect(mutate.sort()).toEqual(["close_tab", "new_tab", "select_tab"]);
+        expect(mutate.sort()).toEqual([
+            "close_tab",
+            "new_tab",
+            "page_navigate",
+            "select_tab",
+        ]);
     });
 
     it("runs every mutate tool through the safety gate", async () => {
@@ -175,7 +181,7 @@ describe("runTool", () => {
 });
 
 describe("tools/list", () => {
-    it("lists exactly the six tools with their schemas", async () => {
+    it("lists exactly the seven tools with their schemas", async () => {
         const server = createMcpServer("1.0.0");
 
         registerTools({ server, tools: allTools, runtime: runtime() });
@@ -192,6 +198,7 @@ describe("tools/list", () => {
             "new_tab",
             "close_tab",
             "page_info",
+            "page_navigate",
         ]);
 
         for (const tool of listed.tools) {
