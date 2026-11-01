@@ -94,6 +94,17 @@ export {
     consoleLogs,
 } from "./console-logs.js";
 
+export {
+    NETWORK_LIST_ITEM_MAX_CHARS,
+    NETWORK_LIST_MAX_ITEMS,
+    NETWORK_REQUESTS_DEFAULT_LIMIT,
+    NETWORK_REQUESTS_MAX_LIMIT,
+    NETWORK_URL_CONTAINS_MAX_CHARS,
+    NETWORK_URL_REGEX_MAX_CHARS,
+    networkFilterOf,
+    networkRequests,
+} from "./network-requests.js";
+
 export { pageDetails, pageInfo, pageInfoExpression } from "./page-info.js";
 
 export {
