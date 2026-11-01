@@ -160,11 +160,15 @@ describe("navigationWaitReduce", () => {
     it("completes on frame stop after navigation for cache restored pages", () => {
         let state = navigationWaitStart();
 
-        state = navigationWaitReduce(state, { type: "stopped" }, "load");
+        state = navigationWaitReduce(state, { type: "stopped", loaderId: undefined }, "load");
 
         expect(state.done).toBe(false);
 
         state = navigationWaitReduce(state, { type: "navigated", loaderId: "loader-1" }, "load");
+
+        expect(state.done).toBe(true);
+
+        state = navigationWaitReduce(state, { type: "stopped", loaderId: "loader-1" }, "load");
 
         expect(state.done).toBe(true);
         expect(state).toEqual({
@@ -174,6 +178,27 @@ describe("navigationWaitReduce", () => {
             status   : undefined,
             done     : true,
         });
+    });
+
+    it("ignores a stop from the old page after navigation", () => {
+        let state = navigationWaitStart();
+
+        state = navigationWaitReduce(state, { type: "navigated", loaderId: "loader-9" }, "load");
+
+        expect(state.done).toBe(false);
+
+        state = navigationWaitReduce(state, { type: "stopped", loaderId: "loader-1" }, "load");
+
+        expect(state.done).toBe(false);
+        expect(state.stopped).toBe(false);
+    });
+
+    it("finishes a fragment navigation within the document", () => {
+        let state = navigationWaitStart();
+
+        state = navigationWaitReduce(state, { type: "sameDocument" }, "load");
+
+        expect(state.done).toBe(true);
     });
 });
 
@@ -247,7 +272,7 @@ describe("page_navigate", () => {
         expect(fake.sent[4]?.params).toEqual({ url: "https://example.org/" });
         expect(fake.sent[2]?.params).toEqual({ enabled: true });
         expect(fake.sent[6]?.params).toMatchObject({ expression: PAGE_STATE_EXPRESSION });
-        expect(fake.unsubscribed).toHaveLength(4);
+        expect(fake.unsubscribed).toHaveLength(5);
     });
 
     it("leaves network capture of the tab alone", async () => {

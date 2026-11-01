@@ -24,7 +24,8 @@ export type NavigationWaitEvent =
     | { type: "navigated"; loaderId: string }
     | { type: "lifecycle"; loaderId: string; name: string }
     | { type: "response"; loaderId: string; status: number }
-    | { type: "stopped" };
+    | { type: "stopped"; loaderId: string | undefined }
+    | { type: "sameDocument" };
 
 export function navigationWaitStart(loaderId?: string): NavigationWaitState {
     return { loaderId, navigated: false, stopped: false, status: undefined, done: false };
@@ -36,14 +37,18 @@ export function navigationWaitReduce(
     wait : Exclude<WaitUntil, "none">,
 ): NavigationWaitState {
     switch (event.type) {
-        case "navigated":
+        case "navigated": {
+            const resumed = state.stopped &&
+                (state.loaderId === undefined || event.loaderId === state.loaderId);
+
             return {
                 ...state,
                 loaderId : event.loaderId,
                 navigated: true,
                 status   : event.loaderId === state.loaderId ? state.status : undefined,
-                done     : state.done || state.stopped,
+                done     : state.done || resumed,
             };
+        }
 
         case "lifecycle": {
             const wanted = wait === "load" ? "load" : "DOMContentLoaded";
@@ -62,12 +67,27 @@ export function navigationWaitReduce(
 
             return state;
 
-        case "stopped":
+        case "stopped": {
             // A history navigation restored from cache sends no lifecycle events,
-            // and its stop arrives before its navigation event.
-            if (state.navigated && !state.done) return { ...state, stopped: true, done: true };
+            // and its stop arrives before its navigation event. A stop from the
+            // old page must not finish the wait: only a stop after the new
+            // navigation with its loader is a result.
+            if (!state.navigated) return { ...state, stopped: true };
+
+            if (
+                event.loaderId !== undefined && state.loaderId !== undefined &&
+                event.loaderId !== state.loaderId
+            ) {
+                return state;
+            }
+
+            if (!state.done) return { ...state, stopped: true, done: true };
 
             return { ...state, stopped: true };
+        }
+
+        case "sameDocument":
+            return { ...state, done: true };
     }
 }
 
@@ -99,7 +119,7 @@ const responseSchema = z.object({
     response: z.object({ status: z.number() }),
 });
 
-const stoppedSchema = z.object({ frameId: z.string() });
+const stoppedSchema = z.object({ frameId: z.string(), loaderId: z.string().optional() });
 
 const pageStateSchema = z.object({
     result: z.object({
@@ -117,6 +137,7 @@ const MAIN_FRAME_EVENTS = [
     "Page.frameNavigated",
     "Page.frameStoppedLoading",
     "Page.lifecycleEvent",
+    "Page.navigatedWithinDocument",
     "Network.responseReceived",
 ];
 
@@ -234,45 +255,47 @@ export const pageNavigate = defineTool({
 
         await ensureNoDialog(context.dialogs, targetId);
 
-        if (waitUntil === "none") {
-            await navigate(context, targetId, action, args.url, args.ignoreCache);
+        // The document changes even when the navigation errors or the wait
+        // times out: uids of the old document go stale in a finally below.
+        try {
+            if (waitUntil === "none") {
+                await navigate(context, targetId, action, args.url, args.ignoreCache);
+                const page = await currentPage(context, targetId);
+
+                return {
+                    tab           : targetId,
+                    url           : page.url,
+                    title         : page.title,
+                    waited        : "none" as const,
+                    navigationType: action,
+                };
+            }
+
+            const state = await navigateAndWait(
+                context,
+                targetId,
+                action,
+                args.url,
+                args.ignoreCache,
+                waitUntil,
+                timeoutMs,
+            );
             const page = await currentPage(context, targetId);
 
-            context.elements.nextGeneration(targetId);
+            const waited: "load" | "domcontentloaded" | "timeout" = state.done ? waitUntil : "timeout";
 
             return {
                 tab           : targetId,
                 url           : page.url,
                 title         : page.title,
-                waited        : "none" as const,
+                ...(state.status === undefined ? {} : { status: state.status }),
+                waited,
                 navigationType: action,
+                ...(waited === "timeout" ? { readyState: page.readyState } : {}),
             };
+        } finally {
+            context.elements.nextGeneration(targetId);
         }
-
-        const state = await navigateAndWait(
-            context,
-            targetId,
-            action,
-            args.url,
-            args.ignoreCache,
-            waitUntil,
-            timeoutMs,
-        );
-        const page = await currentPage(context, targetId);
-
-        context.elements.nextGeneration(targetId);
-
-        const waited: "load" | "domcontentloaded" | "timeout" = state.done ? waitUntil : "timeout";
-
-        return {
-            tab           : targetId,
-            url           : page.url,
-            title         : page.title,
-            ...(state.status === undefined ? {} : { status: state.status }),
-            waited,
-            navigationType: action,
-            ...(waited === "timeout" ? { readyState: page.readyState } : {}),
-        };
     },
 });
 
@@ -453,7 +476,17 @@ function toWaitEvent(
         const parsed = stoppedSchema.safeParse(params);
 
         if (parsed.success && (frameId === undefined || parsed.data.frameId === frameId)) {
-            return { type: "stopped" };
+            return { type: "stopped", loaderId: parsed.data.loaderId };
+        }
+
+        return undefined;
+    }
+
+    if (event === "Page.navigatedWithinDocument") {
+        const parsed = stoppedSchema.safeParse(params);
+
+        if (parsed.success && (frameId === undefined || parsed.data.frameId === frameId)) {
+            return { type: "sameDocument" };
         }
 
         return undefined;
