@@ -168,6 +168,42 @@ describe("network_response_body", () => {
         );
 
         expect(encoded.structuredContent).toMatchObject({ base64: true, body: bytes, size: 4 });
+        expect(() =>
+            Buffer.from(
+                (encoded.structuredContent as { body: string }).body,
+                "base64",
+            ),
+        ).not.toThrow();
+    });
+
+    it("truncates base64 on a 4-char boundary outside the data", async () => {
+        const fake = new FakeAccess();
+        const bytes = Buffer.from("0123456789").toString("base64");
+
+        fake.respond = (_targetId, method) =>
+            method === "Network.getResponseBody" ? { body: bytes, base64Encoded: true } : {};
+        const { runtime } = setup(fake);
+
+        await runTool(newTab, {}, extra(), runtime);
+
+        for (const event of finishedRequest("tab1", "r1", "image/png")) fake.emit("cdp.event", event);
+
+        const result = await runTool(
+            networkResponseBody,
+            { requestId: 1, asBase64: true, maxChars: 7 },
+            extra(),
+            runtime,
+        );
+
+        expect(result.structuredContent).toMatchObject({
+            base64     : true,
+            body       : bytes.slice(0, 4),
+            truncated  : true,
+            totalLength: bytes.length,
+        });
+        expect(
+            (result.structuredContent as { body: string }).body.length % 4,
+        ).toBe(0);
     });
 
     it("maps unknown ids, redirects, loading and evicted bodies", async () => {

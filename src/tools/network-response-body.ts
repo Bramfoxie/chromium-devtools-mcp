@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ErrorCode, RpcError } from "../daemon/index.js";
 import { MAX_RESPONSE_BYTES } from "../daemon/protocol.js";
 import { defineTool } from "./define-tool.js";
 import { ToolError } from "./errors.js";
@@ -63,7 +64,7 @@ export const networkResponseBody = defineTool({
 
         if (known === undefined) {
             throw new ToolError(
-                `No request with id ${args.requestId} is buffered for this tab. Call network_requests to see the buffered ids.`,
+                `No request with id ${args.requestId} is buffered for this tab. Capture starts with the first network_requests call, so earlier requests are missing. Call network_requests to see the buffered ids.`,
             );
         }
 
@@ -83,10 +84,20 @@ export const networkResponseBody = defineTool({
             result = await context.access.send(targetId, "Network.getResponseBody", {
                 requestId: known.record.requestId,
             });
-        } catch {
-            throw new ToolError(
-                "The browser no longer has the body of this request. It was evicted or the request failed before responding.",
-            );
+        } catch (error) {
+            if (error instanceof RpcError && error.code === ErrorCode.resultTooLarge) {
+                throw new ToolError(
+                    "The body exceeds the 32 MiB transport limit. Narrow the request instead.",
+                );
+            }
+
+            if (error instanceof RpcError && error.code === ErrorCode.cdpError) {
+                throw new ToolError(
+                    "The browser no longer has the body of this request. It was evicted or the request failed before responding.",
+                );
+            }
+
+            throw error;
         }
 
         const parsed = bodySchema.safeParse(result);
@@ -121,6 +132,25 @@ export const networkResponseBody = defineTool({
             };
         }
 
+        // Base64 is truncated on a 4-char boundary: the field stays
+        // decodable and the marker lives outside the data.
+        if (parsed.data.base64Encoded && !isTextMimeType(mimeType)) {
+            const chars = Math.floor(maxChars / 4) * 4;
+            const totalLength = parsed.data.body.length;
+            const truncated = totalLength > chars;
+            const body = truncated ? parsed.data.body.slice(0, chars) : parsed.data.body;
+
+            return {
+                tab      : targetId,
+                requestId: args.requestId,
+                ...(mimeType === undefined ? {} : { mimeType }),
+                size,
+                base64   : true as const,
+                body,
+                ...(truncated ? { truncated: true as const, totalLength } : {}),
+            };
+        }
+
         const text = parsed.data.base64Encoded && isTextMimeType(mimeType)
             ? Buffer.from(parsed.data.body, "base64").toString("utf8")
             : parsed.data.body;
@@ -131,7 +161,7 @@ export const networkResponseBody = defineTool({
             requestId: args.requestId,
             ...(mimeType === undefined ? {} : { mimeType }),
             size,
-            base64   : parsed.data.base64Encoded && !isTextMimeType(mimeType),
+            base64   : false as const,
             ...(shaped.truncated
                 ? { body: shaped.text, truncated: true, totalLength: shaped.totalLength }
                 : { body: shaped.text }),
