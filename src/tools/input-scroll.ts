@@ -57,13 +57,6 @@ const scrollStateSchema = z.object({
     }),
 });
 
-const fallbackSchema = z.object({
-    result: z.object({
-        type : z.string().optional(),
-        value: z.string().optional(),
-    }),
-});
-
 async function scrollState(access: DaemonAccess, tab: string): Promise<ScrollPosition> {
     const parsed = scrollStateSchema.safeParse(
         await access.send(tab, "Runtime.evaluate", {
@@ -119,28 +112,35 @@ async function wheelScroll(
     await context.access.send(targetId, "Input.dispatchMouseEvent", wheelParams(point, deltaX, deltaY));
 
     // A wheel event applies asynchronously: smooth scrolling and the compositor
-    // move the page after the dispatch resolves, so wait before measuring.
-    await context.clock.sleep(WHEEL_SETTLE_MS);
+    // move the page after the dispatch resolves, so poll until the position is
+    // stable instead of trusting one fixed sleep.
+    const after = await settleScroll(context, targetId);
 
-    const after = await scrollState(context.access, targetId);
-
+    // Only the window position is reported: a container under the wheel point
+    // may have scrolled while the window stayed. Never apply the script
+    // fallback on top of a scroll the wheel already caused.
     if (scrollMoved(before, after)) return { position: after, method: "wheel" };
 
-    // The wheel moved nothing, so the page ignores wheel events; scroll by script instead.
-    const fallback = fallbackSchema.safeParse(
-        await context.access.send(targetId, "Runtime.evaluate", {
-            expression   : `(() => { window.scrollBy(${JSON.stringify(deltaX)}, ${JSON.stringify(deltaY)}); return "scrolled"; })()`,
-            returnByValue: true,
-        }),
-    );
+    // The wheel moved the window nothing: report it instead of double
+    // scrolling the page by script.
+    return { position: after, method: "wheel" };
+}
 
-    if (!fallback.success || fallback.data.result.value === undefined) {
-        throw new ToolError(
-            "The browser sent an unexpected response to Runtime.evaluate. Try the call again.",
-        );
+async function settleScroll(context: ToolContext, targetId: string): Promise<ScrollPosition> {
+    let current = await scrollState(context.access, targetId);
+
+    for (let round = 0; round < 5; round += 1) {
+        await context.clock.sleep(WHEEL_SETTLE_MS);
+        throwIfCancelled(context.signal);
+
+        const next = await scrollState(context.access, targetId);
+
+        if (!scrollMoved(current, next)) return next;
+
+        current = next;
     }
 
-    return { position: await scrollState(context.access, targetId), method: "script" };
+    return current;
 }
 
 export const inputScroll = defineTool({

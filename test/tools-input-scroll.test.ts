@@ -192,21 +192,20 @@ describe("input_scroll", () => {
         expect(wheel?.params).toMatchObject({ x: 10, y: 500, deltaY: 100 });
     });
 
-    it("falls back to script scrolling when the wheel moves nothing, and says so", async () => {
+    it("reports the window position when the wheel moves nothing", async () => {
         const still = { x: 0, y: 0, maxX: 0, maxY: 1000, width: 800, height: 600 };
-        const moved = { x: 0, y: 300, maxX: 0, maxY: 1000, width: 800, height: 600 };
-        const { fake, runtime } = runtimeWith(scrollFake({ positions: [still, still, moved] }));
+        const { fake, runtime } = runtimeWith(scrollFake({ positions: [still] }));
 
         const result = await runTool(inputScroll, { deltaY: 300 }, extra(), runtime);
 
         expect(result.isError).not.toBe(true);
-        expect(result.structuredContent).toMatchObject({ method: "script", y: 300 });
+        expect(result.structuredContent).toMatchObject({ method: "wheel", y: 0 });
         expect(
             fake.sent.filter((entry) =>
                 entry.method === "Runtime.evaluate" &&
                 String((entry.params as { expression?: unknown })?.expression).includes("scrollBy"),
             ),
-        ).toHaveLength(1);
+        ).toHaveLength(0);
     });
 
     it("scrolls to the top and the bottom through the wheel", async () => {
