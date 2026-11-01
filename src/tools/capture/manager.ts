@@ -130,10 +130,20 @@ export class CaptureManager {
 
         if (capture.consoleEnabled) return;
 
-        await this.access.send(tab, "Runtime.enable", {});
-        await this.access.send(tab, "Log.enable", {});
-
+        // Subscribe first: the daemon drops events nobody listens to, so the
+        // replay emitted during enable would be lost otherwise.
         for (const event of CONSOLE_EVENTS) await this.access.subscribe(tab, event);
+
+        try {
+            await this.access.send(tab, "Runtime.enable", {});
+            await this.access.send(tab, "Log.enable", {});
+        } catch (error) {
+            for (const event of CONSOLE_EVENTS) {
+                await this.access.unsubscribe(tab, event).catch(() => undefined);
+            }
+
+            throw error;
+        }
 
         capture.consoleEnabled = true;
     }
@@ -143,9 +153,17 @@ export class CaptureManager {
 
         if (capture.networkEnabled) return;
 
-        await this.access.send(tab, "Network.enable", {});
-
         for (const event of NETWORK_EVENTS) await this.access.subscribe(tab, event);
+
+        try {
+            await this.access.send(tab, "Network.enable", {});
+        } catch (error) {
+            for (const event of NETWORK_EVENTS) {
+                await this.access.unsubscribe(tab, event).catch(() => undefined);
+            }
+
+            throw error;
+        }
 
         capture.networkEnabled = true;
     }

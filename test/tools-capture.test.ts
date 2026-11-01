@@ -487,12 +487,12 @@ describe("CaptureManager", () => {
 
         await capture.ensureConsole("tab1");
         await capture.ensureConsole("tab1");
-        expect(fake.sent.map((call) => call.method)).toEqual(["Runtime.enable", "Log.enable"]);
         expect(fake.subscribed).toEqual([
             { targetId: "tab1", event: "Runtime.consoleAPICalled" },
             { targetId: "tab1", event: "Runtime.exceptionThrown" },
             { targetId: "tab1", event: "Log.entryAdded" },
         ]);
+        expect(fake.sent.map((call) => call.method)).toEqual(["Runtime.enable", "Log.enable"]);
         expect(capture.consoleEnabled("tab1")).toBe(true);
         expect(capture.networkEnabled("tab1")).toBe(false);
 
