@@ -1,8 +1,18 @@
 export {
+    DaemonAccess,
+    type DaemonAccessOptions,
+    type DaemonEventHandler,
+    type DaemonTab,
+    SessionResetError,
+    type SessionSummary,
+} from "./daemon-access.js";
+
+export {
     DaemonLink,
     DaemonNotReadyError,
     type LinkConfig,
     type LinkDeps,
+    type SessionResetHandler,
     type StartedDaemon,
 } from "./daemon-link.js";
 

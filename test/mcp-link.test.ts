@@ -596,6 +596,32 @@ describe("failures while establishing", () => {
     });
 });
 
+describe("session generations", () => {
+    it("raises the generation on every new session and notifies reset handlers", async () => {
+        const first = new FakeIpc();
+        const second = new FakeIpc();
+        const third = new FakeIpc();
+        const clients = [first, second, third];
+        const { link: l } = link({ connect: async () => asIpc(clients.shift() ?? second) });
+        const generations: number[] = [];
+        const off = l.onSessionReset(() => generations.push(l.sessionGeneration));
+
+        expect(l.sessionGeneration).toBe(0);
+        await l.request("a");
+        expect(l.sessionGeneration).toBe(1);
+        expect(generations).toEqual([1]);
+        first.drop();
+        await l.request("b");
+        expect(l.sessionGeneration).toBe(2);
+        expect(generations).toEqual([1, 2]);
+        off();
+        second.drop();
+        await l.request("c");
+        expect(l.sessionGeneration).toBe(3);
+        expect(generations).toEqual([1, 2]);
+    });
+});
+
 describe("closing", () => {
     it("does not leak a connection that finishes opening after the link was closed", async () => {
         const ipc = new FakeIpc();

@@ -35,6 +35,8 @@ export interface LinkConfig {
     isolated?: boolean;
 }
 
+export type SessionResetHandler = () => void;
+
 const MAX_STARTS = 3;
 
 function isUnreachable(error: unknown): boolean {
@@ -50,11 +52,23 @@ export class DaemonLink {
     private sessionOpen = false;
     private establishing: Promise<IpcClient> | undefined;
     private closed = false;
+    private generation = 0;
+    private readonly resets = new Set<SessionResetHandler>();
 
     constructor(
         private readonly config: LinkConfig,
         private readonly deps  : LinkDeps,
     ) {}
+
+    get sessionGeneration(): number {
+        return this.generation;
+    }
+
+    onSessionReset(handler: SessionResetHandler): () => void {
+        this.resets.add(handler);
+
+        return () => void this.resets.delete(handler);
+    }
 
     async request(
         method  : string,
@@ -131,8 +145,14 @@ export class DaemonLink {
         }
 
         this.sessionOpen = true;
+        this.generation += 1;
+        this.notifyReset();
 
         return client;
+    }
+
+    private notifyReset(): void {
+        for (const handler of [...this.resets]) handler();
     }
 
     private async openSession(client: IpcClient): Promise<void> {
