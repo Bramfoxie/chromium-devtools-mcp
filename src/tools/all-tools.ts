@@ -14,6 +14,7 @@ import { networkResponseBody } from "./network-response-body.js";
 import { pagePdf } from "./page-pdf.js";
 import { screenshot } from "./screenshot.js";
 import { pageInfo } from "./page-info.js";
+import { pageMetrics } from "./page-metrics.js";
 import { pageNavigate } from "./page-navigate.js";
 import { closeTab, listSessions, listTabs, newTab, selectTab } from "./tabs.js";
 
@@ -33,6 +34,7 @@ export const allTools: AnyTool[] = [
     networkRequests,
     networkResponseBody,
     pagePdf,
+    pageMetrics,
     screenshot,
     click,
     inputClick,

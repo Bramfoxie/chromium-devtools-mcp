@@ -70,8 +70,14 @@ Each session keeps its own tab selection. `new_tab` opens a background tab and s
 - `input_scroll`: scroll by wheel deltas, to the top or bottom, or an element into view. Falls back to script scrolling only when the wheel provably moved nothing, and reports which ran.
 - `input_select`: choose options of a `select` by value, label or index.
 - `input_upload`: attach local files to a file input. This is the most sensitive tool: it sends local files to a web page. Paths are validated on the server machine (absolute, existing regular readable files under 100 MiB, at most 20), symlinks are followed, and results carry file names and sizes only, never contents.
+- `console_logs`: read console messages, uncaught exceptions and browser messages of a tab, with level and text filters, paging and clear.
+- `network_requests`: read HTTP requests of a tab with URL, method, resource type, status and failure filters.
+- `network_response_body`: read the response body of a request from `network_requests`. Binary bodies need `asBase64`.
+- `page_pdf`: print a tab to PDF with orientation, paper, margins and page ranges. Needs a headless managed browser when the headed browser refuses to print.
+- `page_metrics`: read performance counters, layout metrics and navigation timing of a tab.
+- `screenshot`: capture a tab as an image. Defaults to jpeg quality 80; supports viewport, full page, element and clip shots.
 
-Every tool returns its result as JSON text plus structured content. Large outputs are truncated with an explicit marker. Mutating tools (`new_tab`, `select_tab`, `close_tab`, `page_navigate`, `js_evaluate`, `click`, `input_click`, `input_hover`, `input_type`, `input_key`, `input_scroll`, `input_select`, `input_upload`) are refused in read-only mode; the domain allowlist and dangerous action confirmations are planned.
+Every tool returns its result as JSON text plus structured content. Large outputs are truncated with an explicit marker. `screenshot` and `page_pdf` also return an image or embedded resource block. Mutating tools (`new_tab`, `select_tab`, `close_tab`, `page_navigate`, `js_evaluate`, `click`, `input_click`, `input_hover`, `input_type`, `input_key`, `input_scroll`, `input_select`, `input_upload`) are refused in read-only mode; the domain allowlist and dangerous action confirmations are planned.
 
 Input tools never bring the browser window to the front. The page believes it is focused through CDP focus emulation, enabled once per tab, so mouse and keyboard events behave like a real user while your windows stay put.
 
@@ -82,6 +88,10 @@ Input tools never bring the browser window to the front. The page believes it is
 ## Output limits
 
 Text results are capped per call: snapshots and evaluation results default to 50000 characters and can be raised to 200000 with `maxChars` or `maxResultChars`. The daemon protocol itself carries requests up to 1 MiB and responses up to 32 MiB. Elements hidden with `display: none` are absent from the accessibility tree, so snapshots never list them, even with `includeHidden`.
+
+Console and network tools read bounded per-tab buffers: 1000 entries and 2 MiB for console messages, 2000 records and 8 MiB for network requests. Only output since capture started is kept, plus what the browser replays on enable. Console capture starts when a tab is created or selected; network capture starts lazily on the first network tool call for a tab. Evicted entries are reported as `droppedCount`. Sensitive query values (names containing `token`, `key`, `secret`, `password`, `auth`, `session`, `sig` or `code`) and sensitive header values (`authorization`, `cookie`, `set-cookie`, `proxy-authorization`, `x-api-key`, names containing `token` or `secret`) are replaced by `[redacted]`.
+
+Screenshots default to 4 MiB and 4096 pixels per side, raisable to 16 MiB; PDFs default to 8 MiB, raisable to 24 MiB.
 
 ## Daemon
 

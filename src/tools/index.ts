@@ -146,6 +146,13 @@ export {
     screenshot,
 } from "./screenshot.js";
 
+export {
+    METRICS_TIMEOUT_MS,
+    NAVIGATION_TIMING_EXPRESSION,
+    pageMetrics,
+    shapePerformanceMetrics,
+} from "./page-metrics.js";
+
 export { pageDetails, pageInfo, pageInfoExpression } from "./page-info.js";
 
 export {
