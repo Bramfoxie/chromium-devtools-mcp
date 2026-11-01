@@ -345,9 +345,10 @@ async function scopeNode(
             const resolved = await frames.resolve(tab, frame);
             const scope = await frameContentNode(access, tab, rootId, resolved.frameId);
 
-            return { nodeId: scope ?? rootId, frameId: resolved.frameId };
-        } catch {
-            // Fall through to the iframe selector path below.
+            if (scope !== undefined) return { nodeId: scope, frameId: resolved.frameId };
+        } catch (error) {
+            // Unknown frame ids fall through to the iframe selector path.
+            if (error instanceof ToolError && !error.message.startsWith("No frame ")) throw error;
         }
     }
 
