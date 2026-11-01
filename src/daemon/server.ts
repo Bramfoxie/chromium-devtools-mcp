@@ -15,7 +15,8 @@ import { tokensMatch } from "./token.js";
 
 const DEFAULT_HELLO_TIMEOUT_MS = 5000;
 const MAX_IN_FLIGHT = 64;
-const MAX_WRITE_BUFFER_BYTES = 8 * 1024 * 1024;
+// Replies up to MAX_RESPONSE_BYTES are always flushed; only queued backlog kills.
+const MAX_WRITE_BACKLOG_BYTES = 2 * MAX_RESPONSE_BYTES;
 const INTERNAL_MESSAGE = "The daemon failed to handle the request.";
 const TOO_LARGE_MESSAGE = "The result exceeds the 32 MiB limit of the daemon protocol. Ask for less data.";
 
@@ -62,12 +63,17 @@ export function acceptConnection(socket: net.Socket, options: AcceptOptions): vo
     const write = (message: unknown) => {
         if (socket.destroyed || !socket.writable) return;
 
-        socket.write(encodeMessage(message, MAX_RESPONSE_BYTES));
+        const line = encodeMessage(message, MAX_RESPONSE_BYTES);
+        const backlog = socket.writableLength;
 
-        if (socket.writableLength > MAX_WRITE_BUFFER_BYTES) {
+        if (backlog > MAX_WRITE_BACKLOG_BYTES) {
             logDaemon("dropped a client that does not read its messages");
             socket.destroy();
+
+            return;
         }
+
+        socket.write(line);
     };
 
     const reply = (id: number, outcome: { result: unknown } | { error: RpcError }) => {

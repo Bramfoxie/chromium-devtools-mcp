@@ -1,5 +1,5 @@
 import net from "node:net";
-import { IpcClosedError, IpcTimeoutError, RpcError } from "./errors.js";
+import { IpcCancelledError, IpcClosedError, IpcTimeoutError, RpcError } from "./errors.js";
 import { describeError, logDaemon, quoted } from "./log.js";
 import {
     encodeMessage,
@@ -13,6 +13,8 @@ import {
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 const DEFAULT_CONNECT_TIMEOUT_MS = 5000;
 const DECLARED_TIMEOUT_MARGIN_MS = 5000;
+const MULTI_STEP_TIMEOUT_MARGIN_MS = 30_000;
+const MULTI_STEP_METHODS = new Set(["frame.list", "tab.list"]);
 
 export interface IpcConnectOptions {
     socketPath       : string;
@@ -90,14 +92,16 @@ export class IpcClient {
     request(
         method : string,
         params?: unknown,
-        options: { timeoutMs?: number } = {},
+        options: { timeoutMs?: number; signal?: AbortSignal } = {},
     ): Promise<unknown> {
         if (this.isClosed || this.socket.destroyed) {
             return Promise.reject(new IpcClosedError("the client was closed"));
         }
 
+        if (options.signal?.aborted) return Promise.reject(new IpcCancelledError(method));
+
         const id = this.nextId++;
-        const timeoutMs = options.timeoutMs ?? this.timeoutFor(params);
+        const timeoutMs = options.timeoutMs ?? this.timeoutFor(method, params);
         let line: string;
 
         try {
@@ -109,17 +113,46 @@ export class IpcClient {
         return new Promise<unknown>((resolve, reject) => {
             const timer = setTimeout(() => {
                 this.pending.delete(id);
+                options.signal?.removeEventListener("abort", onAbort);
                 reject(new IpcTimeoutError(method, timeoutMs));
             }, timeoutMs);
+            const onAbort = () => {
+                clearTimeout(timer);
+                this.pending.delete(id);
+                reject(new IpcCancelledError(method));
+            };
 
-            this.pending.set(id, { method, resolve, reject, timer });
+            // The daemon keeps running an aborted command; the caller gets its slot back.
+            options.signal?.addEventListener("abort", onAbort, { once: true });
+            const pending = { method, resolve, reject, timer };
+            const originalResolve = pending.resolve;
+            const originalReject = pending.reject;
+
+            pending.resolve = (value) => {
+                options.signal?.removeEventListener("abort", onAbort);
+                originalResolve(value);
+            };
+
+            pending.reject = (error: Error) => {
+                options.signal?.removeEventListener("abort", onAbort);
+                originalReject(error);
+            };
+
+            this.pending.set(id, pending);
             this.socket.write(line);
         });
     }
 
-    // A declared timeoutMs, as in cdp.send, sets the wait plus a margin.
-    private timeoutFor(params: unknown): number {
+    // The IPC wait is the CDP wait plus a margin; multi-step methods get
+    // a larger bound because they run several sequential CDP commands.
+    private timeoutFor(method: string, params: unknown): number {
         const declared = (params as { timeoutMs?: unknown } | null | undefined)?.timeoutMs;
+
+        if (MULTI_STEP_METHODS.has(method)) {
+            return typeof declared === "number" && Number.isFinite(declared)
+                ? declared + MULTI_STEP_TIMEOUT_MARGIN_MS
+                : this.requestTimeoutMs + MULTI_STEP_TIMEOUT_MARGIN_MS;
+        }
 
         return typeof declared === "number" && Number.isFinite(declared)
             ? Math.max(this.requestTimeoutMs, declared + DECLARED_TIMEOUT_MARGIN_MS)

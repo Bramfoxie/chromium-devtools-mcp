@@ -750,9 +750,57 @@ describe("subscriptions", () => {
         await a.subscribe(tab, "Page.loadEventFired");
         expect(backend.sessions.get(tab)?.listenerCount("Page.loadEventFired")).toBe(1);
         a.unsubscribe(tab, "Page.loadEventFired");
+        expect(backend.sessions.get(tab)?.listenerCount("Page.loadEventFired")).toBe(1);
+        a.unsubscribe(tab, "Page.loadEventFired");
         expect(backend.sessions.get(tab)?.listenerCount("Page.loadEventFired")).toBe(0);
         backend.sessions.get(tab)?.emit("Page.loadEventFired", {});
         expect(emitted.a).toEqual([]);
+    });
+
+    it("keeps a shared event alive until every subscriber leaves", async () => {
+        const { backend, emitted, open } = setup();
+        const a = await open("a");
+        const tab = await a.createTab("about:blank");
+
+        await a.subscribe(tab, "Page.frameNavigated");
+        await a.subscribe(tab, "Page.frameNavigated");
+        a.unsubscribe(tab, "Page.frameNavigated");
+        expect(backend.sessions.get(tab)?.listenerCount("Page.frameNavigated")).toBe(1);
+        backend.sessions.get(tab)?.emit("Page.frameNavigated", { frame: { id: "main" } });
+        expect(emitted.a).toHaveLength(1);
+        a.unsubscribe(tab, "Page.frameNavigated");
+        expect(backend.sessions.get(tab)?.listenerCount("Page.frameNavigated")).toBe(0);
+        backend.sessions.get(tab)?.emit("Page.frameNavigated", { frame: { id: "main" } });
+        expect(emitted.a).toHaveLength(1);
+    });
+
+    it("drops frame subscriptions when the child session detaches", async () => {
+        const { backend, emitted, open } = setup();
+        const a = await open("a");
+        const tab = await a.createTab("about:blank");
+
+        await a.send(tab, "Page.enable", undefined);
+        const session = backend.sessions.get(tab);
+
+        if (session) {
+            session.reply = (method) =>
+                method === "Page.getFrameTree"
+                    ? { frameTree: { frame: { id: "main", url: "https://a.example/" } } }
+                    : { echoed: method };
+        }
+
+        await a.listFrames(tab);
+        backend.childHandles[0]?.addChild("main");
+        await a.listFrames(tab);
+        await a.subscribe(tab, "Page.frameNavigated", "main");
+        backend.childHandles[0]?.removeChild("main");
+        backend.childHandles[0]?.addChild("main");
+        await a.listFrames(tab);
+        await a.subscribe(tab, "Page.frameNavigated", "main");
+        const child = backend.childHandles[0]?.childSession("main");
+
+        child?.emit("Page.frameNavigated", { frame: { id: "main" } });
+        expect(emitted.a).toHaveLength(1);
     });
 
     it("drops subscriptions with the tab and with the session", async () => {
@@ -909,9 +957,9 @@ describe("frame targets", () => {
         if (session) session.reply = mainTree();
 
         expect(await a.listFrames(tab)).toEqual([
-            { frameId: "main", parentFrameId: undefined, url: "https://a.example/", name: "", isolated: false },
-            { frameId: "same", parentFrameId: "main", url: "https://a.example/inner", name: "inner", isolated: false },
-            { frameId: "cross", parentFrameId: "main", url: "https://b.example/", name: "pay", isolated: false },
+            { frameId: "main", parentFrameId: undefined, url: "https://a.example/", name: "", isolated: false, truncated: false },
+            { frameId: "same", parentFrameId: "main", url: "https://a.example/inner", name: "inner", isolated: false, truncated: false },
+            { frameId: "cross", parentFrameId: "main", url: "https://b.example/", name: "pay", isolated: false, truncated: false },
         ]);
         expect(backend.childHandles.map((handle) => handle.targetId)).toEqual([tab]);
     });
@@ -1070,7 +1118,7 @@ describe("frame targets", () => {
         }
 
         expect(await a.listFrames(tab)).toEqual([
-            { frameId: "main", parentFrameId: undefined, url: "https://a.example/", name: "", isolated: false },
+            { frameId: "main", parentFrameId: undefined, url: "https://a.example/", name: "", isolated: false, truncated: false },
         ]);
         backend.childHandles[0]?.addChild("cross");
         await a.closeTab(tab);

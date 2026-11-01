@@ -8,34 +8,52 @@ import {
 } from "../src/daemon/index.js";
 
 interface SentCall {
-    method: string;
-    params: Record<string, unknown>;
+    session: string;
+    method : string;
+    params : Record<string, unknown>;
 }
+
+type HandlerMap = Map<string, Set<(params: unknown, sessionId?: string) => void>>;
 
 function setup() {
     const sent: SentCall[] = [];
-    const listeners = new Map<string, Set<(params: unknown, sessionId?: string) => void>>();
+    const sessions = new Map<string, { handlers: HandlerMap }>();
     const detached: string[] = [];
     const log: string[] = [];
+    const sessionOf = (session: CdpSession): { handlers: HandlerMap } => {
+        let entry = sessions.get(session.sessionId);
+
+        if (!entry) {
+            entry = { handlers: new Map() };
+            sessions.set(session.sessionId, entry);
+        }
+
+        return entry;
+    };
     const peer = { sessionId: "peer-session" } as CdpSession;
     const deps: ChildTargetsDeps = {
-        send: async (_session, method, params) => {
-            sent.push({ method, params });
+        send: async (session, method, params) => {
+            sent.push({ session: session.sessionId, method, params });
 
             return {};
         },
-        adopt: (sessionId) =>
-            ({
+        adopt: (sessionId) => {
+            const child = {
                 sessionId,
                 detach: async () => void detached.push(sessionId),
-            } as unknown as CdpSession),
-        on      : (_session, event, handler) => deps.clientOn(event, handler),
-        clientOn: (event, handler) => {
-            let set = listeners.get(event);
+            } as unknown as CdpSession;
+
+            sessionOf(child);
+
+            return child;
+        },
+        on: (session, event, handler) => {
+            const entry = sessionOf(session);
+            let set = entry.handlers.get(event);
 
             if (!set) {
                 set = new Set();
-                listeners.set(event, set);
+                entry.handlers.set(event, set);
             }
 
             set.add(handler);
@@ -44,16 +62,28 @@ function setup() {
         },
         log: (message) => void log.push(message),
     };
-    const emit = (event: string, params: unknown, sessionId?: string) => {
-        for (const handler of [...(listeners.get(event) ?? [])]) handler(params, sessionId);
+    const emit = (
+        session  : CdpSession,
+        event    : string,
+        params   : unknown,
+        envelope?: string,
+    ) => {
+        for (const handler of [...(sessionOf(session).handlers.get(event) ?? [])]) {
+            handler(params, envelope);
+        }
     };
-    const attach = (targetId: string, sessionId: string, envelope?: string, type = "iframe") =>
-        emit("Target.attachedToTarget", {
+    const childSession = (sessionId: string): CdpSession => {
+        sessionOf({ sessionId } as CdpSession);
+
+        return { sessionId } as CdpSession;
+    };
+    const attach = (targetId: string, sessionId: string, session: CdpSession, type = "iframe") =>
+        emit(session, "Target.attachedToTarget", {
             sessionId,
             targetInfo: { targetId, type, url: `https://${targetId}.example/` },
-        }, envelope);
+        }, session.sessionId);
 
-    return { sent, listeners, detached, log, peer, deps, emit, attach };
+    return { sent, detached, log, peer, deps, emit, attach, childSession };
 }
 
 describe("ChildTargets.attach", () => {
@@ -63,8 +93,9 @@ describe("ChildTargets.attach", () => {
         await ChildTargets.attach(peer, { onDetached: () => undefined }, deps);
         expect(sent).toEqual([
             {
-                method: "Target.setAutoAttach",
-                params: {
+                session: "peer-session",
+                method : "Target.setAutoAttach",
+                params : {
                     autoAttach            : true,
                     waitForDebuggerOnStart: false,
                     flatten               : true,
@@ -75,12 +106,12 @@ describe("ChildTargets.attach", () => {
     });
 
     it("tracks iframe sessions of the tab and ignores other envelopes", async () => {
-        const { peer, deps, attach } = setup();
+        const { peer, deps, attach, childSession } = setup();
         const handle = await ChildTargets.attach(peer, { onDetached: () => undefined }, deps);
 
-        attach("child1", "child-session-1", "peer-session");
-        attach("stranger", "stranger-session", "other-session");
-        attach("page", "page-session", "peer-session", "page");
+        attach("child1", "child-session-1", peer);
+        attach("stranger", "stranger-session", childSession("other-session"));
+        attach("page", "page-session", peer, "page");
 
         expect(handle.childCount()).toBe(1);
         expect(handle.children().map((child) => child.child)).toEqual([
@@ -94,32 +125,55 @@ describe("ChildTargets.attach", () => {
     });
 
     it("tracks nested iframe sessions up to the depth limit", async () => {
-        const { peer, deps, attach } = setup();
+        const { peer, deps, attach, childSession } = setup();
         const handle = await ChildTargets.attach(peer, { onDetached: () => undefined }, deps);
 
-        let parent = "peer-session";
+        let session = peer;
 
         for (let depth = 1; depth <= MAX_CHILD_ATTACH_DEPTH + 1; depth += 1) {
-            attach(`child${depth}`, `session${depth}`, parent);
-            parent = `session${depth}`;
+            attach(`child${depth}`, `session${depth}`, session);
+            session = childSession(`session${depth}`);
         }
 
         expect(handle.childCount()).toBe(MAX_CHILD_ATTACH_DEPTH);
+        expect(handle.droppedCount()).toBe(1);
     });
 
-    it("drops sessions over the per tab limit and logs it", async () => {
-        const { peer, deps, attach, log } = setup();
+    it("auto attaches on adopted child sessions", async () => {
+        const { sent, peer, deps, attach, childSession } = setup();
+        const handle = await ChildTargets.attach(peer, { onDetached: () => undefined }, deps);
+
+        attach("child1", "child-session-1", peer);
+        attach("grandchild", "grandchild-session", childSession("child-session-1"));
+
+        expect(handle.childCount()).toBe(2);
+        const autoAttached = sent
+            .filter((call) => call.method === "Target.setAutoAttach")
+            .map((call) => call.session)
+            .sort();
+
+        expect(autoAttached).toEqual(["child-session-1", "grandchild-session", "peer-session"]);
+    });
+
+    it("detaches sessions over the per tab limit and reports them", async () => {
+        const { peer, deps, attach, sent, log, childSession } = setup();
         const handle = await ChildTargets.attach(peer, { onDetached: () => undefined }, deps);
 
         for (let index = 0; index < MAX_CHILD_SESSIONS_PER_TAB + 1; index += 1) {
-            attach(`child${index}`, `session${index}`, "peer-session");
+            attach(`child${index}`, `session${index}`, peer);
         }
 
         expect(handle.childCount()).toBe(MAX_CHILD_SESSIONS_PER_TAB);
+        expect(handle.droppedCount()).toBe(1);
         expect(log.join("\n")).toContain(String(MAX_CHILD_SESSIONS_PER_TAB));
+        const detach = sent.find((call) => call.method === "Target.detachFromTarget");
+
+        expect(detach).toMatchObject({ session: "peer-session" });
+        attach("nested", "nested-session", childSession("session0"));
+        expect(handle.droppedCount()).toBe(2);
     });
 
-    it("forgets a child on detach and tells the owner", async () => {
+    it("forgets a child on the parent envelope detach and tells the owner", async () => {
         const { peer, deps, attach, emit } = setup();
         const seen: string[] = [];
         const handle = await ChildTargets.attach(
@@ -128,40 +182,68 @@ describe("ChildTargets.attach", () => {
             deps,
         );
 
-        attach("child1", "child-session-1", "peer-session");
-        emit("Target.detachedFromTarget", { sessionId: "child-session-1" }, "child-session-1");
-        emit("Target.detachedFromTarget", { sessionId: "unknown" }, "unknown");
+        attach("child1", "child-session-1", peer);
+        // Real Chrome wraps the child detach in the parent (tab) session.
+        emit(peer, "Target.detachedFromTarget", { sessionId: "child-session-1" }, "peer-session");
+        emit(peer, "Target.detachedFromTarget", { sessionId: "unknown" }, "peer-session");
 
         expect(handle.childCount()).toBe(0);
         expect(seen).toEqual(["child-session-1"]);
     });
 
-    it("hands out unmatched children once for frame matching", async () => {
+    it("forgets a nested child on its parent session detach", async () => {
+        const { peer, deps, attach, emit, childSession } = setup();
+        const seen: string[] = [];
+        const handle = await ChildTargets.attach(
+            peer,
+            { onDetached: (child) => void seen.push(child.sessionId) },
+            deps,
+        );
+
+        attach("child1", "child-session-1", peer);
+        attach("grandchild", "grandchild-session", childSession("child-session-1"));
+        emit(
+            childSession("child-session-1"),
+            "Target.detachedFromTarget",
+            { sessionId: "grandchild-session" },
+            "child-session-1",
+        );
+
+        expect(seen).toEqual(["grandchild-session"]);
+        expect(handle.childCount()).toBe(1);
+    });
+
+    it("hands out unmatched children until they match and retries failures", async () => {
         const { peer, deps, attach } = setup();
         const handle = await ChildTargets.attach(peer, { onDetached: () => undefined }, deps);
 
-        attach("child1", "child-session-1", "peer-session");
+        attach("child1", "child-session-1", peer);
 
         expect(handle.takeUnmatched().map((child) => child.child.sessionId)).toEqual([
             "child-session-1",
         ]);
+        // Not confirmed, so it comes back for the next frame list.
+        expect(handle.takeUnmatched().map((child) => child.child.sessionId)).toEqual([
+            "child-session-1",
+        ]);
+        handle.confirmMatched("child-session-1");
         expect(handle.takeUnmatched()).toEqual([]);
         expect(handle.childCount()).toBe(1);
     });
 
     it("detaches every child and stops listening on detachAll", async () => {
-        const { peer, deps, attach, detached, listeners } = setup();
+        const { peer, deps, attach, detached, emit } = setup();
         const handle = await ChildTargets.attach(peer, { onDetached: () => undefined }, deps);
 
-        attach("child1", "child-session-1", "peer-session");
-        attach("child2", "child-session-2", "peer-session");
+        attach("child1", "child-session-1", peer);
+        attach("child2", "child-session-2", peer);
         await handle.detachAll();
-        attach("child3", "child-session-3", "peer-session");
+        attach("child3", "child-session-3", peer);
+        emit(peer, "Target.detachedFromTarget", { sessionId: "child-session-3" }, "peer-session");
 
         expect(detached.sort()).toEqual(["child-session-1", "child-session-2"]);
         expect(handle.childCount()).toBe(0);
         expect(handle.children()).toEqual([]);
-        expect([...listeners.values()].every((set) => set.size === 0)).toBe(true);
         await handle.detachAll();
         expect(detached).toHaveLength(2);
     });
@@ -180,8 +262,8 @@ describe("ChildTargets.attach", () => {
             deps,
         );
 
-        attach("child1", "child-session-1", "peer-session");
-        emit("Target.detachedFromTarget", { sessionId: "child-session-1" }, "child-session-1");
+        attach("child1", "child-session-1", peer);
+        emit(peer, "Target.detachedFromTarget", { sessionId: "child-session-1" }, "peer-session");
 
         expect(handle.childCount()).toBe(0);
         expect(log.join("\n")).toContain("child detach handler threw");

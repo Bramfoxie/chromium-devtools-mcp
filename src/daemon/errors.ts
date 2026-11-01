@@ -52,6 +52,15 @@ export class IpcTimeoutError extends DaemonError {
     }
 }
 
+export class IpcCancelledError extends DaemonError {
+    constructor(readonly method: string) {
+        super(
+            `Daemon request ${method} was cancelled before it completed. The daemon may still run the command.`,
+        );
+        this.name = "IpcCancelledError";
+    }
+}
+
 export class IpcClosedError extends DaemonError {
     constructor(detail: string) {
         super(`Daemon connection is closed: ${detail}. Reconnect to the daemon and retry.`);

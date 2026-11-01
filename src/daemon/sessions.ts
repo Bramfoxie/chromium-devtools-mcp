@@ -57,7 +57,7 @@ interface OwnedTab {
     attached?    : Promise<BackendSession>;
     children?    : Promise<ChildSessionHandle>;
     frames       : Map<string, FrameEntry>;
-    subscriptions: Map<string, () => void>;
+    subscriptions: Map<string, { count: number; off: () => void }>;
 }
 
 function unknownFrame(): RpcError {
@@ -267,25 +267,37 @@ export class ClientSession {
 
         checkEvent(event);
         const key = frameId === undefined ? event : `${frameId}|${event}`;
+        // Two owners (a tool and the frame tracker) share one browser listener.
+        const known = tab.subscriptions.get(key);
 
-        if (tab.subscriptions.has(key)) return;
+        if (known !== undefined) {
+            known.count += 1;
+
+            return;
+        }
 
         try {
             const session = await this.sessionFor(targetId, tab, frameId);
 
             this.assertCurrent(targetId, tab);
-            if (tab.subscriptions.has(key)) return;
+            const current = tab.subscriptions.get(key);
 
-            tab.subscriptions.set(
-                key,
-                session.on(event, (params) =>
+            if (current !== undefined) {
+                current.count += 1;
+
+                return;
+            }
+
+            tab.subscriptions.set(key, {
+                count: 1,
+                off  : session.on(event, (params) =>
                     this.emit("cdp.event", {
                         targetId,
                         event,
                         params,
                         ...(frameId === undefined ? {} : { frameId }),
                     })),
-            );
+            });
         } catch (error) {
             throw translate(error);
         }
@@ -295,9 +307,16 @@ export class ClientSession {
         this.ensureOpen();
         const tab = this.owned(targetId);
         const key = frameId === undefined ? event : `${frameId}|${event}`;
+        const known = tab.subscriptions.get(key);
 
-        tab.subscriptions.get(key)?.();
-        tab.subscriptions.delete(key);
+        if (known === undefined) return;
+
+        known.count -= 1;
+
+        if (known.count <= 0) {
+            tab.subscriptions.delete(key);
+            known.off();
+        }
     }
 
     async listFrames(targetId: string): Promise<FrameSummary[]> {
@@ -320,6 +339,7 @@ export class ClientSession {
             for (const [frameId, entry] of tab.frames) {
                 if (entry.session !== undefined && !live.has(entry.session.child.sessionId)) {
                     tab.frames.set(frameId, { summary: entry.summary });
+                    this.unsubscribeAll(tab, frameId);
                 }
             }
 
@@ -328,10 +348,12 @@ export class ClientSession {
 
             this.syncFrames(tab, summaries);
             await this.matchChildren(tab, children);
+            const truncated = (children?.droppedCount() ?? 0) > 0;
 
             return summaries.map((summary) => ({
                 ...summary,
                 isolated: tab.frames.get(summary.frameId)?.session !== undefined,
+                truncated,
             }));
         } catch (error) {
             throw translate(error);
@@ -356,7 +378,7 @@ export class ClientSession {
         this.tabs.clear();
 
         for (const [targetId, tab] of entries) {
-            for (const off of tab.subscriptions.values()) off();
+            for (const entry of tab.subscriptions.values()) entry.off();
 
             if (!tab.created && this.contextId === undefined) {
                 this.registry.releaseOwner(targetId, this);
@@ -468,6 +490,7 @@ export class ClientSession {
                             if (entry.session?.child.sessionId !== child.sessionId) continue;
 
                             tab.frames.set(frameId, { summary: entry.summary });
+                            this.unsubscribeAll(tab, frameId);
                         }
                     },
                 });
@@ -489,12 +512,19 @@ export class ClientSession {
     ): Promise<BackendSession> {
         if (frameId === undefined) return this.attached(targetId, tab);
 
-        await this.childrenOf(targetId, tab);
+        const children = await this.childrenOf(targetId, tab).catch(() => undefined);
         const entry = tab.frames.get(frameId);
 
-        if (entry?.session === undefined) throw unknownFrame();
+        if (entry?.session === undefined) {
+            // An isolated frame may attach before a frame list names it; try once.
+            await this.matchChildren(tab, children);
+        }
 
-        return entry.session;
+        const matched = tab.frames.get(frameId);
+
+        if (matched?.session === undefined) throw unknownFrame();
+
+        return matched.session;
     }
 
     private syncFrames(tab: OwnedTab, summaries: FrameSummary[]): void {
@@ -529,7 +559,21 @@ export class ClientSession {
 
             const entry = tab.frames.get(child.child.frameId);
 
-            if (entry !== undefined) entry.session = child;
+            // The frame tree may not name the frame yet; retry on the next list.
+            if (entry === undefined) continue;
+
+            entry.session = child;
+            children.confirmMatched(child.child.sessionId);
+        }
+    }
+
+    // Frame listeners belong to a child session; drop them when it ends.
+    private unsubscribeAll(tab: OwnedTab, frameId: string): void {
+        for (const [key, entry] of [...tab.subscriptions]) {
+            if (key === frameId || key.startsWith(`${frameId}|`)) {
+                tab.subscriptions.delete(key);
+                entry.off();
+            }
         }
     }
 
@@ -540,7 +584,7 @@ export class ClientSession {
 
         this.tabs.delete(targetId);
         this.registry.releaseOwner(targetId, this);
-        for (const off of tab.subscriptions.values()) off();
+        for (const entry of tab.subscriptions.values()) entry.off();
         void tab.children?.then((children) => children.detachAll()).catch(() => undefined);
         void tab.attached?.then((session) => session.detach()).catch(() => undefined);
     }

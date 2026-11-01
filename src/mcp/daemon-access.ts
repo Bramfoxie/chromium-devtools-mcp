@@ -29,6 +29,7 @@ const frameSchema = z.strictObject({
     url          : z.string(),
     name         : z.string(),
     isolated     : z.boolean(),
+    truncated    : z.boolean().optional(),
 });
 
 export type DaemonFrame = z.infer<typeof frameSchema>;
@@ -71,6 +72,7 @@ export class DaemonAccess {
     private readonly link         : DaemonLink;
     private readonly registrations: EventRegistration[] = [];
     private generation            : number;
+    private attachedClient        : object | undefined;
 
     constructor(options: DaemonAccessOptions) {
         this.link = options.link;
@@ -81,12 +83,11 @@ export class DaemonAccess {
         return this.generation;
     }
 
+    // Registration is local until a request brings the link up; see attachAll.
     on(event: string, handler: DaemonEventHandler): () => void {
         const registration: EventRegistration = { event, handler, off: () => undefined };
 
         this.registrations.push(registration);
-
-        void this.attach(registration);
 
         return () => {
             const index = this.registrations.indexOf(registration);
@@ -149,14 +150,19 @@ export class DaemonAccess {
         params?   : Record<string, unknown>,
         timeoutMs?: number,
         frameId?  : string,
+        options?  : { signal?: AbortSignal },
     ): Promise<unknown> {
-        return this.request("cdp.send", {
-            targetId,
-            method,
-            ...(params === undefined ? {} : { params }),
-            ...(timeoutMs === undefined ? {} : { timeoutMs }),
-            ...(frameId === undefined ? {} : { frameId }),
-        });
+        return this.request(
+            "cdp.send",
+            {
+                targetId,
+                method,
+                ...(params === undefined ? {} : { params }),
+                ...(timeoutMs === undefined ? {} : { timeoutMs }),
+                ...(frameId === undefined ? {} : { frameId }),
+            },
+            options,
+        );
     }
 
     async subscribe(targetId: string, event: string, frameId?: string): Promise<void> {
@@ -181,17 +187,39 @@ export class DaemonAccess {
         throw new SessionResetError();
     }
 
-    private async request(method: string, params: unknown): Promise<unknown> {
-        this.syncGeneration();
+    private async request(
+        method  : string,
+        params  : unknown,
+        options?: { timeoutMs?: number; signal?: AbortSignal },
+    ): Promise<unknown> {
+        const result = await this.link.request(method, params, options);
 
-        return this.link.request(method, params);
+        this.syncGeneration();
+        // A request proves the link is up, so attach local registrations now.
+        void this.attachMissing();
+
+        return result;
     }
 
     private syncGeneration(): void {
         if (this.link.sessionGeneration === this.generation) return;
 
         this.generation = this.link.sessionGeneration;
+        this.attachedClient = undefined;
         this.attachAll();
+    }
+
+    private async attachMissing(): Promise<void> {
+        try {
+            const client = await this.link.ready();
+
+            if (this.attachedClient === client) return;
+
+            this.attachedClient = client;
+            this.attachAll();
+        } catch {
+            // No daemon yet: the next request retries.
+        }
     }
 
     private attachAll(): void {

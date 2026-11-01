@@ -298,6 +298,17 @@ describe("requests", () => {
         }
     });
 
+    it("rejects locally when the signal aborts and keeps serving", async () => {
+        const server = await startServer();
+        const client = await connectClient(server);
+        const controller = new AbortController();
+        const pending = client.request("hang", undefined, { signal: controller.signal });
+
+        controller.abort();
+        await expect(pending).rejects.toThrow(/was cancelled/);
+        await expect(client.request("echo", "next")).resolves.toBe("next");
+    });
+
     it("ignores a response that arrives after the request timed out", async () => {
         const server = await startServer();
         const client = await connectClient(server);
@@ -358,6 +369,17 @@ describe("requests", () => {
         const client = await connectClient(server);
 
         await expect(client.request("big")).resolves.toHaveLength(MAX_REQUEST_BYTES + 100);
+        await expect(client.request("other")).resolves.toBe("alive");
+    });
+
+    it("keeps the connection alive for a 20 MiB response", async () => {
+        const body = "x".repeat(20 * 1024 * 1024);
+        const server = await startServer({
+            handler: async ({ method }) => (method === "big" ? body : "alive"),
+        });
+        const client = await connectClient(server);
+
+        await expect(client.request("big")).resolves.toHaveLength(body.length);
         await expect(client.request("other")).resolves.toBe("alive");
     });
 
@@ -477,7 +499,7 @@ describe("handler failures", () => {
         await vi.waitFor(() => expect(server.ready).toHaveLength(1));
         const chunk = "x".repeat(900_000);
 
-        for (let i = 0; i < 60 && !raw.socket.destroyed; i += 1) {
+        for (let i = 0; i < 80 && !raw.socket.destroyed; i += 1) {
             server.ready[0]?.sendEvent("big", chunk);
         }
 

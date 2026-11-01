@@ -6,6 +6,7 @@ export interface FrameSummary {
     url          : string;
     name         : string;
     isolated     : boolean;
+    truncated    : boolean;
 }
 
 interface FrameNode {
@@ -26,8 +27,9 @@ const frameNodeSchema: z.ZodType<FrameNode> = z.object({
 const frameTreeSchema = z.object({ frameTree: frameNodeSchema });
 
 export function frameSummaries(
-    tree    : unknown,
-    isolated: (frameId: string) => boolean,
+    tree     : unknown,
+    isolated : (frameId: string) => boolean,
+    truncated: boolean = false,
 ): FrameSummary[] {
     const parsed = frameTreeSchema.safeParse(tree);
 
@@ -41,6 +43,7 @@ export function frameSummaries(
             url          : node.frame.url ?? "",
             name         : node.frame.name ?? "",
             isolated     : isolated(node.frame.id),
+            truncated,
         });
 
         for (const child of node.childFrames) visit(child);

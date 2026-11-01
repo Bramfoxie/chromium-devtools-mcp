@@ -68,7 +68,13 @@ export class FakeLink {
         for (const handler of [...this.resets]) handler();
     }
 
-    async request(method: string, params?: unknown): Promise<unknown> {
+    async request(
+        method  : string,
+        params? : unknown,
+        options?: { timeoutMs?: number; signal?: AbortSignal },
+    ): Promise<unknown> {
+        options?.signal?.throwIfAborted();
+
         return this.current().request(method, params);
     }
 

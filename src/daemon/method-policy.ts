@@ -22,7 +22,15 @@ const ALLOWED_DOMAINS = new Set([
 const FOCUS_METHODS = new Set(["Page.bringToFront"]);
 const BLOCKED_METHODS = new Map([
     ["Page.setDownloadBehavior", "it would let a page write files to any directory"],
+    ["Page.close", "it would close tabs owned by other sessions"],
+    ["Page.crash", "it would crash the tab for every session using it"],
+    ["Page.setInterceptFileChooserDialog", "it would change file chooser handling for the whole tab"],
     ["Network.getAllCookies", "it returns the cookies of every site in the browser"],
+    ["Network.clearBrowserCookies", "it would delete the cookies of every site in the browser"],
+    ["Network.clearBrowserCache", "it would clear the cache of every site in the browser"],
+    ["Network.loadNetworkResource", "it would fetch a URL with the browser profile"],
+    ["IO.read", "its handles are small integers and could belong to another session"],
+    ["IO.close", "its handles are small integers and could belong to another session"],
 ]);
 const SAFE_URL_PROTOCOLS = new Set(["http:", "https:"]);
 
@@ -92,6 +100,13 @@ export function checkCall(
         }
 
         return { ...params, url: normalizeUrl(url) };
+    }
+
+    // Cookie reads and writes are scoped to the tab URL; other sites stay out.
+    if (method === "Network.getCookies" && params?.urls !== undefined) {
+        throw forbidden(
+            "Network.getCookies with urls is not allowed because it reads the cookies of other sites.",
+        );
     }
 
     return params;

@@ -4,6 +4,7 @@ export {
     DaemonError,
     DaemonNotRunningError,
     errorCode,
+    IpcCancelledError,
     IpcClosedError,
     IpcTimeoutError,
     ProtocolViolationError,

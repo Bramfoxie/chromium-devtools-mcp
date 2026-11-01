@@ -61,15 +61,27 @@ describe("DaemonAccess requests", () => {
 });
 
 describe("DaemonAccess events", () => {
-    it("delivers events to handlers registered on the link", async () => {
+    it("does not connect the link for local registrations", async () => {
         const link = new FakeLink();
+        const access = new DaemonAccess({ link: link.asLink() });
+
+        access.on("tab.closed", () => undefined);
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        expect(link.clients).toHaveLength(0);
+    });
+
+    it("delivers events to handlers registered on the link", async () => {
+        const link = new FakeLink(() => ({ tabs: [] }));
         const access = new DaemonAccess({ link: link.asLink() });
         const seen: unknown[] = [];
 
         access.on("tab.closed", (params) => seen.push(params));
+        await access.listTabs("owned");
         await vi.waitFor(() => expect(link.clients).toHaveLength(1));
-        link.clients[0]?.emit("tab.closed", { targetId: "t1" });
-        expect(seen).toEqual([{ targetId: "t1" }]);
+        await vi.waitFor(() => {
+            link.clients[0]?.emit("tab.closed", { targetId: "t1" });
+            expect(seen).toEqual([{ targetId: "t1" }]);
+        });
     });
 
     it("keeps handlers across reconnects and attaches them to the new client", async () => {
@@ -78,6 +90,7 @@ describe("DaemonAccess events", () => {
         const seen: unknown[] = [];
 
         access.on("tab.closed", (params) => seen.push(params));
+        await access.listTabs("owned");
         await vi.waitFor(() => expect(link.clients).toHaveLength(1));
         link.resetSession();
         await access.listTabs("owned");
@@ -93,6 +106,7 @@ describe("DaemonAccess events", () => {
         const off = access.on("tab.closed", (params) => seen.push(params));
 
         off();
+        await access.listTabs("owned");
         link.resetSession();
         await access.listTabs("owned");
         await vi.waitFor(() => expect(link.clients).toHaveLength(2));
@@ -127,6 +141,17 @@ describe("session generations", () => {
         access.forgetStaleState(() => resets.push(access.sessionGeneration));
         link.resetSession();
         expect(resets).toEqual([1]);
+    });
+
+    it("rejects a request whose signal is already aborted", async () => {
+        const link = new FakeLink(() => ({ tabs: [] }));
+        const access = new DaemonAccess({ link: link.asLink() });
+        const controller = new AbortController();
+
+        controller.abort();
+        await expect(access.send("t1", "Page.enable", undefined, undefined, undefined, {
+            signal: controller.signal,
+        })).rejects.toThrow(/abort|cancel/i);
     });
 
     it("rejects stale generations with the lost session error", async () => {

@@ -13,6 +13,7 @@ export interface FrameInfo {
     url           : string;
     name          : string;
     isolated      : boolean;
+    truncated?    : boolean | undefined;
 }
 
 interface TabFrames {

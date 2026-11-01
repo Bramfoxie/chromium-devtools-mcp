@@ -99,6 +99,12 @@ export class FakeChildHandle implements ChildSessionHandle {
         return this.children();
     }
 
+    confirmMatched(): void {}
+
+    droppedCount(): number {
+        return 0;
+    }
+
     async detachAll(): Promise<void> {
         this.detachedAll = true;
         this.backend.log.push(`detachChildren ${this.targetId}`);

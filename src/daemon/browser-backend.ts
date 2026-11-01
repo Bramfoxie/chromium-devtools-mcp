@@ -31,6 +31,8 @@ export interface FrameChildSession extends BackendSession {
 export interface ChildSessionHandle {
     children(): FrameChildSession[];
     takeUnmatched(): FrameChildSession[];
+    confirmMatched(sessionId: string): void;
+    droppedCount(): number;
     detachAll(): Promise<void>;
 }
 

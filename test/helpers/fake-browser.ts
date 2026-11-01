@@ -113,9 +113,11 @@ export class FakeBrowser {
         if (!child) return;
 
         this.children.delete(sessionId);
+        // Real Chrome wraps the child detach in the session of its parent.
         this.broadcast({
-            method: "Target.detachedFromTarget",
-            params: { sessionId, targetId: child.targetId },
+            method   : "Target.detachedFromTarget",
+            params   : { sessionId, targetId: child.targetId },
+            sessionId: child.parent,
         });
     }
 

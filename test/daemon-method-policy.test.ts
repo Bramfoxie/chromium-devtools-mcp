@@ -41,7 +41,18 @@ describe("checkCall", () => {
         },
     );
 
-    it.each(["Page.setDownloadBehavior", "Network.getAllCookies"])("refuses %s", (method) => {
+    it.each([
+        "Page.setDownloadBehavior",
+        "Page.close",
+        "Page.crash",
+        "Page.setInterceptFileChooserDialog",
+        "Network.getAllCookies",
+        "Network.clearBrowserCookies",
+        "Network.clearBrowserCache",
+        "Network.loadNetworkResource",
+        "IO.read",
+        "IO.close",
+    ])("refuses %s", (method) => {
         expect(codeOf(() => checkCall(method, undefined, { allowFocus: true }))).toBe(
             ErrorCode.forbiddenMethod,
         );
@@ -63,6 +74,13 @@ describe("checkCall", () => {
         });
         expect(checkCall("Runtime.evaluate", { expression: "1" }, off)).toEqual({ expression: "1" });
         expect(checkCall("Page.reload", undefined, off)).toBeUndefined();
+    });
+
+    it("scopes Network.getCookies to the tab and refuses other sites", () => {
+        expect(codeOf(() => checkCall("Network.getCookies", undefined, off))).toBe(undefined);
+        expect(
+            codeOf(() => checkCall("Network.getCookies", { urls: ["https://a.example/"] }, off)),
+        ).toBe(ErrorCode.forbiddenMethod);
     });
 
     it("lets Page.navigate open only http, https and about:blank", () => {

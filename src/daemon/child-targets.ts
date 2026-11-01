@@ -36,17 +36,15 @@ export interface ChildTargetsDeps {
         event  : string,
         handler: (params: unknown, sessionId?: string) => void,
     ): () => void;
-    clientOn(event: string, handler: (params: unknown, sessionId?: string) => void): () => void;
     log(message: string): void;
 }
 
 export function cdpChildTargetsDeps(client: CdpClient): ChildTargetsDeps {
     return {
-        send    : (session, method, params) => session.send(method, params),
-        adopt   : (sessionId, targetId) => client.adoptSession(sessionId, targetId),
-        on      : (session, event, handler) => session.on(event, handler),
-        clientOn: (event, handler) => client.on(event, handler),
-        log     : (message) => logDaemon(message),
+        send : (session, method, params) => session.send(method, params),
+        adopt: (sessionId, targetId) => client.adoptSession(sessionId, targetId),
+        on   : (session, event, handler) => session.on(event, handler),
+        log  : (message) => logDaemon(message),
     };
 }
 
@@ -69,11 +67,12 @@ export class ChildTargets implements ChildSessionHandle {
     private readonly known = new Map<string, KnownChild>();
     // Child sessions arrive before the frame tree names them; matched by listFrames.
     private readonly unmatched = new Set<string>();
+    private readonly listeners = new Map<string, Array<() => void>>();
     private closed = false;
+    private dropped = 0;
     private readonly off: Array<() => void> = [];
 
     private constructor(
-        private readonly peer   : CdpSession,
         private readonly options: ChildSessionOptions,
         private readonly deps   : ChildTargetsDeps,
     ) {}
@@ -83,14 +82,9 @@ export class ChildTargets implements ChildSessionHandle {
         options: ChildSessionOptions,
         deps   : ChildTargetsDeps,
     ): Promise<ChildTargets> {
-        const handle = new ChildTargets(peer, options, deps);
+        const handle = new ChildTargets(options, deps);
 
-        handle.off.push(
-            deps.on(peer, "Target.attachedToTarget", (params, sessionId) =>
-                handle.attached(params, sessionId)),
-            deps.clientOn("Target.detachedFromTarget", (params, sessionId) =>
-                handle.detached(params, sessionId)),
-        );
+        handle.listen(peer, 0);
         await deps.send(peer, "Target.setAutoAttach", {
             autoAttach            : true,
             waitForDebuggerOnStart: false,
@@ -109,18 +103,28 @@ export class ChildTargets implements ChildSessionHandle {
         return this.known.size;
     }
 
+    droppedCount(): number {
+        return this.dropped;
+    }
+
     takeUnmatched(): FrameChildSession[] {
-        const sessions = [...this.unmatched]
-            .flatMap((sessionId) => {
-                const known = this.known.get(sessionId);
+        const sessions: FrameChildSession[] = [];
 
-                return known === undefined ? [] : [known];
-            })
-            .map((known) => wrap(known.session, known.child));
+        for (const sessionId of [...this.unmatched]) {
+            const known = this.known.get(sessionId);
 
-        this.unmatched.clear();
+            if (known === undefined) {
+                this.unmatched.delete(sessionId);
+            } else {
+                sessions.push(wrap(known.session, known.child));
+            }
+        }
 
         return sessions;
+    }
+
+    confirmMatched(sessionId: string): void {
+        this.unmatched.delete(sessionId);
     }
 
     async detachAll(): Promise<void> {
@@ -136,38 +140,69 @@ export class ChildTargets implements ChildSessionHandle {
         await Promise.all(sessions.map((known) => known.session.detach().catch(() => undefined)));
     }
 
-    private attached(params: unknown, envelopeSessionId: string | undefined): void {
+    // Nested OOPIF reports arrive on the child session, so every session listens.
+    private listen(session: CdpSession, depth: number): void {
+        const stop = [
+            this.deps.on(session, "Target.attachedToTarget", (params, envelope) =>
+                this.attached(session, depth, params, envelope)),
+            this.deps.on(session, "Target.detachedFromTarget", (params) =>
+                this.detached(params)),
+        ];
+
+        this.off.push(...stop);
+        this.listeners.set(session.sessionId, stop);
+    }
+
+    private unlisten(sessionId: string): void {
+        const stop = this.listeners.get(sessionId);
+
+        if (stop === undefined) return;
+
+        this.listeners.delete(sessionId);
+        for (const off of stop) off();
+    }
+
+    private attached(
+        session : CdpSession,
+        depth   : number,
+        params  : unknown,
+        envelope: string | undefined,
+    ): void {
         if (this.closed) return;
 
         const parsed = attachedSchema.safeParse(params);
 
         if (!parsed.success || parsed.data.targetInfo.type !== "iframe") return;
 
-        const parent = envelopeSessionId === undefined
-            ? undefined
-            : envelopeSessionId === this.peer.sessionId
-                ? { depth: 0 }
-                : this.known.get(envelopeSessionId);
-
-        if (parent === undefined) return;
-
-        const depth = parent.depth + 1;
-
-        if (depth > MAX_CHILD_ATTACH_DEPTH) return;
+        // The attach event arrives on the session that owns the iframe.
+        if (envelope !== undefined && envelope !== session.sessionId) return;
 
         this.adopt(
+            session,
+            depth + 1,
             parsed.data.sessionId,
             parsed.data.targetInfo.targetId,
-            depth,
             parsed.data.targetInfo.url,
         );
     }
 
-    private adopt(sessionId: string, targetId: string, depth: number, url?: string): void {
+    private adopt(
+        parent   : CdpSession,
+        depth    : number,
+        sessionId: string,
+        targetId : string,
+        url      : string | undefined,
+    ): void {
         if (this.closed || this.known.has(sessionId)) return;
 
-        if (this.known.size >= MAX_CHILD_SESSIONS_PER_TAB) {
-            this.deps.log(`dropped an iframe session over the ${MAX_CHILD_SESSIONS_PER_TAB} limit`);
+        if (depth > MAX_CHILD_ATTACH_DEPTH || this.known.size >= MAX_CHILD_SESSIONS_PER_TAB) {
+            this.dropped += 1;
+            this.deps.log(
+                `dropped an iframe session over the limit (${MAX_CHILD_SESSIONS_PER_TAB} per tab, depth ${MAX_CHILD_ATTACH_DEPTH})`,
+            );
+            void this.deps
+                .send(parent, "Target.detachFromTarget", { sessionId })
+                .catch((error: unknown) => this.deps.log(`could not detach an iframe: ${describeError(error)}`));
 
             return;
         }
@@ -178,12 +213,23 @@ export class ChildTargets implements ChildSessionHandle {
             frameId: undefined,
             url    : url ?? "",
         };
+        const adopted = this.deps.adopt(sessionId, targetId);
 
-        this.known.set(sessionId, { child, session: this.deps.adopt(sessionId, targetId), depth });
+        this.known.set(sessionId, { child, session: adopted, depth });
         this.unmatched.add(sessionId);
+        this.listen(adopted, depth);
+        // Nested OOPIF reports arrive on the child session, so it opts in too.
+        void this.deps
+            .send(adopted, "Target.setAutoAttach", {
+                autoAttach            : true,
+                waitForDebuggerOnStart: false,
+                flatten               : true,
+                filter                : [{ type: "iframe", exclude: false }],
+            })
+            .catch((error: unknown) => this.deps.log(`could not auto attach an iframe: ${describeError(error)}`));
     }
 
-    private detached(params: unknown, envelopeSessionId: string | undefined): void {
+    private detached(params: unknown): void {
         const parsed = detachedSchema.safeParse(params);
 
         if (!parsed.success) return;
@@ -191,10 +237,10 @@ export class ChildTargets implements ChildSessionHandle {
         const known = this.known.get(parsed.data.sessionId);
 
         if (!known) return;
-        if (envelopeSessionId !== undefined && envelopeSessionId !== parsed.data.sessionId) return;
 
         this.known.delete(parsed.data.sessionId);
         this.unmatched.delete(parsed.data.sessionId);
+        this.unlisten(parsed.data.sessionId);
 
         try {
             this.options.onDetached(known.child);

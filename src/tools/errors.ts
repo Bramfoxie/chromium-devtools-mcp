@@ -2,6 +2,7 @@ import {
     DaemonConfigMismatchError,
     DaemonError,
     ErrorCode,
+    IpcCancelledError,
     IpcClosedError,
     IpcTimeoutError,
     RpcError,
@@ -64,6 +65,7 @@ export function toToolMessage(error: unknown): string {
     }
 
     if (error instanceof IpcTimeoutError) return `${error.message} Try the call again.`;
+    if (error instanceof IpcCancelledError) return error.message;
     if (error instanceof DaemonConfigMismatchError) return error.message;
 
     if (error instanceof DaemonError) {

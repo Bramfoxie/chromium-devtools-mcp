@@ -73,7 +73,7 @@ export class DaemonLink {
     async request(
         method  : string,
         params? : unknown,
-        options?: { timeoutMs?: number },
+        options?: { timeoutMs?: number; signal?: AbortSignal },
     ): Promise<unknown> {
         const client = await this.ready();
 
