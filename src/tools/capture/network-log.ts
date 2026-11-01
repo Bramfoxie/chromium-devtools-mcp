@@ -185,7 +185,23 @@ export function reduceNetworkEvent(
         if (!parsed.success) return undefined;
 
         const data = parsed.data;
-        const previous = data.redirectResponse === undefined ? undefined : find(data.requestId);
+        const known = find(data.requestId);
+
+        // The browser repeats the event without a redirect when a request restarts.
+        if (data.redirectResponse === undefined && known !== undefined) {
+            known.method = data.request.method;
+            known.url = redactUrl(data.request.url);
+            if (data.type !== undefined && data.type !== "") known.resourceType = data.type;
+            if (data.initiator?.type !== undefined) known.initiator = data.initiator.type;
+
+            const headers = stringHeaders(data.request.headers);
+
+            if (headers !== undefined) known.requestHeaders = headers;
+
+            return { record: known, created: false, redirected: false };
+        }
+
+        const previous = data.redirectResponse === undefined ? undefined : known;
 
         if (previous !== undefined && data.redirectResponse) {
             previous.status = data.redirectResponse.status;

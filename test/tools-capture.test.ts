@@ -334,6 +334,25 @@ describe("network reduction", () => {
         });
     });
 
+    it("merges a repeated request without a redirect into one record", () => {
+        const records = new Map<string, NetworkRecord>();
+        const find = (id: string) => records.get(id);
+
+        const first = reduceNetworkEvent("Network.requestWillBeSent", sent(), find);
+
+        records.set("r1", first?.record as NetworkRecord);
+
+        const repeat = reduceNetworkEvent(
+            "Network.requestWillBeSent",
+            sent({ type: "Document", timestamp: 101 }),
+            find,
+        );
+
+        expect(repeat?.created).toBe(false);
+        expect(repeat?.record).toBe(records.get("r1"));
+        expect(records.get("r1")).toMatchObject({ method: "GET", resourceType: "Document" });
+    });
+
     it("creates stub records for out of order events and rejects malformed ones", () => {
         const stub = reduceNetworkEvent(
             "Network.responseReceived",

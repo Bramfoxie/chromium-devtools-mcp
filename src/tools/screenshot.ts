@@ -170,10 +170,7 @@ async function capture(
             format: request.format,
             ...(request.quality === undefined ? {} : { quality: request.quality }),
             ...(request.clip === undefined ? {} : {
-                clip: {
-                    ...request.clip,
-                    ...(request.scale === undefined ? {} : { scale: request.scale }),
-                },
+                clip: { ...request.clip, scale: request.scale ?? 1 },
             }),
             captureBeyondViewport: request.captureBeyondViewport,
             fromSurface          : true,
