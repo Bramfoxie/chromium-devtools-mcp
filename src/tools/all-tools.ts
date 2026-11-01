@@ -3,6 +3,8 @@ import type { AnyTool } from "./define-tool.js";
 import { domQuery } from "./dom-query.js";
 import { domSnapshot } from "./dom-snapshot.js";
 import { click, inputClick, inputHover } from "./input-click.js";
+import { inputScroll } from "./input-scroll.js";
+import { inputSelect } from "./input-select.js";
 import { inputKey, inputType } from "./input-text.js";
 import { jsEvaluate } from "./js-evaluate.js";
 import { pageInfo } from "./page-info.js";
@@ -26,4 +28,6 @@ export const allTools: AnyTool[] = [
     inputHover,
     inputType,
     inputKey,
+    inputScroll,
+    inputSelect,
 ];

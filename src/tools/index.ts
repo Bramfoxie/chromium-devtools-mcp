@@ -222,3 +222,29 @@ export {
     TYPE_MAX_CHARS,
     VALUE_EXPRESSION,
 } from "./input-text.js";
+
+export {
+    inputScroll,
+    SCROLL_BLOCKS,
+    SCROLL_DELTA_MAX,
+    SCROLL_EDGES,
+    type ScrollBlock,
+    type ScrollEdge,
+    SCROLL_INTO_VIEW_EXPRESSION,
+    SCROLL_STATE_EXPRESSION,
+    scrollMoved,
+    type ScrollPosition,
+    wheelParams,
+    type WheelScrollResult,
+} from "./input-scroll.js";
+
+export {
+    describeOptions,
+    inputSelect,
+    matchSelectOptions,
+    type SelectBy,
+    type SelectOption,
+    SELECT_OPTIONS_LIMIT,
+    SELECT_READ_EXPRESSION,
+    SELECT_WRITE_EXPRESSION,
+} from "./input-select.js";
