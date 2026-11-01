@@ -37,11 +37,13 @@ export interface DialogHistoryEntry {
 }
 
 interface TabDialogs {
-    pageEnabled: boolean;
-    subscribed : Set<string>;
-    open       : OpenDialog | undefined;
-    policy     : DialogPolicy;
-    history    : DialogHistoryEntry[];
+    pageEnabled   : boolean;
+    subscribed    : Set<string>;
+    open          : OpenDialog | undefined;
+    policy        : DialogPolicy;
+    history       : DialogHistoryEntry[];
+    resolving     : OpenDialog | undefined;
+    resolveOutcome: DialogResolution | undefined;
 }
 
 export interface DialogStateOptions {
@@ -88,8 +90,10 @@ export function assertNoDialog(dialogs: DialogState, tab: string): void {
 
     if (open === undefined) return;
 
+    const article = /^[aeiou]/i.test(open.type) ? "An" : "A";
+
     throw new ToolError(
-        `A ${open.type} dialog is open in this tab and blocks page scripts. ` +
+        `${article} ${open.type} dialog is open in this tab and blocks page scripts. ` +
         "Use page_dialogs to see it and accept or dismiss it first.",
     );
 }
@@ -174,6 +178,9 @@ export class DialogState {
 
         if (open === undefined) return { handled: false, stale: false };
 
+        state.resolving = open;
+        state.resolveOutcome = accept ? "accept" : "dismiss";
+
         try {
             await this.access.send(tab, "Page.handleJavaScriptDialog", {
                 accept,
@@ -184,15 +191,24 @@ export class DialogState {
             if (error instanceof RpcError && error.code === ErrorCode.cdpError) {
                 this.record(state, open, "closed");
                 state.open = undefined;
+                state.resolving = undefined;
+                state.resolveOutcome = undefined;
 
                 return { handled: false, stale: true };
             }
 
+            state.resolving = undefined;
+            state.resolveOutcome = undefined;
+
             throw error;
         }
 
-        this.record(state, open, accept ? "accept" : "dismiss");
-        state.open = undefined;
+        if (state.open === open) {
+            this.record(state, open, accept ? "accept" : "dismiss");
+            state.open = undefined;
+            state.resolving = undefined;
+            state.resolveOutcome = undefined;
+        }
 
         return { handled: true, stale: false };
     }
@@ -221,8 +237,12 @@ export class DialogState {
 
             if (state?.open === undefined) return;
 
-            this.record(state, state.open, "closed");
+            const resolving = state.resolving === state.open ? state.resolveOutcome : undefined;
+
+            this.record(state, state.open, resolving ?? "closed");
             state.open = undefined;
+            state.resolving = undefined;
+            state.resolveOutcome = undefined;
         }
     }
 
@@ -248,14 +268,24 @@ export class DialogState {
 
         const accept = state.policy === "accept";
 
+        state.resolving = dialog;
+        state.resolveOutcome = "policy";
+
         void this.access.send(tab, "Page.handleJavaScriptDialog", { accept })
             .then(() => {
                 if (state.open !== dialog) return;
 
                 this.record(state, dialog, "policy");
                 state.open = undefined;
+                state.resolving = undefined;
+                state.resolveOutcome = undefined;
             })
             .catch((error: unknown) => {
+                if (state.resolving === dialog) {
+                    state.resolving = undefined;
+                    state.resolveOutcome = undefined;
+                }
+
                 logDaemon(`could not resolve a dialog by policy: ${describeError(error)}`);
             });
     }
@@ -277,11 +307,13 @@ export class DialogState {
 
         if (!state) {
             state = {
-                pageEnabled: false,
-                subscribed : new Set(),
-                open       : undefined,
-                policy     : "none",
-                history    : [],
+                pageEnabled   : false,
+                subscribed    : new Set(),
+                open          : undefined,
+                policy        : "none",
+                history       : [],
+                resolving     : undefined,
+                resolveOutcome: undefined,
             };
             this.tabs.set(tab, state);
         }

@@ -112,6 +112,25 @@ describe("DialogState", () => {
         expect(fake.sent.at(-1)?.params).toEqual({ accept: true, promptText: "Milana" });
     });
 
+    it("records one entry when the browser acks the resolve", async () => {
+        const { fake, state } = dialogs();
+
+        opening(fake, "tab1", { url: "https://a.example/", message: "go?", type: "confirm" });
+        fake.emit("cdp.event", {
+            targetId: "tab1",
+            event   : "Page.javascriptDialogClosed",
+            params  : {},
+        });
+
+        const pending = state.resolve("tab1", true, undefined);
+
+        closed(fake, "tab1");
+        await pending;
+
+        expect(state.historyOf("tab1")).toHaveLength(1);
+        expect(state.historyOf("tab1")[0]?.resolved).toBe("closed");
+    });
+
     it("is a no op without an open dialog", async () => {
         const { fake, state } = dialogs();
         const result = await state.resolve("tab1", false, undefined);
