@@ -1,4 +1,11 @@
-import type { BackendSession, BrowserBackend, TargetInfo } from "../../src/daemon/index.js";
+import type {
+    BackendSession,
+    BrowserBackend,
+    ChildSessionHandle,
+    ChildSessionOptions,
+    FrameChildSession,
+    TargetInfo,
+} from "../../src/daemon/index.js";
 
 interface SentCommand {
     method   : string;
@@ -10,6 +17,7 @@ export class FakeSession implements BackendSession {
     sent   : SentCommand[] = [];
     detached = false;
     failure: Error | undefined;
+    reply? : (method: string, params: object | undefined) => unknown;
     private readonly handlers = new Map<string, Set<(params: unknown) => void>>();
 
     constructor(
@@ -21,7 +29,7 @@ export class FakeSession implements BackendSession {
         this.sent.push({ method, params, timeoutMs });
         if (this.failure) throw this.failure;
 
-        return { echoed: method, target: this.targetId };
+        return this.reply?.(method, params) ?? { echoed: method, target: this.targetId };
     }
 
     on(event: string, handler: (params: unknown) => void): () => void {
@@ -51,6 +59,71 @@ export class FakeSession implements BackendSession {
     }
 }
 
+export class FakeChildHandle implements ChildSessionHandle {
+    readonly childrenOf = new Map<string, FakeSession>();
+    detachedAll = false;
+
+    constructor(
+        private readonly backend: FakeBackend,
+        readonly targetId       : string,
+        private readonly options: ChildSessionOptions,
+    ) {}
+
+    addChild(frameId: string): FakeSession {
+        const session = new FakeSession(`${this.targetId}/${frameId}`, this.backend.log);
+
+        this.childrenOf.set(frameId, session);
+
+        return session;
+    }
+
+    removeChild(frameId: string): void {
+        const session = this.childrenOf.get(frameId);
+
+        if (!session) return;
+
+        this.childrenOf.delete(frameId);
+        this.options.onDetached({
+            targetId : `${this.targetId}/${frameId}`,
+            sessionId: `child-${frameId}`,
+            frameId,
+            url      : "",
+        });
+    }
+
+    children(): FrameChildSession[] {
+        return [...this.childrenOf].map(([frameId, session]) => this.wrap(frameId, session));
+    }
+
+    takeUnmatched(): FrameChildSession[] {
+        return this.children();
+    }
+
+    async detachAll(): Promise<void> {
+        this.detachedAll = true;
+        this.backend.log.push(`detachChildren ${this.targetId}`);
+        this.childrenOf.clear();
+    }
+
+    childSession(frameId: string): FakeSession | undefined {
+        return this.childrenOf.get(frameId);
+    }
+
+    private wrap(frameId: string, session: FakeSession): FrameChildSession {
+        return {
+            child: {
+                targetId : `${this.targetId}/${frameId}`,
+                sessionId: `child-${frameId}`,
+                frameId,
+                url      : "",
+            },
+            send  : (method, params, timeoutMs) => session.send(method, params, timeoutMs),
+            on    : (event, handler) => session.on(event, handler),
+            detach: () => session.detach(),
+        };
+    }
+}
+
 export class FakeBackend implements BrowserBackend {
     readonly log: string[] = [];
     readonly contexts = new Set<string>();
@@ -59,6 +132,7 @@ export class FakeBackend implements BrowserBackend {
         { url: string; title: string; contextId: string | undefined }
     >();
     readonly sessions = new Map<string, FakeSession>();
+    readonly childHandles: FakeChildHandle[] = [];
     failures: Partial<Record<"createContext" | "createTarget" | "closeTarget" | "attach", Error[]>> =
         {};
     gates: Partial<
@@ -134,6 +208,18 @@ export class FakeBackend implements BrowserBackend {
         this.log.push(`attach ${targetId}`);
 
         return session;
+    }
+
+    async attachChildren(
+        session: BackendSession,
+        options: ChildSessionOptions,
+    ): Promise<ChildSessionHandle> {
+        const page = session as FakeSession | undefined;
+        const handle = new FakeChildHandle(this, page?.targetId ?? "unknown", options);
+
+        this.childHandles.push(handle);
+
+        return handle;
     }
 
     onTargetDestroyed(handler: (targetId: string) => void): () => void {

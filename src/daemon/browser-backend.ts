@@ -12,6 +12,32 @@ export interface BackendSession {
     detach(): Promise<void>;
 }
 
+export interface ChildTargetInfo {
+    targetId : string;
+    sessionId: string;
+    frameId  : string | undefined;
+    url      : string;
+}
+
+export interface ChildSessionOptions {
+    // Raised when a child session ends: Target.detachedFromTarget, navigation, tab close.
+    onDetached(child: ChildTargetInfo): void;
+}
+
+export interface FrameChildSession extends BackendSession {
+    child: ChildTargetInfo;
+}
+
+export interface ChildSessionHandle {
+    children(): FrameChildSession[];
+    takeUnmatched(): FrameChildSession[];
+    detachAll(): Promise<void>;
+}
+
+export const MAX_CHILD_SESSIONS_PER_TAB = 50;
+
+export const MAX_CHILD_ATTACH_DEPTH = 5;
+
 export interface BrowserBackend {
     createContext(): Promise<string>;
     disposeContext(contextId: string): Promise<void>;
@@ -21,6 +47,10 @@ export interface BrowserBackend {
     // page targets only
     listTargets(): Promise<TargetInfo[]>;
     attach(targetId: string): Promise<BackendSession>;
+    attachChildren(
+        session: BackendSession,
+        options: ChildSessionOptions,
+    ): Promise<ChildSessionHandle>;
     onTargetDestroyed(handler: (targetId: string) => void): () => void;
     // fires when the connection ends, including after close()
     onDisconnected(handler: () => void): () => void;

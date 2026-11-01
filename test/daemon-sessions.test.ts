@@ -868,3 +868,229 @@ describe("listing sessions", () => {
         expect(seen).toEqual([expect.objectContaining({ tabs: 1 })]);
     });
 });
+
+describe("frame targets", () => {
+    const TREE = {
+        frameTree: {
+            frame      : { id: "main", url: "https://a.example/", name: "" },
+            childFrames: [
+                {
+                    frame: {
+                        id      : "same",
+                        parentId: "main",
+                        url     : "https://a.example/inner",
+                        name    : "inner",
+                    },
+                },
+                {
+                    frame: {
+                        id      : "cross",
+                        parentId: "main",
+                        url     : "https://b.example/",
+                        name    : "pay",
+                    },
+                },
+            ],
+        },
+    };
+
+    function mainTree(): (method: string) => unknown {
+        return (method) => (method === "Page.getFrameTree" ? TREE : { echoed: method });
+    }
+
+    it("lists the frame tree and marks frames without child sessions as shared", async () => {
+        const { backend, open } = setup();
+        const a = await open("a");
+        const tab = await a.createTab("https://a.example/");
+
+        await a.send(tab, "Page.enable", undefined);
+        const session = backend.sessions.get(tab);
+
+        if (session) session.reply = mainTree();
+
+        expect(await a.listFrames(tab)).toEqual([
+            { frameId: "main", parentFrameId: undefined, url: "https://a.example/", name: "", isolated: false },
+            { frameId: "same", parentFrameId: "main", url: "https://a.example/inner", name: "inner", isolated: false },
+            { frameId: "cross", parentFrameId: "main", url: "https://b.example/", name: "pay", isolated: false },
+        ]);
+        expect(backend.childHandles.map((handle) => handle.targetId)).toEqual([tab]);
+    });
+
+    it("marks a frame isolated once its child session is matched", async () => {
+        const { backend, open } = setup();
+        const a = await open("a");
+        const tab = await a.createTab("https://a.example/");
+
+        await a.send(tab, "Page.enable", undefined);
+        const session = backend.sessions.get(tab);
+
+        if (session) session.reply = mainTree();
+
+        await a.listFrames(tab);
+        backend.childHandles[0]?.addChild("cross");
+        const frames = await a.listFrames(tab);
+
+        expect(frames.find((frame) => frame.frameId === "cross")).toMatchObject({ isolated: true });
+        expect(frames.find((frame) => frame.frameId === "same")).toMatchObject({ isolated: false });
+    });
+
+    it("routes cdp.send with a frame id to the child session", async () => {
+        const { backend, open } = setup();
+        const a = await open("a");
+        const tab = await a.createTab("https://a.example/");
+
+        await a.send(tab, "Page.enable", undefined);
+        const session = backend.sessions.get(tab);
+
+        if (session) session.reply = mainTree();
+
+        await a.listFrames(tab);
+        const child = backend.childHandles[0]?.addChild("cross");
+
+        await a.listFrames(tab);
+        await a.send(tab, "Runtime.evaluate", { expression: "1" }, undefined, "cross");
+
+        expect(child?.sent.map((call) => call.method)).toEqual(["Runtime.evaluate"]);
+        expect(session?.sent.map((call) => call.method)).not.toContain("Runtime.evaluate");
+    });
+
+    it("answers an unknown frame id with not_found", async () => {
+        const { backend, open } = setup();
+        const a = await open("a");
+        const tab = await a.createTab("https://a.example/");
+
+        await a.send(tab, "Page.enable", undefined);
+        const session = backend.sessions.get(tab);
+
+        if (session) session.reply = mainTree();
+
+        await a.listFrames(tab);
+        expect(await code(a.send(tab, "Page.enable", undefined, undefined, "nope"))).toBe(
+            ErrorCode.notFound,
+        );
+        expect(await code(a.send(tab, "Page.enable", undefined, undefined, "same"))).toBe(
+            ErrorCode.notFound,
+        );
+    });
+
+    it("keeps child sessions of one session away from another", async () => {
+        const { backend, open } = setup();
+        const a = await open("a");
+        const b = await open("b");
+        const tab = await a.createTab("https://a.example/");
+
+        await a.send(tab, "Page.enable", undefined);
+        const session = backend.sessions.get(tab);
+
+        if (session) session.reply = mainTree();
+
+        await a.listFrames(tab);
+        backend.childHandles[0]?.addChild("cross");
+        await a.listFrames(tab);
+        expect(await code(b.send(tab, "Page.enable", undefined, undefined, "cross"))).toBe(
+            ErrorCode.notOwned,
+        );
+        expect(await code(b.listFrames(tab))).toBe(ErrorCode.notOwned);
+    });
+
+    it("forwards child session events with the frame id", async () => {
+        const { backend, emitted, open } = setup();
+        const a = await open("a");
+        const tab = await a.createTab("https://a.example/");
+
+        await a.send(tab, "Page.enable", undefined);
+        const session = backend.sessions.get(tab);
+
+        if (session) session.reply = mainTree();
+
+        await a.listFrames(tab);
+        const child = backend.childHandles[0]?.addChild("cross");
+
+        await a.listFrames(tab);
+        await a.subscribe(tab, "Page.loadEventFired", "cross");
+        child?.emit("Page.loadEventFired", { timestamp: 3 });
+
+        expect(emitted.a).toEqual([
+            {
+                event : "cdp.event",
+                params: {
+                    targetId: tab,
+                    event   : "Page.loadEventFired",
+                    params  : { timestamp: 3 },
+                    frameId : "cross",
+                },
+            },
+        ]);
+        a.unsubscribe(tab, "Page.loadEventFired", "cross");
+        child?.emit("Page.loadEventFired", { timestamp: 4 });
+        expect(emitted.a).toHaveLength(1);
+    });
+
+    it("drops the frame mapping when the child session detaches", async () => {
+        const { backend, open } = setup();
+        const a = await open("a");
+        const tab = await a.createTab("https://a.example/");
+
+        await a.send(tab, "Page.enable", undefined);
+        const session = backend.sessions.get(tab);
+
+        if (session) session.reply = mainTree();
+
+        await a.listFrames(tab);
+        backend.childHandles[0]?.addChild("cross");
+        await a.listFrames(tab);
+        backend.childHandles[0]?.removeChild("cross");
+        const frames = await a.listFrames(tab);
+
+        expect(frames.find((frame) => frame.frameId === "cross")).toMatchObject({ isolated: false });
+        expect(await code(a.send(tab, "Page.enable", undefined, undefined, "cross"))).toBe(
+            ErrorCode.notFound,
+        );
+    });
+
+    it("forgets frames that are gone and detaches children with the tab", async () => {
+        const { backend, open } = setup();
+        const a = await open("a");
+        const tab = await a.createTab("https://a.example/");
+
+        await a.send(tab, "Page.enable", undefined);
+        const session = backend.sessions.get(tab);
+
+        if (session) session.reply = mainTree();
+
+        await a.listFrames(tab);
+        backend.childHandles[0]?.addChild("cross");
+        await a.listFrames(tab);
+
+        if (session) {
+            session.reply = (method) =>
+                method === "Page.getFrameTree"
+                    ? { frameTree: { frame: { id: "main", url: "https://a.example/" } } }
+                    : { echoed: method };
+        }
+
+        expect(await a.listFrames(tab)).toEqual([
+            { frameId: "main", parentFrameId: undefined, url: "https://a.example/", name: "", isolated: false },
+        ]);
+        backend.childHandles[0]?.addChild("cross");
+        await a.closeTab(tab);
+        expect(backend.childHandles[0]?.detachedAll).toBe(true);
+        expect(backend.log).toContain(`detachChildren ${tab}`);
+    });
+
+    it("detaches children when the session closes", async () => {
+        const { backend, registry, open } = setup();
+        const a = await open("a");
+        const tab = await a.createTab("https://a.example/");
+
+        await a.send(tab, "Page.enable", undefined);
+        const session = backend.sessions.get(tab);
+
+        if (session) session.reply = mainTree();
+
+        await a.listFrames(tab);
+        await registry.close("a");
+        expect(backend.childHandles).toHaveLength(1);
+        expect(backend.childHandles[0]?.detachedAll).toBe(true);
+    });
+});

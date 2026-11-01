@@ -480,3 +480,80 @@ describe("client lifetime", () => {
         expect(backend.contexts.size).toBe(0);
     });
 });
+
+describe("frame addressing through the daemon", () => {
+    const TREE = {
+        frameTree: {
+            frame      : { id: "main", url: "https://a.example/", name: "" },
+            childFrames: [
+                { frame: { id: "cross", parentId: "main", url: "https://b.example/", name: "pay" } },
+            ],
+        },
+    };
+
+    async function frameTab() {
+        const started = await start();
+        const client = await started.connect();
+
+        await client.request("session.open");
+        const { targetId } = (await client.request("tab.create")) as { targetId: string };
+
+        await client.request("cdp.send", { targetId, method: "Page.enable" });
+        const session = started.backend.sessions.get(targetId);
+
+        if (session) session.reply = (method) => method === "Page.getFrameTree" ? TREE : {};
+
+        await client.request("frame.list", { targetId });
+        started.backend.childHandles[0]?.addChild("cross");
+
+        return { ...started, client, targetId };
+    }
+
+    it("lists frames and rejects unknown fields", async () => {
+        const { client, targetId } = await frameTab();
+        const listed = (await client.request("frame.list", { targetId })) as { frames: unknown[] };
+
+        expect(listed.frames).toHaveLength(2);
+        const error = await failure(client.request("frame.list", { targetId, surprise: true }));
+
+        expect(error.code).toBe(ErrorCode.badRequest);
+        expect(error.message).toContain("surprise");
+    });
+
+    it("routes cdp.send with a frame id to the child session", async () => {
+        const { backend, client, targetId } = await frameTab();
+
+        await client.request("frame.list", { targetId });
+        await client.request("cdp.send", {
+            targetId,
+            method : "Runtime.evaluate",
+            params : { expression: "1" },
+            frameId: "cross",
+        });
+
+        const child = backend.childHandles[0]?.childSession("cross");
+
+        expect(child?.sent.map((call) => call.method)).toEqual(["Runtime.evaluate"]);
+        const error = await failure(
+            client.request("cdp.send", { targetId, method: "Page.enable", frameId: "nope" }),
+        );
+
+        expect(error.code).toBe(ErrorCode.notFound);
+    });
+
+    it("keeps one session from addressing the frames of another", async () => {
+        const { client, targetId, connect } = await frameTab();
+        const stranger = await connect("stranger");
+
+        await stranger.request("session.open");
+        expect(
+            (await failure(stranger.request("frame.list", { targetId }))).code,
+        ).toBe(ErrorCode.notOwned);
+        expect(
+            (await failure(
+                stranger.request("cdp.send", { targetId, method: "Page.enable", frameId: "cross" }),
+            )).code,
+        ).toBe(ErrorCode.notOwned);
+        await expect(client.request("frame.list", { targetId })).resolves.toBeDefined();
+    });
+});

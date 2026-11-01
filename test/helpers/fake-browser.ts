@@ -16,6 +16,14 @@ interface FakeTarget {
     browserContextId: string | undefined;
 }
 
+interface FakeChild {
+    targetId : string;
+    sessionId: string;
+    frameId  : string;
+    url      : string;
+    parent   : string;
+}
+
 export class FakeBrowser {
     readonly defaultContext = "DEFAULT-CONTEXT";
     readonly contexts = new Set<string>();
@@ -30,6 +38,8 @@ export class FakeBrowser {
     private discovering = false;
     private counter = 0;
     private sessions = new Map<string, string>();
+    private autoAttached = new Set<string>();
+    private readonly children = new Map<string, FakeChild>();
 
     async start(): Promise<string> {
         await once(this.server, "listening");
@@ -65,6 +75,48 @@ export class FakeBrowser {
         for (const [sessionId, target] of this.sessions) {
             if (target === targetId) this.broadcast({ method: event, params, sessionId });
         }
+    }
+
+    emitChildEvent(sessionId: string, event: string, params: unknown): void {
+        if (this.children.has(sessionId)) this.broadcast({ method: event, params, sessionId });
+    }
+
+    childSessionIds(): string[] {
+        return [...this.children.keys()];
+    }
+
+    attachChild(parentTargetId: string, frameId: string, url: string): string {
+        const parent = [...this.sessions].find(([, target]) => target === parentTargetId)?.[0];
+
+        if (parent === undefined || !this.autoAttached.has(parent)) return "";
+
+        const sessionId = `S${++this.counter}`;
+        const targetId = `T${++this.counter}`;
+
+        this.children.set(sessionId, { targetId, sessionId, frameId, url, parent });
+        this.broadcast({
+            method: "Target.attachedToTarget",
+            params: {
+                sessionId,
+                targetInfo        : { targetId, type: "iframe", url },
+                waitingForDebugger: false,
+            },
+            sessionId: parent,
+        });
+
+        return sessionId;
+    }
+
+    detachChild(sessionId: string): void {
+        const child = this.children.get(sessionId);
+
+        if (!child) return;
+
+        this.children.delete(sessionId);
+        this.broadcast({
+            method: "Target.detachedFromTarget",
+            params: { sessionId, targetId: child.targetId },
+        });
     }
 
     emitRaw(method: string, params: unknown): void {
@@ -216,6 +268,14 @@ export class FakeBrowser {
 
             case "Target.detachFromTarget":
                 this.sessions.delete(String(params.sessionId));
+                this.children.delete(String(params.sessionId));
+                reply({});
+
+                return;
+
+            case "Target.setAutoAttach":
+                if (rpc.sessionId !== undefined) this.autoAttached.add(rpc.sessionId);
+
                 reply({});
 
                 return;

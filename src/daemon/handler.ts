@@ -23,6 +23,7 @@ export interface HandlerContext {
 const DOMAIN_METHOD = /^[A-Za-z][A-Za-z0-9]*\.[A-Za-z][A-Za-z0-9]*$/;
 
 const targetId = z.string().min(1).max(128);
+const frameId = z.string().min(1).max(128);
 const domainName = z.string().regex(DOMAIN_METHOD).max(100);
 
 const schemas = {
@@ -33,14 +34,16 @@ const schemas = {
     "tab.list"     : z.strictObject({ scope: z.enum(["owned", "available"]).optional() }),
     "tab.claim"    : z.strictObject({ targetId }),
     "tab.close"    : z.strictObject({ targetId }),
+    "frame.list"   : z.strictObject({ targetId }),
     "cdp.send"     : z.strictObject({
         targetId,
         method   : domainName,
         params   : z.record(z.string(), z.unknown()).optional(),
         timeoutMs: z.number().int().min(1).max(300_000).optional(),
+        frameId  : frameId.optional(),
     }),
-    "cdp.subscribe"  : z.strictObject({ targetId, event: domainName }),
-    "cdp.unsubscribe": z.strictObject({ targetId, event: domainName }),
+    "cdp.subscribe"  : z.strictObject({ targetId, event: domainName, frameId: frameId.optional() }),
+    "cdp.unsubscribe": z.strictObject({ targetId, event: domainName, frameId: frameId.optional() }),
 } as const;
 
 type Method = keyof typeof schemas;
@@ -139,6 +142,12 @@ export function createRequestHandler(context: HandlerContext): RequestHandler {
                 return {};
             }
 
+            case "frame.list": {
+                const request = parseParams(method, params);
+
+                return { frames: await session.listFrames(request.targetId) };
+            }
+
             case "cdp.send": {
                 const request = parseParams(method, params);
 
@@ -147,13 +156,14 @@ export function createRequestHandler(context: HandlerContext): RequestHandler {
                     request.method,
                     request.params,
                     request.timeoutMs,
+                    request.frameId,
                 );
             }
 
             case "cdp.subscribe": {
                 const request = parseParams(method, params);
 
-                await session.subscribe(request.targetId, request.event);
+                await session.subscribe(request.targetId, request.event, request.frameId);
 
                 return {};
             }
@@ -161,7 +171,7 @@ export function createRequestHandler(context: HandlerContext): RequestHandler {
             case "cdp.unsubscribe": {
                 const request = parseParams(method, params);
 
-                session.unsubscribe(request.targetId, request.event);
+                session.unsubscribe(request.targetId, request.event, request.frameId);
 
                 return {};
             }

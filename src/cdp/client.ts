@@ -240,6 +240,10 @@ export class CdpClient {
         return new CdpSession(this, sessionId, targetId);
     }
 
+    adoptSession(sessionId: string, targetId: string): CdpSession {
+        return new CdpSession(this, sessionId, targetId);
+    }
+
     dropSession(sessionId: string): void {
         const prefix = `${sessionId}|`;
 

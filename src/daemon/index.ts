@@ -55,7 +55,25 @@ export {
     type RequestHandler,
 } from "./server.js";
 
-export type { BackendSession, BrowserBackend, TargetInfo } from "./browser-backend.js";
+export {
+    MAX_CHILD_ATTACH_DEPTH,
+    MAX_CHILD_SESSIONS_PER_TAB,
+    type BackendSession,
+    type BrowserBackend,
+    type ChildSessionHandle,
+    type ChildSessionOptions,
+    type ChildTargetInfo,
+    type FrameChildSession,
+    type TargetInfo,
+} from "./browser-backend.js";
+
+export {
+    cdpChildTargetsDeps,
+    ChildTargets,
+    type ChildTargetsDeps,
+} from "./child-targets.js";
+
+export { frameSummaries, type FrameSummary } from "./frames.js";
 
 export { Daemon, type DaemonOptions } from "./daemon.js";
 

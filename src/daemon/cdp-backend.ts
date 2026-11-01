@@ -1,6 +1,13 @@
 import { z } from "zod";
 import type { CdpClient, CdpSession } from "../cdp/index.js";
-import type { BackendSession, BrowserBackend, TargetInfo } from "./browser-backend.js";
+import type {
+    BackendSession,
+    BrowserBackend,
+    ChildSessionHandle,
+    ChildSessionOptions,
+    TargetInfo,
+} from "./browser-backend.js";
+import { cdpChildTargetsDeps, ChildTargets } from "./child-targets.js";
 import { DaemonError } from "./errors.js";
 
 const contextsSchema = z.object({
@@ -32,7 +39,8 @@ function wrapSession(session: CdpSession): BackendSession {
         send  : (method, params, timeoutMs) => session.send(method, params, { timeoutMs }),
         on    : (event, handler) => session.on(event, (params) => handler(params)),
         detach: () => session.detach(),
-    };
+        peer  : session,
+    } as BackendSession & { peer: CdpSession };
 }
 
 export class CdpBackend implements BrowserBackend {
@@ -110,6 +118,19 @@ export class CdpBackend implements BrowserBackend {
 
     async attach(targetId: string): Promise<BackendSession> {
         return wrapSession(await this.client.attach(targetId));
+    }
+
+    async attachChildren(
+        session: BackendSession,
+        options: ChildSessionOptions,
+    ): Promise<ChildSessionHandle> {
+        const peer = (session as { peer?: CdpSession }).peer;
+
+        if (!peer) {
+            throw new DaemonError("The tab session does not support child targets.");
+        }
+
+        return ChildTargets.attach(peer, options, cdpChildTargetsDeps(this.client));
     }
 
     onTargetDestroyed(handler: (targetId: string) => void): () => void {

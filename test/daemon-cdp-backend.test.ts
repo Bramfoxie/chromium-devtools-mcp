@@ -336,3 +336,72 @@ describe("attached sessions", () => {
         expect(browser.calls.some((call) => call.method === "Target.detachFromTarget")).toBe(true);
     });
 });
+
+describe("child targets", () => {
+    it("auto attaches iframe targets of the tab session", async () => {
+        const { browser, backend } = await setup();
+        const id = await backend.createTarget("https://a.example/", undefined);
+        const session = await backend.attach(id);
+        const detached: string[] = [];
+        const handle = await backend.attachChildren(session, {
+            onDetached: (child) => void detached.push(child.sessionId),
+        });
+
+        expect(
+            browser.calls.find((call) => call.method === "Target.setAutoAttach")?.params,
+        ).toEqual({
+            autoAttach            : true,
+            waitForDebuggerOnStart: false,
+            flatten               : true,
+            filter                : [{ type: "iframe", exclude: false }],
+        });
+        expect(browser.childSessionIds()).toEqual([]);
+        expect(handle.children()).toEqual([]);
+
+        const childSession = browser.attachChild(id, "frame1", "https://b.example/");
+
+        expect(childSession).not.toBe("");
+        await vi.waitFor(() => expect(handle.children()).toHaveLength(1));
+
+        const [child] = handle.children();
+
+        expect(child?.child).toMatchObject({ frameId: undefined, url: "https://b.example/" });
+
+        const seen: unknown[] = [];
+
+        child?.on("Page.loadEventFired", (params) => seen.push(params));
+        browser.emitChildEvent(childSession, "Page.loadEventFired", { timestamp: 1 });
+        await vi.waitFor(() => expect(seen).toEqual([{ timestamp: 1 }]));
+
+        browser.detachChild(childSession);
+        await vi.waitFor(() => expect(handle.children()).toHaveLength(0));
+        expect(detached).toEqual([childSession]);
+        await handle.detachAll();
+    });
+
+    it("attaches nothing before the tab session opts in", async () => {
+        const { browser, backend } = await setup();
+        const id = await backend.createTarget("https://a.example/", undefined);
+
+        await backend.attach(id);
+        expect(browser.attachChild(id, "frame1", "https://b.example/")).toBe("");
+    });
+
+    it("detaches every child on detachAll", async () => {
+        const { browser, backend } = await setup();
+        const id = await backend.createTarget("https://a.example/", undefined);
+        const session = await backend.attach(id);
+        const handle = await backend.attachChildren(session, { onDetached: () => undefined });
+
+        browser.attachChild(id, "frame1", "https://b.example/");
+        browser.attachChild(id, "frame2", "https://c.example/");
+        await vi.waitFor(() => expect(handle.children()).toHaveLength(2));
+        await handle.detachAll();
+
+        expect(handle.children()).toEqual([]);
+        expect(browser.childSessionIds()).toEqual([]);
+        expect(
+            browser.calls.filter((call) => call.method === "Target.detachFromTarget"),
+        ).toHaveLength(2);
+    });
+});

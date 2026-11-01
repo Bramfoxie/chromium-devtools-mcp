@@ -1,5 +1,12 @@
 import { CdpClosedError, CdpProtocolError, CdpTimeoutError } from "../cdp/errors.js";
-import type { BackendSession, BrowserBackend, TargetInfo } from "./browser-backend.js";
+import { frameSummaries, type FrameSummary } from "./frames.js";
+import type {
+    BackendSession,
+    BrowserBackend,
+    ChildSessionHandle,
+    FrameChildSession,
+    TargetInfo,
+} from "./browser-backend.js";
 import { RpcError } from "./errors.js";
 import { describeError, logDaemon } from "./log.js";
 import { checkCall, checkEvent } from "./method-policy.js";
@@ -37,11 +44,24 @@ export type TabScope = "owned" | "available";
 
 export type Emit = (event: string, params?: unknown) => void;
 
+export type { FrameSummary } from "./frames.js";
+
+interface FrameEntry {
+    summary : FrameSummary;
+    session?: FrameChildSession;
+}
+
 interface OwnedTab {
     created      : boolean;
     closing      : boolean;
     attached?    : Promise<BackendSession>;
+    children?    : Promise<ChildSessionHandle>;
+    frames       : Map<string, FrameEntry>;
     subscriptions: Map<string, () => void>;
+}
+
+function unknownFrame(): RpcError {
+    return new RpcError(ErrorCode.notFound, "No such frame in this tab.");
 }
 
 interface Ownership {
@@ -134,7 +154,12 @@ export class ClientSession {
         if (this.registry.wasDestroyed(targetId)) throw tabGone();
 
         this.registry.setOwner(targetId, this);
-        this.tabs.set(targetId, { created: true, closing: false, subscriptions: new Map() });
+        this.tabs.set(targetId, {
+            created      : true,
+            closing      : false,
+            frames       : new Map(),
+            subscriptions: new Map(),
+        });
 
         return targetId;
     }
@@ -156,7 +181,12 @@ export class ClientSession {
         if (this.registry.wasDestroyed(targetId)) throw tabGone();
 
         this.registry.setOwner(targetId, this);
-        this.tabs.set(targetId, { created: false, closing: false, subscriptions: new Map() });
+        this.tabs.set(targetId, {
+            created      : false,
+            closing      : false,
+            frames       : new Map(),
+            subscriptions: new Map(),
+        });
     }
 
     async closeTab(targetId: string): Promise<void> {
@@ -213,6 +243,7 @@ export class ClientSession {
         method    : string,
         params    : Record<string, unknown> | undefined,
         timeoutMs?: number,
+        frameId?  : string,
     ): Promise<unknown> {
         this.ensureOpen();
         const tab = this.owned(targetId);
@@ -220,7 +251,7 @@ export class ClientSession {
         const checked = checkCall(method, params, this.options);
 
         try {
-            const session = await this.attached(targetId, tab);
+            const session = await this.sessionFor(targetId, tab, frameId);
 
             this.assertCurrent(targetId, tab);
 
@@ -230,34 +261,81 @@ export class ClientSession {
         }
     }
 
-    async subscribe(targetId: string, event: string): Promise<void> {
+    async subscribe(targetId: string, event: string, frameId?: string): Promise<void> {
         this.ensureOpen();
         const tab = this.owned(targetId);
 
         checkEvent(event);
-        if (tab.subscriptions.has(event)) return;
+        const key = frameId === undefined ? event : `${frameId}|${event}`;
+
+        if (tab.subscriptions.has(key)) return;
 
         try {
-            const session = await this.attached(targetId, tab);
+            const session = await this.sessionFor(targetId, tab, frameId);
 
             this.assertCurrent(targetId, tab);
-            if (tab.subscriptions.has(event)) return;
+            if (tab.subscriptions.has(key)) return;
 
             tab.subscriptions.set(
-                event,
-                session.on(event, (params) => this.emit("cdp.event", { targetId, event, params })),
+                key,
+                session.on(event, (params) =>
+                    this.emit("cdp.event", {
+                        targetId,
+                        event,
+                        params,
+                        ...(frameId === undefined ? {} : { frameId }),
+                    })),
             );
         } catch (error) {
             throw translate(error);
         }
     }
 
-    unsubscribe(targetId: string, event: string): void {
+    unsubscribe(targetId: string, event: string, frameId?: string): void {
+        this.ensureOpen();
+        const tab = this.owned(targetId);
+        const key = frameId === undefined ? event : `${frameId}|${event}`;
+
+        tab.subscriptions.get(key)?.();
+        tab.subscriptions.delete(key);
+    }
+
+    async listFrames(targetId: string): Promise<FrameSummary[]> {
         this.ensureOpen();
         const tab = this.owned(targetId);
 
-        tab.subscriptions.get(event)?.();
-        tab.subscriptions.delete(event);
+        try {
+            const session = await this.attached(targetId, tab);
+
+            this.assertCurrent(targetId, tab);
+            const tree = await session.send("Page.getFrameTree", undefined);
+            const children = await this.childrenOf(targetId, tab).catch(() => undefined);
+
+            this.assertCurrent(targetId, tab);
+
+            const live = new Set(
+                children?.children().map((child) => child.child.sessionId) ?? [],
+            );
+
+            for (const [frameId, entry] of tab.frames) {
+                if (entry.session !== undefined && !live.has(entry.session.child.sessionId)) {
+                    tab.frames.set(frameId, { summary: entry.summary });
+                }
+            }
+
+            const summaries = frameSummaries(tree, (frameId) =>
+                tab.frames.get(frameId)?.session !== undefined);
+
+            this.syncFrames(tab, summaries);
+            await this.matchChildren(tab, children);
+
+            return summaries.map((summary) => ({
+                ...summary,
+                isolated: tab.frames.get(summary.frameId)?.session !== undefined,
+            }));
+        } catch (error) {
+            throw translate(error);
+        }
     }
 
     handleTargetDestroyed(targetId: string): void {
@@ -288,7 +366,9 @@ export class ClientSession {
         const detaches = Promise.all(
             entries.map(async ([, tab]) => {
                 const session = await tab.attached?.catch(() => undefined);
+                const children = await tab.children?.catch(() => undefined);
 
+                await children?.detachAll().catch(() => undefined);
                 await session?.detach().catch(() => undefined);
             }),
         );
@@ -377,6 +457,82 @@ export class ClientSession {
         return tab.attached;
     }
 
+    private childrenOf(targetId: string, tab: OwnedTab): Promise<ChildSessionHandle> {
+        if (!tab.children) {
+            const attaching = (async () => {
+                const session = await this.attached(targetId, tab);
+
+                return this.backend.attachChildren(session, {
+                    onDetached: (child) => {
+                        for (const [frameId, entry] of tab.frames) {
+                            if (entry.session?.child.sessionId !== child.sessionId) continue;
+
+                            tab.frames.set(frameId, { summary: entry.summary });
+                        }
+                    },
+                });
+            })();
+
+            tab.children = attaching;
+            attaching.catch(() => {
+                if (tab.children === attaching) tab.children = undefined;
+            });
+        }
+
+        return tab.children;
+    }
+
+    private async sessionFor(
+        targetId: string,
+        tab     : OwnedTab,
+        frameId : string | undefined,
+    ): Promise<BackendSession> {
+        if (frameId === undefined) return this.attached(targetId, tab);
+
+        await this.childrenOf(targetId, tab);
+        const entry = tab.frames.get(frameId);
+
+        if (entry?.session === undefined) throw unknownFrame();
+
+        return entry.session;
+    }
+
+    private syncFrames(tab: OwnedTab, summaries: FrameSummary[]): void {
+        const seen = new Set(summaries.map((summary) => summary.frameId));
+
+        for (const frameId of [...tab.frames.keys()]) {
+            if (!seen.has(frameId)) tab.frames.delete(frameId);
+        }
+
+        for (const summary of summaries) {
+            const entry = tab.frames.get(summary.frameId);
+
+            tab.frames.set(summary.frameId, { summary, session: entry?.session });
+        }
+    }
+
+    private async matchChildren(
+        tab     : OwnedTab,
+        children: ChildSessionHandle | undefined,
+    ): Promise<void> {
+        if (children === undefined) return;
+
+        for (const child of children.takeUnmatched()) {
+            if (child.child.frameId === undefined) {
+                const frames = await child.send("Page.getFrameTree", undefined).catch(() => undefined);
+                const root = frameSummaries(frames, () => false)[0];
+
+                if (root === undefined) continue;
+
+                child.child.frameId = root.frameId;
+            }
+
+            const entry = tab.frames.get(child.child.frameId);
+
+            if (entry !== undefined) entry.session = child;
+        }
+    }
+
     private forget(targetId: string): void {
         const tab = this.tabs.get(targetId);
 
@@ -385,6 +541,7 @@ export class ClientSession {
         this.tabs.delete(targetId);
         this.registry.releaseOwner(targetId, this);
         for (const off of tab.subscriptions.values()) off();
+        void tab.children?.then((children) => children.detachAll()).catch(() => undefined);
         void tab.attached?.then((session) => session.detach()).catch(() => undefined);
     }
 }
