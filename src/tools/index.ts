@@ -1,3 +1,5 @@
+export { allTools } from "./all-tools.js";
+
 export {
     type AnyTool,
     defineTool,
@@ -34,3 +36,7 @@ export {
     type SafetyRequest,
     type SafetyTarget,
 } from "./safety.js";
+
+export { pageDetails, pageInfo, pageInfoExpression } from "./page-info.js";
+
+export { closeTab, listSessions, listTabs, newTab, selectTab, selectionOf } from "./tabs.js";

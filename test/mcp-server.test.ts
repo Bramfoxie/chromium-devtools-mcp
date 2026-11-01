@@ -113,14 +113,14 @@ describe("createMcpServer", () => {
         await server.close();
     });
 
-    it("lists an empty set of tools until tools are registered", async () => {
+    it("advertises instructions and no tools capability until tools are registered", async () => {
         const server = createMcpServer("1.0.0");
         const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
         const client = new Client({ name: "test-client", version: "1.0.0" });
 
         await Promise.all([server.connect(serverSide), client.connect(clientSide)]);
-        expect(client.getServerCapabilities()).toMatchObject({ tools: {} });
-        expect(await client.listTools()).toEqual({ tools: [] });
+        expect(client.getServerCapabilities()).not.toHaveProperty("tools");
+        expect(client.getInstructions()).toContain("new_tab");
         await client.close();
         await server.close();
     });
@@ -166,7 +166,15 @@ describe("runMcpServer", () => {
     function setup() {
         const stdin = new PassThrough();
         const stdout = new PassThrough();
-        const link = { close: vi.fn(async () => undefined) };
+        const link = {
+            close  : vi.fn(async () => undefined),
+            request: vi.fn(async () => ({})),
+            ready  : vi.fn(async () => {
+                throw new Error("no daemon");
+            }),
+            sessionGeneration: 0,
+            onSessionReset   : vi.fn(() => () => undefined),
+        };
         const lines: string[] = [];
         let pending = "";
 

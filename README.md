@@ -2,7 +2,7 @@
 
 MCP server that lets AI agents drive your real Chromium browser through the DevTools Protocol.
 
-Status: early development. The core (config, browser connection, daemon, MCP entrypoint) works; the browser tools are not published yet.
+Status: early development. The core (config, browser connection, daemon, MCP entrypoint) and the tab tools work; the rest of the browser tools are not published yet.
 
 ## Features
 
@@ -10,7 +10,7 @@ Status: early development. The core (config, browser connection, daemon, MCP ent
 - Tabs open in the background. Bringing a window to the front is refused unless `allowFocus` is on.
 - Headless and interactive modes for the managed profile.
 - Several MCP clients share one browser through a per-user daemon, each in its own session.
-- Planned: browser tools, one-command install into your MCP client, safety controls (read-only mode, domain allowlist, confirmation of dangerous actions).
+- Planned: the rest of the browser tools, one-command install into your MCP client, domain allowlist and confirmation of dangerous actions.
 
 ## Usage
 
@@ -47,6 +47,19 @@ Attach mode controls the browser you already run. The browser has to allow it:
 
 Until the browser allows it, the daemon prints these instructions, returns them to the client and keeps checking.
 
+## Tools
+
+Each session keeps its own tab selection. `new_tab` opens a background tab and selects it; the other tab tools act on the selected tab unless a `tab` id from `list_tabs` is passed. Claimed tabs cannot be closed, they are released when the session ends. When the daemon restarts, the session is gone and its tabs with it, so the tools say to open a new tab.
+
+- `list_tabs`: list owned tabs, or with `scope: "available"` the browser tabs this session could claim.
+- `list_sessions`: list open sessions of the daemon without their tab details.
+- `select_tab`: select an owned tab, claiming an available one when needed. Never focuses it.
+- `new_tab`: open a background tab and select it.
+- `close_tab`: close a tab opened by this session.
+- `page_info`: read the URL, title, viewport and scroll position of a tab.
+
+Every tool returns its result as JSON text plus structured content. Large outputs are truncated with an explicit marker. Mutating tools (`new_tab`, `select_tab`, `close_tab`) are refused in read-only mode; the domain allowlist and dangerous action confirmations are planned.
+
 ## Daemon
 
 The MCP server connects to one daemon per user and data directory and starts it when it is absent. Clients that run with a different `HOME` or `XDG_DATA_HOME` get their own daemon. The daemon owns the browser connection and gives every MCP client its own session.
@@ -74,7 +87,7 @@ The file is `~/.config/chromium-devtools-mcp/config.json` on macOS and Linux and
 | `profileDir`              | `--profile-dir`               | `CHROMIUM_DEVTOOLS_MCP_PROFILE_DIR`       | absolute directory of the managed profile                             | see below       |
 | `debugPort`               | `--debug-port`                | `CHROMIUM_DEVTOOLS_MCP_DEBUG_PORT`        | 1 to 65535                                                            | 9222            |
 | `allowFocus`              | `--allow-focus`               | `CHROMIUM_DEVTOOLS_MCP_ALLOW_FOCUS`       | allow bringing a window to the front                                  | false           |
-| `safety.readOnly`         | `--read-only`                 | `CHROMIUM_DEVTOOLS_MCP_READ_ONLY`         | refuse actions that change pages (planned)                            | false           |
+| `safety.readOnly`         | `--read-only`                 | `CHROMIUM_DEVTOOLS_MCP_READ_ONLY`         | refuse actions that change pages                                      | false           |
 | `safety.allowedDomains`   | `--allowed-domains`           | `CHROMIUM_DEVTOOLS_MCP_ALLOWED_DOMAINS`   | comma separated list (planned)                                        | empty, no limit |
 | `safety.confirmDangerous` | `--confirm-dangerous`         | `CHROMIUM_DEVTOOLS_MCP_CONFIRM_DANGEROUS` | ask before dangerous actions (planned)                                | false           |
 
@@ -97,8 +110,8 @@ An unknown flag, a missing value or a stray argument is an error, so a typo neve
 
 1. Repository, npm name and CI.
 2. Core: config, CDP client, browser discovery, managed and attach modes, daemon.
-3. Tools: tabs, navigation, DOM, input, network, emulation, storage, dialogs, network mocking.
-4. Safety controls.
+3. Tools: tabs (done), navigation, DOM, input, network, emulation, storage, dialogs, network mocking.
+4. Safety controls (read-only mode works, the rest planned).
 5. Client installer.
 6. First release.
 7. Later: performance traces and Core Web Vitals, Lighthouse, heap snapshots.

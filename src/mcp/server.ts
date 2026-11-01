@@ -4,6 +4,8 @@ import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { pathFor, type Config } from "../config/index.js";
+import { allTools, registerTools, ToolRuntime } from "../tools/index.js";
+import { DaemonAccess } from "./daemon-access.js";
 import {
     connectToDaemon,
     currentLayout,
@@ -106,13 +108,43 @@ export function createDaemonLink(
     return new DaemonLink({ identity: daemonIdentity(config) }, deps);
 }
 
-export function createMcpServer(version: string): McpServer {
-    const server = new McpServer({ name: SERVER_NAME, version });
+export const SERVER_INSTRUCTIONS =
+    "Drive a Chromium browser. Tabs open in the background with new_tab; most tools act on " +
+    "the selected tab or on a tab id from list_tabs. Element targets use a uid from a snapshot " +
+    "or a CSS selector, never both. Large outputs are truncated with an explicit marker.";
 
-    // Registering and removing a tool makes the SDK answer tools/list with an empty list.
-    server.registerTool("placeholder", {}, () => ({ content: [] })).remove();
+export function createMcpServer(version: string): McpServer {
+    const server = new McpServer(
+        { name: SERVER_NAME, version },
+        { instructions: SERVER_INSTRUCTIONS },
+    );
 
     return server;
+}
+
+export interface ToolServerOptions {
+    access?: DaemonAccess;
+    tools? : typeof allTools;
+}
+
+export function registerServerTools(
+    server : McpServer,
+    config : Config,
+    link   : DaemonLink,
+    options: ToolServerOptions = {},
+): ToolRuntime {
+    const access = options.access ?? new DaemonAccess({ link });
+    const runtime = new ToolRuntime({ access, config });
+
+    access.on("tab.closed", (params) => {
+        const targetId = (params as { targetId?: unknown } | null)?.targetId;
+
+        if (typeof targetId === "string") runtime.tabs.forget(targetId);
+    });
+    access.forgetStaleState(() => runtime.tabs.reset());
+    registerTools({ server, tools: options.tools ?? allTools, runtime });
+
+    return runtime;
 }
 
 export async function runMcpServer(
@@ -124,6 +156,8 @@ export async function runMcpServer(
     const stdin = options.stdin ?? process.stdin;
     const stdout = options.stdout ?? process.stdout;
     const server = createMcpServer(options.version ?? packageVersion());
+
+    registerServerTools(server, config, link);
     let finish: () => void = () => undefined;
     const done = new Promise<void>((resolve) => {
         finish = resolve;

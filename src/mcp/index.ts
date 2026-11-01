@@ -24,7 +24,10 @@ export {
     type LinkFactoryOptions,
     packageVersion,
     readPackageVersion,
+    registerServerTools,
     runMcpServer,
+    SERVER_INSTRUCTIONS,
+    type ToolServerOptions,
 } from "./server.js";
 
 export { spawnDaemonProcess, type SpawnDaemonOptions } from "./spawn-daemon.js";

@@ -8,6 +8,7 @@ import type { Config } from "../src/config/index.js";
 import { ErrorCode, RpcError } from "../src/daemon/index.js";
 import { createMcpServer } from "../src/mcp/index.js";
 import {
+    allTools,
     CANCELLED_MESSAGE,
     defineTool,
     registerTools,
@@ -33,27 +34,31 @@ const readOnly: Config = {
     safety: { ...managedConfig.safety, readOnly: true },
 };
 
-const reader = defineTool({
-    name       : "reader",
-    description: "Reads a value.",
-    access     : "read",
-    input      : z.strictObject({}),
-    output     : z.strictObject({ ok: z.boolean() }),
-    handler    : async () => ({ ok: true }),
-});
+describe("tool declarations", () => {
+    it("declares six tools with unique names, descriptions and access", () => {
+        expect(allTools.map((tool) => tool.name)).toEqual([
+            "list_tabs",
+            "list_sessions",
+            "select_tab",
+            "new_tab",
+            "close_tab",
+            "page_info",
+        ]);
 
-const writer = defineTool({
-    name       : "writer",
-    description: "Writes a value.",
-    access     : "mutate",
-    input      : z.strictObject({}),
-    output     : z.strictObject({ ok: z.boolean() }),
-    handler    : async () => ({ ok: true }),
-});
+        for (const tool of allTools) {
+            expect(tool.description.length).toBeGreaterThan(0);
+            expect(["read", "mutate"]).toContain(tool.access);
+        }
+    });
 
-describe("safety gate", () => {
-    it("runs every mutate tool through the gate", async () => {
-        for (const tool of [reader, writer]) {
+    it("marks exactly the tab changing tools as mutate", () => {
+        const mutate = allTools.filter((tool) => tool.access === "mutate").map((tool) => tool.name);
+
+        expect(mutate.sort()).toEqual(["close_tab", "new_tab", "select_tab"]);
+    });
+
+    it("runs every mutate tool through the safety gate", async () => {
+        for (const tool of allTools) {
             const called: string[] = [];
             const probe = defineTool({
                 name       : tool.name,
@@ -169,18 +174,25 @@ describe("runTool", () => {
     });
 });
 
-describe("registerTools", () => {
-    it("registers tools with their schemas on the server", async () => {
+describe("tools/list", () => {
+    it("lists exactly the six tools with their schemas", async () => {
         const server = createMcpServer("1.0.0");
 
-        registerTools({ server, tools: [reader, writer], runtime: runtime() });
+        registerTools({ server, tools: allTools, runtime: runtime() });
         const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
         const client = new Client({ name: "test-client", version: "1.0.0" });
 
         await Promise.all([server.connect(serverSide), client.connect(clientSide)]);
         const listed = await client.listTools();
 
-        expect(listed.tools.map((tool) => tool.name)).toEqual(["reader", "writer"]);
+        expect(listed.tools.map((tool) => tool.name)).toEqual([
+            "list_tabs",
+            "list_sessions",
+            "select_tab",
+            "new_tab",
+            "close_tab",
+            "page_info",
+        ]);
 
         for (const tool of listed.tools) {
             expect(tool.description?.length ?? 0).toBeGreaterThan(0);
@@ -188,9 +200,32 @@ describe("registerTools", () => {
             expect(tool.outputSchema).toMatchObject({ type: "object" });
         }
 
-        const called = await client.callTool({ name: "reader", arguments: {} });
+        const select = listed.tools.find((tool) => tool.name === "select_tab");
 
-        expect(called.structuredContent).toEqual({ ok: true });
+        expect(select?.inputSchema.required).toEqual(["tab"]);
+        await client.close();
+        await server.close();
+    });
+
+    it("calls a registered tool end to end", async () => {
+        const access = new FakeAccess();
+        const server = createMcpServer("1.0.0");
+
+        registerTools({ server, tools: allTools, runtime: runtime(managedConfig, access) });
+        const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
+        const client = new Client({ name: "test-client", version: "1.0.0" });
+
+        await Promise.all([server.connect(serverSide), client.connect(clientSide)]);
+        const created = await client.callTool({ name: "new_tab", arguments: {} });
+        const structured = created.structuredContent as { tab: { tab: string } };
+
+        expect(structured.tab.tab).toBe("tab1");
+
+        const listed = (await client.callTool({ name: "list_tabs", arguments: {} }))
+            .structuredContent as { tabs: Array<{ selected: boolean }> };
+
+        expect(listed.tabs).toHaveLength(1);
+        expect(listed.tabs[0]?.selected).toBe(true);
         await client.close();
         await server.close();
     });
