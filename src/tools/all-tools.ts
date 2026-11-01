@@ -18,6 +18,7 @@ import { networkRequests } from "./network-requests.js";
 import { networkResponseBody } from "./network-response-body.js";
 import { pageDialogs } from "./page-dialogs.js";
 import { pagePdf } from "./page-pdf.js";
+import { storageRead } from "./storage-read.js";
 import { pageWait } from "./page-wait.js";
 import { screenshot } from "./screenshot.js";
 import { pageInfo } from "./page-info.js";
@@ -42,6 +43,7 @@ export const allTools: AnyTool[] = [
     networkResponseBody,
     pageDialogs,
     pageWait,
+    storageRead,
     pagePdf,
     pageMetrics,
     screenshot,

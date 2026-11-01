@@ -180,6 +180,21 @@ export {
 } from "./page-wait.js";
 
 export {
+    pageOrigin,
+    STORAGE_DEFAULT_ENTRIES,
+    STORAGE_DEFAULT_VALUE_CHARS,
+    STORAGE_KEY_CLIP_CHARS,
+    STORAGE_MAX_ENTRIES,
+    STORAGE_MAX_KEY_CHARS,
+    STORAGE_MAX_KEYS,
+    STORAGE_MAX_VALUE_CHARS,
+    type StorageCookie,
+    storageKeysOf,
+    storageOriginOf,
+    storageRead,
+} from "./storage-read.js";
+
+export {
     elementFunctionDeclaration,
     EVALUATE_DEFAULT_RESULT_CHARS,
     EVALUATE_DEFAULT_TIMEOUT_MS,
