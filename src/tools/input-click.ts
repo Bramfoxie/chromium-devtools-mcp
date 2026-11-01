@@ -271,6 +271,8 @@ export const inputClick = defineTool({
 
         throwIfCancelled(context.signal);
 
+        // The release must reach the page even when the press path fails:
+        // a pressed button left down drags the page until the tab closes.
         const acted = await navigationOf(context.access, targetId, async () => {
             await context.access.send(targetId, "Input.dispatchMouseEvent", {
                 type      : "mouseMoved",
@@ -290,15 +292,30 @@ export const inputClick = defineTool({
                 buttons,
                 clickCount,
             });
-            await context.access.send(targetId, "Input.dispatchMouseEvent", {
-                type: "mouseReleased",
-                x   : point.x,
-                y   : point.y,
-                modifiers,
-                button,
-                buttons,
-                clickCount,
-            });
+
+            try {
+                await context.access.send(targetId, "Input.dispatchMouseEvent", {
+                    type: "mouseReleased",
+                    x   : point.x,
+                    y   : point.y,
+                    modifiers,
+                    button,
+                    buttons,
+                    clickCount,
+                });
+            } catch (error) {
+                await context.access.send(targetId, "Input.dispatchMouseEvent", {
+                    type: "mouseReleased",
+                    x   : point.x,
+                    y   : point.y,
+                    modifiers,
+                    button,
+                    buttons,
+                    clickCount,
+                }).catch(() => undefined);
+
+                throw error;
+            }
         });
 
         return {

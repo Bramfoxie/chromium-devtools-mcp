@@ -382,6 +382,30 @@ describe("input_key", () => {
         });
     });
 
+    it("releases a held modifier when a mid-chord dispatch fails", async () => {
+        const { fake, runtime } = runtimeWith(textFake());
+        let calls = 0;
+
+        fake.failSend = (_targetId, method) => {
+            if (method !== "Input.dispatchKeyEvent") return undefined as never;
+
+            calls += 1;
+
+            if (calls === 2) return new Error("CDP gone");
+
+            return undefined as never;
+        };
+
+        const result = await runTool(inputKey, { key: "Control+a" }, extra(), runtime);
+
+        expect(result.isError).toBe(true);
+        const keys = fake.sent.filter((entry) => entry.method === "Input.dispatchKeyEvent");
+        const ups = keys.filter((entry) => entry.params?.type === "keyUp");
+
+        expect(ups.length).toBeGreaterThanOrEqual(1);
+        expect(ups[ups.length - 1]?.params).toMatchObject({ key: "Control" });
+    });
+
     it("resolves ControlOrMeta from the browser platform, not the server", async () => {
         const { fake, runtime } = runtimeWith(textFake({ platform: "MacIntel" }));
 
