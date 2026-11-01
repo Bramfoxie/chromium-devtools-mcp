@@ -57,11 +57,17 @@ describe("storage helpers", () => {
 });
 
 describe("storage_read", () => {
-    it("is a read tool without the dangerous flag", () => {
+    it("flags only the cookie part as dangerous", () => {
         const found = allTools.find((tool) => tool.name === "storage_read");
 
         expect(found?.access).toBe("read");
-        expect(found?.dangerous).toBeUndefined();
+        expect(typeof found?.dangerous).toBe("function");
+
+        const dangerous = found?.dangerous as (args: { kind: string }) => boolean;
+
+        expect(dangerous({ kind: "cookies" })).toBe(true);
+        expect(dangerous({ kind: "local" })).toBe(false);
+        expect(dangerous({ kind: "session" })).toBe(false);
     });
 
     it("reads local storage through DOMStorage with the origin storage id", async () => {

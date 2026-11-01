@@ -59,7 +59,7 @@ export interface ToolDefinition<
     name       : string;
     description: string;
     access     : ToolAccess;
-    dangerous? : boolean;
+    dangerous? : boolean | ((args: z.output<TInputSchema>) => boolean);
     input      : TInputSchema;
     output     : TOutputSchema;
     announced? : z.ZodType;
