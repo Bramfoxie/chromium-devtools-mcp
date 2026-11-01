@@ -120,6 +120,18 @@ export {
 } from "./image-size.js";
 
 export {
+    PDF_A4_HEIGHT_INCHES,
+    PDF_A4_WIDTH_INCHES,
+    PDF_DEFAULT_MARGIN_INCHES,
+    PDF_DEFAULT_MAX_BYTES,
+    PDF_MAX_BYTES_LIMIT,
+    PDF_PAGE_RANGES_MAX_CHARS,
+    countPdfPages,
+    pagePdf,
+    validPageRanges,
+} from "./page-pdf.js";
+
+export {
     SCREENSHOT_DEFAULT_MAX_BYTES,
     SCREENSHOT_DEFAULT_MAX_DIMENSION,
     SCREENSHOT_DEFAULT_QUALITY,
