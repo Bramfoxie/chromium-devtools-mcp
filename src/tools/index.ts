@@ -159,6 +159,27 @@ export { pageDetails, pageInfo, pageInfoExpression } from "./page-info.js";
 export { DIALOG_PROMPT_TEXT_MAX_CHARS, pageDialogs } from "./page-dialogs.js";
 
 export {
+    checkConditions,
+    expressionScript,
+    pageWait,
+    selectorScript,
+    textScript,
+    WAIT_DEFAULT_POLL_MS,
+    WAIT_DEFAULT_TIMEOUT_MS,
+    WAIT_MAX_EXPRESSION_CHARS,
+    WAIT_MAX_SELECTOR_CHARS,
+    WAIT_MAX_SLEEP_MS,
+    WAIT_MAX_TEXT_CHARS,
+    WAIT_MAX_TIMEOUT_MS,
+    WAIT_MAX_URL_CHARS,
+    WAIT_MIN_POLL_MS,
+    WAIT_NETWORK_IDLE_MS,
+    type WaitCondition,
+    waitOutcomeOf,
+    type WaitOutcome,
+} from "./page-wait.js";
+
+export {
     elementFunctionDeclaration,
     EVALUATE_DEFAULT_RESULT_CHARS,
     EVALUATE_DEFAULT_TIMEOUT_MS,

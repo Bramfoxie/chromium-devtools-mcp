@@ -18,6 +18,7 @@ import { networkRequests } from "./network-requests.js";
 import { networkResponseBody } from "./network-response-body.js";
 import { pageDialogs } from "./page-dialogs.js";
 import { pagePdf } from "./page-pdf.js";
+import { pageWait } from "./page-wait.js";
 import { screenshot } from "./screenshot.js";
 import { pageInfo } from "./page-info.js";
 import { pageMetrics } from "./page-metrics.js";
@@ -40,6 +41,7 @@ export const allTools: AnyTool[] = [
     networkRequests,
     networkResponseBody,
     pageDialogs,
+    pageWait,
     pagePdf,
     pageMetrics,
     screenshot,

@@ -185,6 +185,13 @@ export class CaptureManager {
 
         if (reduced === undefined) return;
 
+        if (
+            reduced.record.finished && reduced.record.finishedAt === undefined &&
+            (event === "Network.loadingFinished" || event === "Network.loadingFailed")
+        ) {
+            reduced.record.finishedAt = this.clock.now();
+        }
+
         if (reduced.created) {
             if (reduced.redirected && known !== undefined && before !== undefined) {
                 reduced.record.redirectedFrom = known.id;
@@ -266,6 +273,28 @@ export class CaptureManager {
         }
 
         return { records, nextAfterId, droppedCount, totalBuffered };
+    }
+
+    idleNetworkMs(tab: string): number {
+        const capture = this.tabs.get(tab);
+
+        if (capture === undefined) return Number.MAX_SAFE_INTEGER;
+
+        let latest: number | undefined;
+
+        for (const { value } of capture.network.after(0, Number.MAX_SAFE_INTEGER)) {
+            if (!value.finished) return 0;
+
+            if (value.finishedAt !== undefined) {
+                latest = latest === undefined
+                    ? value.finishedAt
+                    : Math.max(latest, value.finishedAt);
+            }
+        }
+
+        if (latest === undefined) return Number.MAX_SAFE_INTEGER;
+
+        return Math.max(0, this.clock.now() - latest);
     }
 
     networkRecord(tab: string, id: number): { id: number; record: NetworkRecord } | undefined {

@@ -32,6 +32,7 @@ export interface NetworkRecord {
     redirect        : boolean;
     errorText?      : string;
     startTime?      : number;
+    finishedAt?     : number;
     durationMs?     : number;
     encodedBytes?   : number;
     initiator?      : string;
