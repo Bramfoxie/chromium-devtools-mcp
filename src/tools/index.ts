@@ -40,6 +40,23 @@ export {
 export { pageDetails, pageInfo, pageInfoExpression } from "./page-info.js";
 
 export {
+    elementFunctionDeclaration,
+    EVALUATE_DEFAULT_RESULT_CHARS,
+    EVALUATE_DEFAULT_TIMEOUT_MS,
+    EVALUATE_MAX_EXPRESSION_CHARS,
+    EVALUATE_MAX_RESULT_CHARS,
+    EVALUATE_MAX_STACK_CHARS,
+    EVALUATE_MAX_TIMEOUT_MS,
+    exceptionText,
+    formatExceptionStack,
+    isBareEmptyObject,
+    isFunctionExpression,
+    jsEvaluate,
+    shapeRemoteValue,
+    type ShapedValue,
+} from "./js-evaluate.js";
+
+export {
     NAVIGATE_DEFAULT_TIMEOUT_MS,
     NAVIGATE_MAX_TIMEOUT_MS,
     type NavigationWaitEvent,

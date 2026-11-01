@@ -1,4 +1,5 @@
 import type { AnyTool } from "./define-tool.js";
+import { jsEvaluate } from "./js-evaluate.js";
 import { pageInfo } from "./page-info.js";
 import { pageNavigate } from "./page-navigate.js";
 import { closeTab, listSessions, listTabs, newTab, selectTab } from "./tabs.js";
@@ -11,4 +12,5 @@ export const allTools: AnyTool[] = [
     closeTab,
     pageInfo,
     pageNavigate,
+    jsEvaluate,
 ];
