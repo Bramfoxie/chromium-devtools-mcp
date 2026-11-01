@@ -20,6 +20,19 @@ export interface TabInfo {
     created : boolean;
 }
 
+export interface SessionSummary {
+    sessionId : string;
+    clientName: string;
+    isolated  : boolean;
+    tabs      : number;
+    own       : boolean;
+}
+
+export interface SessionOpenOptions {
+    isolated  : boolean;
+    clientName: string;
+}
+
 export type TabScope = "owned" | "available";
 
 export type Emit = (event: string, params?: unknown) => void;
@@ -81,6 +94,7 @@ export class ClientSession {
         private readonly emit    : Emit,
         private readonly options : SessionOptions,
         readonly contextId       : string | undefined,
+        readonly clientName      : string = "",
     ) {}
 
     get isolated(): boolean {
@@ -89,6 +103,16 @@ export class ClientSession {
 
     get closed(): boolean {
         return this.isClosed;
+    }
+
+    get tabCount(): number {
+        let count = 0;
+
+        for (const tab of this.tabs.values()) {
+            if (!tab.closing) count += 1;
+        }
+
+        return count;
     }
 
     async createTab(url: string): Promise<string> {
@@ -369,6 +393,8 @@ export class SessionRegistry<K> implements Ownership {
     private readonly sessions = new Map<K, ClientSession>();
     private readonly owners = new Map<string, ClientSession>();
     private readonly opening = new Map<K, symbol>();
+    private readonly sessionIds = new Map<ClientSession, string>();
+    private nextSessionId = 1;
     private readonly destroyed = new Set<string>();
     private readonly stopListening: () => void;
     private shuttingDown = false;
@@ -403,7 +429,7 @@ export class SessionRegistry<K> implements Ownership {
         return this.destroyed.has(targetId);
     }
 
-    async open(key: K, emit: Emit, isolated: boolean): Promise<ClientSession> {
+    async open(key: K, emit: Emit, options: SessionOpenOptions): Promise<ClientSession> {
         if (this.shuttingDown) throw closedError();
 
         if (this.sessions.has(key) || this.opening.has(key)) {
@@ -416,7 +442,7 @@ export class SessionRegistry<K> implements Ownership {
         let contextId: string | undefined;
 
         try {
-            contextId = isolated ? await this.backend.createContext() : undefined;
+            contextId = options.isolated ? await this.backend.createContext() : undefined;
         } catch (error) {
             if (this.opening.get(key) === ticket) this.opening.delete(key);
 
@@ -432,11 +458,42 @@ export class SessionRegistry<K> implements Ownership {
         }
 
         this.opening.delete(key);
-        const session = new ClientSession(this.backend, this, emit, this.options, contextId);
+        const session = new ClientSession(
+            this.backend,
+            this,
+            emit,
+            this.options,
+            contextId,
+            options.clientName,
+        );
 
         this.sessions.set(key, session);
+        this.sessionIds.set(session, `session${this.nextSessionId++}`);
 
         return session;
+    }
+
+    listSessions(caller: K): SessionSummary[] {
+        const callerSession = this.sessions.get(caller);
+        const summaries: SessionSummary[] = [];
+
+        for (const session of this.sessions.values()) {
+            if (session.closed) continue;
+
+            const sessionId = this.sessionIds.get(session);
+
+            if (sessionId === undefined) continue;
+
+            summaries.push({
+                sessionId,
+                clientName: session.clientName,
+                isolated  : session.isolated,
+                tabs      : session.tabCount,
+                own       : session === callerSession,
+            });
+        }
+
+        return summaries;
     }
 
     async close(key: K): Promise<void> {
@@ -446,6 +503,7 @@ export class SessionRegistry<K> implements Ownership {
         if (!session) return;
 
         this.sessions.delete(key);
+        this.sessionIds.delete(session);
         await session.close();
     }
 
@@ -456,6 +514,7 @@ export class SessionRegistry<K> implements Ownership {
         const sessions = [...this.sessions.values()];
 
         this.sessions.clear();
+        this.sessionIds.clear();
         await Promise.all(sessions.map((session) => session.close()));
     }
 

@@ -28,6 +28,7 @@ const domainName = z.string().regex(DOMAIN_METHOD).max(100);
 const schemas = {
     "daemon.status": z.strictObject({}),
     "session.open" : z.strictObject({ isolated: z.boolean().optional() }),
+    "session.list" : z.strictObject({}),
     "tab.create"   : z.strictObject({ url: z.string().min(1).max(2048).optional() }),
     "tab.list"     : z.strictObject({ scope: z.enum(["owned", "available"]).optional() }),
     "tab.claim"    : z.strictObject({ targetId }),
@@ -95,7 +96,7 @@ export function createRequestHandler(context: HandlerContext): RequestHandler {
             const session = await registry.open(
                 connection,
                 (event, eventParams) => connection.sendEvent(event, eventParams),
-                isolated ?? false,
+                { isolated: isolated ?? false, clientName: connection.clientName },
             );
 
             return { isolated: session.isolated };
@@ -105,6 +106,12 @@ export function createRequestHandler(context: HandlerContext): RequestHandler {
 
         if (!session) {
             throw new RpcError(ErrorCode.sessionRequired, "Open a session with session.open first.");
+        }
+
+        if (method === "session.list") {
+            parseParams(method, params);
+
+            return { sessions: registry.listSessions(connection) };
         }
 
         switch (method) {

@@ -14,12 +14,12 @@ function setup(allowFocus = false) {
     const backend = new FakeBackend();
     const registry = new SessionRegistry<string>(backend, { allowFocus });
     const emitted: Record<string, Emitted[]> = {};
-    const open = async (key: string, isolated = false) => {
+    const open = async (key: string, isolated = false, clientName = `client-${key}`) => {
         emitted[key] = [];
 
         const emit = (event: string, params?: unknown) => emitted[key]?.push({ event, params });
 
-        return registry.open(key, emit, isolated);
+        return registry.open(key, emit, { isolated, clientName });
     };
 
     return { backend, registry, emitted, open };
@@ -778,5 +778,93 @@ describe("subscriptions", () => {
         backend.destroyTarget(tab);
         expect(await code(subscribing)).toBe(ErrorCode.notFound);
         expect(backend.sessions.get(tab)?.listenerCount("Page.loadEventFired") ?? 0).toBe(0);
+    });
+});
+
+describe("listing sessions", () => {
+    it("reports every session with its own flag on the caller", async () => {
+        const { registry, open } = setup();
+        const a = await open("a", false, "alice");
+        const b = await open("b", true, "bob");
+
+        await a.createTab("https://a.example/");
+        await a.createTab("https://a2.example/");
+        await b.createTab("https://b.example/");
+
+        const seen = registry.listSessions("a");
+
+        expect(seen).toHaveLength(2);
+        expect(seen.find((session) => session.clientName === "alice")).toMatchObject({
+            clientName: "alice",
+            isolated  : false,
+            tabs      : 2,
+            own       : true,
+        });
+        expect(seen.find((session) => session.clientName === "bob")).toMatchObject({
+            clientName: "bob",
+            isolated  : true,
+            tabs      : 1,
+            own       : false,
+        });
+    });
+
+    it("gives every session a unique id and reveals nothing about other tabs", async () => {
+        const { registry, open } = setup();
+
+        await open("a", false, "alice");
+        await open("b", false, "bob");
+        const seen = registry.listSessions("a");
+        const ids = seen.map((session) => session.sessionId);
+
+        expect(new Set(ids).size).toBe(2);
+        expect(JSON.stringify(seen)).not.toContain("targetId");
+        expect(seen).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    sessionId : expect.any(String),
+                    clientName: "bob",
+                    isolated  : false,
+                    tabs      : 0,
+                    own       : false,
+                }),
+            ]),
+        );
+        expect(Object.keys(seen[0] ?? {}).sort()).toEqual(
+            ["clientName", "isolated", "own", "sessionId", "tabs"].sort(),
+        );
+    });
+
+    it("drops closed sessions from the list", async () => {
+        const { registry, open } = setup();
+
+        await open("a", false, "alice");
+        await open("b", false, "bob");
+        await registry.close("b");
+        const seen = registry.listSessions("a");
+
+        expect(seen.map((session) => session.clientName)).toEqual(["alice"]);
+    });
+
+    it("marks no session as own for an unknown caller", async () => {
+        const { registry, open } = setup();
+
+        await open("a", false, "alice");
+        const seen = registry.listSessions("gone");
+
+        expect(seen).toEqual([
+            expect.objectContaining({ clientName: "alice", own: false }),
+        ]);
+    });
+
+    it("counts only open tabs of a session", async () => {
+        const { registry, open } = setup();
+        const a = await open("a", false, "alice");
+        const first = await a.createTab("https://a.example/");
+
+        await a.createTab("https://a2.example/");
+        await a.closeTab(first);
+        const seen = registry.listSessions("a");
+
+        expect(seen).toEqual([expect.objectContaining({ tabs: 1 })]);
     });
 });

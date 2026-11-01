@@ -66,7 +66,9 @@ export {
     ClientSession,
     type Emit,
     SessionRegistry,
+    type SessionOpenOptions,
     type SessionOptions,
+    type SessionSummary,
     type TabInfo,
     type TabScope,
 } from "./sessions.js";

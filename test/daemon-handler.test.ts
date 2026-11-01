@@ -68,7 +68,7 @@ describe("session handling", () => {
         const { connect } = await start();
         const client = await connect();
 
-        for (const method of ["tab.create", "tab.list", "cdp.send"]) {
+        for (const method of ["session.list", "tab.create", "tab.list", "cdp.send"]) {
             const error = await failure(client.request(method, { targetId: "t", method: "A.b" }));
 
             expect(error.code).toBe(ErrorCode.sessionRequired);
@@ -136,6 +136,7 @@ describe("parameter validation", () => {
     it.each([
         ["daemon.status", {}],
         ["session.open", {}],
+        ["session.list", {}],
         ["tab.create", {}],
         ["tab.list", {}],
         ["tab.claim", { targetId: "t" }],
@@ -155,6 +156,76 @@ describe("parameter validation", () => {
 
         expect(error.code).toBe(ErrorCode.badRequest);
         expect(error.message).toContain("surprise");
+    });
+});
+
+describe("sessions through the daemon", () => {
+    interface Summary {
+        sessionId : string;
+        clientName: string;
+        isolated  : boolean;
+        tabs      : number;
+        own       : boolean;
+    }
+
+    it("lists every open session and flags the caller", async () => {
+        const { connect } = await start();
+        const alice = await connect("alice");
+        const bob = await connect("bob");
+
+        await alice.request("session.open");
+        await bob.request("session.open", { isolated: true });
+        await alice.request("tab.create");
+        const { sessions } = (await alice.request("session.list")) as { sessions: Summary[] };
+
+        expect(sessions).toHaveLength(2);
+        expect(sessions.find((session) => session.clientName === "alice")).toMatchObject({
+            isolated: false,
+            tabs    : 1,
+            own     : true,
+        });
+        expect(sessions.find((session) => session.clientName === "bob")).toMatchObject({
+            isolated: true,
+            tabs    : 0,
+            own     : false,
+        });
+        const ids = sessions.map((session) => session.sessionId);
+
+        expect(new Set(ids).size).toBe(2);
+    });
+
+    it("reveals no tab details of other sessions", async () => {
+        const { connect } = await start();
+        const alice = await connect("alice");
+        const bob = await connect("bob");
+
+        await alice.request("session.open");
+        await bob.request("session.open");
+        await alice.request("tab.create", { url: "https://secret.example/page" });
+        const { sessions } = (await bob.request("session.list")) as { sessions: Summary[] };
+        const raw = JSON.stringify(sessions);
+
+        expect(raw).not.toContain("secret.example");
+        expect(raw).not.toContain("targetId");
+        expect(sessions.find((session) => session.clientName === "alice")).toMatchObject({
+            tabs: 1,
+            own : false,
+        });
+    });
+
+    it("drops a session from the list when its client disconnects", async () => {
+        const { connect } = await start();
+        const staying = await connect("staying");
+        const leaving = await connect("leaving");
+
+        await staying.request("session.open");
+        await leaving.request("session.open");
+        await leaving.close();
+        await vi.waitFor(async () => {
+            const { sessions } = (await staying.request("session.list")) as { sessions: Summary[] };
+
+            expect(sessions.map((session) => session.clientName)).toEqual(["staying"]);
+        });
     });
 });
 
