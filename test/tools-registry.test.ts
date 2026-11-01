@@ -143,6 +143,7 @@ describe("runTool", () => {
             access     : "read",
             input      : z.strictObject({}),
             output     : z.strictObject({ data: z.string(), bytes: z.number() }),
+            announced  : z.strictObject({ bytes: z.number() }),
             present    : (output) => ({
                 content: [
                     { type: "text", text: JSON.stringify({ bytes: output.bytes }) },
@@ -157,6 +158,23 @@ describe("runTool", () => {
         expect(result.structuredContent).toEqual({ bytes: 2 });
         expect(result.content).toHaveLength(2);
         expect(result.content[1]).toMatchObject({ type: "image", mimeType: "image/png" });
+
+        const server = createMcpServer("1.0.0");
+
+        registerTools({ server, tools: [shot], runtime: runtime() });
+        const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
+        const client = new Client({ name: "test-client", version: "1.0.0" });
+
+        await Promise.all([server.connect(serverSide), client.connect(clientSide)]);
+        const listed = await client.listTools();
+        const found = listed.tools.find((tool) => tool.name === "shot");
+
+        expect(found?.outputSchema).toMatchObject({
+            properties: { bytes: { type: "number" } },
+            required  : ["bytes"],
+        });
+        await client.close();
+        await server.close();
     });
 
     it("rejects invalid arguments with the tool named", async () => {

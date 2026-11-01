@@ -164,6 +164,7 @@ describe("screenshot", () => {
             captureBeyondViewport: false,
             fromSurface          : true,
         });
+        expect(screenshot.announced?.safeParse(result.structuredContent).success).toBe(true);
     });
 
     it("captures full page and explicit clips with scale", async () => {

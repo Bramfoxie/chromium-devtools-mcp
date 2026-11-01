@@ -186,23 +186,31 @@ async function capture(
     return result.data.data;
 }
 
-function oversizeError(maxBytes: number): ToolError {
-    const mib = (maxBytes / (1024 * 1024)).toFixed(maxBytes % (1024 * 1024) === 0 ? 0 : 1);
+export function formatByteLimit(maxBytes: number): string {
+    if (maxBytes % (1024 * 1024) === 0) return `${maxBytes / (1024 * 1024)} MiB`;
+    if (maxBytes % 1024 === 0) return `${maxBytes / 1024} KiB`;
 
+    return `${maxBytes} bytes`;
+}
+
+function oversizeError(maxBytes: number): ToolError {
     return new ToolError(
-        `The screenshot is larger than the ${mib} MiB limit. Use format jpeg, a smaller clip or a scale below 1.`,
+        `The screenshot is larger than the ${formatByteLimit(maxBytes)} limit. Use format jpeg, a smaller clip or a scale below 1.`,
     );
 }
 
-const screenshotOutput = z.strictObject({
+const screenshotSmall = z.strictObject({
     width     : z.number().describe("Image width in pixels."),
     height    : z.number().describe("Image height in pixels."),
     bytes     : z.number().describe("Image size in bytes."),
     format    : z.enum(["png", "jpeg", "webp"]).describe("Image format."),
     clipped   : z.boolean().describe("Whether the shot is clipped to an element or a rectangle."),
     scaledDown: z.boolean().describe("Whether the shot was scaled below full size."),
-    data      : z.string().describe("Base64 encoded image, presented as an image block."),
-    mimeType  : z.string().describe("MIME type of the image."),
+});
+
+const screenshotOutput = screenshotSmall.extend({
+    data    : z.string().describe("Base64 encoded image, presented as an image block."),
+    mimeType: z.string().describe("MIME type of the image."),
 });
 
 export const screenshot = defineTool({
@@ -229,8 +237,9 @@ export const screenshot = defineTool({
             ctx.addIssue({ code: "custom", message: "Quality applies to jpeg and webp only." });
         }
     }),
-    output : screenshotOutput,
-    present: (output) => {
+    output   : screenshotOutput,
+    announced: screenshotSmall,
+    present  : (output) => {
         const { data, mimeType, ...small } = output;
 
         return binaryResult(small, imageBlock({ data, mimeType }));

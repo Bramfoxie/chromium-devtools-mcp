@@ -140,6 +140,7 @@ export {
     type ScreenshotClip,
     type ScreenshotFormat,
     type ScreenshotPlan,
+    formatByteLimit,
     planScreenshot,
     retryQuality,
     roundClip,

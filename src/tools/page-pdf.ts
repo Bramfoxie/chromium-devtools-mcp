@@ -2,6 +2,7 @@ import { z } from "zod";
 import { defineTool } from "./define-tool.js";
 import { ToolError } from "./errors.js";
 import { binaryResult, resourceBlock } from "./result.js";
+import { formatByteLimit } from "./screenshot.js";
 
 export const PDF_DEFAULT_MAX_BYTES = 8 * 1024 * 1024;
 
@@ -48,10 +49,13 @@ export function countPdfPages(bytes: Uint8Array): number | undefined {
     return matches.length;
 }
 
-const pdfOutput = z.strictObject({
-    bytes   : z.number().describe("PDF size in bytes."),
-    pages   : z.number().optional().describe("Page count, when it can be read from the file."),
-    uri     : z.string().describe("URI of the embedded PDF resource."),
+const pdfSmall = z.strictObject({
+    bytes: z.number().describe("PDF size in bytes."),
+    pages: z.number().optional().describe("Page count, when it can be read from the file."),
+    uri  : z.string().describe("URI of the embedded PDF resource."),
+});
+
+const pdfOutput = pdfSmall.extend({
     data    : z.string().describe("Base64 encoded PDF, presented as a resource block."),
     mimeType: z.string().describe("MIME type of the PDF."),
 });
@@ -77,8 +81,9 @@ export const pagePdf = defineTool({
             ctx.addIssue({ code: "custom", message: "Page ranges look like 1-3,5 with positive pages." });
         }
     }),
-    output : pdfOutput,
-    present: (output) => {
+    output   : pdfOutput,
+    announced: pdfSmall,
+    present  : (output) => {
         const { data, mimeType, uri, ...small } = output;
 
         return binaryResult({ ...small, uri }, resourceBlock(uri, { data, mimeType }));
@@ -131,10 +136,8 @@ export const pagePdf = defineTool({
         const bytes = Buffer.from(parsed.data.data, "base64");
 
         if (bytes.byteLength > maxBytes) {
-            const mib = (maxBytes / (1024 * 1024)).toFixed(maxBytes % (1024 * 1024) === 0 ? 0 : 1);
-
             throw new ToolError(
-                `The PDF is larger than the ${mib} MiB limit. Use pageRanges to print fewer pages.`,
+                `The PDF is larger than the ${formatByteLimit(maxBytes)} limit. Use pageRanges to print fewer pages.`,
             );
         }
 

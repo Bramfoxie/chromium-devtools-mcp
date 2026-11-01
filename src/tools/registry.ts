@@ -26,7 +26,7 @@ export function throwIfCancelled(signal: AbortSignal): void {
 export function registerTools(options: RegisterToolsOptions): void {
     for (const tool of options.tools) {
         const input = tool.input;
-        const output = tool.output;
+        const output = tool.announced ?? tool.output;
 
         options.server.registerTool(
             tool.name,

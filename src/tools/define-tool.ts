@@ -56,6 +56,7 @@ export interface ToolDefinition<
     dangerous? : boolean;
     input      : TInputSchema;
     output     : TOutputSchema;
+    announced? : z.ZodType;
     target?    : (args: z.output<TInputSchema>) => SafetyTarget | undefined;
     present?   : (output: z.output<TOutputSchema>) => CallToolResult;
     handler    : (

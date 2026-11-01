@@ -101,6 +101,7 @@ describe("page_pdf", () => {
             marginRight      : 0.4,
             preferCSSPageSize: false,
         });
+        expect(pagePdf.announced?.safeParse(result.structuredContent).success).toBe(true);
     });
 
     it("passes ranges, orientation and margins through", async () => {
