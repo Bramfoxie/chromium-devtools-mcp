@@ -367,9 +367,13 @@ export {
     ensureActionable,
     HIT_EXPRESSION,
     type HitResult,
+    type HitStackEntry,
     type HitTarget,
     hitTest,
     readBox,
+    stackEntriesOf,
+    STACK_EXPRESSION,
+    stackExpression,
     STATE_EXPRESSION,
 } from "./actionability.js";
 

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ErrorCode, RpcError } from "../daemon/index.js";
 import type { DaemonAccess } from "../mcp/index.js";
 import {
     boxOf,
@@ -90,19 +91,90 @@ export const STATE_EXPRESSION = `function (element) {
 }`;
 
 export const HIT_EXPRESSION = `function (element, x, y) {
-  const point = { x: Number(x), y: Number(y) };
+  const px = Number(x), py = Number(y);
   const doc = element.ownerDocument;
-  if (doc === null) return { kind: "outside" };
-  const el = doc.elementFromPoint(point.x, point.y);
-  if (el === null) return { kind: "outside" };
-  if (el === element || element.contains(el)) return { kind: "hit" };
-  return {
-    kind: "covered",
+  if (doc === null || doc.defaultView === null) return { kind: "outside" };
+  let top = doc.defaultView;
+  while (top.parent !== top) top = top.parent;
+  const topDoc = top.document;
+  let scope = topDoc;
+  let sx = px, sy = py;
+  for (let depth = 0; depth < 12; depth++) {
+    const el = scope.elementFromPoint(sx, sy);
+    if (el === null) return { kind: "outside" };
+    if (el === element) return { kind: "hit" };
+    if (element.contains(el)) return { kind: "hit" };
+    let node = element;
+    let ancestor = false;
+    for (let i = 0; i < 60 && node !== null; i++) {
+      if (node === el) { ancestor = true; break; }
+      const root = node.getRootNode ? node.getRootNode() : null;
+      node = node.parentNode || (root && root.host ? root.host : null);
+    }
+    if (ancestor) {
+      const shadow = el.shadowRoot;
+      if (shadow) { scope = shadow; continue; }
+      return { kind: "hit" };
+    }
+    const tag = el.localName;
+    if ((tag === "iframe" || tag === "frame") && el.contentDocument) {
+      const rect = el.getBoundingClientRect();
+      sx = sx - rect.left - (el.clientLeft || 0);
+      sy = sy - rect.top - (el.clientTop || 0);
+      scope = el.contentDocument;
+      continue;
+    }
+    return {
+      kind: "covered",
+      tag: el.localName,
+      id: el.id,
+      classes: [...el.classList].slice(0, 10),
+    };
+  }
+  return { kind: "covered", tag: "?", id: "", classes: [] };
+}`;
+
+export const STACK_EXPRESSION = `(() => {
+  const point = __POINT__;
+  return document.elementsFromPoint(point.x, point.y).slice(0, 12).map((el) => ({
     tag: el.localName,
     id: el.id,
-    classes: [...el.classList].slice(0, 10),
-  };
-}`;
+    frame: el.localName === "iframe" || el.localName === "frame",
+  }));
+})()`;
+
+export function stackExpression(point: { x: number; y: number }): string {
+    return STACK_EXPRESSION.replace("__POINT__", JSON.stringify({ x: point.x, y: point.y }));
+}
+
+const stackSchema = z.object({
+    result: z.object({
+        type : z.string().optional(),
+        value: z.array(z.object({
+            tag  : z.string(),
+            id   : z.string(),
+            frame: z.boolean(),
+        })).optional(),
+    }),
+});
+
+export interface HitStackEntry {
+    tag    : string;
+    id     : string;
+    isFrame: boolean;
+}
+
+export function stackEntriesOf(value: unknown): HitStackEntry[] | undefined {
+    const parsed = stackSchema.safeParse(value);
+
+    if (!parsed.success || parsed.data.result.value === undefined) return undefined;
+
+    return parsed.data.result.value.map((entry) => ({
+        tag    : entry.tag,
+        id     : entry.id,
+        isFrame: entry.frame,
+    }));
+}
 
 export function describeClasses(classes: string[]): string {
     return classes.length === 0 ? "" : `.${classes.join(".")}`;
@@ -159,16 +231,27 @@ export async function hitTest(
     element: ResolvedElement,
     point  : { x: number; y: number },
 ): Promise<HitResult> {
-    const result = await access.send(tab, "Runtime.callFunctionOn", {
-        functionDeclaration: HIT_EXPRESSION,
-        objectId           : element.objectId,
-        arguments          : [
-            { objectId: element.objectId },
-            { value: point.x },
-            { value: point.y },
-        ],
-        returnByValue: true,
-    });
+    let result: unknown;
+
+    try {
+        result = await access.send(tab, "Runtime.callFunctionOn", {
+            functionDeclaration: HIT_EXPRESSION,
+            objectId           : element.objectId,
+            arguments          : [
+                { objectId: element.objectId },
+                { value: point.x },
+                { value: point.y },
+            ],
+            returnByValue: true,
+        });
+    } catch (error) {
+        if (isCrossOriginHitTest(error)) {
+            return isolatedHitTest(access, tab, point);
+        }
+
+        throw error;
+    }
+
     const parsed = hitSchema.safeParse(result);
 
     if (!parsed.success || parsed.data.result.type === "undefined" || parsed.data.result.value === undefined) {
@@ -183,6 +266,37 @@ export async function hitTest(
         kind: "covered",
         by  : { tag: value.tag ?? "?", id: value.id ?? "", classes: value.classes ?? [] },
     };
+}
+
+function isCrossOriginHitTest(error: unknown): boolean {
+    return error instanceof RpcError && error.code === ErrorCode.cdpError;
+}
+
+async function isolatedHitTest(
+    access: DaemonAccess,
+    tab   : string,
+    point : { x: number; y: number },
+): Promise<HitResult> {
+    const stack = stackEntriesOf(
+        await access.send(tab, "Runtime.evaluate", {
+            expression   : stackExpression(point),
+            returnByValue: true,
+        }),
+    );
+
+    if (stack === undefined) {
+        throw new ToolError("The browser sent an unexpected hit test result. Try the call again.");
+    }
+
+    if (stack.length === 0) return { kind: "outside" };
+
+    const [top] = stack;
+
+    if (top !== undefined && !top.isFrame) {
+        return { kind: "covered", by: { tag: top.tag, id: top.id, classes: [] } };
+    }
+
+    return { kind: "hit" };
 }
 
 export interface ActionablePoint {

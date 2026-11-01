@@ -290,3 +290,68 @@ describe("readBox", () => {
         );
     });
 });
+
+describe("hitTest piercing", () => {
+    function piercingFake(stack: Array<{ tag: string; id: string; frame: boolean }>): FakeAccess {
+        const fake = new FakeAccess();
+
+        fake.respond = (_targetId, method, params) => {
+            if (method === "Runtime.callFunctionOn") {
+                throw new RpcError(ErrorCode.cdpError, "Uncaught SecurityError");
+            }
+
+            if (method === "Runtime.evaluate") {
+                const expression = (params as { expression?: unknown })?.expression;
+
+                if (typeof expression === "string" && expression.includes("elementsFromPoint")) {
+                    return { result: { type: "object", subtype: "array", value: stack } };
+                }
+            }
+
+            throw new Error(`unexpected CDP call ${method}`);
+        };
+
+        return fake;
+    }
+
+    it("treats a top-level iframe hit as a hit on the isolated element", async () => {
+        const fake = piercingFake([
+            { tag: "iframe", id: "cross", frame: true },
+            { tag: "body", id: "", frame: false },
+        ]);
+
+        await expect(hitTest(fake.asAccess(), "tab1", element, { x: 12, y: 34 })).resolves.toEqual({
+            kind: "hit",
+        });
+    });
+
+    it("reports a top-level overlay as covering the isolated element", async () => {
+        const fake = piercingFake([
+            { tag: "div", id: "overlay", frame: false },
+            { tag: "iframe", id: "cross", frame: true },
+        ]);
+
+        await expect(hitTest(fake.asAccess(), "tab1", element, { x: 12, y: 34 })).resolves.toEqual({
+            kind: "covered",
+            by  : { tag: "div", id: "overlay", classes: [] },
+        });
+    });
+
+    it("reports an empty stack as outside", async () => {
+        const fake = piercingFake([]);
+
+        await expect(hitTest(fake.asAccess(), "tab1", element, { x: 12, y: 34 })).resolves.toEqual({
+            kind: "outside",
+        });
+    });
+
+    it("passes non-CDP failures through instead of guessing", async () => {
+        const fake = new FakeAccess();
+
+        fake.failSend = () => new RpcError(ErrorCode.cdpTimeout, "CDP request timed out.");
+
+        await expect(hitTest(fake.asAccess(), "tab1", element, { x: 12, y: 34 })).rejects.toMatchObject(
+            { code: ErrorCode.cdpTimeout },
+        );
+    });
+});
