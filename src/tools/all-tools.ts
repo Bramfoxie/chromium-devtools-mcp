@@ -10,6 +10,7 @@ import { inputKey, inputType } from "./input-text.js";
 import { inputUpload } from "./input-upload.js";
 import { jsEvaluate } from "./js-evaluate.js";
 import { networkRequests } from "./network-requests.js";
+import { networkResponseBody } from "./network-response-body.js";
 import { pageInfo } from "./page-info.js";
 import { pageNavigate } from "./page-navigate.js";
 import { closeTab, listSessions, listTabs, newTab, selectTab } from "./tabs.js";
@@ -28,6 +29,7 @@ export const allTools: AnyTool[] = [
     cssInspect,
     consoleLogs,
     networkRequests,
+    networkResponseBody,
     click,
     inputClick,
     inputHover,

@@ -105,6 +105,14 @@ export {
     networkRequests,
 } from "./network-requests.js";
 
+export {
+    RESPONSE_BODY_DEFAULT_CHARS,
+    RESPONSE_BODY_MAX_CHARS,
+    bodyByteSize,
+    isTextMimeType,
+    networkResponseBody,
+} from "./network-response-body.js";
+
 export { pageDetails, pageInfo, pageInfoExpression } from "./page-info.js";
 
 export {
