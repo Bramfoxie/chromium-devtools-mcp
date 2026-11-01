@@ -3,6 +3,11 @@ import { cssInspect } from "./css-inspect.js";
 import type { AnyTool } from "./define-tool.js";
 import { domQuery } from "./dom-query.js";
 import { domSnapshot } from "./dom-snapshot.js";
+import { emulateDevice } from "./emulation/emulate-device.js";
+import { emulateLocale } from "./emulation/emulate-locale.js";
+import { emulateMedia } from "./emulation/emulate-media.js";
+import { emulateNetwork } from "./emulation/emulate-network.js";
+import { listDevices } from "./emulation/list-devices.js";
 import { click, inputClick, inputHover } from "./input-click.js";
 import { inputScroll } from "./input-scroll.js";
 import { inputSelect } from "./input-select.js";
@@ -36,6 +41,11 @@ export const allTools: AnyTool[] = [
     pagePdf,
     pageMetrics,
     screenshot,
+    listDevices,
+    emulateDevice,
+    emulateMedia,
+    emulateNetwork,
+    emulateLocale,
     click,
     inputClick,
     inputHover,

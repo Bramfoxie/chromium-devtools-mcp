@@ -368,3 +368,109 @@ export {
     validateUploadFiles,
     type ValidatedUpload,
 } from "./input-upload.js";
+
+export {
+    type DeviceEmulation,
+    type LocaleEmulation,
+    type NetworkEmulation,
+    type TabEmulation,
+    EmulationState,
+} from "./emulation/state.js";
+
+export {
+    type DeviceKind,
+    type DeviceSpec,
+    type LandscapeSpec,
+    asLandscape,
+    DEVICE_HEIGHT_MAX,
+    DEVICE_HEIGHT_MIN,
+    DEVICE_SCALE_MAX,
+    DEVICE_SCALE_MIN,
+    DEVICE_USER_AGENT_MAX_CHARS,
+    DEVICE_WIDTH_MAX,
+    DEVICE_WIDTH_MIN,
+    DEVICES,
+    filterDevices,
+    findDevice,
+    suggestDevices,
+} from "./emulation/devices.js";
+
+export {
+    BLOCK_URL_MAX_CHARS,
+    BLOCK_URLS_MAX,
+    type CdpCommand,
+    type DeviceMetrics,
+    type LocaleSelection,
+    type MediaSelection,
+    type MediaState,
+    type NetworkConditions,
+    type NetworkPresetName,
+    type UserAgentParts,
+    buildBlockedUrlsCommands,
+    buildDeviceCommands,
+    buildDeviceResetCommands,
+    buildLocaleCommands,
+    buildLocaleResetCommands,
+    buildMediaCommands,
+    buildMediaResetCommands,
+    buildNetworkCommands,
+    buildNetworkResetCommands,
+    buildUserAgentCommand,
+    canonicalLocale,
+    checkedTimezone,
+    deviceMetricsOf,
+    mergeMedia,
+    NETWORK_LATENCY_MAX_MS,
+    NETWORK_PRESETS,
+    NETWORK_THROUGHPUT_MAX_KBPS,
+    orientationOf,
+    presetConditions,
+    resolveDevice,
+    TOUCH_POINTS_DEFAULT,
+} from "./emulation/commands.js";
+
+export {
+    type DeviceRead,
+    type LocaleRead,
+    type MediaRead,
+    DEVICE_READ_EXPRESSION,
+    EMULATION_READ_TIMEOUT_MS,
+    LOCALE_READ_EXPRESSION,
+    MEDIA_READ_EXPRESSION,
+    readDevice,
+    readLocale,
+    readMedia,
+} from "./emulation/reads.js";
+
+export {
+    type EmulationSummary,
+    emulationSummarySchema,
+    summarizeEmulation,
+} from "./emulation/summary.js";
+
+export { listDevices } from "./emulation/list-devices.js";
+
+export {
+    type DeviceInput,
+    applyDeviceReset,
+    checkDeviceInput,
+    emulateDevice,
+    explicitMetrics,
+} from "./emulation/emulate-device.js";
+
+export { emulateMedia, hasMediaSelection } from "./emulation/emulate-media.js";
+
+export {
+    type NetworkInput,
+    checkNetworkInput,
+    conditionsOf,
+    emulateNetwork,
+    ensureNetworkForEmulation,
+} from "./emulation/emulate-network.js";
+
+export {
+    ACCEPT_LANGUAGE_MAX_CHARS,
+    checkAcceptLanguage,
+    emulateLocale,
+    hasLocaleSelection,
+} from "./emulation/emulate-locale.js";
