@@ -220,6 +220,10 @@ export function producedText(
         return undefined;
     }
 
+    // Enter inserts a carriage return: without it forms do not submit and
+    // text areas get no newline. No text when combined with modifiers.
+    if (spec.key === "Enter") return "\r";
+
     if (spec.key.length > 1) {
         return spec.key === " " ? " " : undefined;
     }

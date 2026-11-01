@@ -373,11 +373,12 @@ describe("input_key", () => {
         expect(result.structuredContent).toMatchObject({ ok: true, pressed: "Enter" });
         const keys = fake.sent.filter((entry) => entry.method === "Input.dispatchKeyEvent");
 
-        expect(keys.map((entry) => entry.params?.type)).toEqual(["rawKeyDown", "keyUp"]);
+        expect(keys.map((entry) => entry.params?.type)).toEqual(["rawKeyDown", "char", "keyUp"]);
         expect(keys[0]?.params).toMatchObject({
             key                  : "Enter",
             code                 : "Enter",
             windowsVirtualKeyCode: 13,
+            text                 : "\r",
         });
     });
 

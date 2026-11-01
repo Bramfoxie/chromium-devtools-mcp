@@ -122,8 +122,13 @@ describe("producedText", () => {
     it("returns undefined for command chords and control keys", () => {
         expect(producedText(lookupKey("a")!, ["Control"], false)).toBeUndefined();
         expect(producedText(lookupKey("a")!, ["Meta"], false)).toBeUndefined();
-        expect(producedText(lookupKey("Enter")!, [], false)).toBeUndefined();
+        expect(producedText(lookupKey("Enter")!, ["Control"], false)).toBeUndefined();
         expect(producedText(lookupKey("F5")!, [], false)).toBeUndefined();
+    });
+
+    it("returns carriage return for Enter without modifiers", () => {
+        expect(producedText(lookupKey("Enter")!, [], false)).toBe("\r");
+        expect(producedText(lookupKey("NumpadEnter")!, [], false)).toBe("\r");
     });
 });
 
@@ -250,12 +255,13 @@ describe("planKeyPress", () => {
         ]);
     });
 
-    it("omits text and commands for a bare Enter", () => {
+    it("sends text and a char event for a bare Enter", () => {
         const events = planKeyPress(parseKeyChord("Enter"), "Win32", 1);
 
-        expect(events).toHaveLength(2);
-        expect(events[0]).toMatchObject({ type: "rawKeyDown", key: "Enter", modifiers: 0 });
-        expect(events[0]?.text).toBeUndefined();
+        expect(events).toHaveLength(3);
+        expect(events[0]).toMatchObject({ type: "rawKeyDown", key: "Enter", modifiers: 0, text: "\r" });
+        expect(events[1]).toMatchObject({ type: "char", text: "\r" });
+        expect(events[2]).toMatchObject({ type: "keyUp", key: "Enter" });
         expect(events[0]?.commands).toBeUndefined();
     });
 
