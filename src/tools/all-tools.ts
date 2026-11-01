@@ -1,3 +1,4 @@
+import { cssInspect } from "./css-inspect.js";
 import type { AnyTool } from "./define-tool.js";
 import { domQuery } from "./dom-query.js";
 import { domSnapshot } from "./dom-snapshot.js";
@@ -17,4 +18,5 @@ export const allTools: AnyTool[] = [
     jsEvaluate,
     domQuery,
     domSnapshot,
+    cssInspect,
 ];

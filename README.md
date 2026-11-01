@@ -2,7 +2,7 @@
 
 MCP server that lets AI agents drive your real Chromium browser through the DevTools Protocol.
 
-Status: early development. The core (config, browser connection, daemon, MCP entrypoint) and the tab tools work; the rest of the browser tools are not published yet.
+Status: early development. The core (config, browser connection, daemon, MCP entrypoint), the tab tools and the navigation and inspection tools work; the rest of the browser tools are not published yet.
 
 ## Features
 
@@ -57,8 +57,21 @@ Each session keeps its own tab selection. `new_tab` opens a background tab and s
 - `new_tab`: open a background tab and select it.
 - `close_tab`: close a tab opened by this session.
 - `page_info`: read the URL, title, viewport and scroll position of a tab.
+- `page_navigate`: open a URL, go back or forward, or reload, waiting for the page to load.
+- `js_evaluate`: run JavaScript in a tab. Page exceptions come back as data, not as tool errors.
+- `dom_query`: find elements by a CSS selector and read their text, attributes and boxes.
+- `dom_snapshot`: read a compact text snapshot of the page with element ids.
+- `css_inspect`: read the computed style, matched CSS rules and box of an element.
 
-Every tool returns its result as JSON text plus structured content. Large outputs are truncated with an explicit marker. Mutating tools (`new_tab`, `select_tab`, `close_tab`) are refused in read-only mode; the domain allowlist and dangerous action confirmations are planned.
+Every tool returns its result as JSON text plus structured content. Large outputs are truncated with an explicit marker. Mutating tools (`new_tab`, `select_tab`, `close_tab`, `page_navigate`, `js_evaluate`) are refused in read-only mode; the domain allowlist and dangerous action confirmations are planned.
+
+## Element ids
+
+`dom_query` and `dom_snapshot` assign every element they report an id like `2_1`: the tab generation, then a counter. Pass the id as `{ "uid": "2_1" }` to target that element, or use `{ "selector": "..." }` with a CSS selector instead, never both. An id becomes stale when a new snapshot is taken or the tab navigates; using a stale id is an explicit error, never a wrong element.
+
+## Output limits
+
+Text results are capped per call: snapshots and evaluation results default to 50000 characters and can be raised to 200000 with `maxChars` or `maxResultChars`. The daemon protocol itself carries requests up to 1 MiB and responses up to 32 MiB. Elements hidden with `display: none` are absent from the accessibility tree, so snapshots never list them, even with `includeHidden`.
 
 ## Daemon
 
@@ -111,7 +124,7 @@ An unknown flag, a missing value or a stray argument is an error, so a typo neve
 
 1. Repository, npm name and CI.
 2. Core: config, CDP client, browser discovery, managed and attach modes, daemon.
-3. Tools: tabs (done), navigation, DOM, input, network, emulation, storage, dialogs, network mocking.
+3. Tools: tabs (done), navigation and inspection (done), input, network, emulation, storage, dialogs, network mocking.
 4. Safety controls (read-only mode works, the rest planned).
 5. Client installer.
 6. First release.

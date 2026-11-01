@@ -72,6 +72,22 @@ export {
     SNAPSHOT_MAX_CHARS,
 } from "./dom-snapshot.js";
 
+export {
+    clipCssValue,
+    type CssDeclaration,
+    cssInspect,
+    CSS_MAX_RULES_DEFAULT,
+    CSS_MAX_RULES_LIMIT,
+    CSS_VALUE_CLIP,
+    type CssRule,
+    DEFAULT_CSS_PROPERTIES,
+    type InheritedStyle,
+    quadToRect,
+    shapeComputed,
+    shapeInherited,
+    shapeMatchedRules,
+} from "./css-inspect.js";
+
 export { pageDetails, pageInfo, pageInfoExpression } from "./page-info.js";
 
 export {
