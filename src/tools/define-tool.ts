@@ -1,0 +1,66 @@
+import { z } from "zod";
+import type { Config } from "../config/index.js";
+import type { DaemonAccess } from "../mcp/index.js";
+import type { SafetyAccess, SafetyDecision, SafetyTarget } from "./safety.js";
+
+export type ToolAccess = SafetyAccess;
+
+export type { SafetyDecision };
+
+export interface ToolClock {
+    now(): number;
+    sleep(ms: number): Promise<void>;
+}
+
+export interface SessionState {
+    readonly tabs?    : Array<{ targetId: string }>;
+    readonly selected?: string;
+}
+
+export interface KnownTabShape {
+    targetId: string;
+    url     : string;
+    title   : string;
+    owned   : boolean;
+    created : boolean;
+}
+
+export interface TabSelection {
+    refresh(tabs: KnownTabShape[], selected: string | undefined): void;
+    select(targetId: string | undefined): void;
+}
+
+export interface ToolContext {
+    access: DaemonAccess;
+    state : SessionState;
+    tabs  : TabSelection;
+    config: Config;
+    clock : ToolClock;
+    signal: AbortSignal;
+}
+
+export interface ToolDefinition<
+    TInputSchema extends z.ZodType = z.ZodType,
+    TOutputSchema extends z.ZodType = z.ZodType,
+> {
+    name       : string;
+    description: string;
+    access     : ToolAccess;
+    input      : TInputSchema;
+    output     : TOutputSchema;
+    target?    : (args: z.output<TInputSchema>) => SafetyTarget | undefined;
+    handler    : (
+        args   : z.output<TInputSchema>,
+        context: ToolContext,
+    ) => Promise<z.output<TOutputSchema>>;
+}
+
+type AnyDefinition<I extends z.ZodType, O extends z.ZodType> = ToolDefinition<I, O>;
+
+export function defineTool<I extends z.ZodType, O extends z.ZodType>(
+    definition: AnyDefinition<I, O>,
+): AnyDefinition<I, O> {
+    return definition;
+}
+
+export type AnyTool = ToolDefinition<z.ZodType, z.ZodType>;
