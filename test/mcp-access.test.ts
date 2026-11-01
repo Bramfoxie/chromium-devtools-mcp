@@ -99,6 +99,23 @@ describe("DaemonAccess events", () => {
         link.clients[1]?.emit("tab.closed", { targetId: "t1" });
         expect(seen).toEqual([]);
     });
+
+    it("delivers once when a reset lands before the first attach finishes", async () => {
+        const link = new FakeLink(() => ({ tabs: [] }));
+
+        link.reuseClient = true;
+
+        const access = new DaemonAccess({ link: link.asLink() });
+        const seen: unknown[] = [];
+
+        access.forgetStaleState(() => undefined);
+        access.on("tab.closed", (params) => seen.push(params));
+        link.resetSession();
+        await access.listTabs("owned");
+        await vi.waitFor(() => expect(link.clients).toHaveLength(1));
+        link.clients[0]?.emit("tab.closed", { targetId: "t1" });
+        expect(seen).toEqual([{ targetId: "t1" }]);
+    });
 });
 
 describe("session generations", () => {

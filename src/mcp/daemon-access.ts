@@ -48,6 +48,7 @@ export type DaemonEventHandler = (params: unknown) => void;
 interface EventRegistration {
     event  : string;
     handler: DaemonEventHandler;
+    off    : () => void;
 }
 
 export interface DaemonAccessOptions {
@@ -69,7 +70,7 @@ export class DaemonAccess {
     }
 
     on(event: string, handler: DaemonEventHandler): () => void {
-        const registration = { event, handler };
+        const registration: EventRegistration = { event, handler, off: () => undefined };
 
         this.registrations.push(registration);
 
@@ -78,7 +79,11 @@ export class DaemonAccess {
         return () => {
             const index = this.registrations.indexOf(registration);
 
-            if (index !== -1) this.registrations.splice(index, 1);
+            if (index === -1) return;
+
+            this.registrations.splice(index, 1);
+            registration.off();
+            registration.off = () => undefined;
         };
     }
 
@@ -171,7 +176,8 @@ export class DaemonAccess {
 
             if (!this.registrations.includes(registration)) return;
 
-            client.on(registration.event, (params) => {
+            registration.off();
+            registration.off = client.on(registration.event, (params) => {
                 try {
                     registration.handler(params);
                 } catch (error) {

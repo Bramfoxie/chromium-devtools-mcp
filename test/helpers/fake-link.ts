@@ -49,6 +49,7 @@ export class FakeLink {
     readonly clients: FakeLinkClient[] = [];
     readonly resets = new Set<SessionResetHandler>();
     generation = 0;
+    reuseClient = false;
 
     constructor(private readonly handler: Handler = () => ({})) {}
 
@@ -86,7 +87,9 @@ export class FakeLink {
     private current(): FakeLinkClient {
         const last = this.clients[this.clients.length - 1];
 
-        if (last && !last.closed && this.clients.length === this.generation + 1) return last;
+        const current = this.reuseClient || this.clients.length === this.generation + 1;
+
+        if (last && !last.closed && current) return last;
 
         const client = new FakeLinkClient(this.handler);
 
