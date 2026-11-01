@@ -418,6 +418,31 @@ describe("redaction", () => {
             "x-token-id"  : "[redacted]",
         });
     });
+
+    it("strips userinfo, decodes names, and redacts fragments", () => {
+        expect(redactUrl("https://u:p@h.example/x?token=abc")).toBe(
+            "https://[redacted]@h.example/x?token=[redacted]",
+        );
+        expect(redactUrl("https://h.example/x?%74oken=abc")).toBe(
+            "https://h.example/x?%74oken=[redacted]",
+        );
+        expect(redactUrl("https://h.example/x#access_token=abc")).toBe(
+            "https://h.example/x#access_token=[redacted]",
+        );
+        expect(
+            redactHeaders({
+                Referer       : "https://x.example/?session=abc",
+                Location      : "https://y.example/?code=abc",
+                "X-Auth-Key"  : "k",
+                "X-Session-Id": "s",
+            }),
+        ).toEqual({
+            Referer       : "https://x.example/?session=[redacted]",
+            Location      : "https://y.example/?code=[redacted]",
+            "X-Auth-Key"  : "[redacted]",
+            "X-Session-Id": "[redacted]",
+        });
+    });
 });
 
 describe("url pattern", () => {

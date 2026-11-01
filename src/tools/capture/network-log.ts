@@ -16,7 +16,18 @@ const SENSITIVE_HEADERS = new Set([
     "x-api-key",
 ]);
 
-const SENSITIVE_HEADER_PARTS = ["token", "secret"];
+const URL_BEARING_HEADERS = new Set(["referer", "location", "origin", "content-location"]);
+
+const SENSITIVE_HEADER_PARTS = [
+    "token",
+    "secret",
+    "auth",
+    "key",
+    "session",
+    "password",
+    "code",
+    "sig",
+];
 
 export interface NetworkRecord {
     requestId       : string;
@@ -106,26 +117,46 @@ function sensitiveName(name: string, parts: string[]): boolean {
     return parts.some((part) => lower.includes(part));
 }
 
-export function redactUrl(url: string): string {
-    const query = url.indexOf("?");
+function decodeName(name: string): string {
+    try {
+        return decodeURIComponent(name);
+    } catch {
+        return name;
+    }
+}
 
-    if (query === -1) return url;
-
-    const head = url.slice(0, query + 1);
-    const hash = url.indexOf("#", query);
-    const tail = hash === -1 ? "" : url.slice(hash);
-    const raw = url.slice(query + 1, hash === -1 ? url.length : hash);
-
-    const redacted = raw.split("&").map((pair) => {
+function redactParams(raw: string): string {
+    return raw.split("&").map((pair) => {
         const cut = pair.indexOf("=");
         const name = cut === -1 ? pair : pair.slice(0, cut);
 
-        if (!sensitiveName(name, SENSITIVE_QUERY_PARTS)) return pair;
+        if (!sensitiveName(decodeName(name), SENSITIVE_QUERY_PARTS)) return pair;
 
         return `${name}=${REDACTED}`;
-    });
+    }).join("&");
+}
 
-    return `${head}${redacted.join("&")}${tail}`;
+export function redactUrl(url: string): string {
+    // Userinfo never reaches the model: credentials in the URL are replaced.
+    const withoutUserinfo = url.replace(/^(https?:\/\/)[^@/]*@/, `$1${REDACTED}@`);
+    const query = withoutUserinfo.indexOf("?");
+
+    if (query === -1) {
+        const hashOnly = withoutUserinfo.indexOf("#");
+
+        if (hashOnly === -1) return withoutUserinfo;
+
+        return `${withoutUserinfo.slice(0, hashOnly + 1)}${redactParams(withoutUserinfo.slice(hashOnly + 1))}`;
+    }
+
+    const head = withoutUserinfo.slice(0, query + 1);
+    const hash = withoutUserinfo.indexOf("#", query);
+    const tail = hash === -1
+        ? ""
+        : `#${redactParams(withoutUserinfo.slice(hash + 1))}`;
+    const raw = withoutUserinfo.slice(query + 1, hash === -1 ? withoutUserinfo.length : hash);
+
+    return `${head}${redactParams(raw)}${tail}`;
 }
 
 export function redactHeaders(headers: Record<string, string>): Record<string, string> {
@@ -137,7 +168,13 @@ export function redactHeaders(headers: Record<string, string>): Record<string, s
         const sensitive = SENSITIVE_HEADERS.has(lower) ||
             sensitiveName(lower, SENSITIVE_HEADER_PARTS);
 
-        redacted[name] = sensitive ? REDACTED : value;
+        if (sensitive) {
+            redacted[name] = REDACTED;
+
+            continue;
+        }
+
+        redacted[name] = URL_BEARING_HEADERS.has(lower) ? redactUrl(value) : value;
     }
 
     return redacted;
