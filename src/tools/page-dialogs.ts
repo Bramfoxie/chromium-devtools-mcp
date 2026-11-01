@@ -50,13 +50,13 @@ export const pageDialogs = defineTool({
 
         await context.dialogs.ensure(targetId);
 
-        if (args.policy !== undefined) context.dialogs.setPolicy(targetId, args.policy);
-
         const action = args.action ?? "status";
 
         if (args.promptText !== undefined && action !== "accept") {
             throw new ToolError("promptText is only accepted with action accept.");
         }
+
+        if (args.policy !== undefined) context.dialogs.setPolicy(targetId, args.policy);
 
         let effect: string;
 

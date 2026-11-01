@@ -314,15 +314,15 @@ describe("page_wait", () => {
         expect(result.structuredContent).toMatchObject({ met: true });
     });
 
-    it("sleeps without touching the page and caps it at the timeout", async () => {
+    it("sleeps the full requested time without touching the page", async () => {
         const { fake, runtime, sleeps } = setup();
         const result = await runTool(pageWait, { ms: 5000, timeoutMs: 1000 }, extra(), runtime);
 
         expect(result.structuredContent).toMatchObject({
             met   : true,
-            detail: { sleptMs: 1000 },
+            detail: { sleptMs: 5000 },
         });
-        expect(sleeps).toEqual([1000]);
+        expect(sleeps).toEqual([5000]);
         expect(fake.sent).toEqual([]);
     });
 

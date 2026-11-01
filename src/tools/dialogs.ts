@@ -204,9 +204,14 @@ export class DialogState {
             });
         } catch (error) {
             // The dialog went away on its own; the stale record must not block script tools.
+            // Only clear when the same dialog is still open: a newer dialog
+            // must never be forgotten, and its history stays single.
             if (error instanceof RpcError && error.code === ErrorCode.cdpError) {
-                this.record(state, open, "closed");
-                state.open = undefined;
+                if (state.open === open) {
+                    this.record(state, open, "closed");
+                    state.open = undefined;
+                }
+
                 state.resolving = undefined;
                 state.resolveOutcome = undefined;
 

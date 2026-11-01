@@ -453,7 +453,9 @@ export const pageWait = defineTool({
         if (kind === "ms") {
             throwIfCancelled(context.signal);
 
-            const sleepMs = Math.min(args.ms ?? 0, timeoutMs);
+            // A plain sleep is not a page wait: it always runs its full
+            // length instead of being capped by the default tool timeout.
+            const sleepMs = args.ms ?? 0;
 
             await cancellableSleep(context, sleepMs);
             throwIfCancelled(context.signal);
