@@ -3,6 +3,7 @@ import type { DaemonAccess } from "../mcp/index.js";
 import { compileUrlPattern } from "./capture/network-log.js";
 import { defineTool, type ToolContext } from "./define-tool.js";
 import { assertNoDialog } from "./dialogs.js";
+import { MAX_FRAME_LENGTH } from "./element-target.js";
 import { ToolError } from "./errors.js";
 import { throwIfCancelled } from "./registry.js";
 
@@ -49,16 +50,27 @@ export function selectorScript(
     state    : "attached" | "visible" | "hidden" | "detached",
     pollMs   : number,
     timeoutMs: number,
+    pierce?  : boolean,
 ): string {
     const matcher = JSON.stringify(selector);
     const want = JSON.stringify(state);
+    const collect = pierce === true
+        ? `const collect = (root, out) => {
+      for (const el of root.querySelectorAll(selector)) out.push(el);
+      for (const el of root.querySelectorAll("*")) {
+        if (el.shadowRoot) collect(el.shadowRoot, out);
+      }
+    };
+    const found = [];
+    collect(document, found);`
+        : `const found = [...document.querySelectorAll(selector)];`;
 
     return `(async () => {
   const selector = ${matcher};
   const want = ${want};
   const deadline = Date.now() + ${JSON.stringify(timeoutMs)};
   const query = () => {
-    const found = [...document.querySelectorAll(selector)];
+    ${collect}
     const visible = found.filter((el) => {
       const rect = el.getBoundingClientRect();
       return rect.width > 0 && rect.height > 0 &&
@@ -215,11 +227,12 @@ function describeCondition(args: WaitCondition, kind: string): string {
 }
 
 async function runScript(
-    context  : ToolContext,
-    targetId : string,
-    script   : string,
-    timeoutMs: number,
-    started  : number,
+    context   : ToolContext,
+    targetId  : string,
+    script    : string,
+    timeoutMs : number,
+    started   : number,
+    contextId?: number,
 ): Promise<{ met: boolean; elapsedMs: number; detail: unknown }> {
     const margin = Math.min(5000, Math.floor(timeoutMs / 4) + 1000);
     let result: unknown;
@@ -228,7 +241,12 @@ async function runScript(
         result = await context.access.send(
             targetId,
             "Runtime.evaluate",
-            { expression: script, returnByValue: true, awaitPromise: true },
+            {
+                expression   : script,
+                returnByValue: true,
+                awaitPromise : true,
+                ...(contextId === undefined ? {} : { contextId }),
+            },
             timeoutMs + margin,
         );
     } catch (error) {
@@ -388,6 +406,8 @@ export const pageWait = defineTool({
         ms        : conditionSchema.shape.ms,
         timeoutMs : z.number().int().min(1).max(WAIT_MAX_TIMEOUT_MS).optional().describe("How long to wait. Defaults to 10000 ms."),
         pollMs    : z.number().int().min(WAIT_MIN_POLL_MS).max(5000).optional().describe("Poll interval in ms. Defaults to 100."),
+        pierce    : z.boolean().optional().describe("Match the selector through open shadow roots. Only with a selector condition. Defaults to false."),
+        frame     : z.string().min(1).max(MAX_FRAME_LENGTH).optional().describe("Frame id from dom_snapshot to wait in. Only with a selector condition. Defaults to the main frame."),
     }),
     output: z.strictObject({
         tab      : z.string().describe("Tab id."),
@@ -421,6 +441,10 @@ export const pageWait = defineTool({
             throw new ToolError("selector only combines with text, not with other conditions.");
         }
 
+        if ((args.pierce !== undefined || args.frame !== undefined) && kind !== "selector") {
+            throw new ToolError("pierce and frame only combine with a selector condition.");
+        }
+
         const timeoutMs = args.timeoutMs ?? WAIT_DEFAULT_TIMEOUT_MS;
         const pollMs = args.pollMs ?? WAIT_DEFAULT_POLL_MS;
         const condition = describeCondition(conditionArgs, kind);
@@ -447,6 +471,10 @@ export const pageWait = defineTool({
         throwIfCancelled(context.signal);
 
         if (kind === "selector") {
+            const contextId = args.frame === undefined
+                ? undefined
+                : await waitContext(context, targetId, args.frame);
+
             return {
                 tab: targetId,
                 condition,
@@ -458,9 +486,11 @@ export const pageWait = defineTool({
                         args.state ?? "visible",
                         pollMs,
                         timeoutMs,
+                        args.pierce,
                     ),
                     timeoutMs,
                     started,
+                    contextId,
                 ),
             };
         }
@@ -545,6 +575,47 @@ export const pageWait = defineTool({
         };
     },
 });
+
+const waitWorldSchema = z.object({ executionContextId: z.number() });
+
+async function waitContext(
+    context : ToolContext,
+    targetId: string,
+    frame   : string,
+): Promise<number> {
+    await context.frames.ensure(targetId).catch(() => undefined);
+
+    const known = context.frames.frameOf(targetId, frame);
+
+    if (known === undefined) {
+        await context.frames.refresh(targetId).catch(() => undefined);
+
+        const found = context.frames.frameOf(targetId, frame);
+
+        if (found === undefined) {
+            throw new ToolError(
+                `No frame ${JSON.stringify(frame)} exists in this tab. List frames with dom_snapshot and try again.`,
+            );
+        }
+
+        return waitContext(context, targetId, found.frameId);
+    }
+
+    const world = waitWorldSchema.safeParse(
+        await context.access.send(targetId, "Page.createIsolatedWorld", {
+            frameId  : known.frameId,
+            worldName: "chromium-devtools-mcp-wait",
+        }),
+    );
+
+    if (!world.success) {
+        throw new ToolError(
+            "The browser sent an unexpected response to Page.createIsolatedWorld. Try the call again.",
+        );
+    }
+
+    return world.data.executionContextId;
+}
 
 async function cancellableSleep(context: ToolContext, ms: number): Promise<void> {
     if (context.signal.aborted) return;

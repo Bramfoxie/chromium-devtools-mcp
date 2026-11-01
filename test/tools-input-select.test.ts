@@ -325,3 +325,50 @@ describe("input_select", () => {
         expect(fake.sent.map((entry) => entry.method)).not.toContain("Target.activateTarget");
     });
 });
+
+describe("input_select in shadow roots", () => {
+    it("selects an option of a select inside a shadow root", async () => {
+        const fake = selectFake();
+        const inner = fake.respond?.bind(fake);
+
+        fake.respond = (_targetId, method, params) => {
+            if (method === "DOM.querySelector") {
+                const selector = (params as { selector?: unknown })?.selector;
+
+                if (selector === "my-app") return { nodeId: 13 };
+
+                return { nodeId: 15 };
+            }
+
+            if (method === "DOM.describeNode") {
+                const nodeId = (params as { nodeId?: unknown })?.nodeId;
+
+                if (nodeId === 13) {
+                    return {
+                        node: {
+                            nodeName     : "MY-APP",
+                            backendNodeId: 5,
+                            shadowRoots  : [{ nodeId: 14 }],
+                        },
+                    };
+                }
+            }
+
+            return inner?.(_targetId, method, params) as unknown;
+        };
+
+        const { runtime } = runtimeWith(fake);
+        const result = await runTool(
+            inputSelect,
+            { target: { selector: "my-app >>> select" }, values: ["red"] },
+            extra(),
+            runtime,
+        );
+
+        expect(result.isError).not.toBe(true);
+        expect(result.structuredContent).toMatchObject({
+            ok      : true,
+            selected: [{ value: "red", label: "Red" }],
+        });
+    });
+});

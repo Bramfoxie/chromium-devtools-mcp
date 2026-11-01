@@ -444,3 +444,90 @@ describe("text tools", () => {
         expect(fake.sent.map((entry) => entry.method)).not.toContain("Target.activateTarget");
     });
 });
+
+describe("input_type and input_key in frames", () => {
+    function framedTextFake(): FakeAccess {
+        const fake = textFake({ value: { length: 4, text: "4111" } });
+        const inner = fake.respond?.bind(fake);
+
+        fake.frames = [
+            { frameId: "main", url: "https://a.example/", name: "", isolated: false },
+            {
+                frameId      : "cross",
+                parentFrameId: "main",
+                url          : "https://b.example/",
+                name         : "pay",
+                isolated     : true,
+            },
+        ];
+
+        fake.respond = (_targetId, method, params) => {
+            if (method === "DOM.getDocument") return { root: { nodeId: 1 } };
+
+            if (method === "DOM.querySelector") {
+                const selector = (params as { selector?: unknown })?.selector;
+
+                if (selector === "#frame") return { nodeId: 10 };
+
+                return { nodeId: 41 };
+            }
+
+            if (method === "DOM.describeNode") {
+                const nodeId = (params as { nodeId?: unknown })?.nodeId;
+
+                if (nodeId === 10) {
+                    return {
+                        node: {
+                            nodeName       : "IFRAME",
+                            backendNodeId  : 20,
+                            frameId        : "cross",
+                            contentDocument: { nodeId: 11 },
+                        },
+                    };
+                }
+
+                return { node: { backendNodeId: 4 } };
+            }
+
+            return inner?.(_targetId, method, params) as unknown;
+        };
+
+        return fake;
+    }
+
+    it("types into a field inside a frame selected by an iframe selector", async () => {
+        const { fake, runtime } = runtimeWith(framedTextFake());
+
+        fake.sent.length = 0;
+
+        const result = await runTool(
+            inputType,
+            { target: { selector: "#card", frame: "#frame" }, text: "4111" },
+            extra(),
+            runtime,
+        );
+
+        expect(result.isError).not.toBe(true);
+        expect(result.structuredContent).toMatchObject({ ok: true, contains: true });
+        expect(fake.sent.map((call) => call.method)).toContain("DOM.focus");
+        expect(fake.sent.map((call) => call.method)).toContain("Input.insertText");
+    });
+
+    it("presses a key into a field inside a frame", async () => {
+        const { fake, runtime } = runtimeWith(framedTextFake());
+
+        clearPlatformCache();
+        fake.sent.length = 0;
+
+        const result = await runTool(
+            inputKey,
+            { target: { selector: "#card", frame: "#frame" }, key: "Enter" },
+            extra(),
+            runtime,
+        );
+
+        expect(result.isError).not.toBe(true);
+        expect(result.structuredContent).toMatchObject({ ok: true, pressed: "Enter" });
+        expect(fake.sent.map((call) => call.method)).toContain("Input.dispatchKeyEvent");
+    });
+});

@@ -477,3 +477,75 @@ describe("js_evaluate", () => {
         expect(slow.isError).toBe(true);
     });
 });
+
+describe("js_evaluate against shadow elements", () => {
+    it("runs the expression against an element resolved through a chain", async () => {
+        const fake = new FakeAccess();
+
+        fake.respond = (_targetId, method, params) => {
+            switch (method) {
+                case "DOM.getDocument":
+                    return { root: { nodeId: 1 } };
+
+                case "DOM.querySelector": {
+                    const selector = (params as { selector?: unknown })?.selector;
+
+                    if (selector === "my-app") return { nodeId: 13 };
+
+                    return { nodeId: 15 };
+                }
+
+                case "DOM.resolveNode":
+                    return { object: { objectId: "obj-15" } };
+
+                case "DOM.describeNode": {
+                    const nodeId = (params as { nodeId?: unknown })?.nodeId;
+
+                    if (nodeId === 13) {
+                        return {
+                            node: {
+                                nodeName     : "MY-APP",
+                                backendNodeId: 5,
+                                shadowRoots  : [{ nodeId: 14 }],
+                            },
+                        };
+                    }
+
+                    return { node: { nodeId: 15, backendNodeId: 9 } };
+                }
+
+                case "Runtime.callFunctionOn":
+                    return { result: { type: "string", value: "open shadow button" } };
+                default:
+                    throw new Error(`unexpected CDP call ${method}`);
+            }
+        };
+
+        const { runtime } = setup(fake);
+
+        await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+
+        const result = await runTool(
+            jsEvaluate,
+            {
+                expression: "return this.textContent;",
+                target    : { selector: "my-app >>> #open-btn" },
+            },
+            extra(),
+            runtime,
+        );
+
+        expect(result.isError).not.toBe(true);
+        expect(result.structuredContent).toMatchObject({ ok: true, value: "open shadow button" });
+        expect(fake.sent.map((call) => call.method)).toEqual([
+            "DOM.getDocument",
+            "DOM.querySelector",
+            "DOM.describeNode",
+            "DOM.querySelector",
+            "DOM.resolveNode",
+            "DOM.describeNode",
+            "Runtime.callFunctionOn",
+        ]);
+    });
+});

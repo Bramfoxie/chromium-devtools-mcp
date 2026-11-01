@@ -287,3 +287,48 @@ describe("input_scroll", () => {
         expect(fake.sent.map((entry) => entry.method)).not.toContain("Target.activateTarget");
     });
 });
+
+describe("input_scroll in frames", () => {
+    it("scrolls an element inside a frame into view", async () => {
+        const fake = scrollFake();
+        const inner = fake.respond?.bind(fake);
+
+        fake.respond = (_targetId, method, params) => {
+            if (method === "DOM.querySelector") {
+                const selector = (params as { selector?: unknown })?.selector;
+
+                if (selector === "#frame") return { nodeId: 10 };
+
+                return { nodeId: 41 };
+            }
+
+            if (method === "DOM.describeNode") {
+                const nodeId = (params as { nodeId?: unknown })?.nodeId;
+
+                if (nodeId === 10) {
+                    return {
+                        node: {
+                            nodeName       : "IFRAME",
+                            backendNodeId  : 20,
+                            frameId        : "frame1",
+                            contentDocument: { nodeId: 11 },
+                        },
+                    };
+                }
+            }
+
+            return inner?.(_targetId, method, params) as unknown;
+        };
+
+        const { runtime } = runtimeWith(fake);
+        const result = await runTool(
+            inputScroll,
+            { target: { selector: "#inner", frame: "#frame" } },
+            extra(),
+            runtime,
+        );
+
+        expect(result.isError).not.toBe(true);
+        expect(result.structuredContent).toMatchObject({ ok: true, method: "intoView" });
+    });
+});

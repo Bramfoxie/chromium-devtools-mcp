@@ -311,3 +311,73 @@ describe("screenshot", () => {
         expect(JSON.stringify(result.content)).toContain("new_tab");
     });
 });
+
+describe("screenshot of framed elements", () => {
+    it("clips to an element inside a frame in top-level coordinates", async () => {
+        const fake = new FakeAccess();
+
+        fake.respond = (_targetId, method, params) => {
+            switch (method) {
+                case "DOM.getDocument":
+                    return { root: { nodeId: 1 } };
+
+                case "DOM.querySelector": {
+                    const selector = (params as { selector?: unknown })?.selector;
+
+                    if (selector === "#frame") return { nodeId: 10 };
+
+                    return { nodeId: 41 };
+                }
+
+                case "DOM.describeNode": {
+                    const nodeId = (params as { nodeId?: unknown })?.nodeId;
+
+                    if (nodeId === 10) {
+                        return {
+                            node: {
+                                nodeName       : "IFRAME",
+                                backendNodeId  : 20,
+                                frameId        : "frame1",
+                                contentDocument: { nodeId: 11 },
+                            },
+                        };
+                    }
+
+                    return { node: { nodeId: 41, backendNodeId: 9 } };
+                }
+
+                case "DOM.resolveNode":
+                    return { object: { objectId: "obj-9" } };
+                case "DOM.scrollIntoViewIfNeeded":
+                    return {};
+                case "DOM.getBoxModel":
+                    return {
+                        model: {
+                            content: [179, 289, 201, 289, 201, 304, 179, 304],
+                            padding: [179, 289, 201, 289, 201, 304, 179, 304],
+                            border : [179, 289, 201, 289, 201, 304, 179, 304],
+                            margin : [179, 289, 201, 289, 201, 304, 179, 304],
+                        },
+                    };
+                case "Page.captureScreenshot":
+                    return { data: PNG_2X3.toString("base64") };
+                default:
+                    throw new Error(`unexpected CDP call ${method}`);
+            }
+        };
+
+        const { runtime } = setup(fake);
+
+        await runTool(newTab, {}, extra(), runtime);
+        const result = await runTool(
+            screenshot,
+            { target: { selector: "#pay-btn", frame: "#frame" }, format: "png" },
+            extra(),
+            runtime,
+        );
+        const shot = fake.sent.find((call) => call.method === "Page.captureScreenshot");
+
+        expect(result.isError).not.toBe(true);
+        expect(shot?.params).toMatchObject({ clip: { x: 179, y: 289, width: 22, height: 15 } });
+    });
+});

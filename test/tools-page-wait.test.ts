@@ -384,3 +384,98 @@ describe("page_wait", () => {
         expect(textOf(result)).toContain("not several");
     });
 });
+
+describe("page_wait piercing", () => {
+    function piercingSetup() {
+        const fake = new FakeAccess({
+            frames: [
+                { frameId: "main", url: "https://a.example/", name: "", isolated: false },
+                {
+                    frameId      : "cross",
+                    parentFrameId: "main",
+                    url          : "https://b.example/",
+                    name         : "pay",
+                    isolated     : true,
+                },
+            ],
+        });
+
+        fake.respond = (_targetId, method) => {
+            switch (method) {
+                case "Page.createIsolatedWorld":
+                    return { executionContextId: 9 };
+                case "Runtime.evaluate":
+                    return { result: { value: { met: true, detail: { matched: 1, visible: 1 } } } };
+                default:
+                    throw new Error(`unexpected CDP call ${method}`);
+            }
+        };
+
+        const runtime = new ToolRuntime({ access: fake.asAccess(), config: managedConfig });
+
+        runtime.tabs.refresh(
+            [{ targetId: "tab1", url: "https://a.example/", title: "a", owned: true, created: true }],
+            "tab1",
+        );
+
+        return { fake, runtime };
+    }
+
+    it("builds a pierced selector script that walks shadow roots", () => {
+        const script = selectorScript(".x", "visible", 100, 1000, true);
+
+        expect(script).toContain("shadowRoot");
+        expect(selectorScript(".x", "visible", 100, 1000)).not.toContain("shadowRoot");
+    });
+
+    it("waits in a frame through an isolated world", async () => {
+        const { fake, runtime } = piercingSetup();
+        const result = await runTool(
+            pageWait,
+            { selector: "#pay-btn", frame: "cross", timeoutMs: 1000 },
+            extra(),
+            runtime,
+        );
+
+        expect(result.isError).not.toBe(true);
+        expect(fake.sent.map((call) => call.method)).toEqual([
+            "Page.createIsolatedWorld",
+            "Runtime.evaluate",
+        ]);
+        expect(fake.sent[0]?.params).toMatchObject({ frameId: "cross" });
+        expect(fake.sent[1]?.params).toMatchObject({ contextId: 9 });
+    });
+
+    it("waits with pierce in the main frame", async () => {
+        const { fake, runtime } = piercingSetup();
+        const result = await runTool(
+            pageWait,
+            { selector: "#open-btn", pierce: true, timeoutMs: 1000 },
+            extra(),
+            runtime,
+        );
+
+        expect(result.isError).not.toBe(true);
+        expect(fake.sent.map((call) => call.method)).toEqual(["Runtime.evaluate"]);
+        expect(String(fake.sent[0]?.params?.expression)).toContain("shadowRoot");
+        expect(fake.sent[0]?.params).not.toHaveProperty("contextId");
+    });
+
+    it("reports an unknown frame and rejects pierce without a selector", async () => {
+        const { runtime } = piercingSetup();
+        const unknown = await runTool(
+            pageWait,
+            { selector: "#x", frame: "nope" },
+            extra(),
+            runtime,
+        );
+
+        expect(unknown.isError).toBe(true);
+        expect(JSON.stringify(unknown.content)).toContain("No frame");
+
+        const misplaced = await runTool(pageWait, { url: "/x", pierce: true }, extra(), runtime);
+
+        expect(misplaced.isError).toBe(true);
+        expect(JSON.stringify(misplaced.content)).toContain("only combine with a selector");
+    });
+});

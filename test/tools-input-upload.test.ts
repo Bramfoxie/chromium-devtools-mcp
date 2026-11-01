@@ -299,3 +299,62 @@ describe("input_upload", () => {
         }
     });
 });
+
+describe("input_upload in frames", () => {
+    it("sets files on an input inside a frame", async () => {
+        const fake = uploadFake({ files: 1 });
+        const inner = fake.respond?.bind(fake);
+
+        fake.respond = (_targetId, method, params) => {
+            if (method === "DOM.querySelector") {
+                const selector = (params as { selector?: unknown })?.selector;
+
+                if (selector === "#frame") return { nodeId: 10 };
+
+                return { nodeId: 41 };
+            }
+
+            if (method === "DOM.describeNode") {
+                const nodeId = (params as { nodeId?: unknown })?.nodeId;
+
+                if (nodeId === 10) {
+                    return {
+                        node: {
+                            nodeName       : "IFRAME",
+                            backendNodeId  : 20,
+                            frameId        : "frame1",
+                            contentDocument: { nodeId: 11 },
+                        },
+                    };
+                }
+            }
+
+            return inner?.(_targetId, method, params) as unknown;
+        };
+
+        const { runtime } = runtimeWith(fake);
+        const real = await import("node:os");
+        const path = await import("node:path");
+        const fs = await import("node:fs/promises");
+        const dir = await fs.mkdtemp(path.join(real.tmpdir(), "cdm-upload-"));
+
+        try {
+            const file = path.join(dir, "resume.txt");
+
+            await fs.writeFile(file, "cv");
+            const result = await runTool(
+                inputUpload,
+                { target: { selector: "#resume", frame: "#frame" }, files: [file] },
+                extra(),
+                runtime,
+            );
+
+            expect(result.isError).not.toBe(true);
+            expect(result.structuredContent).toMatchObject({ ok: true });
+            expect(fake.sent.find((entry) => entry.method === "DOM.setFileInputFiles")?.params)
+                .toEqual({ backendNodeId: 101, files: [file] });
+        } finally {
+            await fs.rm(dir, { recursive: true, force: true });
+        }
+    });
+});

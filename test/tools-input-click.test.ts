@@ -500,3 +500,147 @@ describe("mouse tools", () => {
         expect(fake.sent.map((entry) => entry.method)).not.toContain("Target.activateTarget");
     });
 });
+
+describe("input tools in shadow roots and frames", () => {
+    function piercedMouseFake(): FakeAccess {
+        const fake = new FakeAccess();
+
+        fake.respond = (_targetId, method, params) => {
+            switch (method) {
+                case "DOM.getDocument":
+                    return { root: { nodeId: 1 } };
+
+                case "DOM.querySelector": {
+                    const selector = (params as { selector?: unknown })?.selector;
+
+                    if (selector === "my-app") return { nodeId: 13 };
+
+                    return { nodeId: 15 };
+                }
+
+                case "DOM.resolveNode":
+                    return { object: { objectId: "obj-15" } };
+
+                case "DOM.describeNode": {
+                    const nodeId = (params as { nodeId?: unknown })?.nodeId;
+
+                    if (nodeId === 13) {
+                        return {
+                            node: {
+                                nodeName     : "MY-APP",
+                                backendNodeId: 5,
+                                shadowRoots  : [{ nodeId: 14 }],
+                            },
+                        };
+                    }
+
+                    return { node: { nodeId: 15, backendNodeId: 9 } };
+                }
+
+                case "DOM.scrollIntoViewIfNeeded":
+                case "Emulation.setFocusEmulationEnabled":
+                case "Input.dispatchMouseEvent":
+                    return {};
+                case "DOM.getBoxModel":
+                    return BOX_MODEL;
+                case "Runtime.evaluate":
+                    return { result: { type: "string", value: "https://same.example/" } };
+
+                case "Runtime.callFunctionOn": {
+                    const declaration = (params as { functionDeclaration?: unknown })
+                        ?.functionDeclaration;
+
+                    if (
+                        typeof declaration === "string" && declaration.includes("elementFromPoint")
+                    ) {
+                        return { result: { type: "object", value: { kind: "hit" } } };
+                    }
+
+                    if (typeof declaration === "string" && declaration.includes(":hover")) {
+                        return { result: { type: "boolean", value: true } };
+                    }
+
+                    return {
+                        result: {
+                            type : "object",
+                            value: {
+                                tag       : "button",
+                                id        : "open-btn",
+                                classes   : [],
+                                disabled  : false,
+                                connected : true,
+                                editable  : "none",
+                                selectable: false,
+                                fileInput : false,
+                            },
+                        },
+                    };
+                }
+
+                default:
+                    throw new Error(`unexpected CDP call ${method}`);
+            }
+        };
+
+        return fake;
+    }
+
+    function piercedSetup() {
+        const fake = piercedMouseFake();
+        const runtime = new ToolRuntime({ access: fake.asAccess(), config: managedConfig });
+
+        return { fake, runtime };
+    }
+
+    it("clicks a shadow element resolved through a chain", async () => {
+        const { fake, runtime } = piercedSetup();
+
+        await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+
+        const result = await runTool(
+            click,
+            { target: { selector: "my-app >>> #open-btn" } },
+            extra(),
+            runtime,
+        );
+
+        expect(result.isError).not.toBe(true);
+        expect(result.structuredContent).toMatchObject({ ok: true, effect: "The element was clicked." });
+        expect(fake.sent.map((call) => call.method)).toContain("DOM.querySelector");
+    });
+
+    it("input_clicks a shadow element with a trusted mouse sequence", async () => {
+        const { fake, runtime } = piercedSetup();
+
+        await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+
+        const result = await runTool(
+            inputClick,
+            { target: { selector: "my-app >>> #open-btn" } },
+            extra(),
+            runtime,
+        );
+
+        expect(result.isError).not.toBe(true);
+        expect(fake.sent.filter((call) => call.method === "Input.dispatchMouseEvent")).toHaveLength(3);
+    });
+
+    it("hovers a shadow element", async () => {
+        const { fake, runtime } = piercedSetup();
+
+        await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+
+        const result = await runTool(
+            inputHover,
+            { target: { selector: "my-app >>> #open-btn" } },
+            extra(),
+            runtime,
+        );
+
+        expect(result.isError).not.toBe(true);
+        expect(result.structuredContent).toMatchObject({ ok: true, hovered: true });
+    });
+});
