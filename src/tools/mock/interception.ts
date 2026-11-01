@@ -289,12 +289,7 @@ export class InterceptionManager {
 
         rule.applications += 1;
 
-        if (rule.times !== undefined && rule.applications >= rule.times) {
-            state.rules = state.rules.filter((candidate) => candidate !== rule);
-            await this.sync(tab).catch((error: unknown) => {
-                logDaemon(`could not sync interception: ${describeError(error)}`);
-            });
-        }
+        const expired = rule.times !== undefined && rule.applications >= rule.times;
 
         if (rule.delayMs > 0) await this.clock.sleep(rule.delayMs);
 
@@ -307,14 +302,19 @@ export class InterceptionManager {
                 responseHeaders: headersForCdp(rule.response as MockResponse),
                 ...(body === undefined ? {} : { body }),
             }));
-
-            return;
+        } else {
+            await resolve(() => this.access.send(tab, "Fetch.failRequest", {
+                requestId  : paused.requestId,
+                errorReason: rule.fail ?? "Failed",
+            }));
         }
 
-        await resolve(() => this.access.send(tab, "Fetch.failRequest", {
-            requestId  : paused.requestId,
-            errorReason: rule.fail ?? "Failed",
-        }));
+        if (expired) {
+            state.rules = state.rules.filter((candidate) => candidate !== rule);
+            await this.sync(tab).catch((error: unknown) => {
+                logDaemon(`could not sync interception: ${describeError(error)}`);
+            });
+        }
     }
 
     async forget(tab: string): Promise<void> {
