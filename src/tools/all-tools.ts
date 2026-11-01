@@ -16,6 +16,7 @@ import { inputUpload } from "./input-upload.js";
 import { jsEvaluate } from "./js-evaluate.js";
 import { networkRequests } from "./network-requests.js";
 import { networkResponseBody } from "./network-response-body.js";
+import { pageDialogs } from "./page-dialogs.js";
 import { pagePdf } from "./page-pdf.js";
 import { screenshot } from "./screenshot.js";
 import { pageInfo } from "./page-info.js";
@@ -38,6 +39,7 @@ export const allTools: AnyTool[] = [
     consoleLogs,
     networkRequests,
     networkResponseBody,
+    pageDialogs,
     pagePdf,
     pageMetrics,
     screenshot,
