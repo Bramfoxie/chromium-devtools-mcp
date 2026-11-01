@@ -189,3 +189,21 @@ export {
     producedText,
     resolveControlOrMeta,
 } from "./keys.js";
+
+export {
+    changedUrl,
+    click,
+    CLICK_COUNT_MAX,
+    CLICK_EXPRESSION,
+    HOVER_DEFAULT_STEPS,
+    HOVER_EXPRESSION,
+    inputClick,
+    inputHover,
+    type MouseButton,
+    MOUSE_BUTTON_BIT,
+    navigationOf,
+    positionSchema,
+    summarizeTarget,
+    targetSummarySchema,
+    type TargetSummary,
+} from "./input-click.js";
