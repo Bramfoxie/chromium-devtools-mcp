@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { defineTool, type ToolContext } from "./define-tool.js";
+import { emulationSummarySchema, summarizeEmulation } from "./emulation/summary.js";
 import { ToolError } from "./errors.js";
 
 const PAGE_INFO_TIMEOUT_MS = 5000;
@@ -68,9 +69,10 @@ export const pageInfo = defineTool({
             maxX: z.number().describe("Maximum horizontal scroll offset."),
             maxY: z.number().describe("Maximum vertical scroll offset."),
         }),
-        selected: z.boolean().describe("Whether the tab is the selected one."),
-        owned   : z.boolean().describe("Whether the session owns the tab."),
-        source  : z.enum(["page", "tab-list"]).describe("Whether the data came from the page or the tab list fallback."),
+        selected : z.boolean().describe("Whether the tab is the selected one."),
+        owned    : z.boolean().describe("Whether the session owns the tab."),
+        source   : z.enum(["page", "tab-list"]).describe("Whether the data came from the page or the tab list fallback."),
+        emulation: emulationSummarySchema.optional().describe("Emulation overrides active on the tab, when any."),
     }),
     handler: async (args, context) => {
         const targetId = args.tab ?? context.state.selected;
@@ -104,6 +106,8 @@ export const pageInfo = defineTool({
             live = undefined;
         }
 
+        const emulation = summarizeEmulation(context.emulation.snapshot(targetId));
+
         if (live) {
             return {
                 tab       : targetId,
@@ -115,6 +119,7 @@ export const pageInfo = defineTool({
                 selected  : context.state.selected === targetId,
                 owned     : true,
                 source    : "page" as const,
+                emulation,
             };
         }
 
@@ -134,6 +139,7 @@ export const pageInfo = defineTool({
             selected  : context.state.selected === targetId,
             owned     : true,
             source    : "tab-list" as const,
+            emulation,
         };
     },
 });

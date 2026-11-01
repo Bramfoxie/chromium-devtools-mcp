@@ -76,6 +76,7 @@ describe("page_info", () => {
             selected  : true,
             owned     : true,
             source    : "page",
+            emulation : {},
         });
         expect(fake.sent[0]).toMatchObject({
             targetId: "tab1",

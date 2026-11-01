@@ -56,7 +56,7 @@ Each session keeps its own tab selection. `new_tab` opens a background tab and s
 - `select_tab`: select an owned tab, claiming an available one when needed. Never focuses it.
 - `new_tab`: open a background tab and select it.
 - `close_tab`: close a tab opened by this session.
-- `page_info`: read the URL, title, viewport and scroll position of a tab.
+- `page_info`: read the URL, title, viewport, scroll position and emulation state of a tab.
 - `page_navigate`: open a URL, go back or forward, or reload, waiting for the page to load.
 - `js_evaluate`: run JavaScript in a tab. Page exceptions come back as data, not as tool errors.
 - `dom_query`: find elements by a CSS selector and read their text, attributes and boxes.
@@ -76,8 +76,15 @@ Each session keeps its own tab selection. `new_tab` opens a background tab and s
 - `page_pdf`: print a tab to PDF with orientation, paper, margins and page ranges. Needs a headless managed browser when the headed browser refuses to print.
 - `page_metrics`: read performance counters, layout metrics and navigation timing of a tab.
 - `screenshot`: capture a tab as an image. Defaults to jpeg quality 80; supports viewport, full page, element and clip shots.
+- `list_devices`: list the built in devices for `emulate_device`, with an optional name or kind filter.
+- `emulate_device`: emulate a device size, pixel ratio, mobile viewport, touch and user agent. Client hints metadata is not emulated.
+- `emulate_media`: emulate a media type and media features such as color scheme and reduced motion. Only the given fields change.
+- `emulate_network`: emulate network conditions with a preset (offline, slow-3g, fast-3g, 4g, wifi, none), custom latency and throughput, or blocked URL patterns. Shares `Network.enable` with the capture tools and never disables capture.
+- `emulate_locale`: emulate locale, timezone and Accept-Language. Takes effect on the next page load: `navigator.language` changes after navigation, and number and date formatting follow the locale. Geolocation is not emulated: it needs the Browser domain, which is not reachable through a tab.
 
-Every tool returns its result as JSON text plus structured content. Large outputs are truncated with an explicit marker. `screenshot` and `page_pdf` also return an image or embedded resource block. Mutating tools (`new_tab`, `select_tab`, `close_tab`, `page_navigate`, `js_evaluate`, `click`, `input_click`, `input_hover`, `input_type`, `input_key`, `input_scroll`, `input_select`, `input_upload`) are refused in read-only mode; the domain allowlist and dangerous action confirmations are planned.
+Every tool returns its result as JSON text plus structured content. Large outputs are truncated with an explicit marker. `screenshot` and `page_pdf` also return an image or embedded resource block. Mutating tools (`new_tab`, `select_tab`, `close_tab`, `page_navigate`, `js_evaluate`, `click`, `input_click`, `input_hover`, `input_type`, `input_key`, `input_scroll`, `input_select`, `input_upload`, `emulate_device`, `emulate_media`, `emulate_network`, `emulate_locale`) are refused in read-only mode; the domain allowlist and dangerous action confirmations are planned.
+
+Each emulation tool returns the full emulation state of the tab, plus what the page reports (viewport, media queries, language) when the page answers. `reset: true` removes only the overrides of that tool. Overrides live in the tab session: they survive cross site navigation but are gone when the tab closes or the session resets. Device emulation reports the inner size the page sees: without a viewport meta tag a mobile page keeps its default 980 CSS pixel layout width.
 
 Input tools never bring the browser window to the front. The page believes it is focused through CDP focus emulation, enabled once per tab, so mouse and keyboard events behave like a real user while your windows stay put.
 
