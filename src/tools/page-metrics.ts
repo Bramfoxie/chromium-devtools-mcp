@@ -66,7 +66,7 @@ const navigationSchema = z.object({
 export const NAVIGATION_TIMING_EXPRESSION = `(() => {
   const entry = performance.getEntriesByType("navigation")[0];
   if (!entry) return null;
-  const duration = (from, to) => (from >= 0 && to >= from ? Math.round((to - from) * 10) / 10 : 0);
+  const duration = (from, to) => (Number.isFinite(from) && Number.isFinite(to) && from >= 0 && to > from ? Math.round((to - from) * 10) / 10 : (to === from && from > 0 ? 0 : null));
   return {
     dnsMs: duration(entry.domainLookupStart, entry.domainLookupEnd),
     connectMs: duration(entry.connectStart, entry.connectEnd),

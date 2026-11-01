@@ -68,6 +68,28 @@ console.log(JSON.stringify(eval(${JSON.stringify(NAVIGATION_TIMING_EXPRESSION)})
         });
     });
 
+    it("reports null for unset phases instead of zeroes", async () => {
+        const script = `const performance = { getEntriesByType: () => [{
+  startTime: 0, domainLookupStart: 0, domainLookupEnd: 0, connectStart: 0,
+  connectEnd: 0, responseStart: 60, responseEnd: 110,
+  domContentLoadedEventEnd: 0, loadEventEnd: 0,
+}] };
+console.log(JSON.stringify(eval(${JSON.stringify(NAVIGATION_TIMING_EXPRESSION)})));`;
+        const output = await new Promise<string>((resolve, reject) => {
+            execFile(process.execPath, ["--input-type=module", "-e", script], (error, stdout) =>
+                error ? reject(error) : resolve(stdout),
+            );
+        });
+
+        expect(JSON.parse(output)).toEqual({
+            dnsMs             : null,
+            connectMs         : null,
+            responseMs        : 50,
+            domContentLoadedMs: null,
+            loadMs            : null,
+        });
+    });
+
     it("returns null without a navigation entry", async () => {
         const script = `const performance = { getEntriesByType: () => [] };
 console.log(JSON.stringify(eval(${JSON.stringify(NAVIGATION_TIMING_EXPRESSION)})));`;
