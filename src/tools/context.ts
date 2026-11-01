@@ -3,6 +3,7 @@ import type { DaemonAccess, DaemonTab } from "../mcp/index.js";
 import { CaptureManager } from "./capture/manager.js";
 import type { ToolClock, ToolContext } from "./define-tool.js";
 import { ElementRegistry } from "./element-target.js";
+import { EmulationState } from "./emulation/state.js";
 import { FocusEmulation } from "./focus-emulation.js";
 
 export type { ToolClock, ToolContext };
@@ -48,23 +49,25 @@ export class SessionTabs {
 }
 
 export interface ToolRuntimeOptions {
-    access   : DaemonAccess;
-    config   : Config;
-    clock?   : ToolClock;
-    tabs?    : SessionTabs;
-    elements?: ElementRegistry;
-    focus?   : FocusEmulation;
-    capture? : CaptureManager;
+    access    : DaemonAccess;
+    config    : Config;
+    clock?    : ToolClock;
+    tabs?     : SessionTabs;
+    elements? : ElementRegistry;
+    focus?    : FocusEmulation;
+    capture?  : CaptureManager;
+    emulation?: EmulationState;
 }
 
 export class ToolRuntime {
-    readonly access  : DaemonAccess;
-    readonly config  : Config;
-    readonly clock   : ToolClock;
-    readonly tabs    : SessionTabs;
-    readonly elements: ElementRegistry;
-    readonly focus   : FocusEmulation;
-    readonly capture : CaptureManager;
+    readonly access   : DaemonAccess;
+    readonly config   : Config;
+    readonly clock    : ToolClock;
+    readonly tabs     : SessionTabs;
+    readonly elements : ElementRegistry;
+    readonly focus    : FocusEmulation;
+    readonly capture  : CaptureManager;
+    readonly emulation: EmulationState;
 
     constructor(options: ToolRuntimeOptions) {
         this.access = options.access;
@@ -78,21 +81,23 @@ export class ToolRuntime {
         this.focus = options.focus ?? new FocusEmulation();
         this.capture = options.capture ??
             new CaptureManager({ access: options.access, clock: this.clock });
+        this.emulation = options.emulation ?? new EmulationState();
     }
 
     context(signal: AbortSignal): ToolContext {
         const tabs = this.tabs;
 
         return {
-            access  : this.access,
+            access   : this.access,
             tabs,
-            elements: this.elements,
-            focus   : this.focus,
-            capture : this.capture,
-            config  : this.config,
-            clock   : this.clock,
+            elements : this.elements,
+            focus    : this.focus,
+            capture  : this.capture,
+            emulation: this.emulation,
+            config   : this.config,
+            clock    : this.clock,
             signal,
-            state   : {
+            state    : {
                 get tabs() {
                     return tabs.knownTabs();
                 },

@@ -190,6 +190,7 @@ export const closeTab = defineTool({
         }
 
         context.capture.forget(targetId);
+        context.emulation.forget(targetId);
 
         const tabs = await context.access.listTabs("owned");
         const kept = tabs.some((tab) => tab.targetId === context.state.selected);

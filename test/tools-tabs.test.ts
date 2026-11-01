@@ -7,6 +7,7 @@ import {
     closeTab,
     listSessions,
     listTabs,
+    mergeMedia,
     newTab,
     runTool,
     selectTab,
@@ -282,9 +283,11 @@ describe("close_tab", () => {
 
         await runTool(newTab, {}, extra(), runtime);
         expect(runtime.capture.consoleEnabled("tab1")).toBe(true);
+        runtime.emulation.applyMedia("tab1", mergeMedia(undefined, { colorScheme: "dark" }));
         await runTool(closeTab, {}, extra(), runtime);
 
         expect(runtime.capture.consoleEnabled("tab1")).toBe(false);
+        expect(runtime.emulation.snapshot("tab1").media).toBeUndefined();
     });
 
     it("names new_tab when no tab is selected", async () => {

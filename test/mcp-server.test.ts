@@ -22,6 +22,7 @@ import {
     registerServerTools,
     runMcpServer,
 } from "../src/mcp/index.js";
+import { mergeMedia } from "../src/tools/index.js";
 import { FakeAccess } from "./helpers/fake-access.js";
 import { managedConfig } from "./helpers/daemon-env.js";
 
@@ -190,9 +191,15 @@ describe("registerServerTools", () => {
         fake.emit("tab.closed", { targetId: "tab1" });
         expect(runtime.capture.consoleEnabled("tab1")).toBe(false);
 
+        runtime.emulation.applyMedia("tab1", mergeMedia(undefined, { colorScheme: "dark" }));
+        fake.emit("tab.closed", { targetId: "tab1" });
+        expect(runtime.emulation.snapshot("tab1").media).toBeUndefined();
+
         await runtime.capture.ensureConsole("tab1");
+        runtime.emulation.applyMedia("tab1", mergeMedia(undefined, { colorScheme: "dark" }));
         fake.bumpGeneration();
         expect(runtime.capture.consoleEnabled("tab1")).toBe(false);
+        expect(runtime.emulation.snapshot("tab1").media).toBeUndefined();
     });
 });
 
