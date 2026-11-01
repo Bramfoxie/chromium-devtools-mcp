@@ -7,7 +7,7 @@ import {
 } from "./actionability.js";
 import { clickPointOf, type ClickPoint, TOP_LEVEL_ORIGIN } from "./coordinates.js";
 import { defineTool, type ToolContext } from "./define-tool.js";
-import { assertNoDialog } from "./dialogs.js";
+import { ensureNoDialog } from "./dialogs.js";
 import {
     elementTargetSchema,
     type ElementTarget,
@@ -169,7 +169,7 @@ export const click = defineTool({
 
         throwIfCancelled(context.signal);
 
-        assertNoDialog(context.dialogs, targetId);
+        await ensureNoDialog(context.dialogs, targetId);
 
         const { element, checked, uid } = await resolveActionable(context, targetId, args.target);
 
@@ -236,7 +236,7 @@ export const inputClick = defineTool({
 
         throwIfCancelled(context.signal);
 
-        assertNoDialog(context.dialogs, targetId);
+        await ensureNoDialog(context.dialogs, targetId);
         await context.focus.ensure(context.access, targetId);
 
         const element = await resolveElement(
@@ -337,7 +337,7 @@ export const inputHover = defineTool({
 
         throwIfCancelled(context.signal);
 
-        assertNoDialog(context.dialogs, targetId);
+        await ensureNoDialog(context.dialogs, targetId);
         await context.focus.ensure(context.access, targetId);
 
         const element = await resolveElement(

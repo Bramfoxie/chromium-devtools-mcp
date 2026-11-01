@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { DaemonAccess } from "../mcp/index.js";
 import { ensureActionable } from "./actionability.js";
 import { defineTool } from "./define-tool.js";
-import { assertNoDialog } from "./dialogs.js";
+import { ensureNoDialog } from "./dialogs.js";
 import { elementTargetSchema, resolveElement, type ResolvedElement } from "./element-target.js";
 import { ToolError } from "./errors.js";
 import { changedUrl, navigationOf, summarizeTarget, targetSummarySchema } from "./input-click.js";
@@ -210,7 +210,7 @@ export const inputSelect = defineTool({
 
         throwIfCancelled(context.signal);
 
-        assertNoDialog(context.dialogs, targetId);
+        await ensureNoDialog(context.dialogs, targetId);
         await context.focus.ensure(context.access, targetId);
 
         const element = await resolveElement(

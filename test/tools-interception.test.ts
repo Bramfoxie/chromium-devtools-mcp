@@ -30,6 +30,15 @@ describe("matchWildcard", () => {
         expect(matchWildcard("https://a.example/a+b", "https://a.example/a+b")).toBe(true);
         expect(matchWildcard("https://a.example/a+b", "https://a.example/aab")).toBe(false);
     });
+
+    it("matches many stars in linear time", () => {
+        const pattern = `${"*a".repeat(25)}b`;
+        const value = `http://x/${"a".repeat(60)}`;
+        const started = Date.now();
+
+        expect(matchWildcard(pattern, value)).toBe(false);
+        expect(Date.now() - started).toBeLessThan(1000);
+    });
 });
 
 describe("ruleMatches", () => {
@@ -105,6 +114,13 @@ describe("InterceptionManager", () => {
 
         expect(manager.enabled("tab1")).toBe(true);
 
+        const order = fake.sent.map((call) => call.method);
+        const subscribeIndex = fake.subscribed.findIndex(
+            (entry) => entry.targetId === "tab1" && entry.event === "Fetch.requestPaused",
+        );
+
+        expect(subscribeIndex).toBe(0);
+        expect(order[0]).toBe("Fetch.enable");
         const enables = fake.sent.filter((call) => call.method === "Fetch.enable");
 
         expect(enables).toHaveLength(2);

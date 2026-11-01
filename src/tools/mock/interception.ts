@@ -120,25 +120,32 @@ function pausedOf(params: unknown): PausedRequest | undefined {
 }
 
 export function matchWildcard(pattern: string, value: string): boolean {
-    let regex = "^";
+    // Linear glob matcher: no regex, no backtracking on hostile patterns.
+    let pi = 0;
+    let vi = 0;
+    let star = -1;
+    let mark = 0;
 
-    for (const char of pattern) {
-        if (char === "*") {
-            regex += ".*";
-        } else if (char === "?") {
-            regex += ".";
+    while (vi < value.length) {
+        if (pi < pattern.length && (pattern[pi] === "?" || pattern[pi] === value[vi])) {
+            pi += 1;
+            vi += 1;
+        } else if (pi < pattern.length && pattern[pi] === "*") {
+            star = pi;
+            mark = vi;
+            pi += 1;
+        } else if (star !== -1) {
+            mark += 1;
+            vi = mark;
+            pi = star + 1;
         } else {
-            regex += char.replace(/[.+^${}()|[\]\\]/, "\\$&");
+            return false;
         }
     }
 
-    regex += "$";
+    while (pi < pattern.length && pattern[pi] === "*") pi += 1;
 
-    try {
-        return new RegExp(regex).test(value);
-    } catch {
-        return false;
-    }
+    return pi === pattern.length;
 }
 
 export function ruleMatches(
@@ -366,17 +373,25 @@ export class InterceptionManager {
     }
 
     private async enable(tab: string, state: TabInterception): Promise<void> {
-        const patterns = state.rules.map((rule) => ({ urlPattern: rule.urlPattern }));
-
-        await this.access.send(tab, "Fetch.enable", { patterns });
-        state.enableSent = true;
-
+        // Subscribe first: the daemon drops events nobody listens to, so any
+        // request paused between Fetch.enable and subscribe would hang.
         if (!state.subscribed) {
             await this.access.subscribe(tab, FETCH_EVENT);
             state.subscribed = true;
         }
 
-        state.enabled = true;
+        try {
+            const patterns = state.rules.map((rule) => ({ urlPattern: rule.urlPattern }));
+
+            await this.access.send(tab, "Fetch.enable", { patterns });
+            state.enableSent = true;
+            state.enabled = true;
+        } catch (error) {
+            await this.access.unsubscribe(tab, FETCH_EVENT).catch(() => undefined);
+            state.subscribed = false;
+
+            throw error;
+        }
     }
 
     private async disable(tab: string): Promise<void> {

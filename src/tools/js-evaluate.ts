@@ -2,7 +2,7 @@ import { z } from "zod";
 import { ErrorCode, RpcError } from "../daemon/index.js";
 import type { DaemonAccess } from "../mcp/index.js";
 import { defineTool } from "./define-tool.js";
-import { assertNoDialog } from "./dialogs.js";
+import { ensureNoDialog } from "./dialogs.js";
 import {
     type ElementRegistry,
     type ElementTarget,
@@ -185,7 +185,7 @@ export const jsEvaluate = defineTool({
             throw new ToolError("No tab is selected. Open one with new_tab first.");
         }
 
-        assertNoDialog(context.dialogs, targetId);
+        await ensureNoDialog(context.dialogs, targetId);
 
         const awaitPromise = args.awaitPromise ?? true;
         const timeoutMs = args.timeoutMs ?? EVALUATE_DEFAULT_TIMEOUT_MS;

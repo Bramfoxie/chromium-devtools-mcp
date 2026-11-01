@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { DaemonAccess } from "../mcp/index.js";
 import { defineTool } from "./define-tool.js";
-import { assertNoDialog } from "./dialogs.js";
+import { ensureNoDialog } from "./dialogs.js";
 import { ToolError } from "./errors.js";
 import { throwIfCancelled } from "./registry.js";
 import { truncateText } from "./result.js";
@@ -229,7 +229,7 @@ export const storageRead = defineTool({
             throw new ToolError("keys only applies to local and session storage, not to cookies.");
         }
 
-        assertNoDialog(context.dialogs, targetId);
+        await ensureNoDialog(context.dialogs, targetId);
         throwIfCancelled(context.signal);
 
         const origin = await pageOrigin(context.access, targetId);

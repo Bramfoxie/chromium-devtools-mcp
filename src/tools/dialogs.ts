@@ -85,6 +85,22 @@ function parseEnvelope(value: unknown): {
     return { targetId: envelope.targetId, event: envelope.event, params: envelope.params };
 }
 
+export async function ensureNoDialog(dialogs: DialogState, tab: string): Promise<void> {
+    await dialogs.ensure(tab).catch(() => undefined);
+
+    const open = dialogs.open(tab);
+
+    if (open === undefined) return;
+
+    const article = /^[aeiou]/i.test(open.type) ? "An" : "A";
+
+    throw new ToolError(
+        `${article} ${open.type} dialog is open in this tab and blocks page scripts. ` +
+        "Use page_dialogs to see it and accept or dismiss it first.",
+    );
+}
+
+// Kept for callers that already ensured capture on this tab.
 export function assertNoDialog(dialogs: DialogState, tab: string): void {
     const open = dialogs.open(tab);
 

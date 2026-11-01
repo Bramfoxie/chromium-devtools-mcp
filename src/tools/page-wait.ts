@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { DaemonAccess } from "../mcp/index.js";
 import { compileUrlPattern } from "./capture/network-log.js";
 import { defineTool, type ToolContext } from "./define-tool.js";
-import { assertNoDialog } from "./dialogs.js";
+import { ensureNoDialog } from "./dialogs.js";
 import { MAX_FRAME_LENGTH } from "./element-target.js";
 import { ToolError } from "./errors.js";
 import { throwIfCancelled } from "./registry.js";
@@ -467,7 +467,7 @@ export const pageWait = defineTool({
             };
         }
 
-        assertNoDialog(context.dialogs, targetId);
+        await ensureNoDialog(context.dialogs, targetId);
         throwIfCancelled(context.signal);
 
         if (kind === "selector") {

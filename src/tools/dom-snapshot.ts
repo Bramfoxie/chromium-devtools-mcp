@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { DaemonAccess } from "../mcp/index.js";
 import { toAxNodes, type AxDomInfo, type AxNode, formatAxTree } from "./ax-format.js";
 import { defineTool, type ToolContext } from "./define-tool.js";
-import { assertNoDialog } from "./dialogs.js";
+import { ensureNoDialog } from "./dialogs.js";
 import { elementTargetSchema, resolveElement } from "./element-target.js";
 import { ToolError } from "./errors.js";
 import { truncateText } from "./result.js";
@@ -193,7 +193,7 @@ export const domSnapshot = defineTool({
             throw new ToolError("No tab is selected. Open one with new_tab first.");
         }
 
-        assertNoDialog(context.dialogs, targetId);
+        await ensureNoDialog(context.dialogs, targetId);
 
         const maxChars = args.maxChars ?? SNAPSHOT_DEFAULT_CHARS;
         const interactiveOnly = args.interactiveOnly ?? false;

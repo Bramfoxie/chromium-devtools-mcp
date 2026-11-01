@@ -200,7 +200,13 @@ export const networkMock = defineTool({
 
             const added = context.mock.add(targetId, ruleInputOf(args.rule));
 
-            await context.mock.sync(targetId);
+            try {
+                await context.mock.sync(targetId);
+            } catch (error) {
+                context.mock.remove(targetId, added.id);
+
+                throw error;
+            }
 
             return {
                 tab   : targetId,

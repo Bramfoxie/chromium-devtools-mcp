@@ -126,13 +126,13 @@ describe("page_wait", () => {
             condition: 'selector ".ready" visible',
             detail   : { matched: 1, visible: 1 },
         });
-        expect(fake.sent).toHaveLength(1);
-        expect(fake.sent[0]).toMatchObject({
+        expect(fake.sent).toHaveLength(2);
+        expect(fake.sent[1]).toMatchObject({
             targetId: "tab1",
             method  : "Runtime.evaluate",
             params  : { awaitPromise: true, returnByValue: true },
         });
-        expect(String(fake.sent[0]?.params?.expression)).toContain(".ready");
+        expect(String(fake.sent[1]?.params?.expression)).toContain(".ready");
     });
 
     it("returns met false with detail on timeout instead of an error", async () => {
@@ -166,7 +166,7 @@ describe("page_wait", () => {
         );
 
         expect(texted.structuredContent).toMatchObject({ met: true });
-        expect(String(fake.sent[0]?.params?.expression)).toContain(JSON.stringify(".main"));
+        expect(String(fake.sent[1]?.params?.expression)).toContain(JSON.stringify(".main"));
 
         const expressed = await runTool(
             pageWait,
@@ -176,7 +176,7 @@ describe("page_wait", () => {
         );
 
         expect(expressed.structuredContent).toMatchObject({ met: true });
-        expect(String(fake.sent[1]?.params?.expression)).toContain("window.done === true");
+        expect(String(fake.sent[2]?.params?.expression)).toContain("window.done === true");
     });
 
     it("matches a URL substring and a regex", async () => {
@@ -369,7 +369,7 @@ describe("page_wait", () => {
 
         expect(result.isError).toBe(true);
         expect(textOf(result)).toContain("page_dialogs");
-        expect(fake.sent).toEqual([]);
+        expect(fake.sent.map((call) => call.method)).toEqual(["Page.enable"]);
     });
 
     it("rejects a selector combined with url", async () => {
@@ -440,11 +440,12 @@ describe("page_wait piercing", () => {
 
         expect(result.isError).not.toBe(true);
         expect(fake.sent.map((call) => call.method)).toEqual([
+            "Page.enable",
             "Page.createIsolatedWorld",
             "Runtime.evaluate",
         ]);
-        expect(fake.sent[0]?.params).toMatchObject({ frameId: "cross" });
-        expect(fake.sent[1]?.params).toMatchObject({ contextId: 9 });
+        expect(fake.sent[1]?.params).toMatchObject({ frameId: "cross" });
+        expect(fake.sent[2]?.params).toMatchObject({ contextId: 9 });
     });
 
     it("waits with pierce in the main frame", async () => {
@@ -457,9 +458,9 @@ describe("page_wait piercing", () => {
         );
 
         expect(result.isError).not.toBe(true);
-        expect(fake.sent.map((call) => call.method)).toEqual(["Runtime.evaluate"]);
-        expect(String(fake.sent[0]?.params?.expression)).toContain("shadowRoot");
-        expect(fake.sent[0]?.params).not.toHaveProperty("contextId");
+        expect(fake.sent.map((call) => call.method)).toEqual(["Page.enable", "Runtime.evaluate"]);
+        expect(String(fake.sent[1]?.params?.expression)).toContain("shadowRoot");
+        expect(fake.sent[1]?.params).not.toHaveProperty("contextId");
     });
 
     it("reports an unknown frame and rejects pierce without a selector", async () => {

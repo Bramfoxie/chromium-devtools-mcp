@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { defineTool, type ToolContext } from "./define-tool.js";
-import { assertNoDialog } from "./dialogs.js";
+import { ensureNoDialog } from "./dialogs.js";
 import { ToolError } from "./errors.js";
 import { throwIfCancelled } from "./registry.js";
 
@@ -232,7 +232,7 @@ export const pageNavigate = defineTool({
 
         throwIfCancelled(context.signal);
 
-        assertNoDialog(context.dialogs, targetId);
+        await ensureNoDialog(context.dialogs, targetId);
 
         if (waitUntil === "none") {
             await navigate(context, targetId, action, args.url, args.ignoreCache);

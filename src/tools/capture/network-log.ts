@@ -331,6 +331,10 @@ export function compileUrlPattern(pattern: string): RegExp {
         throw new Error(`The pattern is longer than ${NETWORK_REGEX_MAX_CHARS} characters.`);
     }
 
+    if (/(\([^)]*[+*][^)]*\)[+*]|\{[^}]*\}[+*]|\([^)]*\)\{2,\})/.test(pattern)) {
+        throw new Error("The pattern has a nested quantifier and could hang the server.");
+    }
+
     try {
         return new RegExp(pattern);
     } catch {

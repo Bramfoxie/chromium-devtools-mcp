@@ -364,7 +364,7 @@ describe("js_evaluate", () => {
 
         expect(result.isError).toBe(true);
         expect(JSON.stringify(result.content)).toContain("Cannot find context with specified id");
-        expect(fake.sent.map((call) => call.method)).toEqual(["Runtime.evaluate", "Runtime.evaluate"]);
+        expect(fake.sent.map((call) => call.method)).toEqual(["Page.enable", "Runtime.evaluate", "Runtime.evaluate"]);
     });
 
     it("stops a timed out script and leaves a usable page", async () => {
@@ -394,6 +394,7 @@ describe("js_evaluate", () => {
         expect(result.isError).toBe(true);
         expect(JSON.stringify(result.content)).toContain("did not finish within 1000 ms");
         expect(fake.sent.map((call) => call.method)).toEqual([
+            "Page.enable",
             "Runtime.evaluate",
             "Runtime.terminateExecution",
         ]);
@@ -539,6 +540,7 @@ describe("js_evaluate against shadow elements", () => {
         expect(result.isError).not.toBe(true);
         expect(result.structuredContent).toMatchObject({ ok: true, value: "open shadow button" });
         expect(fake.sent.map((call) => call.method)).toEqual([
+            "Page.enable",
             "DOM.getDocument",
             "DOM.querySelector",
             "DOM.describeNode",

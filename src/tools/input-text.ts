@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { DaemonAccess } from "../mcp/index.js";
 import { ensureActionable } from "./actionability.js";
 import { defineTool, type ToolContext } from "./define-tool.js";
-import { assertNoDialog } from "./dialogs.js";
+import { ensureNoDialog } from "./dialogs.js";
 import { elementTargetSchema, resolveElement, type ResolvedElement } from "./element-target.js";
 import { ToolError } from "./errors.js";
 import { changedUrl, navigationOf, summarizeTarget, targetSummarySchema } from "./input-click.js";
@@ -173,7 +173,7 @@ export const inputType = defineTool({
 
         throwIfCancelled(context.signal);
 
-        assertNoDialog(context.dialogs, targetId);
+        await ensureNoDialog(context.dialogs, targetId);
         await context.focus.ensure(context.access, targetId);
 
         let element: ResolvedElement | undefined;
@@ -332,7 +332,7 @@ export const inputKey = defineTool({
 
         throwIfCancelled(context.signal);
 
-        assertNoDialog(context.dialogs, targetId);
+        await ensureNoDialog(context.dialogs, targetId);
         await context.focus.ensure(context.access, targetId);
         const platform = parsed.controlOrMeta
             ? await browserPlatform(context.access, context.elements, targetId)

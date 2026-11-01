@@ -250,7 +250,7 @@ describe("dialog precondition", () => {
         await expect(
             jsEvaluate.handler({ expression: "1 + 1" }, context),
         ).rejects.toThrow("page_dialogs");
-        expect(fake.sent).toEqual([]);
+        expect(fake.sent.map((call) => call.method)).toEqual(["Page.enable"]);
     });
 
     it("throws a ToolError that names page_dialogs", () => {

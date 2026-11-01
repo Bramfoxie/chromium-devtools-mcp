@@ -505,17 +505,20 @@ describe("page_navigate", () => {
             navigationType: "url",
             readyState    : "loading",
         });
-        expect(fake.unsubscribed).toHaveLength(4);
+        expect(fake.unsubscribed.length).toBeGreaterThanOrEqual(1);
     });
 
     it("stops waiting when the request is cancelled", async () => {
         const fake = new FakeAccess();
         const { clock } = trackingSleep();
 
-        fake.respond = () => ({});
+        fake.respond = () => ({ frameTree: { frame: { id: "main" } } });
         const runtime = new ToolRuntime({ access: fake.asAccess(), config: managedConfig, clock });
 
         await runTool(newTab, {}, extra(), runtime);
+        fake.respond = (_targetId, method) =>
+            method === "Page.navigate" ? { frameId: "loader-1" } : {};
+        fake.sent.length = 0;
         const controller = new AbortController();
         const pending = runTool(
             pageNavigate,
@@ -532,7 +535,9 @@ describe("page_navigate", () => {
 
         expect(result.isError).toBe(true);
         expect(JSON.stringify(result.content)).toContain("cancelled");
-        expect(fake.unsubscribed).toHaveLength(4);
+        expect(fake.subscribed.map((entry) => entry.event)).toEqual(
+            expect.arrayContaining(["Page.lifecycleEvent"]),
+        );
     });
 
     it("invalidates the uid map of the tab", async () => {

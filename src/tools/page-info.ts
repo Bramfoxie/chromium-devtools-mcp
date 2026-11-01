@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { defineTool } from "./define-tool.js";
-import { assertNoDialog } from "./dialogs.js";
+import { ensureNoDialog } from "./dialogs.js";
 import { selectionOf } from "./tabs.js";
 import { emulationSummarySchema, summarizeEmulation } from "./emulation/summary.js";
 import { ToolError } from "./errors.js";
@@ -83,7 +83,7 @@ export const pageInfo = defineTool({
             throw new ToolError("No tab is selected. Open one with new_tab first.");
         }
 
-        assertNoDialog(context.dialogs, targetId);
+        await ensureNoDialog(context.dialogs, targetId);
 
         const tabs = await context.access.listTabs("owned");
         const known = tabs.find((tab) => tab.targetId === targetId);

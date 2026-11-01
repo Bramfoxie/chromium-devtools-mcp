@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { DaemonAccess } from "../mcp/index.js";
 import { defineTool } from "./define-tool.js";
-import { assertNoDialog } from "./dialogs.js";
+import { ensureNoDialog } from "./dialogs.js";
 import { ToolError } from "./errors.js";
 import { throwIfCancelled } from "./registry.js";
 import { pageOrigin } from "./storage-read.js";
@@ -66,7 +66,7 @@ export function checkCookieDomain(
 }
 
 export function pageHostOf(origin: string): string {
-    return new URL(origin).host;
+    return new URL(origin).hostname;
 }
 
 async function storageCount(
@@ -139,7 +139,7 @@ export const storageWrite = defineTool({
             );
         }
 
-        assertNoDialog(context.dialogs, targetId);
+        await ensureNoDialog(context.dialogs, targetId);
         throwIfCancelled(context.signal);
 
         const origin = await pageOrigin(context.access, targetId);
@@ -148,10 +148,25 @@ export const storageWrite = defineTool({
         if (args.kind === "cookies") {
             const pageUrl = await pageUrlOf(context, targetId);
 
-            return writeCookies(context.access, targetId, origin, host, pageUrl, args);
+            return writeCookies(
+                context.access,
+                targetId,
+                origin,
+                host,
+                pageUrl,
+                args,
+                context.signal,
+            );
         }
 
-        return writeDomStorage(context.access, targetId, origin, args.kind === "local", args);
+        return writeDomStorage(
+            context.access,
+            targetId,
+            origin,
+            args.kind === "local",
+            args,
+            context.signal,
+        );
     },
 });
 
@@ -194,6 +209,7 @@ async function writeDomStorage(
     origin  : string,
     local   : boolean,
     args    : WriteArgs,
+    signal  : AbortSignal,
 ): Promise<{
     tab      : string;
     kind     : "local" | "session";
@@ -219,6 +235,7 @@ async function writeDomStorage(
         }
 
         for (const [key, value] of entries) {
+            throwIfCancelled(signal);
             await access.send(targetId, "DOMStorage.setDOMStorageItem", {
                 storageId: { securityOrigin: origin, isLocalStorage: local },
                 key,
@@ -249,6 +266,7 @@ async function writeDomStorage(
         }
 
         for (const key of keys) {
+            throwIfCancelled(signal);
             await access.send(targetId, "DOMStorage.removeDOMStorageItem", {
                 storageId: { securityOrigin: origin, isLocalStorage: local },
                 key,
@@ -303,6 +321,7 @@ async function writeCookies(
     host    : string,
     pageUrl : string,
     args    : CookieWriteArgs,
+    signal  : AbortSignal,
 ): Promise<{
     tab      : string;
     kind     : "cookies";
@@ -319,8 +338,13 @@ async function writeCookies(
             throw new ToolError("The set action needs cookies to set.");
         }
 
+        // Validate every cookie before the first send: no partial writes.
+        for (const cookie of cookies) checkCookieDomain(cookie.domain, host);
+
+        let applied = 0;
+
         for (const cookie of cookies) {
-            checkCookieDomain(cookie.domain, host.replace(/:\d+$/, ""));
+            throwIfCancelled(signal);
             const ok = z.object({ success: z.boolean() }).safeParse(
                 await access.send(targetId, "Network.setCookie", {
                     name : cookie.name,
@@ -337,9 +361,11 @@ async function writeCookies(
 
             if (!ok.success || !ok.data.success) {
                 throw new ToolError(
-                    `The cookie ${JSON.stringify(cookie.name)} was refused by the browser. Check the domain, path and secure flags.`,
+                    `The cookie ${JSON.stringify(cookie.name)} was refused by the browser after ${applied} of ${cookies.length} were set. Check the domain, path and secure flags.`,
                 );
             }
+
+            applied += 1;
         }
 
         const remaining = await cookieCount(access, targetId);
@@ -362,8 +388,10 @@ async function writeCookies(
             throw new ToolError("The remove action needs cookies to remove.");
         }
 
+        for (const cookie of cookies) checkCookieDomain(cookie.domain, host);
+
         for (const cookie of cookies) {
-            checkCookieDomain(cookie.domain, host.replace(/:\d+$/, ""));
+            throwIfCancelled(signal);
             await access.send(targetId, "Network.deleteCookies", {
                 name: cookie.name,
                 url : pageUrl,
@@ -395,16 +423,18 @@ async function writeCookies(
             path  : z.string(),
         }).passthrough()),
     }).safeParse(await access.send(targetId, "Network.getCookies"));
+    const scoped = (parsed.success ? parsed.data.cookies : []).filter((cookie) =>
+        cookieDomainAllowed(cookie.domain, host),
+    );
 
-    if (parsed.success) {
-        for (const cookie of parsed.data.cookies) {
-            await access.send(targetId, "Network.deleteCookies", {
-                name  : cookie.name,
-                url   : pageUrl,
-                domain: cookie.domain,
-                path  : cookie.path,
-            });
-        }
+    for (const cookie of scoped) {
+        throwIfCancelled(signal);
+        await access.send(targetId, "Network.deleteCookies", {
+            name  : cookie.name,
+            url   : pageUrl,
+            domain: cookie.domain,
+            path  : cookie.path,
+        });
     }
 
     const remaining = await cookieCount(access, targetId);

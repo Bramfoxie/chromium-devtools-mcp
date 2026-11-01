@@ -96,6 +96,7 @@ describe("storage_read", () => {
             ],
         });
         expect(fake.sent.map((call) => call.method)).toEqual([
+            "Page.enable",
             "Runtime.evaluate",
             "DOMStorage.enable",
             "DOMStorage.getDOMStorageItems",
@@ -276,6 +277,6 @@ describe("storage_read", () => {
 
         expect(result.isError).toBe(true);
         expect(textOf(result)).toContain("page_dialogs");
-        expect(fake.sent).toEqual([]);
+        expect(fake.sent.map((call) => call.method)).toEqual(["Page.enable"]);
     });
 });

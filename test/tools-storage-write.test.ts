@@ -106,8 +106,8 @@ describe("storage_write", () => {
             remaining: 1,
         });
         expect(JSON.stringify(result.structuredContent)).not.toContain("dark-secret");
-        expect(fake.sent.at(1)).toMatchObject({ method: "DOMStorage.enable" });
-        expect(fake.sent.at(2)).toMatchObject({
+        expect(fake.sent.at(2)).toMatchObject({ method: "DOMStorage.enable" });
+        expect(fake.sent.at(3)).toMatchObject({
             method: "DOMStorage.setDOMStorageItem",
             params: {
                 storageId: { securityOrigin: "https://a.example", isLocalStorage: true },
