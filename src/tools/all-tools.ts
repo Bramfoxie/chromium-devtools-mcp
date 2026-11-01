@@ -1,3 +1,4 @@
+import { consoleLogs } from "./console-logs.js";
 import { cssInspect } from "./css-inspect.js";
 import type { AnyTool } from "./define-tool.js";
 import { domQuery } from "./dom-query.js";
@@ -24,6 +25,7 @@ export const allTools: AnyTool[] = [
     domQuery,
     domSnapshot,
     cssInspect,
+    consoleLogs,
     click,
     inputClick,
     inputHover,

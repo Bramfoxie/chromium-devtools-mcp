@@ -88,6 +88,12 @@ export {
     shapeMatchedRules,
 } from "./css-inspect.js";
 
+export {
+    CONSOLE_LOGS_DEFAULT_LIMIT,
+    CONSOLE_LOGS_MAX_LIMIT,
+    consoleLogs,
+} from "./console-logs.js";
+
 export { pageDetails, pageInfo, pageInfoExpression } from "./page-info.js";
 
 export {
