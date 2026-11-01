@@ -222,14 +222,18 @@ export class CaptureManager {
         capture.consoleDropped = capture.console.dropped;
 
         const afterId = query.afterId ?? 0;
-        const entries = capture.console
+        const filtered = capture.console
             .after(afterId, Number.MAX_SAFE_INTEGER)
             .filter(({ value }) =>
                 (query.levels === undefined || query.levels.includes(value.level)) &&
                 (query.textContains === undefined || value.text.includes(query.textContains)),
-            )
-            .slice(0, query.limit)
-            .map(({ id, value }) => ({ id, entry: value }));
+            );
+        // Newest takes the tail, oldest the head: paging never returns the
+        // oldest entries in reverse when the buffer exceeds the limit.
+        const kept = query.order === "newest"
+            ? filtered.slice(-query.limit)
+            : filtered.slice(0, query.limit);
+        const entries = kept.map(({ id, value }) => ({ id, entry: value }));
         const ordered = query.order === "newest" ? [...entries].reverse() : entries;
         const nextAfterId = entries.length === 0
             ? afterId

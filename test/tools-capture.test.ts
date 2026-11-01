@@ -103,7 +103,30 @@ describe("console formatting", () => {
         expect(formatConsoleArgument({ type: "number", unserializableValue: "Infinity" })).toBe(
             "Infinity",
         );
-        expect(formatConsoleArgument({ type: "object" })).toBe("Object");
+        expect(formatConsoleArgument({ type: "object" })).toBe("object");
+    });
+
+    it("summarizes objects from the preview instead of printing Object", () => {
+        expect(
+            formatConsoleArgument({
+                type       : "object",
+                className  : "Object",
+                description: "Object",
+                preview    : {
+                    properties: [
+                        { name: "a", value: "1", type: "number" },
+                        { name: "b", value: "x", type: "string" },
+                    ],
+                },
+            }),
+        ).toBe("Object {a: 1, b: x}");
+        expect(
+            formatConsoleArgument({
+                type       : "object",
+                subtype    : "array",
+                description: "Array(0)",
+            }),
+        ).toBe("[]");
     });
 
     it("clips long text and long stacks", () => {
@@ -477,6 +500,11 @@ describe("CaptureManager", () => {
         expect(page.nextAfterId).toBe(2);
         expect(page.droppedCount).toBe(0);
         expect(page.totalBuffered).toBe(2);
+
+        const tail = capture.readConsole("tab1", { limit: 1, order: "newest", clear: false });
+
+        expect(tail.entries.map(({ entry }) => entry.text)).toEqual(["failed"]);
+        expect(tail.nextAfterId).toBe(2);
 
         const next = capture.readConsole("tab1", {
             afterId: 1,

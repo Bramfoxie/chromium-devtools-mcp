@@ -19,6 +19,12 @@ export interface ConsoleEntry {
     stack? : string;
 }
 
+const previewProperty = z.object({
+    name : z.string(),
+    value: z.string().optional(),
+    type : z.string().optional(),
+});
+
 const remoteObject = z.object({
     type               : z.string(),
     subtype            : z.string().optional(),
@@ -26,6 +32,10 @@ const remoteObject = z.object({
     value              : z.unknown().optional(),
     unserializableValue: z.string().optional(),
     description        : z.string().optional(),
+    preview            : z.object({
+        properties: z.array(previewProperty),
+        overflow  : z.boolean().optional(),
+    }).optional(),
 });
 
 const consoleApiCalled = z.object({
@@ -100,11 +110,26 @@ export function formatConsoleArgument(argument: RemoteArgument): string {
         return text === undefined ? argument.type : text;
     }
 
+    const preview = argument.preview?.properties;
+
+    if (preview !== undefined && preview.length > 0) {
+        const shown = preview.slice(0, 10).map((property) => `${property.name}: ${property.value ?? property.type ?? "?"}`);
+        const overflow = (argument.preview?.overflow ?? false) || preview.length > shown.length;
+
+        return `${argument.className ?? "Object"} {${shown.join(", ")}${overflow ? ", ..." : ""}}`;
+    }
+
+    if (argument.subtype === "array" && argument.description !== undefined) {
+        const match = /Array\((\d+)\)/.exec(argument.description);
+
+        if (match?.[1] === "0") return "[]";
+    }
+
     if (argument.description !== undefined) return argument.description;
 
     const name = argument.className ?? argument.subtype ?? argument.type;
 
-    return name === "object" ? "Object" : name;
+    return name;
 }
 
 export function formatConsoleStack(frames: CallFrame[]): string {
