@@ -241,13 +241,12 @@ describe("page_navigate", () => {
             "Page.setLifecycleEventsEnabled",
             "Network.enable",
             "Page.navigate",
-            "Page.disable",
             "Network.disable",
             "Runtime.evaluate",
         ]);
         expect(fake.sent[4]?.params).toEqual({ url: "https://example.org/" });
         expect(fake.sent[2]?.params).toEqual({ enabled: true });
-        expect(fake.sent[7]?.params).toMatchObject({ expression: PAGE_STATE_EXPRESSION });
+        expect(fake.sent[6]?.params).toMatchObject({ expression: PAGE_STATE_EXPRESSION });
         expect(fake.unsubscribed).toHaveLength(4);
     });
 

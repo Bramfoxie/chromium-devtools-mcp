@@ -357,6 +357,7 @@ async function navigateAndWait(
     };
     const off = context.access.on("cdp.event", onEvent);
     const keepNetwork = context.capture.networkEnabled(targetId);
+    const keepPage = context.dialogs.pageEnabled(targetId);
 
     try {
         await context.access.send(targetId, "Page.enable", {});
@@ -402,7 +403,10 @@ async function navigateAndWait(
             await context.access.unsubscribe(targetId, event).catch(() => undefined);
         }
 
-        await context.access.send(targetId, "Page.disable", {}).catch(() => undefined);
+        // Dialog capture owns Page.enable from tab creation; never disable it here.
+        if (!keepPage) {
+            await context.access.send(targetId, "Page.disable", {}).catch(() => undefined);
+        }
 
         if (!keepNetwork) {
             await context.access.send(targetId, "Network.disable", {}).catch(() => undefined);
