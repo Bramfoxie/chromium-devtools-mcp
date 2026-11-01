@@ -50,8 +50,9 @@ function memoryFs(entries: Record<string, MemoryEntry>): UploadFileSystem {
 }
 
 interface UploadWorld {
-    state?: Record<string, unknown>;
-    files?: number;
+    state? : Record<string, unknown>;
+    files? : number;
+    hidden?: boolean;
 }
 
 function uploadFake(world: UploadWorld = {}): FakeAccess {
@@ -70,6 +71,10 @@ function uploadFake(world: UploadWorld = {}): FakeAccess {
             case "DOM.scrollIntoViewIfNeeded":
                 return {};
             case "DOM.getBoxModel":
+                if (world.hidden === true) {
+                    throw new Error("hidden element has no box model");
+                }
+
                 return BOX_MODEL;
             case "DOM.setFileInputFiles":
                 return {};
@@ -206,6 +211,34 @@ describe("input_upload", () => {
             expect(contentOf(result)).not.toContain("beta");
             expect(fake.sent.find((entry) => entry.method === "DOM.setFileInputFiles")?.params)
                 .toEqual({ backendNodeId: 101, files: [first, second] });
+        } finally {
+            await fs.rm(dir, { recursive: true, force: true });
+        }
+    });
+
+    it("attaches to a hidden file input without a box", async () => {
+        const fake = uploadFake({ hidden: true, files: 1 });
+        const { runtime } = runtimeWith(fake);
+        const real = await import("node:os");
+        const path = await import("node:path");
+        const fs = await import("node:fs/promises");
+        const dir = await fs.mkdtemp(path.join(real.tmpdir(), "cdm-upload-"));
+
+        try {
+            const first = path.join(dir, "hidden.txt");
+
+            await fs.writeFile(first, "hidden");
+
+            const result = await runTool(
+                inputUpload,
+                { target: { uid: "1_1" }, files: [first] },
+                extra(),
+                runtime,
+            );
+
+            expect(result.isError).not.toBe(true);
+            expect(result.structuredContent).toMatchObject({ ok: true });
+            expect(fake.sent.find((entry) => entry.method === "DOM.setFileInputFiles")).toBeDefined();
         } finally {
             await fs.rm(dir, { recursive: true, force: true });
         }

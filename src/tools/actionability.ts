@@ -311,6 +311,7 @@ export interface ActionablePoint {
 
 export interface ActionabilityOptions {
     checkDisabled: boolean;
+    checkVisible?: boolean;
     hitTest?     : ActionablePoint | undefined;
 }
 
@@ -336,6 +337,10 @@ export async function ensureActionable(
 
     if (options.checkDisabled && state.disabled) {
         throw new ToolError("The element is disabled and cannot receive input.");
+    }
+
+    if (options.checkVisible === false) {
+        return { state, box: { x: 0, y: 0, width: 0, height: 0 } };
     }
 
     const box = await revealElement(access, tab, { objectId: element.objectId });

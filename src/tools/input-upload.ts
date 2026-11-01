@@ -174,8 +174,11 @@ export const inputUpload = defineTool({
             args.target,
             { frames: context.frames },
         );
+        // Hidden file inputs are the normal case: attaching files needs no
+        // box, scroll or hit test, only a connected enabled file input.
         const checked = await ensureActionable(context.access, targetId, element, {
             checkDisabled: true,
+            checkVisible : false,
         });
 
         if (!checked.state.fileInput) {
