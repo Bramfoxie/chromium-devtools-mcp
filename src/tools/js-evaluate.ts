@@ -191,19 +191,16 @@ export const jsEvaluate = defineTool({
         const timeoutMs = args.timeoutMs ?? EVALUATE_DEFAULT_TIMEOUT_MS;
         const maxChars = args.maxResultChars ?? EVALUATE_DEFAULT_RESULT_CHARS;
 
-        const call = (returnByValue: boolean): Promise<unknown> =>
-            evaluate(context.access, context.elements, targetId, {
+        let result: unknown;
+
+        try {
+            result = await evaluate(context.access, context.elements, targetId, {
                 expression: args.expression,
                 awaitPromise,
                 timeoutMs,
                 target    : args.target,
                 frames    : context.frames,
-            }, returnByValue);
-
-        let result: unknown;
-
-        try {
-            result = await call(true);
+            });
         } catch (error) {
             if (error instanceof RpcError && error.code === ErrorCode.cdpTimeout) {
                 await context.access.send(targetId, "Runtime.terminateExecution", {}).catch(() => undefined);
@@ -216,27 +213,12 @@ export const jsEvaluate = defineTool({
             throw error;
         }
 
-        let parsed = evaluatedSchema.safeParse(result);
+        const parsed = evaluatedSchema.safeParse(result);
 
         if (!parsed.success) {
             throw new ToolError(
                 "The browser sent an unexpected response to Runtime.evaluate. Try the call again.",
             );
-        }
-
-        if (parsed.data.exceptionDetails === undefined && isBareEmptyObject(parsed.data.result)) {
-            try {
-                const second = evaluatedSchema.safeParse(await call(false));
-
-                if (
-                    second.success && second.data.exceptionDetails === undefined &&
-                    second.data.result.description !== undefined
-                ) {
-                    parsed = second;
-                }
-            } catch {
-                // The first result stands when the description retry fails.
-            }
         }
 
         const exception = parsed.data.exceptionDetails;
@@ -289,68 +271,44 @@ interface EvaluateRequest {
 }
 
 async function evaluate(
-    access       : DaemonAccess,
-    elements     : ElementRegistry,
-    targetId     : string,
-    request      : EvaluateRequest,
-    returnByValue: boolean,
+    access  : DaemonAccess,
+    elements: ElementRegistry,
+    targetId: string,
+    request : EvaluateRequest,
 ): Promise<unknown> {
+    // One evaluation only: retrying would run page side effects twice.
     if (request.target === undefined) {
-        try {
-            return await access.send(
-                targetId,
-                "Runtime.evaluate",
-                {
-                    expression  : request.expression,
-                    returnByValue,
-                    awaitPromise: request.awaitPromise,
-                    userGesture : false,
-                    replMode    : false,
-                },
-                request.timeoutMs,
-            );
-        } catch (error) {
-            // A value that cannot cross the protocol (a cycle, window) is retried as a description.
-            const retryable = returnByValue && error instanceof RpcError &&
-                error.code === ErrorCode.cdpError;
-
-            if (!retryable) throw error;
-
-            try {
-                return await evaluate(access, elements, targetId, request, false);
-            } catch {
-                throw error;
-            }
-        }
+        return await access.send(
+            targetId,
+            "Runtime.evaluate",
+            {
+                expression     : request.expression,
+                returnByValue  : false,
+                awaitPromise   : request.awaitPromise,
+                userGesture    : false,
+                replMode       : false,
+                generatePreview: true,
+            },
+            request.timeoutMs,
+        );
     }
 
     const element = await resolveElement(access, elements, targetId, request.target, {
         frames: request.frames,
     });
 
-    try {
-        return await access.send(
-            targetId,
-            "Runtime.callFunctionOn",
-            {
-                functionDeclaration: elementFunctionDeclaration(request.expression),
-                objectId           : element.objectId,
-                arguments          : [{ objectId: element.objectId }],
-                returnByValue,
-                awaitPromise       : request.awaitPromise,
-                userGesture        : false,
-            },
-            request.timeoutMs,
-        );
-    } catch (error) {
-        if (!returnByValue || !(error instanceof RpcError) || error.code !== ErrorCode.cdpError) {
-            throw error;
-        }
-
-        try {
-            return await evaluate(access, elements, targetId, request, false);
-        } catch {
-            throw error;
-        }
-    }
+    return await access.send(
+        targetId,
+        "Runtime.callFunctionOn",
+        {
+            functionDeclaration: elementFunctionDeclaration(request.expression),
+            objectId           : element.objectId,
+            arguments          : [{ objectId: element.objectId }],
+            returnByValue      : false,
+            awaitPromise       : request.awaitPromise,
+            userGesture        : false,
+            generatePreview    : true,
+        },
+        request.timeoutMs,
+    );
 }

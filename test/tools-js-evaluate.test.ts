@@ -181,11 +181,12 @@ describe("js_evaluate", () => {
             targetId: "tab1",
             method  : "Runtime.evaluate",
             params  : {
-                expression   : "2 + 2",
-                returnByValue: true,
-                awaitPromise : true,
-                userGesture  : false,
-                replMode     : false,
+                expression     : "2 + 2",
+                returnByValue  : false,
+                awaitPromise   : true,
+                userGesture    : false,
+                replMode       : false,
+                generatePreview: true,
             },
             timeoutMs: 10000,
         });
@@ -247,27 +248,17 @@ describe("js_evaluate", () => {
         });
     });
 
-    it("retries an unserializable result as a description and releases it", async () => {
+    it("shapes an object result from one evaluation and releases it", async () => {
         const fake = new FakeAccess();
-        const calls: unknown[] = [];
 
-        fake.respond = (_targetId, method, params) => {
-            calls.push(params);
-
-            if (calls.length === 1) {
-                throw new RpcError(ErrorCode.cdpError, "Object reference chain is too long");
-            }
-
-            return {
-                result: { type: "object", className: "Object", description: "Object", objectId: "obj-9" },
-            };
-        };
+        fake.respond = () => ({
+            result: { type: "object", className: "Object", description: "Object", objectId: "obj-9" },
+        });
 
         const { runtime } = setup(fake);
 
         await runTool(newTab, {}, extra(), runtime);
         fake.sent.length = 0;
-        calls.length = 0;
 
         const result = await runTool(jsEvaluate, { expression: "window" }, extra(), runtime);
 
@@ -279,39 +270,28 @@ describe("js_evaluate", () => {
         });
         expect(fake.sent.map((call) => call.method)).toEqual([
             "Runtime.evaluate",
-            "Runtime.evaluate",
             "Runtime.releaseObject",
         ]);
-        expect(calls[0]).toMatchObject({ returnByValue: true });
-        expect(calls[1]).toMatchObject({ returnByValue: false });
-        expect(fake.sent[2]?.params).toEqual({ objectId: "obj-9" });
+        expect(fake.sent[0]?.params).toMatchObject({ returnByValue: false });
     });
 
-    it("describes a DOM node instead of returning an empty object", async () => {
+    it("describes a DOM node from one evaluation", async () => {
         const fake = new FakeAccess();
-        const calls: unknown[] = [];
 
-        fake.respond = (_targetId, method, params) => {
-            calls.push(params);
-
-            if (calls.length === 1) return { result: { type: "object", value: {} } };
-
-            return {
-                result: {
-                    type       : "object",
-                    subtype    : "node",
-                    className  : "HTMLHeadingElement",
-                    description: "h1",
-                    objectId   : "obj-3",
-                },
-            };
-        };
+        fake.respond = () => ({
+            result: {
+                type       : "object",
+                subtype    : "node",
+                className  : "HTMLHeadingElement",
+                description: "h1",
+                objectId   : "obj-3",
+            },
+        });
 
         const { runtime } = setup(fake);
 
         await runTool(newTab, {}, extra(), runtime);
         fake.sent.length = 0;
-        calls.length = 0;
 
         const result = await runTool(jsEvaluate, { expression: "document.querySelector('h1')" }, extra(), runtime);
 
@@ -323,13 +303,12 @@ describe("js_evaluate", () => {
         });
         expect(fake.sent.map((call) => call.method)).toEqual([
             "Runtime.evaluate",
-            "Runtime.evaluate",
             "Runtime.releaseObject",
         ]);
-        expect(calls[1]).toMatchObject({ returnByValue: false });
+        expect(fake.sent[0]?.params).toMatchObject({ returnByValue: false });
     });
 
-    it("keeps the first result when the description retry has none", async () => {
+    it("evaluates an empty object once and reports it", async () => {
         const fake = new FakeAccess();
         let calls = 0;
 
@@ -347,11 +326,11 @@ describe("js_evaluate", () => {
 
         const result = await runTool(jsEvaluate, { expression: "({})" }, extra(), runtime);
 
-        expect(result.structuredContent).toMatchObject({ ok: true, value: {} });
-        expect(calls).toBe(2);
+        expect(result.structuredContent).toMatchObject({ ok: true });
+        expect(calls).toBe(1);
     });
 
-    it("reports the original error when the description retry also fails", async () => {
+    it("reports the protocol error from one evaluation", async () => {
         const fake = new FakeAccess();
 
         fake.failSend = () => new RpcError(ErrorCode.cdpError, "Cannot find context with specified id");
@@ -364,7 +343,7 @@ describe("js_evaluate", () => {
 
         expect(result.isError).toBe(true);
         expect(JSON.stringify(result.content)).toContain("Cannot find context with specified id");
-        expect(fake.sent.map((call) => call.method)).toEqual(["Page.enable", "Runtime.evaluate", "Runtime.evaluate"]);
+        expect(fake.sent.map((call) => call.method)).toEqual(["Page.enable", "Runtime.evaluate"]);
     });
 
     it("stops a timed out script and leaves a usable page", async () => {
@@ -434,9 +413,10 @@ describe("js_evaluate", () => {
             functionDeclaration: "function (element) { return this.textContent; }",
             objectId           : "obj-7",
             arguments          : [{ objectId: "obj-7" }],
-            returnByValue      : true,
+            returnByValue      : false,
             awaitPromise       : true,
             userGesture        : false,
+            generatePreview    : true,
         });
     });
 
