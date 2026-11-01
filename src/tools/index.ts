@@ -195,6 +195,25 @@ export {
 } from "./storage-read.js";
 
 export {
+    FETCH_EVENT,
+    headersForCdp,
+    InterceptionManager,
+    matchWildcard,
+    MOCK_BODY_MAX_BYTES,
+    MOCK_DELAY_MAX_MS,
+    MOCK_HEADER_NAME_MAX_CHARS,
+    MOCK_HEADER_VALUE_MAX_CHARS,
+    MOCK_HEADERS_MAX,
+    MOCK_RULES_MAX,
+    MOCK_URL_PATTERN_MAX_CHARS,
+    type MockAction,
+    type MockResponse,
+    type MockRule,
+    type RuleInput,
+    ruleMatches,
+} from "./mock/interception.js";
+
+export {
     checkCookieDomain,
     cookieDomainAllowed,
     pageHostOf,

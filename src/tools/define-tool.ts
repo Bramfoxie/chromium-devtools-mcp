@@ -5,6 +5,7 @@ import type { DaemonAccess } from "../mcp/index.js";
 import type { CaptureManager } from "./capture/manager.js";
 import type { DialogState } from "./dialogs.js";
 import type { ElementRegistry } from "./element-target.js";
+import type { InterceptionManager } from "./mock/interception.js";
 import type { EmulationState } from "./emulation/state.js";
 import type { FocusEmulation } from "./focus-emulation.js";
 import type { SafetyAccess, SafetyDecision, SafetyTarget } from "./safety.js";
@@ -44,6 +45,7 @@ export interface ToolContext {
     focus    : FocusEmulation;
     capture  : CaptureManager;
     dialogs  : DialogState;
+    mock     : InterceptionManager;
     emulation: EmulationState;
     config   : Config;
     clock    : ToolClock;

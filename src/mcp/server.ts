@@ -143,17 +143,20 @@ export function registerServerTools(
             runtime.tabs.forget(targetId);
             runtime.focus.forget(targetId);
             runtime.dialogs.forget(targetId);
+            void runtime.mock.forget(targetId);
             runtime.emulation.forget(targetId);
         }
     });
     runtime.capture.attach();
     runtime.dialogs.attach();
+    runtime.mock.attach();
     access.forgetStaleState(() => {
         runtime.tabs.reset();
         runtime.elements.reset();
         runtime.focus.reset();
         runtime.capture.reset();
         runtime.dialogs.reset();
+        void runtime.mock.reset();
         runtime.emulation.reset();
     });
     registerTools({ server, tools: options.tools ?? allTools, runtime });
