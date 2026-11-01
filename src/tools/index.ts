@@ -207,3 +207,18 @@ export {
     targetSummarySchema,
     type TargetSummary,
 } from "./input-click.js";
+
+export {
+    browserPlatform,
+    clearPlatformCache,
+    echoOf,
+    inputKey,
+    inputType,
+    KEY_REPEAT_MAX,
+    PLATFORM_EXPRESSION,
+    platformCacheKey,
+    TYPE_DELAY_MAX_MS,
+    TYPE_ECHO_CHARS,
+    TYPE_MAX_CHARS,
+    VALUE_EXPRESSION,
+} from "./input-text.js";
