@@ -51,6 +51,27 @@ export {
     roundRect,
 } from "./dom-query.js";
 
+export {
+    type AxDomInfo,
+    AX_NAME_CLIP,
+    AX_VALUE_CLIP,
+    type AxFormatOptions,
+    type AxFormatResult,
+    type AxNode,
+    formatAxTree,
+    type RawAxNode,
+    toAxNodes,
+} from "./ax-format.js";
+
+export {
+    domInfoMap,
+    domSnapshot,
+    SNAPSHOT_DEFAULT_CHARS,
+    SNAPSHOT_DOM_ATTRS,
+    SNAPSHOT_DOM_DEPTH,
+    SNAPSHOT_MAX_CHARS,
+} from "./dom-snapshot.js";
+
 export { pageDetails, pageInfo, pageInfoExpression } from "./page-info.js";
 
 export {

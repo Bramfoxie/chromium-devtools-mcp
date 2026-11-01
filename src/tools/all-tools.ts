@@ -1,5 +1,6 @@
 import type { AnyTool } from "./define-tool.js";
 import { domQuery } from "./dom-query.js";
+import { domSnapshot } from "./dom-snapshot.js";
 import { jsEvaluate } from "./js-evaluate.js";
 import { pageInfo } from "./page-info.js";
 import { pageNavigate } from "./page-navigate.js";
@@ -15,4 +16,5 @@ export const allTools: AnyTool[] = [
     pageNavigate,
     jsEvaluate,
     domQuery,
+    domSnapshot,
 ];
