@@ -75,13 +75,13 @@ async function storageCount(
     origin  : string,
     local   : boolean,
 ): Promise<number> {
-    const parsed = z.object({ items: z.array(z.tuple([z.string(), z.string()])) }).safeParse(
+    const parsed = z.object({ entries: z.array(z.tuple([z.string(), z.string()])) }).safeParse(
         await access.send(targetId, "DOMStorage.getDOMStorageItems", {
             storageId: { securityOrigin: origin, isLocalStorage: local },
         }),
     );
 
-    return parsed.success ? parsed.data.items.length : 0;
+    return parsed.success ? parsed.data.entries.length : 0;
 }
 
 async function cookieCount(access: DaemonAccess, targetId: string): Promise<number> {

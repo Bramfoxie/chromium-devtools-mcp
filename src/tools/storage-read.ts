@@ -20,7 +20,7 @@ export const STORAGE_MAX_KEY_CHARS = 1024;
 
 export const STORAGE_KEY_CLIP_CHARS = 200;
 
-const itemsSchema = z.object({ items: z.array(z.tuple([z.string(), z.string()])) });
+const itemsSchema = z.object({ entries: z.array(z.tuple([z.string(), z.string()])) });
 
 const evaluatedSchema = z.object({
     result: z.object({
@@ -137,9 +137,9 @@ async function readDomStorage(
         );
     }
 
-    const names = items.data.items.map(([key]) => key);
+    const names = items.data.entries.map(([key]) => key);
     const kept = storageKeysOf(keys, names);
-    const values = new Map(items.data.items);
+    const values = new Map(items.data.entries);
     const sliced = kept.slice(0, maxEntries);
 
     return {

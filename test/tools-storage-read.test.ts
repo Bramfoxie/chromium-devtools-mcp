@@ -70,7 +70,7 @@ describe("storage_read", () => {
         fake.respond = (_tab, method) => {
             if (method === "Runtime.evaluate") return { result: { value: "https://a.example/p" } };
 
-            return { items: [["theme", "dark"], ["lang", "en"]] };
+            return { entries: [["theme", "dark"], ["lang", "en"]] };
         };
 
         const result = await runTool(storageRead, { kind: "local" }, extra(), runtime);
@@ -105,7 +105,7 @@ describe("storage_read", () => {
         fake.respond = (_tab, method) => {
             if (method === "Runtime.evaluate") return { result: { value: "https://a.example/p" } };
 
-            return { items: [] };
+            return { entries: [] };
         };
 
         await runTool(storageRead, { kind: "session" }, extra(), runtime);
@@ -121,7 +121,7 @@ describe("storage_read", () => {
         fake.respond = (_tab, method) => {
             if (method === "Runtime.evaluate") return { result: { value: "https://a.example/p" } };
 
-            return { items: [["a", "x".repeat(10)], ["b", "y"], ["c", "z"]] };
+            return { entries: [["a", "x".repeat(10)], ["b", "y"], ["c", "z"]] };
         };
 
         const result = await runTool(
@@ -149,7 +149,7 @@ describe("storage_read", () => {
         fake.respond = (_tab, method) => {
             if (method === "Runtime.evaluate") return { result: { value: "https://a.example/p" } };
 
-            return { items: [["k", "secret"]] };
+            return { entries: [["k", "secret"]] };
         };
 
         const result = await runTool(

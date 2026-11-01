@@ -84,7 +84,7 @@ describe("storage_write", () => {
 
         fake.respond = (tab, method) => {
             if (method === "Runtime.evaluate") return { result: { value: "https://a.example/p" } };
-            if (method === "DOMStorage.getDOMStorageItems") return { items: [["k", "v"]] };
+            if (method === "DOMStorage.getDOMStorageItems") return { entries: [["k", "v"]] };
 
             return {};
         };
@@ -122,7 +122,7 @@ describe("storage_write", () => {
 
         fake.respond = (tab, method) => {
             if (method === "Runtime.evaluate") return { result: { value: "https://a.example/p" } };
-            if (method === "DOMStorage.getDOMStorageItems") return { items: [] };
+            if (method === "DOMStorage.getDOMStorageItems") return { entries: [] };
 
             return {};
         };
@@ -160,7 +160,7 @@ describe("storage_write", () => {
             if (method === "Runtime.evaluate") return { result: { value: "https://a.example/p" } };
 
             if (method === "DOMStorage.getDOMStorageItems") {
-                return { items: [["a", "1"], ["b", "2"]] };
+                return { entries: [["a", "1"], ["b", "2"]] };
             }
 
             return {};
