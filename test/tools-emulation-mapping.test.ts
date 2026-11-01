@@ -255,9 +255,9 @@ describe("media mapping", () => {
                 media        : "print",
                 colorScheme  : "dark",
                 reducedMotion: "reduce",
-                contrast     : "no-preference",
-                forcedColors : "none",
-                reducedData  : "no-preference",
+                contrast     : undefined,
+                forcedColors : undefined,
+                reducedData  : undefined,
             },
             { colorScheme: "light" },
         );
@@ -266,44 +266,38 @@ describe("media mapping", () => {
             media        : "print",
             colorScheme  : "light",
             reducedMotion: "reduce",
-            contrast     : "no-preference",
-            forcedColors : "none",
-            reducedData  : "no-preference",
+            contrast     : undefined,
+            forcedColors : undefined,
+            reducedData  : undefined,
         });
     });
 
-    it("starts from the browser defaults without previous state", () => {
+    it("starts unset without previous state", () => {
         expect(mergeMedia(undefined, { media: "screen" })).toEqual({
             media        : "screen",
-            colorScheme  : "no-preference",
-            reducedMotion: "no-preference",
-            contrast     : "no-preference",
-            forcedColors : "none",
-            reducedData  : "no-preference",
+            colorScheme  : undefined,
+            reducedMotion: undefined,
+            contrast     : undefined,
+            forcedColors : undefined,
+            reducedData  : undefined,
         });
     });
 
-    it("emits one setEmulatedMedia with every feature and clears on reset", () => {
+    it("emits only the set features and clears on reset", () => {
         const commands = buildMediaCommands({
             media        : "print",
             colorScheme  : "dark",
-            reducedMotion: "reduce",
-            contrast     : "more",
-            forcedColors : "active",
-            reducedData  : "reduce",
+            reducedMotion: undefined,
+            contrast     : undefined,
+            forcedColors : undefined,
+            reducedData  : undefined,
         });
 
         expect(commands).toEqual([{
             method: "Emulation.setEmulatedMedia",
             params: {
                 media   : "print",
-                features: [
-                    { name: "prefers-color-scheme", value: "dark" },
-                    { name: "prefers-reduced-motion", value: "reduce" },
-                    { name: "prefers-contrast", value: "more" },
-                    { name: "forced-colors", value: "active" },
-                    { name: "prefers-reduced-data", value: "reduce" },
-                ],
+                features: [{ name: "prefers-color-scheme", value: "dark" }],
             },
         }]);
         expect(buildMediaResetCommands()).toEqual([{
@@ -571,14 +565,7 @@ describe("EmulationState", () => {
                 userAgent        : "agent",
                 landscape        : false,
             },
-            media: {
-                media        : "print",
-                colorScheme  : "dark",
-                reducedMotion: "no-preference",
-                contrast     : "no-preference",
-                forcedColors : "none",
-                reducedData  : "no-preference",
-            },
+            media  : { media: "print", colorScheme: "dark" },
             network: {
                 preset      : "4g",
                 offline     : false,

@@ -14,11 +14,11 @@ export const emulationSummarySchema = z.strictObject({
     }).optional().describe("Device override, when active."),
     media: z.strictObject({
         media        : z.string().describe("Emulated media type, empty when unset."),
-        colorScheme  : z.string().describe("Emulated prefers-color-scheme."),
-        reducedMotion: z.string().describe("Emulated prefers-reduced-motion."),
-        contrast     : z.string().describe("Emulated prefers-contrast."),
-        forcedColors : z.string().describe("Emulated forced-colors."),
-        reducedData  : z.string().describe("Emulated prefers-reduced-data."),
+        colorScheme  : z.string().optional().describe("Emulated prefers-color-scheme, when set."),
+        reducedMotion: z.string().optional().describe("Emulated prefers-reduced-motion, when set."),
+        contrast     : z.string().optional().describe("Emulated prefers-contrast, when set."),
+        forcedColors : z.string().optional().describe("Emulated forced-colors, when set."),
+        reducedData  : z.string().optional().describe("Emulated prefers-reduced-data, when set."),
     }).optional().describe("Media overrides, when active."),
     network: z.strictObject({
         preset      : z.string().optional().describe("Preset name, when set from a preset."),

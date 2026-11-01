@@ -31,11 +31,11 @@ export interface MediaSelection {
 
 export interface MediaState {
     media        : "" | "screen" | "print";
-    colorScheme  : "light" | "dark" | "no-preference";
-    reducedMotion: "reduce" | "no-preference";
-    contrast     : "more" | "less" | "no-preference";
-    forcedColors : "active" | "none";
-    reducedData  : "reduce" | "no-preference";
+    colorScheme  : "light" | "dark" | "no-preference" | undefined;
+    reducedMotion: "reduce" | "no-preference" | undefined;
+    contrast     : "more" | "less" | "no-preference" | undefined;
+    forcedColors : "active" | "none" | undefined;
+    reducedData  : "reduce" | "no-preference" | undefined;
 }
 
 export interface NetworkConditions {
@@ -177,22 +177,36 @@ export function mergeMedia(
 ): MediaState {
     return {
         media        : selection.media ?? previous?.media ?? "",
-        colorScheme  : selection.colorScheme ?? previous?.colorScheme ?? "no-preference",
-        reducedMotion: selection.reducedMotion ?? previous?.reducedMotion ?? "no-preference",
-        contrast     : selection.contrast ?? previous?.contrast ?? "no-preference",
-        forcedColors : selection.forcedColors ?? previous?.forcedColors ?? "none",
-        reducedData  : selection.reducedData ?? previous?.reducedData ?? "no-preference",
+        colorScheme  : selection.colorScheme ?? previous?.colorScheme,
+        reducedMotion: selection.reducedMotion ?? previous?.reducedMotion,
+        contrast     : selection.contrast ?? previous?.contrast,
+        forcedColors : selection.forcedColors ?? previous?.forcedColors,
+        reducedData  : selection.reducedData ?? previous?.reducedData,
     };
 }
 
+const MEDIA_FEATURE_OF = {
+    colorScheme  : "prefers-color-scheme",
+    reducedMotion: "prefers-reduced-motion",
+    contrast     : "prefers-contrast",
+    forcedColors : "forced-colors",
+    reducedData  : "prefers-reduced-data",
+} as const;
+
 export function buildMediaCommands(state: MediaState): CdpCommand[] {
-    const features = [
-        { name: "prefers-color-scheme", value: state.colorScheme },
-        { name: "prefers-reduced-motion", value: state.reducedMotion },
-        { name: "prefers-contrast", value: state.contrast },
-        { name: "forced-colors", value: state.forcedColors },
-        { name: "prefers-reduced-data", value: state.reducedData },
-    ];
+    // Only explicitly set features are sent: omitted features keep the
+    // browser default instead of being forced to no-preference.
+    const features = (
+        Object.entries({
+            colorScheme  : state.colorScheme,
+            reducedMotion: state.reducedMotion,
+            contrast     : state.contrast,
+            forcedColors : state.forcedColors,
+            reducedData  : state.reducedData,
+        }) as Array<[keyof typeof MEDIA_FEATURE_OF, string | undefined]>
+    ).flatMap(([key, value]) =>
+        value === undefined ? [] : [{ name: MEDIA_FEATURE_OF[key], value }],
+    );
 
     return [{ method: "Emulation.setEmulatedMedia", params: { media: state.media, features } }];
 }
