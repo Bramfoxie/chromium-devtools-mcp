@@ -144,7 +144,7 @@ describe("list_tabs", () => {
         fake.tabs = [];
         const result = await runTool(listTabs, {}, extra(), runtime);
 
-        expect(result.structuredContent).toEqual({ tabs: [] });
+        expect(result.structuredContent).toEqual({ tabs: [], total: 0, truncated: false });
         expect(runtime.tabs.selected()).toBeUndefined();
     });
 
@@ -170,6 +170,8 @@ describe("list_tabs", () => {
                     selected: false,
                 },
             ],
+            total    : 1,
+            truncated: false,
         });
         expect(runtime.tabs.selected()).toBe("tab1");
     });

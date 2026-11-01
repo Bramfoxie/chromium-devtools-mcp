@@ -331,12 +331,13 @@ describe("page_wait", () => {
         const controller = new AbortController();
 
         fake.respond = () => {
-            controller.abort();
-
             throw new RpcError(ErrorCode.cdpTimeout, "Timed out.");
         };
 
-        const result = await runTool(pageWait, { selector: ".slow" }, extra(controller.signal), runtime);
+        const pending = runTool(pageWait, { selector: ".slow" }, extra(controller.signal), runtime);
+
+        controller.abort();
+        const result = await pending;
 
         expect(result.isError).toBe(true);
         expect(textOf(result)).toContain("cancelled");

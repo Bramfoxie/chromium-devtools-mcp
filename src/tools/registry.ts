@@ -9,7 +9,8 @@ import type { AnyTool } from "./define-tool.js";
 import { ToolRuntime } from "./context.js";
 import { ToolError, toToolMessage } from "./errors.js";
 import { errorResult, jsonResult } from "./result.js";
-import { checkSafety } from "./safety.js";
+import { checkSafety, type SafetyAccess } from "./safety.js";
+import { SessionResetError } from "../mcp/index.js";
 
 export const CANCELLED_MESSAGE = "The request was cancelled. Call the tool again if needed.";
 
@@ -23,6 +24,67 @@ export function throwIfCancelled(signal: AbortSignal): void {
     if (signal.aborted) throw new ToolError(CANCELLED_MESSAGE);
 }
 
+export function toolAnnotations(tool: AnyTool): {
+    title          : string;
+    readOnlyHint   : boolean;
+    destructiveHint: boolean;
+    openWorldHint  : boolean;
+} {
+    const mutate = typeof tool.access === "function" ? true : tool.access === "mutate";
+    const dangerous = typeof tool.dangerous === "function" ? true : (tool.dangerous ?? false);
+
+    return {
+        title          : tool.name,
+        readOnlyHint   : !mutate,
+        destructiveHint: dangerous,
+        openWorldHint  : false,
+    };
+}
+
+async function resolveTabUrl(
+    tool   : AnyTool,
+    args   : unknown,
+    runtime: ToolRuntime,
+): Promise<string | undefined> {
+    const argTab = (args as { tab?: unknown } | null)?.tab;
+
+    if (typeof argTab === "string" && argTab.length > 0) {
+        const tabs = await runtime.access.listTabs("owned");
+        const known = tabs.find((tab) => tab.targetId === argTab);
+
+        return known?.url;
+    }
+
+    if (runtime.tabs.selected() !== undefined) {
+        const tabs = await runtime.access.listTabs("owned");
+        const known = tabs.find((tab) => tab.targetId === runtime.tabs.selected());
+
+        return known?.url;
+    }
+
+    return undefined;
+}
+
+function raceWithSignal<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+    if (signal.aborted) return Promise.reject(new ToolError(CANCELLED_MESSAGE));
+
+    return new Promise<T>((resolve, reject) => {
+        const onAbort = () => reject(new ToolError(CANCELLED_MESSAGE));
+
+        signal.addEventListener("abort", onAbort, { once: true });
+        work.then(
+            (value) => {
+                signal.removeEventListener("abort", onAbort);
+                resolve(value);
+            },
+            (error: unknown) => {
+                signal.removeEventListener("abort", onAbort);
+                reject(error);
+            },
+        );
+    });
+}
+
 export function registerTools(options: RegisterToolsOptions): void {
     for (const tool of options.tools) {
         const input = tool.input;
@@ -30,7 +92,12 @@ export function registerTools(options: RegisterToolsOptions): void {
 
         options.server.registerTool(
             tool.name,
-            { description: tool.description, inputSchema: input, outputSchema: output },
+            {
+                description : tool.description,
+                inputSchema : input,
+                outputSchema: output,
+                annotations : toolAnnotations(tool),
+            },
             (async (
                 args : Record<string, unknown>,
                 extra: RequestHandlerExtra<ServerRequest, ServerNotification>,
@@ -53,19 +120,35 @@ export async function runTool(
 
     if (extra.signal.aborted) return errorResult(CANCELLED_MESSAGE);
 
+    const access: SafetyAccess = typeof tool.access === "function"
+        ? (tool.access as (args: unknown) => SafetyAccess)(parsed.data)
+        : tool.access;
+    const dangerous = typeof tool.dangerous === "function"
+        ? (tool.dangerous as (args: unknown) => boolean)(parsed.data)
+        : (tool.dangerous ?? false);
+
+    // The gate sees the tab URL resolved for this call; step 19 adds policy on top.
+    const tabUrl = access === "mutate"
+        ? await resolveTabUrl(tool, parsed.data, runtime).catch(() => undefined)
+        : undefined;
     const decision = checkSafety({
         tool  : tool.name,
-        access: tool.access,
+        access,
         config: runtime.config,
-        target: tool.target?.(parsed.data),
+        target: tool.target?.(parsed.data as never),
+        tabUrl,
+        dangerous,
     });
 
     if (!decision.allowed) return errorResult(`${decision.reason} ${decision.hint}`);
 
-    try {
-        const output = await tool.handler(parsed.data, runtime.context(extra.signal));
+    const generation = runtime.access.sessionGeneration;
 
-        throwIfCancelled(extra.signal);
+    try {
+        const output = await raceWithSignal(
+            tool.handler(parsed.data, runtime.context(extra.signal)),
+            extra.signal,
+        );
         const validated = tool.output.safeParse(output);
 
         if (!validated.success) {
@@ -78,6 +161,12 @@ export async function runTool(
 
         return jsonResult(value);
     } catch (error) {
+        if (error instanceof SessionResetError) return errorResult(error.message);
+
+        if (runtime.access.sessionGeneration !== generation) {
+            return errorResult(new SessionResetError().message);
+        }
+
         if (extra.signal.aborted) return errorResult(CANCELLED_MESSAGE);
 
         return errorResult(toToolMessage(error));

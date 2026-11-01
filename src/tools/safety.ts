@@ -3,16 +3,19 @@ import type { Config } from "../config/index.js";
 export type SafetyAccess = "read" | "mutate";
 
 export interface SafetyTarget {
-    url?: string;
+    url?    : string;
+    pattern?: string;
 }
 
 export type SafetyDecision = { allowed: true } | { allowed: false; reason: string; hint: string };
 
 export interface SafetyRequest {
-    tool   : string;
-    access : SafetyAccess;
-    config : Config;
-    target?: SafetyTarget;
+    tool      : string;
+    access    : SafetyAccess;
+    config    : Config;
+    target?   : SafetyTarget;
+    tabUrl?   : string;
+    dangerous?: boolean;
 }
 
 export function checkSafety(request: SafetyRequest): SafetyDecision {

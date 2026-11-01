@@ -37,15 +37,21 @@ describe("toToolMessage", () => {
         );
     });
 
-    it("points at list_tabs when a tab is gone or a command fails", () => {
+    it("points at list_tabs when a tab is gone", () => {
         expect(toToolMessage(new RpcError(ErrorCode.notFound, "The tab was closed."))).toContain(
             "Call list_tabs",
         );
+    });
+
+    it("suggests a snapshot rerun when a command fails", () => {
         expect(toToolMessage(new RpcError(ErrorCode.cdpError, "CDP method failed."))).toContain(
-            "Call list_tabs",
+            "Re-run the snapshot or query.",
         );
+    });
+
+    it("suggests a larger timeout when the page is slow", () => {
         expect(toToolMessage(new RpcError(ErrorCode.cdpTimeout, "CDP timed out."))).toContain(
-            "Call list_tabs",
+            "larger timeout",
         );
     });
 

@@ -11,6 +11,7 @@ import {
     allTools,
     CANCELLED_MESSAGE,
     defineTool,
+    pageWait,
     registerTools,
     runTool,
     throwIfCancelled,
@@ -23,6 +24,63 @@ type Extra = RequestHandlerExtra<ServerRequest, ServerNotification>;
 
 function extra(signal?: AbortSignal): Extra {
     return { signal: signal ?? new AbortController().signal } as Extra;
+}
+
+function minimalArgs(name: string): Record<string, unknown> {
+    switch (name) {
+        case "select_tab":
+        case "close_tab":
+            return { tab: "tab1" };
+        case "page_navigate":
+            return { url: "https://example.com/" };
+        case "js_evaluate":
+        case "page_wait":
+            return { expression: "true" };
+        case "dom_query":
+            return { selector: "body" };
+        case "dom_snapshot":
+        case "css_inspect":
+            return { uid: "1_1" };
+        case "screenshot":
+        case "page_pdf":
+        case "page_metrics":
+        case "page_info":
+        case "console_logs":
+        case "network_requests":
+        case "network_response_body":
+        case "storage_read":
+            return {};
+        case "page_dialogs":
+            return { action: "status" };
+        case "storage_write":
+            return { kind: "cookies", action: "clear", confirm: true };
+        case "network_mock":
+            return { action: "list" };
+        case "emulate_device":
+            return { device: "iPhone SE" };
+        case "emulate_media":
+            return { reducedMotion: "reduce" };
+        case "emulate_network":
+            return { preset: "slow-3g" };
+        case "emulate_locale":
+            return { locale: "de-DE" };
+        case "click":
+        case "input_click":
+        case "input_hover":
+            return { target: { selector: "body" } };
+        case "input_type":
+            return { text: "hi" };
+        case "input_key":
+            return { key: "Enter" };
+        case "input_scroll":
+            return { deltaY: 100 };
+        case "input_select":
+            return { target: { selector: "select" }, indexes: [0] };
+        case "input_upload":
+            return { target: { selector: "input" }, files: ["/tmp/a.png"] };
+        default:
+            return {};
+    }
 }
 
 function runtime(config: Config = managedConfig, access = new FakeAccess()): ToolRuntime {
@@ -76,7 +134,10 @@ describe("tool declarations", () => {
 
         for (const tool of allTools) {
             expect(tool.description.length).toBeGreaterThan(0);
-            expect(["read", "mutate"]).toContain(tool.access);
+
+            const access = typeof tool.access === "function" ? tool.access({}) : tool.access;
+
+            expect(["read", "mutate"]).toContain(access);
         }
     });
 
@@ -107,32 +168,133 @@ describe("tool declarations", () => {
         ]);
     });
 
-    it("runs every mutate tool through the safety gate", async () => {
-        for (const tool of allTools) {
-            const called: string[] = [];
-            const probe = defineTool({
-                name       : tool.name,
-                description: tool.description,
-                access     : tool.access,
-                input      : z.strictObject({}).passthrough(),
-                output     : z.strictObject({ ok: z.boolean() }),
-                handler    : async () => {
-                    called.push(tool.name);
+    it("marks exactly the page changing tools as dangerous", () => {
+        const dangerous = allTools.filter((tool) =>
+            typeof tool.dangerous === "function" ? tool.dangerous({}) : (tool.dangerous ?? false),
+        ).map((tool) => tool.name);
 
-                    return { ok: true };
-                },
-            });
-            const result = await runTool(probe, {}, extra(), runtime(readOnly));
+        expect(dangerous.sort()).toEqual(["input_upload", "storage_write"]);
+    });
+
+    it("runs every real mutate tool through the safety gate", async () => {
+        const mutate = allTools.filter((tool) =>
+            (typeof tool.access === "function" ? tool.access({}) : tool.access) === "mutate",
+        );
+        const mutatingMethods = new Set([
+            "Input.",
+            "Emulation.",
+            "Page.navigate",
+            "Runtime.evaluate",
+            "DOM.",
+            "Storage.",
+            "Network.",
+            "Fetch.",
+            "Page.handleJavaScriptDialog",
+            "Target.",
+        ]);
+
+        for (const tool of mutate) {
+            const access = new FakeAccess();
+            const result = await runTool(
+                tool,
+                minimalArgs(tool.name),
+                extra(),
+                runtime(readOnly, access),
+            );
             const text = JSON.stringify(result.content);
 
-            if (tool.access === "mutate") {
-                expect(result.isError).toBe(true);
-                expect(text).toContain("read-only mode");
-                expect(called).toEqual([]);
-            } else {
-                expect(result.isError).not.toBe(true);
+            expect(result.isError).toBe(true);
+            expect(text).toContain("read-only mode");
+            expect(access.created).toEqual([]);
+
+            for (const call of access.sent) {
+                expect(
+                    [...mutatingMethods].some((known) => call.method.startsWith(known)),
+                ).toBe(false);
             }
         }
+    });
+
+    it("refuses page_wait with an expression in read-only mode", async () => {
+        const access = new FakeAccess();
+        const result = await runTool(
+            pageWait,
+            { expression: "true" },
+            extra(),
+            runtime(readOnly, access),
+        );
+
+        expect(result.isError).toBe(true);
+        expect(JSON.stringify(result.content)).toContain("read-only mode");
+        expect(access.sent).toEqual([]);
+    });
+
+    it("reports a restarted session instead of a stale tab error", async () => {
+        const access = new FakeAccess({
+            tabs: [
+                { targetId: "tab1", url: "https://a.example/", title: "a", owned: true, created: true },
+            ],
+        });
+        const underTest = runtime(managedConfig, access);
+        const stale = defineTool({
+            name       : "stale",
+            description: "Fails after a reset.",
+            access     : "read",
+            input      : z.strictObject({}),
+            output     : z.strictObject({}),
+            handler    : async () => {
+                access.bumpGeneration();
+
+                throw new RpcError(ErrorCode.notFound, "The tab was closed.");
+            },
+        });
+        const result = await runTool(stale, {}, extra(), underTest);
+
+        expect(result.isError).toBe(true);
+        expect(JSON.stringify(result.content)).toContain("was restarted");
+    });
+
+    it("returns the completed result instead of a late cancellation", async () => {
+        const controller = new AbortController();
+        const quick = defineTool({
+            name       : "quick",
+            description: "Completes then aborts.",
+            access     : "read",
+            input      : z.strictObject({}),
+            output     : z.strictObject({ ok: z.boolean() }),
+            handler    : async () => ({ ok: true }),
+        });
+        const pending = runTool(quick, {}, extra(controller.signal), runtime());
+
+        await Promise.resolve();
+        controller.abort();
+        const result = await pending;
+
+        expect(result.isError).not.toBe(true);
+        expect(result.structuredContent).toEqual({ ok: true });
+    });
+
+    it("derives read-only and destructive hints from the tool table", async () => {
+        const server = createMcpServer("1.0.0");
+
+        registerTools({ server, tools: allTools, runtime: runtime() });
+        const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
+        const client = new Client({ name: "test-client", version: "1.0.0" });
+
+        await Promise.all([server.connect(serverSide), client.connect(clientSide)]);
+        const listed = await client.listTools();
+        const read = listed.tools.find((tool) => tool.name === "page_info");
+        const mutate = listed.tools.find((tool) => tool.name === "js_evaluate");
+        const dangerous = listed.tools.find((tool) => tool.name === "input_upload");
+
+        expect(read?.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false });
+        expect(mutate?.annotations).toMatchObject({ readOnlyHint: false });
+        expect(dangerous?.annotations).toMatchObject({
+            readOnlyHint   : false,
+            destructiveHint: true,
+        });
+        await client.close();
+        await server.close();
     });
 });
 
@@ -233,7 +395,7 @@ describe("runTool", () => {
         expect(JSON.stringify(result.content)).toContain("invalid result");
     });
 
-    it("refuses cancelled requests before and after the handler", async () => {
+    it("refuses cancelled requests before the handler and stops a wait on cancel", async () => {
         const controller = new AbortController();
 
         controller.abort();
@@ -244,21 +406,27 @@ describe("runTool", () => {
         expect(JSON.stringify(before.content)).toContain("cancelled");
 
         const late = new AbortController();
+        let released!: () => void;
+        const gate = new Promise<void>((resolve) => {
+            released = resolve;
+        });
         const slow = defineTool({
             name       : "slow",
-            description: "Cancels mid-flight.",
+            description: "Waits until released or cancelled.",
             access     : "read",
             input      : z.strictObject({}),
             output     : z.strictObject({}),
-            handler    : async (_args, context) => {
-                late.abort();
-
-                throwIfCancelled(context.signal);
+            handler    : async () => {
+                await gate;
 
                 return {};
             },
         });
-        const after = await runTool(slow, {}, extra(late.signal), runtime());
+        const pending = runTool(slow, {}, extra(late.signal), runtime());
+
+        late.abort();
+        released();
+        const after = await pending;
 
         expect(after.isError).toBe(true);
         expect(JSON.stringify(after.content)).toContain("cancelled");

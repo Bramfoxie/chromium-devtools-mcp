@@ -17,8 +17,14 @@ export class ToolError extends Error {
     }
 }
 
+const MAX_ERROR_CHARS = 500;
+
+function clip(message: string): string {
+    return message.length <= MAX_ERROR_CHARS ? message : `${message.slice(0, MAX_ERROR_CHARS)}...`;
+}
+
 function tabMessage(error: RpcError): string {
-    return `${error.message} Call list_tabs to see the open tabs.`;
+    return `${clip(error.message)} Call list_tabs to see the open tabs.`;
 }
 
 export function toToolMessage(error: unknown): string {
@@ -45,10 +51,11 @@ export function toToolMessage(error: unknown): string {
                 return error.message;
             case ErrorCode.forbiddenMethod:
             case ErrorCode.unsupportedUrl:
-                return error.message;
+                return clip(error.message);
             case ErrorCode.cdpError:
+                return `${clip(error.message)} The page may have changed. Re-run the snapshot or query.`;
             case ErrorCode.cdpTimeout:
-                return `${error.message} Call list_tabs to see the open tabs.`;
+                return `${clip(error.message)} The page did not answer in time. Try again with a larger timeout or check that the tab is responsive.`;
             case ErrorCode.browserClosed:
                 return `${error.message} Open a new tab with new_tab.`;
             case ErrorCode.resultTooLarge:

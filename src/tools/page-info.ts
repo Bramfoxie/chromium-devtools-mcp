@@ -1,6 +1,7 @@
 import { z } from "zod";
-import { defineTool, type ToolContext } from "./define-tool.js";
+import { defineTool } from "./define-tool.js";
 import { assertNoDialog } from "./dialogs.js";
+import { selectionOf } from "./tabs.js";
 import { emulationSummarySchema, summarizeEmulation } from "./emulation/summary.js";
 import { ToolError } from "./errors.js";
 
@@ -88,7 +89,7 @@ export const pageInfo = defineTool({
         const known = tabs.find((tab) => tab.targetId === targetId);
 
         if (known) {
-            context.tabs.refresh(tabs, context.state.selected);
+            context.tabs.refresh(tabs, selectionOf(tabs, context.state.selected));
         }
 
         let live: z.infer<typeof pageInfoValue> | undefined;
@@ -146,5 +147,3 @@ export const pageInfo = defineTool({
         };
     },
 });
-
-export type PageContext = ToolContext;

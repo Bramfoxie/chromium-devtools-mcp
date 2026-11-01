@@ -11,7 +11,7 @@ import type { FocusEmulation } from "./focus-emulation.js";
 import type { FrameState } from "./frames.js";
 import type { SafetyAccess, SafetyDecision, SafetyTarget } from "./safety.js";
 
-export type ToolAccess = SafetyAccess;
+export type ToolAccess = SafetyAccess | ((args: unknown) => SafetyAccess);
 
 export type { SafetyDecision };
 

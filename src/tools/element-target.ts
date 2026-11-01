@@ -162,6 +162,10 @@ export class ElementRegistry {
         }
     }
 
+    forget(tab: string): void {
+        this.tabs.delete(tab);
+    }
+
     reset(): void {
         this.tabs.clear();
     }

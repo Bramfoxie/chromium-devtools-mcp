@@ -250,8 +250,6 @@ async function runScript(
             timeoutMs + margin,
         );
     } catch (error) {
-        if (context.signal.aborted) throw error;
-
         await context.access.send(targetId, "Runtime.terminateExecution", {}).catch(() => undefined);
 
         throw error;
@@ -392,9 +390,13 @@ async function readyState(access: DaemonAccess, targetId: string): Promise<strin
 export const pageWait = defineTool({
     name: "page_wait",
     description:
-        "Wait for a selector, text, URL, load state or expression in a tab. A timeout is a result with met false, not an error.",
-    access: "read",
-    input : z.strictObject({
+        "Wait for a selector, text, URL, load state or expression in a tab. A timeout is a result with met false, not an error. The expression condition runs arbitrary page JavaScript.",
+    access: (args: unknown) => {
+        const expression = (args as { expression?: unknown } | null)?.expression;
+
+        return expression === undefined ? "read" : "mutate";
+    },
+    input: z.strictObject({
         tab       : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
         selector  : conditionSchema.shape.selector,
         state     : conditionSchema.shape.state,
@@ -435,9 +437,7 @@ export const pageWait = defineTool({
         };
         const kind = checkConditions(conditionArgs);
 
-        if (kind === "text" && args.text !== undefined && args.selector !== undefined) {
-            void 0;
-        } else if (args.selector !== undefined && kind !== "selector") {
+        if (args.selector !== undefined && kind !== "selector" && kind !== "text") {
             throw new ToolError("selector only combines with text, not with other conditions.");
         }
 

@@ -12,12 +12,19 @@ export interface TruncatedText {
 }
 
 export function truncateText(text: string, limit: number): TruncatedText {
-    const totalLength = [...text].length;
+    const safeLimit = Number.isInteger(limit) ? Math.max(0, limit) : 0;
+    let totalLength = 0;
+    let kept = "";
 
-    if (totalLength <= limit) return { text, truncated: false, totalLength };
+    for (const point of text) {
+        if (totalLength < safeLimit) kept += point;
 
-    const omitted = totalLength - limit;
-    const kept = [...text].slice(0, limit).join("");
+        totalLength += 1;
+    }
+
+    if (totalLength <= safeLimit) return { text, truncated: false, totalLength };
+
+    const omitted = totalLength - safeLimit;
 
     return {
         text     : `${kept}[truncated: ${omitted} of ${totalLength} characters omitted]`,

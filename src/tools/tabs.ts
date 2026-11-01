@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { RpcError, ErrorCode } from "../daemon/index.js";
-import { defineTool, type KnownTabShape, type ToolContext } from "./define-tool.js";
+import { defineTool } from "./define-tool.js";
 import { ToolError } from "./errors.js";
 
 const tabId = z.string().min(1).max(128).describe("Tab id returned by the tab tools.");
@@ -17,17 +17,6 @@ export function selectionOf(tabs: Array<{ targetId: string }>, selected: string 
     return selected !== undefined && tabs.some((tab) => tab.targetId === selected)
         ? selected
         : undefined;
-}
-
-async function refresh(
-    context : ToolContext,
-    selected: string | undefined,
-): Promise<KnownTabShape[]> {
-    const tabs = await context.access.listTabs("owned");
-
-    context.tabs.refresh(tabs, selected);
-
-    return tabs;
 }
 
 function noTabError(): ToolError {
@@ -51,8 +40,10 @@ export const newTab = defineTool({
         await context.dialogs.ensure(targetId).catch(() => undefined);
         await context.frames.ensure(targetId).catch(() => undefined);
 
-        const select = args.select === false ? context.state.selected : targetId;
-        const tabs = await refresh(context, select);
+        const tabs = await context.access.listTabs("owned");
+        const select = args.select === false ? selectionOf(tabs, context.state.selected) : targetId;
+
+        context.tabs.refresh(tabs, select);
         const tab = tabs.find((known) => known.targetId === targetId) ?? {
             targetId,
             url    : args.url ?? "about:blank",
@@ -73,6 +64,7 @@ export const listTabs = defineTool({
     access     : "read",
     input      : z.strictObject({
         scope: z.enum(["owned", "available"]).optional().describe("Owned tabs or tabs available to claim. Defaults to owned."),
+        limit: z.number().int().min(1).max(500).optional().describe("Maximum tabs to return. Defaults to 100."),
     }),
     output: z.strictObject({
         tabs: z.array(
@@ -80,10 +72,21 @@ export const listTabs = defineTool({
                 selected: z.boolean().describe("Whether the tab is the selected one."),
             }),
         ),
+        total    : z.number().describe("Tabs available in this scope before the limit."),
+        truncated: z.boolean().describe("Whether the limit dropped tabs."),
     }),
     handler: async (args, context) => {
         const scope = args.scope ?? "owned";
+        const limit = args.limit ?? 100;
         const tabs = await context.access.listTabs(scope);
+
+        const slice = (list: typeof tabs) => list.slice(0, limit).map((tab) => ({
+            tab    : tab.targetId,
+            url    : tab.url.length <= 2000 ? tab.url : `${tab.url.slice(0, 2000)}...`,
+            title  : tab.title.length <= 500 ? tab.title : `${tab.title.slice(0, 500)}...`,
+            owned  : tab.owned,
+            created: tab.created,
+        }));
 
         if (scope === "owned") {
             const selected = selectionOf(tabs, context.state.selected);
@@ -91,26 +94,21 @@ export const listTabs = defineTool({
             context.tabs.refresh(tabs, selected);
 
             return {
-                tabs: tabs.map((tab) => ({
-                    tab     : tab.targetId,
-                    url     : tab.url,
-                    title   : tab.title,
-                    owned   : tab.owned,
-                    created : tab.created,
-                    selected: tab.targetId === selected,
-                })),
+                tabs     : slice(tabs).map((tab) => ({ ...tab, selected: tab.tab === selected })),
+                total    : tabs.length,
+                truncated: tabs.length > limit,
             };
         }
 
         return {
-            tabs: tabs.map((tab) => ({
-                tab     : tab.targetId,
-                url     : tab.url,
-                title   : tab.title,
+            tabs: slice(tabs).map((tab) => ({
+                ...tab,
                 owned   : false,
                 created : false,
                 selected: false,
             })),
+            total    : tabs.length,
+            truncated: tabs.length > limit,
         };
     },
 });
@@ -196,17 +194,15 @@ export const closeTab = defineTool({
         context.capture.forget(targetId);
         context.dialogs.forget(targetId);
         context.frames.forget(targetId);
+        context.elements.forget(targetId);
         await context.mock.forget(targetId);
         context.emulation.forget(targetId);
 
         const tabs = await context.access.listTabs("owned");
-        const kept = tabs.some((tab) => tab.targetId === context.state.selected);
-        const selected = kept && context.state.selected !== targetId
-            ? context.state.selected
-            : undefined;
-        const next = selected !== undefined && tabs.some((tab) => tab.targetId === selected)
-            ? selected
-            : tabs[0]?.targetId;
+        const rest = tabs.filter((tab) => tab.targetId !== targetId);
+        const next = context.state.selected === targetId
+            ? selectionOf(rest, undefined) ?? rest[0]?.targetId
+            : selectionOf(tabs, context.state.selected);
 
         context.tabs.refresh(tabs, next);
 
