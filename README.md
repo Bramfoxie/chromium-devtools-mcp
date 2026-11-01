@@ -73,6 +73,11 @@ Each session keeps its own tab selection. `new_tab` opens a background tab and s
 - `console_logs`: read console messages, uncaught exceptions and browser messages of a tab, with level and text filters, paging and clear.
 - `network_requests`: read HTTP requests of a tab with URL, method, resource type, status and failure filters.
 - `network_response_body`: read the response body of a request from `network_requests`. Binary bodies need `asBase64`.
+- `network_mock`: mock responses or fail requests by Fetch wildcard pattern, with delay and a use count. First match in insertion order wins.
+- `page_dialogs`: see and resolve JavaScript dialogs, or set an automatic accept or dismiss policy for later ones.
+- `page_wait`: wait for a selector, text, URL, load state or expression. A timeout returns `met: false`, not an error.
+- `storage_read`: read local storage, session storage or cookies of the page origin. Cookie values are secrets and stay hidden unless `includeValues` is true.
+- `storage_write`: write local storage, session storage or cookies of the page origin. Cookie domains must match the page host. `clear` needs `confirm: true`.
 - `page_pdf`: print a tab to PDF with orientation, paper, margins and page ranges. Needs a headless managed browser when the headed browser refuses to print.
 - `page_metrics`: read performance counters, layout metrics and navigation timing of a tab.
 - `screenshot`: capture a tab as an image. Defaults to jpeg quality 80; supports viewport, full page, element and clip shots.
@@ -82,11 +87,17 @@ Each session keeps its own tab selection. `new_tab` opens a background tab and s
 - `emulate_network`: emulate network conditions with a preset (offline, slow-3g, fast-3g, 4g, wifi, none), custom latency and throughput, or blocked URL patterns. Shares `Network.enable` with the capture tools and never disables capture.
 - `emulate_locale`: emulate locale, timezone and Accept-Language. Takes effect on the next page load: `navigator.language` changes after navigation, and number and date formatting follow the locale. Geolocation is not emulated: it needs the Browser domain, which is not reachable through a tab.
 
-Every tool returns its result as JSON text plus structured content. Large outputs are truncated with an explicit marker. `screenshot` and `page_pdf` also return an image or embedded resource block. Mutating tools (`new_tab`, `select_tab`, `close_tab`, `page_navigate`, `js_evaluate`, `click`, `input_click`, `input_hover`, `input_type`, `input_key`, `input_scroll`, `input_select`, `input_upload`, `emulate_device`, `emulate_media`, `emulate_network`, `emulate_locale`) are refused in read-only mode; the domain allowlist and dangerous action confirmations are planned.
+Every tool returns its result as JSON text plus structured content. Large outputs are truncated with an explicit marker. `screenshot` and `page_pdf` also return an image or embedded resource block. Mutating tools (`new_tab`, `select_tab`, `close_tab`, `page_navigate`, `js_evaluate`, `click`, `input_click`, `input_hover`, `input_type`, `input_key`, `input_scroll`, `input_select`, `input_upload`, `emulate_device`, `emulate_media`, `emulate_network`, `emulate_locale`, `network_mock`, `page_dialogs`, `storage_write`) are refused in read-only mode; the domain allowlist and dangerous action confirmations are planned.
 
 Each emulation tool returns the full emulation state of the tab, plus what the page reports (viewport, media queries, language) when the page answers. `reset: true` removes only the overrides of that tool. Overrides live in the tab session: they survive cross site navigation but are gone when the tab closes or the session resets. Device emulation reports the inner size the page sees: without a viewport meta tag a mobile page keeps its default 980 CSS pixel layout width.
 
 Input tools never bring the browser window to the front. The page believes it is focused through CDP focus emulation, enabled once per tab, so mouse and keyboard events behave like a real user while your windows stay put.
+
+Dialog capture starts when a tab is created or selected: while a dialog is open, tools that run page scripts fail fast and name `page_dialogs` instead of timing out. The dialog policy auto-resolves later dialogs including `beforeunload` and is cleared on reset.
+
+Storage tools only touch the page origin. Cookie reads never leave the page URL: no `urls` parameter is sent and `Network.getAllCookies` is never used. Cookie writes always carry the page URL, and the domain must equal the page host or be its parent domain. Values are never logged; cookie values are only returned with `includeValues: true`.
+
+Mock rules live per tab in the MCP process: at most 100 rules, bodies up to 10 MiB, delays up to 30 seconds. Requests that match no rule continue untouched. Rules survive navigation and are removed on tab close, session reset and `clear`. A `times` limit expires the rule after that many applications.
 
 ## Element ids
 

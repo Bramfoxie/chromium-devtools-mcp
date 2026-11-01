@@ -206,12 +206,22 @@ export {
     MOCK_HEADERS_MAX,
     MOCK_RULES_MAX,
     MOCK_URL_PATTERN_MAX_CHARS,
+    type FailReason,
     type MockAction,
     type MockResponse,
     type MockRule,
     type RuleInput,
     ruleMatches,
 } from "./mock/interception.js";
+
+export {
+    MOCK_METHOD_MAX_CHARS,
+    MOCK_RESOURCE_TYPE_MAX_CHARS,
+    MOCK_TIMES_MAX,
+    type MockAddInput,
+    networkMock,
+    ruleInputOf,
+} from "./network-mock.js";
 
 export {
     checkCookieDomain,
