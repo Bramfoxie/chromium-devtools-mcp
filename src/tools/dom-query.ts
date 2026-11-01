@@ -241,6 +241,12 @@ export const domQuery = defineTool({
 
         const scope = await queryScope(context, targetId, root.data.root.nodeId, args.frame);
 
+        if (scope.frameId !== undefined && scope.contextId === undefined) {
+            throw new ToolError(
+                "The browser refused to open the frame for querying. Try the call again.",
+            );
+        }
+
         const nodeIds = chained
             ? await chainedNodes(context.access, targetId, scope.nodeId, args.selector, all)
             : pierce
@@ -256,6 +262,19 @@ export const domQuery = defineTool({
         if (nodeIds.length === 0) return { matches: [], total: 0, returned: 0 };
 
         if (chained) {
+            return chainedMatches(
+                context,
+                targetId,
+                nodeIds,
+                all,
+                limit,
+                args.text,
+                includeBox,
+                scope.frameId,
+            );
+        }
+
+        if (pierce && scope.frameId !== undefined) {
             return chainedMatches(
                 context,
                 targetId,
@@ -399,7 +418,13 @@ async function queryScope(
             );
         }
 
-        return { nodeId: rootId, frameId: known.frameId, contextId: world.data.executionContextId };
+        const nodeId = await frameContentNode(context.access, targetId, known.frameId) ?? rootId;
+
+        return {
+            nodeId,
+            frameId  : known.frameId,
+            contextId: world.data.executionContextId,
+        };
     }
 
     const owner = await matchingNodes(context.access, targetId, rootId, frame, false);
@@ -439,7 +464,83 @@ async function queryScope(
         );
     }
 
-    return { nodeId: content.nodeId, frameId: described.data.node.frameId, contextId: undefined };
+    const frameId = described.data.node.frameId;
+
+    if (frameId !== undefined) {
+        const world = worldSchema.safeParse(
+            await context.access.send(targetId, "Page.createIsolatedWorld", {
+                frameId,
+                worldName: "chromium-devtools-mcp-query",
+            }),
+        );
+
+        if (world.success) {
+            return { nodeId: content.nodeId, frameId, contextId: world.data.executionContextId };
+        }
+    }
+
+    return { nodeId: content.nodeId, frameId, contextId: undefined };
+}
+
+interface PiercedDocNode {
+    nodeId          : number;
+    nodeName        : string;
+    frameId?        : string | undefined;
+    children        : PiercedDocNode[];
+    shadowRoots     : PiercedDocNode[];
+    contentDocument?: PiercedDocNode | undefined;
+}
+
+const piercedDocSchema: z.ZodType<PiercedDocNode> = z.object({
+    nodeId         : z.number(),
+    nodeName       : z.string(),
+    frameId        : z.string().optional(),
+    children       : z.array(z.lazy(() => piercedDocSchema)).optional().default([]),
+    shadowRoots    : z.array(z.lazy(() => piercedDocSchema)).optional().default([]),
+    contentDocument: z.lazy(() => piercedDocSchema).optional(),
+});
+
+async function frameContentNode(
+    access  : DaemonAccess,
+    targetId: string,
+    frameId : string,
+): Promise<number | undefined> {
+    const document = z.object({ root: piercedDocSchema }).safeParse(
+        await access.send(targetId, "DOM.getDocument", { depth: -1, pierce: true }),
+    );
+
+    if (!document.success) return undefined;
+
+    const visit = (node: PiercedDocNode): number | undefined => {
+        if (
+            (node.nodeName === "IFRAME" || node.nodeName === "FRAME") &&
+            node.frameId === frameId && node.contentDocument !== undefined
+        ) {
+            return node.contentDocument.nodeId;
+        }
+
+        for (const child of node.children) {
+            const found = visit(child);
+
+            if (found !== undefined) return found;
+        }
+
+        for (const shadow of node.shadowRoots) {
+            const found = visit(shadow);
+
+            if (found !== undefined) return found;
+        }
+
+        if (node.contentDocument !== undefined) {
+            const found = visit(node.contentDocument);
+
+            if (found !== undefined) return found;
+        }
+
+        return undefined;
+    };
+
+    return visit(document.data.root);
 }
 
 async function chainedNodes(

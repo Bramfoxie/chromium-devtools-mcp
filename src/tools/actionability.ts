@@ -58,8 +58,9 @@ const stateSchema = z.object({
 
 const hitSchema = z.object({
     result: z.object({
-        type : z.string().optional(),
-        value: z
+        type   : z.string().optional(),
+        subtype: z.string().optional(),
+        value  : z
             .object({
                 kind   : z.enum(["hit", "covered", "outside"]),
                 tag    : z.string().optional(),
@@ -254,7 +255,11 @@ export async function hitTest(
 
     const parsed = hitSchema.safeParse(result);
 
-    if (!parsed.success || parsed.data.result.type === "undefined" || parsed.data.result.value === undefined) {
+    if (!parsed.success || parsed.data.result.value === undefined) {
+        if (parsed.success && parsed.data.result.subtype === "error") {
+            return isolatedHitTest(access, tab, point);
+        }
+
         throw new ToolError("The browser sent an unexpected hit test result. Try the call again.");
     }
 

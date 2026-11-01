@@ -349,3 +349,26 @@ describe("list_sessions", () => {
         expect(result.isError).not.toBe(true);
     });
 });
+
+describe("frame tracking on tabs", () => {
+    it("starts frame tracking for a new tab", async () => {
+        const { fake, runtime } = setup();
+
+        await runTool(newTab, {}, extra(), runtime);
+
+        expect(runtime.frames.ensured("tab1")).toBe(true);
+        expect(fake.subscribed).toContainEqual({
+            targetId: "tab1",
+            event   : "Page.frameNavigated",
+        });
+    });
+
+    it("forgets frame state when the tab closes", async () => {
+        const { runtime } = setup();
+
+        await runTool(newTab, {}, extra(), runtime);
+        expect(runtime.frames.ensured("tab1")).toBe(true);
+        await runTool(closeTab, {}, extra(), runtime);
+        expect(runtime.frames.ensured("tab1")).toBe(false);
+    });
+});

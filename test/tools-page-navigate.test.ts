@@ -325,7 +325,9 @@ describe("page_navigate", () => {
         const pending = runTool(pageNavigate, { action: "reload", tab: "tab1" }, extra(), runtime);
 
         await vi.waitFor(() =>
-            expect(fake.subscribed).toContainEqual({ targetId: "tab1", event: "Page.frameNavigated" }),
+            expect(
+                fake.subscribed.filter((entry) => entry.targetId === "tab1").map((entry) => entry.event),
+            ).toContain("Network.responseReceived"),
         );
         fake.emit("cdp.event", {
             targetId: "tab2",

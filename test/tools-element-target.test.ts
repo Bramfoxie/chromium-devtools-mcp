@@ -649,10 +649,31 @@ describe("resolveElement frame ids", () => {
             },
         ];
 
-        fake.respond = (_targetId, method) => {
+        fake.respond = (_targetId, method, params) => {
             switch (method) {
-                case "DOM.getDocument":
+                case "DOM.getDocument": {
+                    const pierce = (params as { pierce?: unknown })?.pierce;
+
+                    if (pierce === true) {
+                        return {
+                            root: {
+                                nodeId  : 1,
+                                nodeName: "#document",
+                                children: [
+                                    {
+                                        nodeId         : 10,
+                                        nodeName       : "IFRAME",
+                                        frameId        : "cross",
+                                        contentDocument: { nodeId: 11, nodeName: "#document" },
+                                    },
+                                ],
+                            },
+                        };
+                    }
+
                     return { root: { nodeId: 1 } };
+                }
+
                 case "DOM.querySelector":
                     return { nodeId: 41 };
                 case "DOM.resolveNode":
@@ -682,10 +703,12 @@ describe("resolveElement frame ids", () => {
         expect(resolved).toEqual({ backendNodeId: 7, objectId: "obj-1", frameId: "cross" });
         expect(fake.sent.map((call) => call.method)).toEqual([
             "DOM.getDocument",
+            "DOM.getDocument",
             "DOM.querySelector",
             "DOM.resolveNode",
             "DOM.describeNode",
         ]);
+        expect(fake.sent[2]?.params).toEqual({ nodeId: 11, selector: "#pay-btn" });
     });
 
     it("reports a stale uid when its frame navigated", async () => {

@@ -331,8 +331,28 @@ describe("dom_query piercing", () => {
 
         fake.respond = (_targetId, method, params) => {
             switch (method) {
-                case "DOM.getDocument":
+                case "DOM.getDocument": {
+                    const pierce = (params as { pierce?: unknown })?.pierce;
+
+                    if (pierce === true) {
+                        return {
+                            root: {
+                                nodeId  : 1,
+                                nodeName: "#document",
+                                children: [
+                                    {
+                                        nodeId         : 10,
+                                        nodeName       : "IFRAME",
+                                        frameId        : "cross",
+                                        contentDocument: { nodeId: 11, nodeName: "#document" },
+                                    },
+                                ],
+                            },
+                        };
+                    }
+
                     return { root: { nodeId: 1 } };
+                }
 
                 case "DOM.querySelector": {
                     const selector = (params as { selector?: unknown })?.selector;
@@ -439,12 +459,14 @@ describe("dom_query piercing", () => {
         expect(fake.sent.map((call) => call.method)).toEqual([
             "DOM.getDocument",
             "Page.createIsolatedWorld",
+            "DOM.getDocument",
             "DOM.querySelector",
             "Runtime.evaluate",
             "DOM.describeNode",
         ]);
         expect(fake.sent[1]?.params).toMatchObject({ frameId: "cross" });
-        expect(fake.sent[3]?.params).toMatchObject({ contextId: 7 });
+        expect(fake.sent[3]?.params).toEqual({ nodeId: 11, selector: "#pay-btn" });
+        expect(fake.sent[4]?.params).toMatchObject({ contextId: 7 });
         expect(runtime.elements.lookup("tab1", "0_1")).toEqual({
             backendNodeId  : 141,
             frameId        : "cross",
@@ -471,12 +493,14 @@ describe("dom_query piercing", () => {
             "DOM.getDocument",
             "DOM.querySelector",
             "DOM.describeNode",
+            "Page.createIsolatedWorld",
             "DOM.querySelector",
             "Runtime.evaluate",
             "DOM.describeNode",
         ]);
-        expect(fake.sent[3]?.params).toEqual({ nodeId: 11, selector: "#same-btn" });
-        expect(fake.sent[4]?.params).not.toHaveProperty("contextId");
+        expect(fake.sent[3]?.params).toMatchObject({ frameId: "cross" });
+        expect(fake.sent[4]?.params).toEqual({ nodeId: 11, selector: "#same-btn" });
+        expect(fake.sent[5]?.params).toMatchObject({ contextId: 7 });
     });
 
     it("matches through shadow roots with pierce", async () => {

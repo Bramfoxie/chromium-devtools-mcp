@@ -339,8 +339,9 @@ async function scopeNode(
     if (frames !== undefined) {
         try {
             const resolved = await frames.resolve(tab, frame);
+            const scope = await frameContentNode(access, tab, rootId, resolved.frameId);
 
-            return { nodeId: rootId, frameId: resolved.frameId };
+            return { nodeId: scope ?? rootId, frameId: resolved.frameId };
         } catch {
             // Fall through to the iframe selector path below.
         }
@@ -377,6 +378,76 @@ async function scopeNode(
     }
 
     return { nodeId: content.nodeId, frameId: described.node.frameId };
+}
+
+async function frameContentNode(
+    access : DaemonAccess,
+    tab    : string,
+    rootId : number,
+    frameId: string,
+): Promise<number | undefined> {
+    const document = parseCdp(
+        "DOM.getDocument",
+        piercedDocumentSchema,
+        await access.send(tab, "DOM.getDocument", { depth: -1, pierce: true }),
+    );
+
+    return findFrameContent(document.root, rootId, frameId);
+}
+
+interface PiercedNode {
+    nodeId          : number;
+    nodeName        : string;
+    frameId?        : string | undefined;
+    children        : PiercedNode[];
+    shadowRoots     : PiercedNode[];
+    contentDocument?: PiercedNode | undefined;
+}
+
+const piercedNodeSchema: z.ZodType<PiercedNode> = z.object({
+    nodeId         : z.number(),
+    nodeName       : z.string(),
+    frameId        : z.string().optional(),
+    children       : z.array(z.lazy(() => piercedNodeSchema)).optional().default([]),
+    shadowRoots    : z.array(z.lazy(() => piercedNodeSchema)).optional().default([]),
+    contentDocument: z.lazy(() => piercedNodeSchema).optional(),
+});
+
+const piercedDocumentSchema = z.object({ root: piercedNodeSchema });
+
+function findFrameContent(root: PiercedNode, rootId: number, frameId: string): number | undefined {
+    if (root.nodeId === rootId && frameId === "") return root.nodeId;
+
+    const visit = (node: PiercedNode): number | undefined => {
+        if (
+            (node.nodeName === "IFRAME" || node.nodeName === "FRAME") &&
+            node.frameId === frameId && node.contentDocument !== undefined
+        ) {
+            return node.contentDocument.nodeId;
+        }
+
+        for (const child of node.children) {
+            const found = visit(child);
+
+            if (found !== undefined) return found;
+        }
+
+        for (const shadow of node.shadowRoots) {
+            const found = visit(shadow);
+
+            if (found !== undefined) return found;
+        }
+
+        if (node.contentDocument !== undefined) {
+            const found = visit(node.contentDocument);
+
+            if (found !== undefined) return found;
+        }
+
+        return undefined;
+    };
+
+    return visit(root);
 }
 
 async function resolvePlain(

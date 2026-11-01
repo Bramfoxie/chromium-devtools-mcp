@@ -355,3 +355,37 @@ describe("hitTest piercing", () => {
         );
     });
 });
+
+describe("hitTest cross-origin fallback", () => {
+    it("falls back to the top-level stack when the script throws a SecurityError", async () => {
+        const fake = new FakeAccess();
+        let calls = 0;
+
+        fake.respond = (targetId, method, params) => {
+            void targetId;
+
+            if (method === "Runtime.callFunctionOn") {
+                return { result: { type: "object", subtype: "error" } };
+            }
+
+            if (method === "Runtime.evaluate") {
+                calls += 1;
+
+                return {
+                    result: {
+                        type   : "object",
+                        subtype: "array",
+                        value  : [{ tag: "iframe", id: "cross", frame: true }],
+                    },
+                };
+            }
+
+            throw new Error("unexpected " + method + " " + JSON.stringify(params));
+        };
+
+        await expect(hitTest(fake.asAccess(), "tab1", element, { x: 12, y: 34 })).resolves.toEqual({
+            kind: "hit",
+        });
+        expect(calls).toBe(1);
+    });
+});
