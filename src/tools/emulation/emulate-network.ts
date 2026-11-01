@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { DaemonAccess } from "../../mcp/index.js";
 import { defineTool } from "../define-tool.js";
+import { assertNoDialog } from "../dialogs.js";
 import { ToolError } from "../errors.js";
 import { throwIfCancelled } from "../registry.js";
 import {
@@ -110,6 +111,8 @@ export const emulateNetwork = defineTool({
 
         checkNetworkInput(input);
         throwIfCancelled(context.signal);
+
+        assertNoDialog(context.dialogs, targetId);
         await ensureNetworkForEmulation(
             context.access,
             (tab) => context.capture.ensureNetwork(tab),

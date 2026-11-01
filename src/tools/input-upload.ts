@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { DaemonAccess } from "../mcp/index.js";
 import { ensureActionable } from "./actionability.js";
 import { defineTool } from "./define-tool.js";
+import { assertNoDialog } from "./dialogs.js";
 import { elementTargetSchema, resolveElement, type ResolvedElement } from "./element-target.js";
 import { ToolError } from "./errors.js";
 import { changedUrl, navigationOf, summarizeTarget, targetSummarySchema } from "./input-click.js";
@@ -159,6 +160,8 @@ export const inputUpload = defineTool({
         }
 
         throwIfCancelled(context.signal);
+
+        assertNoDialog(context.dialogs, targetId);
 
         const validated = await validateUploadFiles(nodeUploadFs(), args.files);
 

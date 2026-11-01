@@ -93,10 +93,19 @@ describe("new_tab", () => {
         await runTool(newTab, {}, extra(), runtime);
 
         expect(runtime.capture.consoleEnabled("tab1")).toBe(true);
-        expect(fake.sent.map((call) => call.method)).toEqual(["Runtime.enable", "Log.enable"]);
+        expect(runtime.dialogs.pageEnabled("tab1")).toBe(true);
+        expect(fake.sent.map((call) => call.method)).toEqual([
+            "Runtime.enable",
+            "Log.enable",
+            "Page.enable",
+        ]);
         expect(fake.subscribed).toContainEqual({
             targetId: "tab1",
             event   : "Runtime.consoleAPICalled",
+        });
+        expect(fake.subscribed).toContainEqual({
+            targetId: "tab1",
+            event   : "Page.javascriptDialogOpening",
         });
     });
 

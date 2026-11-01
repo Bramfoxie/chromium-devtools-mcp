@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { DaemonAccess } from "../mcp/index.js";
 import { ensureActionable } from "./actionability.js";
 import { defineTool, type ToolContext } from "./define-tool.js";
+import { assertNoDialog } from "./dialogs.js";
 import { elementTargetSchema, resolveElement, type ResolvedElement } from "./element-target.js";
 import { ToolError } from "./errors.js";
 import { summarizeTarget, targetSummarySchema } from "./input-click.js";
@@ -193,6 +194,8 @@ export const inputScroll = defineTool({
         }
 
         throwIfCancelled(context.signal);
+
+        assertNoDialog(context.dialogs, targetId);
         await context.focus.ensure(context.access, targetId);
 
         if (args.target !== undefined) {

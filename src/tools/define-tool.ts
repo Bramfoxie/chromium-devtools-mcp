@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { Config } from "../config/index.js";
 import type { DaemonAccess } from "../mcp/index.js";
 import type { CaptureManager } from "./capture/manager.js";
+import type { DialogState } from "./dialogs.js";
 import type { ElementRegistry } from "./element-target.js";
 import type { EmulationState } from "./emulation/state.js";
 import type { FocusEmulation } from "./focus-emulation.js";
@@ -42,6 +43,7 @@ export interface ToolContext {
     elements : ElementRegistry;
     focus    : FocusEmulation;
     capture  : CaptureManager;
+    dialogs  : DialogState;
     emulation: EmulationState;
     config   : Config;
     clock    : ToolClock;

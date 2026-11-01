@@ -48,6 +48,7 @@ export const newTab = defineTool({
         const targetId = await context.access.createTab(args.url);
 
         await context.capture.ensureConsole(targetId).catch(() => undefined);
+        await context.dialogs.ensure(targetId).catch(() => undefined);
 
         const select = args.select === false ? context.state.selected : targetId;
         const tabs = await refresh(context, select);
@@ -150,6 +151,7 @@ export const selectTab = defineTool({
 
         context.tabs.refresh(tabs, tab.targetId);
         await context.capture.ensureConsole(tab.targetId).catch(() => undefined);
+        await context.dialogs.ensure(tab.targetId).catch(() => undefined);
 
         return {
             tab: {
@@ -190,6 +192,7 @@ export const closeTab = defineTool({
         }
 
         context.capture.forget(targetId);
+        context.dialogs.forget(targetId);
         context.emulation.forget(targetId);
 
         const tabs = await context.access.listTabs("owned");

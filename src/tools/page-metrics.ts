@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { defineTool, type ToolContext } from "./define-tool.js";
+import { assertNoDialog } from "./dialogs.js";
 import { ToolError } from "./errors.js";
 
 export const METRICS_TIMEOUT_MS = 5000;
@@ -150,6 +151,8 @@ export const pageMetrics = defineTool({
         if (targetId === undefined) {
             throw new ToolError("No tab is selected. Open one with new_tab first.");
         }
+
+        assertNoDialog(context.dialogs, targetId);
 
         await context.access.send(targetId, "Performance.enable", {});
 

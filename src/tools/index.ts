@@ -207,6 +207,20 @@ export {
 
 export { FocusEmulation } from "./focus-emulation.js";
 
+export {
+    assertNoDialog,
+    DIALOG_EVENTS,
+    DIALOG_HISTORY_LIMIT,
+    DIALOG_HISTORY_MESSAGE_CLIP,
+    DIALOG_MESSAGE_CLIP,
+    type DialogHistoryEntry,
+    type DialogPolicy,
+    type DialogResolveResult,
+    type DialogResolution,
+    DialogState,
+    type OpenDialog,
+} from "./dialogs.js";
+
 export { RingBuffer, type RingBufferOptions } from "./capture/ring-buffer.js";
 
 export {

@@ -2,6 +2,7 @@ import { z } from "zod";
 import { ErrorCode, RpcError } from "../daemon/index.js";
 import type { DaemonAccess } from "../mcp/index.js";
 import { defineTool } from "./define-tool.js";
+import { assertNoDialog } from "./dialogs.js";
 import { ToolError } from "./errors.js";
 
 export const QUERY_DEFAULT_LIMIT = 20;
@@ -157,6 +158,8 @@ export const domQuery = defineTool({
         if (targetId === undefined) {
             throw new ToolError("No tab is selected. Open one with new_tab first.");
         }
+
+        assertNoDialog(context.dialogs, targetId);
 
         const all = args.all ?? false;
         const limit = all ? (args.limit ?? QUERY_DEFAULT_LIMIT) : 1;

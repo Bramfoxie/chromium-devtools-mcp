@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { defineTool } from "../define-tool.js";
+import { assertNoDialog } from "../dialogs.js";
 import { ToolError } from "../errors.js";
 import { throwIfCancelled } from "../registry.js";
 import {
@@ -86,6 +87,8 @@ export const emulateLocale = defineTool({
             : checkedTimezone(selection.timezone);
 
         throwIfCancelled(context.signal);
+
+        assertNoDialog(context.dialogs, targetId);
 
         if (selection.reset) {
             const previous = context.emulation.snapshot(targetId).locale ??

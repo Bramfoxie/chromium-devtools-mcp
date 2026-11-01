@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { defineTool } from "../define-tool.js";
+import { assertNoDialog } from "../dialogs.js";
 import { ToolError } from "../errors.js";
 import { throwIfCancelled } from "../registry.js";
 import {
@@ -73,6 +74,8 @@ export const emulateMedia = defineTool({
         }
 
         throwIfCancelled(context.signal);
+
+        assertNoDialog(context.dialogs, targetId);
 
         if (selection.reset) {
             for (const command of buildMediaResetCommands()) {

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { DaemonAccess } from "../../mcp/index.js";
 import { defineTool, type ToolContext } from "../define-tool.js";
+import { assertNoDialog } from "../dialogs.js";
 import { ToolError } from "../errors.js";
 import { throwIfCancelled } from "../registry.js";
 import {
@@ -140,6 +141,8 @@ export const emulateDevice = defineTool({
             reset            : args.reset ?? false,
         });
         throwIfCancelled(context.signal);
+
+        assertNoDialog(context.dialogs, targetId);
 
         if (args.reset === true) {
             await applyDeviceReset(context.access, targetId);

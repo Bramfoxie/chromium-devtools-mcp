@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { DaemonAccess } from "../mcp/index.js";
 import { defineTool } from "./define-tool.js";
+import { assertNoDialog } from "./dialogs.js";
 import { elementTargetSchema, resolveElement } from "./element-target.js";
 import { ToolError } from "./errors.js";
 
@@ -286,6 +287,8 @@ export const cssInspect = defineTool({
         if (targetId === undefined) {
             throw new ToolError("No tab is selected. Open one with new_tab first.");
         }
+
+        assertNoDialog(context.dialogs, targetId);
 
         const element = await resolveElement(
             context.access,

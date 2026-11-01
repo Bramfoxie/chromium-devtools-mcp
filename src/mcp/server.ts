@@ -142,15 +142,18 @@ export function registerServerTools(
         if (typeof targetId === "string") {
             runtime.tabs.forget(targetId);
             runtime.focus.forget(targetId);
+            runtime.dialogs.forget(targetId);
             runtime.emulation.forget(targetId);
         }
     });
     runtime.capture.attach();
+    runtime.dialogs.attach();
     access.forgetStaleState(() => {
         runtime.tabs.reset();
         runtime.elements.reset();
         runtime.focus.reset();
         runtime.capture.reset();
+        runtime.dialogs.reset();
         runtime.emulation.reset();
     });
     registerTools({ server, tools: options.tools ?? allTools, runtime });
