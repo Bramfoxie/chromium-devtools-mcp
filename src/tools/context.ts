@@ -1,6 +1,7 @@
 import type { Config } from "../config/index.js";
 import type { DaemonAccess, DaemonTab } from "../mcp/index.js";
 import type { ToolClock, ToolContext } from "./define-tool.js";
+import { ElementRegistry } from "./element-target.js";
 
 export type { ToolClock, ToolContext };
 
@@ -45,17 +46,19 @@ export class SessionTabs {
 }
 
 export interface ToolRuntimeOptions {
-    access: DaemonAccess;
-    config: Config;
-    clock?: ToolClock;
-    tabs? : SessionTabs;
+    access   : DaemonAccess;
+    config   : Config;
+    clock?   : ToolClock;
+    tabs?    : SessionTabs;
+    elements?: ElementRegistry;
 }
 
 export class ToolRuntime {
-    readonly access: DaemonAccess;
-    readonly config: Config;
-    readonly clock : ToolClock;
-    readonly tabs  : SessionTabs;
+    readonly access  : DaemonAccess;
+    readonly config  : Config;
+    readonly clock   : ToolClock;
+    readonly tabs    : SessionTabs;
+    readonly elements: ElementRegistry;
 
     constructor(options: ToolRuntimeOptions) {
         this.access = options.access;
@@ -65,18 +68,20 @@ export class ToolRuntime {
             sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
         };
         this.tabs = options.tabs ?? new SessionTabs();
+        this.elements = options.elements ?? new ElementRegistry();
     }
 
     context(signal: AbortSignal): ToolContext {
         const tabs = this.tabs;
 
         return {
-            access: this.access,
+            access  : this.access,
             tabs,
-            config: this.config,
-            clock : this.clock,
+            elements: this.elements,
+            config  : this.config,
+            clock   : this.clock,
             signal,
-            state : {
+            state   : {
                 get tabs() {
                     return tabs.knownTabs();
                 },

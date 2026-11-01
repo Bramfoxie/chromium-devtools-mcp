@@ -40,3 +40,20 @@ export {
 export { pageDetails, pageInfo, pageInfoExpression } from "./page-info.js";
 
 export { closeTab, listSessions, listTabs, newTab, selectTab, selectionOf } from "./tabs.js";
+
+export {
+    boxOf,
+    type ElementBox,
+    type ElementNode,
+    type ElementRef,
+    ElementRegistry,
+    type ElementTarget,
+    elementTargetSchema,
+    MAX_SELECTOR_LENGTH,
+    MAX_UIDS_PER_TAB,
+    type Rect,
+    rectOfQuad,
+    resolveElement,
+    revealElement,
+    STALE_UID_MESSAGE,
+} from "./element-target.js";

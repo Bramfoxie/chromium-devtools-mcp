@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { Config } from "../config/index.js";
 import type { DaemonAccess } from "../mcp/index.js";
+import type { ElementRegistry } from "./element-target.js";
 import type { SafetyAccess, SafetyDecision, SafetyTarget } from "./safety.js";
 
 export type ToolAccess = SafetyAccess;
@@ -31,12 +32,13 @@ export interface TabSelection {
 }
 
 export interface ToolContext {
-    access: DaemonAccess;
-    state : SessionState;
-    tabs  : TabSelection;
-    config: Config;
-    clock : ToolClock;
-    signal: AbortSignal;
+    access  : DaemonAccess;
+    state   : SessionState;
+    tabs    : TabSelection;
+    elements: ElementRegistry;
+    config  : Config;
+    clock   : ToolClock;
+    signal  : AbortSignal;
 }
 
 export interface ToolDefinition<

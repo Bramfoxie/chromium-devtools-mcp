@@ -141,7 +141,10 @@ export function registerServerTools(
 
         if (typeof targetId === "string") runtime.tabs.forget(targetId);
     });
-    access.forgetStaleState(() => runtime.tabs.reset());
+    access.forgetStaleState(() => {
+        runtime.tabs.reset();
+        runtime.elements.reset();
+    });
     registerTools({ server, tools: options.tools ?? allTools, runtime });
 
     return runtime;

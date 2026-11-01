@@ -13,12 +13,23 @@ export class FakeAccess {
     readonly created: string[] = [];
     readonly closed : string[] = [];
     readonly claimed: string[] = [];
-    readonly sent: Array<{ targetId: string; method: string; params?: Record<string, unknown> }> =
-        [];
+    readonly sent: Array<{
+        targetId  : string;
+        method    : string;
+        params?   : Record<string, unknown>;
+        timeoutMs?: number;
+    }> = [];
+    readonly subscribed  : Array<{ targetId: string; event: string }> = [];
+    readonly unsubscribed: Array<{ targetId: string; event: string }> = [];
     readonly events = new Map<string, Set<(params: unknown) => void>>();
     readonly resets = new Set<() => void>();
     generation = 0;
-    failSend?                : (targetId: string, method: string) => Error;
+    failSend?            : (targetId: string, method: string) => Error;
+    respond?                 : (
+        targetId: string,
+        method  : string,
+        params? : Record<string, unknown>,
+    ) => unknown;
     private readonly evaluate: unknown;
     private counter = 0;
 
@@ -117,21 +128,32 @@ export class FakeAccess {
     }
 
     async send(
-        targetId: string,
-        method  : string,
-        params? : Record<string, unknown>,
+        targetId  : string,
+        method    : string,
+        params?   : Record<string, unknown>,
+        timeoutMs?: number,
     ): Promise<unknown> {
-        this.sent.push({ targetId, method, params });
+        this.sent.push({ targetId, method, params, timeoutMs });
         const failure = this.failSend?.(targetId, method);
 
         if (failure) throw failure;
 
-        return this.evaluate ?? { result: { type: "undefined" } };
+        return this.respond?.(targetId, method, params) ?? this.evaluate ?? {
+            result: { type: "undefined" },
+        };
     }
 
-    async subscribe(): Promise<void> {}
+    async subscribe(targetId: string, event: string): Promise<void> {
+        this.subscribed.push({ targetId, event });
+    }
 
-    async unsubscribe(): Promise<void> {}
+    async unsubscribe(targetId: string, event: string): Promise<void> {
+        this.unsubscribed.push({ targetId, event });
+    }
+
+    emit(event: string, params: unknown): void {
+        for (const handler of [...(this.events.get(event) ?? [])]) handler(params);
+    }
 
     assertCurrent(): void {}
 
