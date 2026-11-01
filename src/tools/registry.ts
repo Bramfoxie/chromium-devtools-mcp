@@ -74,6 +74,8 @@ export async function runTool(
 
         const value = validated.data as Record<string, unknown>;
 
+        if (tool.present) return tool.present(validated.data);
+
         return jsonResult(value);
     } catch (error) {
         if (extra.signal.aborted) return errorResult(CANCELLED_MESSAGE);

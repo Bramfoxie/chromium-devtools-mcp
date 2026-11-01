@@ -35,7 +35,7 @@ const readOnly: Config = {
 };
 
 describe("tool declarations", () => {
-    it("declares twenty-two tools with unique names, descriptions and access", () => {
+    it("declares twenty-three tools with unique names, descriptions and access", () => {
         expect(allTools.map((tool) => tool.name)).toEqual([
             "list_tabs",
             "list_sessions",
@@ -51,6 +51,7 @@ describe("tool declarations", () => {
             "console_logs",
             "network_requests",
             "network_response_body",
+            "screenshot",
             "click",
             "input_click",
             "input_hover",
@@ -133,6 +134,29 @@ describe("runTool", () => {
         expect(result.content).toEqual([{ type: "text", text: JSON.stringify({ text: "hi" }) }]);
     });
 
+    it("lets a tool present its validated output as binary content", async () => {
+        const shot = defineTool({
+            name       : "shot",
+            description: "Returns a picture.",
+            access     : "read",
+            input      : z.strictObject({}),
+            output     : z.strictObject({ data: z.string(), bytes: z.number() }),
+            present    : (output) => ({
+                content: [
+                    { type: "text", text: JSON.stringify({ bytes: output.bytes }) },
+                    { type: "image", data: output.data, mimeType: "image/png" },
+                ],
+                structuredContent: { bytes: output.bytes },
+            }),
+            handler: async () => ({ data: "aGk=", bytes: 2 }),
+        });
+        const result = await runTool(shot, {}, extra(), runtime());
+
+        expect(result.structuredContent).toEqual({ bytes: 2 });
+        expect(result.content).toHaveLength(2);
+        expect(result.content[1]).toMatchObject({ type: "image", mimeType: "image/png" });
+    });
+
     it("rejects invalid arguments with the tool named", async () => {
         const result = await runTool(echo, { text: 5 }, extra(), runtime());
 
@@ -205,7 +229,7 @@ describe("runTool", () => {
 });
 
 describe("tools/list", () => {
-    it("lists exactly the twenty-two tools with their schemas", async () => {
+    it("lists exactly the twenty-three tools with their schemas", async () => {
         const server = createMcpServer("1.0.0");
 
         registerTools({ server, tools: allTools, runtime: runtime() });
@@ -230,6 +254,7 @@ describe("tools/list", () => {
             "console_logs",
             "network_requests",
             "network_response_body",
+            "screenshot",
             "click",
             "input_click",
             "input_hover",

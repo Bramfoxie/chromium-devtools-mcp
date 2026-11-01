@@ -113,6 +113,27 @@ export {
     networkResponseBody,
 } from "./network-response-body.js";
 
+export {
+    type ImageSize,
+    imageSize,
+    pngSize,
+} from "./image-size.js";
+
+export {
+    SCREENSHOT_DEFAULT_MAX_BYTES,
+    SCREENSHOT_DEFAULT_MAX_DIMENSION,
+    SCREENSHOT_DEFAULT_QUALITY,
+    SCREENSHOT_MAX_BYTES_LIMIT,
+    SCREENSHOT_RETRY_QUALITY,
+    type ScreenshotClip,
+    type ScreenshotFormat,
+    type ScreenshotPlan,
+    planScreenshot,
+    retryQuality,
+    roundClip,
+    screenshot,
+} from "./screenshot.js";
+
 export { pageDetails, pageInfo, pageInfoExpression } from "./page-info.js";
 
 export {

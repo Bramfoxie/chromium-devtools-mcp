@@ -1,3 +1,4 @@
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import type { Config } from "../config/index.js";
 import type { DaemonAccess } from "../mcp/index.js";
@@ -56,6 +57,7 @@ export interface ToolDefinition<
     input      : TInputSchema;
     output     : TOutputSchema;
     target?    : (args: z.output<TInputSchema>) => SafetyTarget | undefined;
+    present?   : (output: z.output<TOutputSchema>) => CallToolResult;
     handler    : (
         args   : z.output<TInputSchema>,
         context: ToolContext,
