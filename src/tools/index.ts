@@ -37,6 +37,20 @@ export {
     type SafetyTarget,
 } from "./safety.js";
 
+export {
+    buildQueryScript,
+    clipValue,
+    DEFAULT_QUERY_ATTRIBUTES,
+    domQuery,
+    isPasswordInput,
+    QUERY_CLIP_CHARS,
+    QUERY_DEFAULT_LIMIT,
+    QUERY_MAX_LIMIT,
+    QUERY_MAX_TEXT_CHARS,
+    type QueryRow,
+    roundRect,
+} from "./dom-query.js";
+
 export { pageDetails, pageInfo, pageInfoExpression } from "./page-info.js";
 
 export {
