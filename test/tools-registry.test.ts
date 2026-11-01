@@ -35,7 +35,7 @@ const readOnly: Config = {
 };
 
 describe("tool declarations", () => {
-    it("declares eighteen tools with unique names, descriptions and access", () => {
+    it("declares nineteen tools with unique names, descriptions and access", () => {
         expect(allTools.map((tool) => tool.name)).toEqual([
             "list_tabs",
             "list_sessions",
@@ -55,6 +55,7 @@ describe("tool declarations", () => {
             "input_key",
             "input_scroll",
             "input_select",
+            "input_upload",
         ]);
 
         for (const tool of allTools) {
@@ -75,6 +76,7 @@ describe("tool declarations", () => {
             "input_scroll",
             "input_select",
             "input_type",
+            "input_upload",
             "js_evaluate",
             "new_tab",
             "page_navigate",
@@ -200,7 +202,7 @@ describe("runTool", () => {
 });
 
 describe("tools/list", () => {
-    it("lists exactly the eighteen tools with their schemas", async () => {
+    it("lists exactly the nineteen tools with their schemas", async () => {
         const server = createMcpServer("1.0.0");
 
         registerTools({ server, tools: allTools, runtime: runtime() });
@@ -229,6 +231,7 @@ describe("tools/list", () => {
             "input_key",
             "input_scroll",
             "input_select",
+            "input_upload",
         ]);
 
         for (const tool of listed.tools) {

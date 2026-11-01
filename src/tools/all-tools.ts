@@ -6,6 +6,7 @@ import { click, inputClick, inputHover } from "./input-click.js";
 import { inputScroll } from "./input-scroll.js";
 import { inputSelect } from "./input-select.js";
 import { inputKey, inputType } from "./input-text.js";
+import { inputUpload } from "./input-upload.js";
 import { jsEvaluate } from "./js-evaluate.js";
 import { pageInfo } from "./page-info.js";
 import { pageNavigate } from "./page-navigate.js";
@@ -30,4 +31,5 @@ export const allTools: AnyTool[] = [
     inputKey,
     inputScroll,
     inputSelect,
+    inputUpload,
 ];

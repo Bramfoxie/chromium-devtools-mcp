@@ -248,3 +248,14 @@ export {
     SELECT_READ_EXPRESSION,
     SELECT_WRITE_EXPRESSION,
 } from "./input-select.js";
+
+export {
+    inputUpload,
+    nodeUploadFs,
+    UPLOAD_CHANGE_EXPRESSION,
+    UPLOAD_MAX_BYTES,
+    UPLOAD_MAX_FILES,
+    type UploadFileSystem,
+    validateUploadFiles,
+    type ValidatedUpload,
+} from "./input-upload.js";

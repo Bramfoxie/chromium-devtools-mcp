@@ -62,8 +62,18 @@ Each session keeps its own tab selection. `new_tab` opens a background tab and s
 - `dom_query`: find elements by a CSS selector and read their text, attributes and boxes.
 - `dom_snapshot`: read a compact text snapshot of the page with element ids.
 - `css_inspect`: read the computed style, matched CSS rules and box of an element.
+- `click`: click an element at the DOM level with `element.click()` semantics. Works on covered elements and background tabs; the event is not trusted.
+- `input_click`: click with trusted CDP mouse events, like a real user. Refuses a covered element unless `force` is passed.
+- `input_hover`: hover an element with trusted CDP mouse events, so hover styles and menus react.
+- `input_type`: type text into a field, with `clear` and `submit` options. Passwords are typed but never echoed back.
+- `input_key`: press a key or chord like `Enter` or `ControlOrMeta+C`. `ControlOrMeta` resolves from the browser platform.
+- `input_scroll`: scroll by wheel deltas, to the top or bottom, or an element into view. Falls back to script scrolling only when the wheel provably moved nothing, and reports which ran.
+- `input_select`: choose options of a `select` by value, label or index.
+- `input_upload`: attach local files to a file input. This is the most sensitive tool: it sends local files to a web page. Paths are validated on the server machine (absolute, existing regular readable files under 100 MiB, at most 20), symlinks are followed, and results carry file names and sizes only, never contents.
 
-Every tool returns its result as JSON text plus structured content. Large outputs are truncated with an explicit marker. Mutating tools (`new_tab`, `select_tab`, `close_tab`, `page_navigate`, `js_evaluate`) are refused in read-only mode; the domain allowlist and dangerous action confirmations are planned.
+Every tool returns its result as JSON text plus structured content. Large outputs are truncated with an explicit marker. Mutating tools (`new_tab`, `select_tab`, `close_tab`, `page_navigate`, `js_evaluate`, `click`, `input_click`, `input_hover`, `input_type`, `input_key`, `input_scroll`, `input_select`, `input_upload`) are refused in read-only mode; the domain allowlist and dangerous action confirmations are planned.
+
+Input tools never bring the browser window to the front. The page believes it is focused through CDP focus emulation, enabled once per tab, so mouse and keyboard events behave like a real user while your windows stay put.
 
 ## Element ids
 
