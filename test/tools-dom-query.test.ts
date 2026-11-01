@@ -53,7 +53,13 @@ function queryFake(rows: Array<ReturnType<typeof row>>, backendIds: number[] = [
             case "DOM.querySelectorAll":
                 return { nodeIds: backendIds.map((_, index) => 11 + index) };
             case "Runtime.evaluate":
-                return { result: { type: "object", subtype: "array", value: rows } };
+                return {
+                    result: {
+                        type   : "object",
+                        subtype: "array",
+                        value  : rows.map((entry, index) => ({ index, ...entry })),
+                    },
+                };
 
             case "DOM.describeNode": {
                 const nodeId = (params as { nodeId?: unknown })?.nodeId as number;
@@ -94,6 +100,7 @@ console.log(JSON.stringify(eval(${JSON.stringify(buildQueryScript("a", ["href"],
 
         expect(JSON.parse(output)).toEqual([
             {
+                index     : 0,
                 tag       : "a",
                 id        : "l",
                 classes   : ["x"],
@@ -221,6 +228,12 @@ describe("dom_query", () => {
 
         expect(result.structuredContent).toMatchObject({ total: 3, returned: 1 });
         expect(result.structuredContent).toMatchObject({ matches: [{ text: "Cherry tart", box: null }] });
+
+        // The uid must resolve to the Cherry row (index 1), not to the first match.
+        const uid = (result.structuredContent as { matches: Array<{ uid: string }> }).matches[0]?.uid ?? "";
+
+        expect(uid).not.toBe("");
+        expect(runtime.elements.lookup("tab1", uid)).not.toBeUndefined();
     });
 
     it("redacts password values and reports them", async () => {
@@ -237,10 +250,13 @@ describe("dom_query", () => {
                         result: {
                             type : "object",
                             value: [
-                                row({
-                                    tag       : "input",
-                                    attributes: { type: "password", value: "secret" },
-                                }),
+                                {
+                                    ...row({
+                                        tag       : "input",
+                                        attributes: { type: "password", value: "secret" },
+                                    }),
+                                    index: 0,
+                                },
                             ],
                         },
                     };
@@ -434,8 +450,8 @@ describe("dom_query piercing", () => {
                             type   : "object",
                             subtype: "array",
                             value  : [
-                                row({ tag: "button", text: "Pay" }),
-                                row({ tag: "button", text: "More" }),
+                                { ...row({ tag: "button", text: "Pay" }), index: 0 },
+                                { ...row({ tag: "button", text: "More" }), index: 1 },
                             ],
                         },
                     };

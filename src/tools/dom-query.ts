@@ -53,6 +53,7 @@ const describedSchema = z.object({
 });
 
 const rowSchema = z.object({
+    index     : z.number().optional(),
     tag       : z.string(),
     id        : z.string(),
     classes   : z.array(z.string()),
@@ -82,8 +83,8 @@ export function buildQueryScript(selector: string, attributes: string[], count: 
     const limit = JSON.stringify(count);
 
     return `(() => {
-  const found = [...document.querySelectorAll(${matcher})].slice(0, ${limit});
-  return found.map((el) => {
+  const found = [...document.querySelectorAll(${matcher})].map((el, index) => ({ el, index })).slice(0, ${limit});
+  return found.map(({ el, index }) => {
     const rect = el.getBoundingClientRect();
     const kept = {};
     for (const name of ${names}) {
@@ -91,6 +92,7 @@ export function buildQueryScript(selector: string, attributes: string[], count: 
       if (value !== null) kept[name] = value.slice(0, 500);
     }
     return {
+      index,
       tag: el.localName,
       id: el.id,
       classes: [...el.classList],
@@ -300,8 +302,18 @@ export const domQuery = defineTool({
 
         if (rows.length === 0) return { matches: [], total: 0, returned: 0 };
 
-        const wanted = rows.length;
-        const described = await describeNodes(context.access, targetId, nodeIds.slice(0, wanted));
+        // Rows carry their match index: uids come from the filtered nodes,
+        // not from the first N matches.
+        const picked = rows.flatMap((row) => {
+            const at = row.index ?? -1;
+            const nodeId = nodeIds[at];
+
+            return nodeId === undefined ? [] : [nodeId];
+        });
+
+        if (picked.length === 0) return { matches: [], total: 0, returned: 0 };
+
+        const described = await describeNodes(context.access, targetId, picked);
         const frameGeneration = scope.frameId === undefined
             ? undefined
             : context.frames.generation(targetId, scope.frameId);
