@@ -4,7 +4,7 @@ import { runDaemon, type RunningDaemon } from "./daemon/runner.js";
 import { runMcpServer, type RunningMcp } from "./mcp/server.js";
 
 const USAGE =
-    "Usage: chromium-devtools-mcp [options]        run the MCP server on stdio\n       chromium-devtools-mcp daemon [options] run the browser daemon\nOptions: --browser chrome, --mode attach|managed, --headless, --profile-dir, --debug-port, --allow-focus, --read-only, --allowed-domains, --confirm-dangerous, --help\nBoolean flags also accept a --no- form, for example --no-headless.";
+    "Usage: chromium-devtools-mcp [options]        run the MCP server on stdio\n       chromium-devtools-mcp daemon [options] run the browser daemon\nOptions: --browser chrome, --mode attach|managed, --headless, --profile-dir, --debug-port, --allow-focus, --isolated, --read-only, --allowed-domains, --confirm-dangerous, --help\nBoolean flags also accept a --no- form, for example --no-headless.";
 
 export interface CliDeps {
     run     : (config: Config) => Promise<RunningDaemon>;

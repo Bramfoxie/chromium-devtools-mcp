@@ -11,6 +11,7 @@ const config: Config = {
     profileDir: "/data/profile",
     debugPort : 9222,
     allowFocus: false,
+    isolated  : false,
     safety    : { readOnly: false, allowedDomains: [], confirmDangerous: false },
 };
 

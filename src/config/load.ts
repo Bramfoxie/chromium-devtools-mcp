@@ -90,6 +90,7 @@ function envLayer(env: NodeJS.ProcessEnv): Layer {
         profileDir: get("PROFILE_DIR"),
         debugPort : port === undefined ? undefined : toInt(port),
         allowFocus: bool("ALLOW_FOCUS"),
+        isolated  : bool("ISOLATED"),
         safety    : {
             readOnly        : bool("READ_ONLY"),
             allowedDomains  : domains === undefined ? undefined : toList(domains),
@@ -112,6 +113,7 @@ function parseFlags(argv: string[]) {
                 "profile-dir"      : { type: "string" },
                 "debug-port"       : { type: "string" },
                 "allow-focus"      : { type: "boolean" },
+                isolated           : { type: "boolean" },
                 "read-only"        : { type: "boolean" },
                 "allowed-domains"  : { type: "string" },
                 "confirm-dangerous": { type: "boolean" },
@@ -136,6 +138,7 @@ function argvLayer(argv: string[]): Layer {
         profileDir: values["profile-dir"],
         debugPort : typeof port === "string" ? toInt(port) : port,
         allowFocus: values["allow-focus"],
+        isolated  : values.isolated,
         safety    : {
             readOnly        : values["read-only"],
             allowedDomains  : typeof domains === "string" ? toList(domains) : domains,
@@ -190,6 +193,7 @@ export function loadConfig(options: LoadOptions = {}): Config {
         profileDir: defaultProfileDir(ctx),
         debugPort : 9222,
         allowFocus: false,
+        isolated  : false,
         safety    : { readOnly: false, allowedDomains: [], confirmDangerous: false },
     };
 

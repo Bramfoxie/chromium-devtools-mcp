@@ -11,6 +11,7 @@ export const configSchema = z.strictObject({
     profileDir: z.string().min(1),
     debugPort : z.number().int().min(1).max(65535),
     allowFocus: z.boolean(),
+    isolated  : z.boolean(),
     safety    : z.strictObject({
         readOnly        : z.boolean(),
         allowedDomains  : z.array(z.string().min(1)),

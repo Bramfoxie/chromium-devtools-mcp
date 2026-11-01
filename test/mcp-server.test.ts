@@ -96,6 +96,31 @@ describe("createDaemonLink", () => {
             },
         ]);
     });
+
+    it("passes the isolated flag to session.open without changing the identity", async () => {
+        const calls: Array<{ method: string; params: unknown }> = [];
+        const config = { ...managedConfig, isolated: true };
+        const link = createDaemonLink(config, [], {
+            connect: async () => ({
+                closed : false,
+                request: async (method: string, params?: unknown) => {
+                    calls.push({ method, params });
+
+                    return {};
+                },
+                on   : () => () => undefined,
+                close: async () => undefined,
+            }) as never,
+        });
+
+        await link.request("tab.list");
+        expect(calls[0]).toEqual({ method: "session.open", params: { isolated: true } });
+
+        const { isolated: _own, ...shared } = config;
+
+        void _own;
+        expect(daemonIdentity(config)).toEqual(daemonIdentity(shared));
+    });
 });
 
 describe("createMcpServer", () => {

@@ -17,6 +17,7 @@ describe("defaults", () => {
             profileDir: "/home/u/.local/share/chromium-devtools-mcp/profile",
             debugPort : 9222,
             allowFocus: false,
+            isolated  : false,
             safety    : { readOnly: false, allowedDomains: [], confirmDangerous: false },
         });
     });
@@ -50,6 +51,25 @@ describe("sources and precedence", () => {
         });
 
         expect(config.headless).toBe(false);
+    });
+
+    it("reads isolated from the file, env and argv in precedence order", () => {
+        expect(loadConfig(withFile(JSON.stringify({ isolated: true }))).isolated).toBe(true);
+
+        const fromEnv = loadConfig({
+            ...withFile(JSON.stringify({ isolated: false })),
+            env: { CHROMIUM_DEVTOOLS_MCP_ISOLATED: "true" },
+        });
+
+        expect(fromEnv.isolated).toBe(true);
+
+        const fromArgv = loadConfig({
+            ...withFile(undefined),
+            env : { CHROMIUM_DEVTOOLS_MCP_ISOLATED: "false" },
+            argv: ["--isolated"],
+        });
+
+        expect(fromArgv.isolated).toBe(true);
     });
 
     it("parses lists and booleans from env and argv", () => {
@@ -104,6 +124,7 @@ describe("sources and precedence", () => {
                 "--profile-dir=/p",
                 "--debug-port=9333",
                 "--allow-focus",
+                "--isolated",
                 "--read-only",
                 "--allowed-domains=a.com,b.com",
                 "--confirm-dangerous",
@@ -117,6 +138,7 @@ describe("sources and precedence", () => {
             profileDir: "/p",
             debugPort : 9333,
             allowFocus: true,
+            isolated  : true,
             safety    : { readOnly: true, allowedDomains: ["a.com", "b.com"], confirmDangerous: true },
         });
     });
@@ -251,13 +273,15 @@ describe("validation", () => {
             ...withFile(undefined),
             env: {
                 CHROMIUM_DEVTOOLS_MCP_ALLOW_FOCUS      : "true",
+                CHROMIUM_DEVTOOLS_MCP_ISOLATED         : "true",
                 CHROMIUM_DEVTOOLS_MCP_READ_ONLY        : "true",
                 CHROMIUM_DEVTOOLS_MCP_CONFIRM_DANGEROUS: "true",
             },
-            argv: ["--no-allow-focus", "--no-read-only", "--no-confirm-dangerous"],
+            argv: ["--no-allow-focus", "--no-isolated", "--no-read-only", "--no-confirm-dangerous"],
         });
 
         expect(config.allowFocus).toBe(false);
+        expect(config.isolated).toBe(false);
         expect(config.safety.readOnly).toBe(false);
         expect(config.safety.confirmDangerous).toBe(false);
     });
