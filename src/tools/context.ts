@@ -2,6 +2,7 @@ import type { Config } from "../config/index.js";
 import type { DaemonAccess, DaemonTab } from "../mcp/index.js";
 import type { ToolClock, ToolContext } from "./define-tool.js";
 import { ElementRegistry } from "./element-target.js";
+import { FocusEmulation } from "./focus-emulation.js";
 
 export type { ToolClock, ToolContext };
 
@@ -51,6 +52,7 @@ export interface ToolRuntimeOptions {
     clock?   : ToolClock;
     tabs?    : SessionTabs;
     elements?: ElementRegistry;
+    focus?   : FocusEmulation;
 }
 
 export class ToolRuntime {
@@ -59,6 +61,7 @@ export class ToolRuntime {
     readonly clock   : ToolClock;
     readonly tabs    : SessionTabs;
     readonly elements: ElementRegistry;
+    readonly focus   : FocusEmulation;
 
     constructor(options: ToolRuntimeOptions) {
         this.access = options.access;
@@ -69,6 +72,7 @@ export class ToolRuntime {
         };
         this.tabs = options.tabs ?? new SessionTabs();
         this.elements = options.elements ?? new ElementRegistry();
+        this.focus = options.focus ?? new FocusEmulation();
     }
 
     context(signal: AbortSignal): ToolContext {
@@ -78,6 +82,7 @@ export class ToolRuntime {
             access  : this.access,
             tabs,
             elements: this.elements,
+            focus   : this.focus,
             config  : this.config,
             clock   : this.clock,
             signal,

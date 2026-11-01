@@ -138,3 +138,54 @@ export {
     revealElement,
     STALE_UID_MESSAGE,
 } from "./element-target.js";
+
+export { FocusEmulation } from "./focus-emulation.js";
+
+export {
+    type ActionableElement,
+    type ActionablePoint,
+    type ActionabilityOptions,
+    coveredMessage,
+    describeTarget,
+    type EditableKind,
+    elementState,
+    type ElementState,
+    ensureActionable,
+    HIT_EXPRESSION,
+    type HitResult,
+    type HitTarget,
+    hitTest,
+    readBox,
+    STATE_EXPRESSION,
+} from "./actionability.js";
+
+export {
+    centerOf,
+    clickPointOf,
+    type ClickPoint,
+    type ElementOffset,
+    type FrameOrigin,
+    insideViewport,
+    quadCenter,
+    TOP_LEVEL_ORIGIN,
+} from "./coordinates.js";
+
+export {
+    acceptedKeyNames,
+    editingCommand,
+    type KeyEventPlan,
+    type KeyModifier,
+    KEY_MODIFIERS,
+    keyHints,
+    type KeySpec,
+    lookupKey,
+    MODIFIER_BITS,
+    modifiersMask,
+    modifierSpec,
+    type ParsedKey,
+    parseKeyChord,
+    planKeyPress,
+    planTypedChar,
+    producedText,
+    resolveControlOrMeta,
+} from "./keys.js";

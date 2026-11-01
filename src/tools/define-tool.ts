@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { Config } from "../config/index.js";
 import type { DaemonAccess } from "../mcp/index.js";
 import type { ElementRegistry } from "./element-target.js";
+import type { FocusEmulation } from "./focus-emulation.js";
 import type { SafetyAccess, SafetyDecision, SafetyTarget } from "./safety.js";
 
 export type ToolAccess = SafetyAccess;
@@ -36,6 +37,7 @@ export interface ToolContext {
     state   : SessionState;
     tabs    : TabSelection;
     elements: ElementRegistry;
+    focus   : FocusEmulation;
     config  : Config;
     clock   : ToolClock;
     signal  : AbortSignal;
@@ -48,6 +50,7 @@ export interface ToolDefinition<
     name       : string;
     description: string;
     access     : ToolAccess;
+    dangerous? : boolean;
     input      : TInputSchema;
     output     : TOutputSchema;
     target?    : (args: z.output<TInputSchema>) => SafetyTarget | undefined;

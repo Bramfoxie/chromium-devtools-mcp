@@ -139,11 +139,15 @@ export function registerServerTools(
     access.on("tab.closed", (params) => {
         const targetId = (params as { targetId?: unknown } | null)?.targetId;
 
-        if (typeof targetId === "string") runtime.tabs.forget(targetId);
+        if (typeof targetId === "string") {
+            runtime.tabs.forget(targetId);
+            runtime.focus.forget(targetId);
+        }
     });
     access.forgetStaleState(() => {
         runtime.tabs.reset();
         runtime.elements.reset();
+        runtime.focus.reset();
     });
     registerTools({ server, tools: options.tools ?? allTools, runtime });
 
