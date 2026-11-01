@@ -103,6 +103,14 @@ Mock rules live per tab in the MCP process: at most 100 rules, bodies up to 10 M
 
 `dom_query` and `dom_snapshot` assign every element they report an id like `2_1`: the tab generation, then a counter. Pass the id as `{ "uid": "2_1" }` to target that element, or use `{ "selector": "..." }` with a CSS selector instead, never both. An id becomes stale when a new snapshot is taken or the tab navigates; using a stale id is an explicit error, never a wrong element.
 
+## Shadow DOM and iframes
+
+Every element target accepts `pierce` and `frame` next to `selector`. Plain selectors keep their browser meaning: they match only the light DOM of the main frame. `pierce: true` matches through open shadow roots anywhere in the frame. A `>>>` chain such as `my-app >>> #inner-button` scopes each segment inside the shadow root of the previous match and also crosses closed shadow roots; pass `pierce` or a chain, not both. `frame` scopes the selector to a frame: pass a frame id from `dom_snapshot` or a CSS selector of an `iframe` element in the main document. `dom_query` and `page_wait` selector conditions take the same `pierce` and `frame` fields.
+
+`dom_snapshot` renders the composed tree: shadow content appears inline, and every iframe shows as `[uid] iframe "name" frame=<id>` with its content as a following section. The `frames` array of the result lists every frame with its parent, URL, `isolated` flag (true when the frame runs in its own process) and node count. At most `maxFrames` frame contents are included (default 20, maximum 50); frames beyond the limit are listed with `omitted: true`. Element ids inside a frame go stale when that frame navigates or is removed, while ids of other frames keep working.
+
+Clicks and typing work the same across boundaries: boxes are viewport coordinates, trusted mouse events are dispatched at the top level, and the hit test descends through frames and shadow roots. For an isolated frame page script cannot prove what covers the point, so the hit test reads the top-level element stack instead: an overlay on top of the iframe owner is reported as covering, otherwise the click proceeds. Sandboxed iframes without `allow-same-origin` expose no document to the debugger and cannot be queried; nested, scrolled, zero-size and `srcdoc` frames work.
+
 ## Output limits
 
 Text results are capped per call: snapshots and evaluation results default to 50000 characters and can be raised to 200000 with `maxChars` or `maxResultChars`. The daemon protocol itself carries requests up to 1 MiB and responses up to 32 MiB. Elements hidden with `display: none` are absent from the accessibility tree, so snapshots never list them, even with `includeHidden`.
