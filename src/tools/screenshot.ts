@@ -92,8 +92,15 @@ export function planScreenshot(args: {
         };
     }
 
-    if (scale !== 1 || args.viewport !== undefined) {
-        const viewport = args.viewport ?? { width: 0, height: 0 };
+    // A default viewport clip pins the shot to the document origin: on a
+    // scrolled page the wrong region is captured. Send no clip unless the
+    // caller asked for a scale or a dimension clamp.
+    if (args.fullPage === true || (scale === 1 && args.viewport === undefined)) {
+        return { clip: undefined, scale: undefined, clipped: false, scaledDown: false };
+    }
+
+    if (args.viewport !== undefined) {
+        const viewport = args.viewport;
 
         if (viewport.width <= 0 || viewport.height <= 0) {
             return { clip: undefined, scale: undefined, clipped: false, scaledDown: false };
@@ -103,6 +110,10 @@ export function planScreenshot(args: {
         const fit = longest > args.maxDimension ? args.maxDimension / longest : 1;
         const effective = Math.min(scale, fit);
 
+        if (effective === 1) {
+            return { clip: undefined, scale: undefined, clipped: false, scaledDown: false };
+        }
+
         return {
             clip      : roundClip({ x: 0, y: 0, width: viewport.width, height: viewport.height }),
             scale     : effective === 1 ? undefined : effective,
@@ -111,7 +122,12 @@ export function planScreenshot(args: {
         };
     }
 
-    return { clip: undefined, scale: undefined, clipped: false, scaledDown: false };
+    return {
+        clip      : undefined,
+        scale     : scale === 1 ? undefined : scale,
+        clipped   : false,
+        scaledDown: false,
+    };
 }
 
 export function retryQuality(quality: number): number {

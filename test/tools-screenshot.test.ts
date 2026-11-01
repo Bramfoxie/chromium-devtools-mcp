@@ -167,6 +167,23 @@ describe("screenshot", () => {
         expect(screenshot.announced?.safeParse(result.structuredContent).success).toBe(true);
     });
 
+    it("sends no viewport clip for a full page or a default shot", async () => {
+        const seen: Array<Record<string, unknown>> = [];
+        const { runtime } = setup(
+            shotFake(PNG_2X3.toString("base64"), (params) => void seen.push(params)),
+        );
+
+        await runTool(newTab, {}, extra(), runtime);
+        await runTool(screenshot, { format: "png", fullPage: true }, extra(), runtime);
+
+        expect(seen[0]).toMatchObject({ format: "png", captureBeyondViewport: true });
+        expect(seen[0]).not.toHaveProperty("clip");
+
+        await runTool(screenshot, { format: "png" }, extra(), runtime);
+
+        expect(seen[1]).not.toHaveProperty("clip");
+    });
+
     it("captures full page and explicit clips with scale", async () => {
         const seen: Array<Record<string, unknown>> = [];
         const { runtime } = setup(
