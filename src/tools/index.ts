@@ -234,6 +234,7 @@ export {
     SCROLL_STATE_EXPRESSION,
     scrollMoved,
     type ScrollPosition,
+    WHEEL_SETTLE_MS,
     wheelParams,
     type WheelScrollResult,
 } from "./input-scroll.js";
@@ -252,7 +253,7 @@ export {
 export {
     inputUpload,
     nodeUploadFs,
-    UPLOAD_CHANGE_EXPRESSION,
+    UPLOAD_COUNT_EXPRESSION,
     UPLOAD_MAX_BYTES,
     UPLOAD_MAX_FILES,
     type UploadFileSystem,

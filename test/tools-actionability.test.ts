@@ -114,7 +114,7 @@ describe("elementState", () => {
         });
     });
 
-    it("passes no arguments: callFunctionOn receives the element as this", async () => {
+    it("passes the element as the first argument as well as this", async () => {
         const fake = actionableFake({});
 
         await elementState(fake.asAccess(), "tab1", element);
@@ -122,9 +122,9 @@ describe("elementState", () => {
 
         expect(call?.params).toMatchObject({
             objectId     : "obj-7",
+            arguments    : [{ objectId: "obj-7" }],
             returnByValue: true,
         });
-        expect(call?.params).not.toHaveProperty("arguments");
     });
 
     it("rejects an unexpected browser response", async () => {
@@ -139,7 +139,7 @@ describe("elementState", () => {
 });
 
 describe("hitTest", () => {
-    it("passes the point as the two function arguments", async () => {
+    it("passes the element and the point as the function arguments", async () => {
         const fake = actionableFake({});
 
         await expect(hitTest(fake.asAccess(), "tab1", element, { x: 12, y: 34 })).resolves.toEqual({
@@ -148,7 +148,7 @@ describe("hitTest", () => {
         const call = fake.sent.find((entry) => entry.method === "Runtime.callFunctionOn");
 
         expect(call?.params).toMatchObject({
-            arguments: [{ value: 12 }, { value: 34 }],
+            arguments: [{ objectId: "obj-7" }, { value: 12 }, { value: 34 }],
         });
     });
 

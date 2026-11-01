@@ -265,7 +265,9 @@ describe("click", () => {
                 String(declaration).includes("scrollIntoView");
         });
 
-        expect(call?.params).toMatchObject({ arguments: [{ value: false }] });
+        expect(call?.params).toMatchObject({
+            arguments: [{ objectId: "obj-11" }, { value: false }],
+        });
     });
 });
 

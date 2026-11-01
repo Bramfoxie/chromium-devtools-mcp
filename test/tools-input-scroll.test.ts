@@ -249,7 +249,9 @@ describe("input_scroll", () => {
                 String(declaration).includes("scrollIntoView({");
         });
 
-        expect(call?.params).toMatchObject({ arguments: [{ value: "start" }] });
+        expect(call?.params).toMatchObject({
+            arguments: [{ objectId: "obj-11" }, { value: "start" }],
+        });
     });
 
     it("requires exactly one scroll mode", async () => {

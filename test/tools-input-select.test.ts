@@ -68,7 +68,7 @@ function selectFake(world: SelectWorld = {}): FakeAccess {
 
                 if (declaration.includes("selectedOptions")) {
                     const indexes = ((params as { arguments?: Array<{ value?: unknown }> })
-                        ?.arguments?.[0]?.value ?? []) as number[];
+                        ?.arguments?.[1]?.value ?? []) as number[];
                     const options = world.options ?? OPTIONS;
 
                     return {
@@ -223,7 +223,9 @@ describe("input_select", () => {
                 String(declaration).includes("selectedOptions");
         });
 
-        expect(write?.params).toMatchObject({ arguments: [{ value: [2] }] });
+        expect(write?.params).toMatchObject({
+            arguments: [{ objectId: "obj-11" }, { value: [2] }],
+        });
     });
 
     it("selects by label and by index", async () => {

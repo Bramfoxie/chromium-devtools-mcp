@@ -126,6 +126,9 @@ export async function elementState(
     const result = await access.send(tab, "Runtime.callFunctionOn", {
         functionDeclaration: STATE_EXPRESSION,
         objectId           : element.objectId,
+        // callFunctionOn binds this but leaves declared parameters undefined,
+        // so the element travels as the first argument too.
+        arguments          : [{ objectId: element.objectId }],
         returnByValue      : true,
     });
     const parsed = stateSchema.safeParse(result);
@@ -159,8 +162,12 @@ export async function hitTest(
     const result = await access.send(tab, "Runtime.callFunctionOn", {
         functionDeclaration: HIT_EXPRESSION,
         objectId           : element.objectId,
-        arguments          : [{ value: point.x }, { value: point.y }],
-        returnByValue      : true,
+        arguments          : [
+            { objectId: element.objectId },
+            { value: point.x },
+            { value: point.y },
+        ],
+        returnByValue: true,
     });
     const parsed = hitSchema.safeParse(result);
 

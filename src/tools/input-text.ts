@@ -111,6 +111,7 @@ async function readValue(
         await access.send(tab, "Runtime.callFunctionOn", {
             functionDeclaration: VALUE_EXPRESSION,
             objectId           : element.objectId,
+            arguments          : [{ objectId: element.objectId }],
             returnByValue      : true,
         }),
     );

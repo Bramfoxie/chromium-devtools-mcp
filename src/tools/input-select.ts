@@ -147,6 +147,7 @@ async function readSelect(
         await access.send(tab, "Runtime.callFunctionOn", {
             functionDeclaration: SELECT_READ_EXPRESSION,
             objectId           : element.objectId,
+            arguments          : [{ objectId: element.objectId }],
             returnByValue      : true,
         }),
     );
@@ -239,7 +240,7 @@ export const inputSelect = defineTool({
             context.access.send(targetId, "Runtime.callFunctionOn", {
                 functionDeclaration: SELECT_WRITE_EXPRESSION,
                 objectId           : element.objectId,
-                arguments          : [{ value: matched.indexes }],
+                arguments          : [{ objectId: element.objectId }, { value: matched.indexes }],
                 returnByValue      : true,
             }));
 

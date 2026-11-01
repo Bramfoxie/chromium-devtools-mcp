@@ -129,14 +129,15 @@ async function mousePoint(
         checkDisabled: true,
     });
     const point = pointOf(scrolled.box, position);
-    const state = force
-        ? scrolled.state
-        : (await ensureActionable(context.access, targetId, element, {
-            checkDisabled: true,
-            hitTest      : { point, verb },
-        })).state;
 
-    return { point, state, box: scrolled.box };
+    if (force) return { point, state: scrolled.state, box: scrolled.box };
+
+    const checked = await ensureActionable(context.access, targetId, element, {
+        checkDisabled: true,
+        hitTest      : { point, verb },
+    });
+
+    return { point: pointOf(checked.box, position), state: checked.state, box: checked.box };
 }
 
 export const click = defineTool({
@@ -177,7 +178,7 @@ export const click = defineTool({
             context.access.send(targetId, "Runtime.callFunctionOn", {
                 functionDeclaration: CLICK_EXPRESSION,
                 objectId           : element.objectId,
-                arguments          : [{ value: scroll }],
+                arguments          : [{ objectId: element.objectId }, { value: scroll }],
                 returnByValue      : true,
             }));
 
@@ -361,6 +362,7 @@ export const inputHover = defineTool({
             await context.access.send(targetId, "Runtime.callFunctionOn", {
                 functionDeclaration: HOVER_EXPRESSION,
                 objectId           : element.objectId,
+                arguments          : [{ objectId: element.objectId }],
                 returnByValue      : true,
             }),
         );

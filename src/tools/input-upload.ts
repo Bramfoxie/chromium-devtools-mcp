@@ -13,11 +13,9 @@ export const UPLOAD_MAX_FILES = 20;
 
 export const UPLOAD_MAX_BYTES = 100 * 1024 * 1024;
 
-export const UPLOAD_CHANGE_EXPRESSION = `function (element) {
+export const UPLOAD_COUNT_EXPRESSION = `function (element) {
   if (!(element instanceof HTMLInputElement) || element.type !== "file") return { files: -1 };
-  const count = element.files === null ? 0 : element.files.length;
-  if (count > 0) element.dispatchEvent(new Event("change", { bubbles: true }));
-  return { files: count };
+  return { files: element.files === null ? 0 : element.files.length };
 }`;
 
 const uploadChangeSchema = z.object({
@@ -115,8 +113,10 @@ async function attachedCount(
 ): Promise<number> {
     const parsed = uploadChangeSchema.safeParse(
         await access.send(tab, "Runtime.callFunctionOn", {
-            functionDeclaration: UPLOAD_CHANGE_EXPRESSION,
+            // DOM.setFileInputFiles already fires change; read the count only.
+            functionDeclaration: UPLOAD_COUNT_EXPRESSION,
             objectId           : element.objectId,
+            arguments          : [{ objectId: element.objectId }],
             returnByValue      : true,
         }),
     );

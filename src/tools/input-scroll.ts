@@ -9,6 +9,8 @@ import { throwIfCancelled } from "./registry.js";
 
 export const SCROLL_DELTA_MAX = 20000;
 
+export const WHEEL_SETTLE_MS = 350;
+
 export const SCROLL_BLOCKS = ["start", "center", "end", "nearest"] as const;
 
 export type ScrollBlock = (typeof SCROLL_BLOCKS)[number];
@@ -101,22 +103,26 @@ export function scrollMoved(before: ScrollPosition, after: ScrollPosition): bool
 }
 
 async function wheelScroll(
-    access: DaemonAccess,
-    tab   : string,
-    before: ScrollPosition,
-    point : { x: number; y: number },
-    deltaX: number,
-    deltaY: number,
+    context : ToolContext,
+    targetId: string,
+    before  : ScrollPosition,
+    point   : { x: number; y: number },
+    deltaX  : number,
+    deltaY  : number,
 ): Promise<WheelScrollResult> {
-    await access.send(tab, "Input.dispatchMouseEvent", wheelParams(point, deltaX, deltaY));
+    await context.access.send(targetId, "Input.dispatchMouseEvent", wheelParams(point, deltaX, deltaY));
 
-    const after = await scrollState(access, tab);
+    // A wheel event applies asynchronously: smooth scrolling and the compositor
+    // move the page after the dispatch resolves, so wait before measuring.
+    await context.clock.sleep(WHEEL_SETTLE_MS);
+
+    const after = await scrollState(context.access, targetId);
 
     if (scrollMoved(before, after)) return { position: after, method: "wheel" };
 
     // The wheel moved nothing, so the page ignores wheel events; scroll by script instead.
     const fallback = fallbackSchema.safeParse(
-        await access.send(tab, "Runtime.evaluate", {
+        await context.access.send(targetId, "Runtime.evaluate", {
             expression   : `(() => { window.scrollBy(${JSON.stringify(deltaX)}, ${JSON.stringify(deltaY)}); return "scrolled"; })()`,
             returnByValue: true,
         }),
@@ -128,7 +134,7 @@ async function wheelScroll(
         );
     }
 
-    return { position: await scrollState(access, tab), method: "script" };
+    return { position: await scrollState(context.access, targetId), method: "script" };
 }
 
 export const inputScroll = defineTool({
@@ -207,7 +213,7 @@ export const inputScroll = defineTool({
         const deltaY = args.deltaY ?? 0;
 
         throwIfCancelled(context.signal);
-        const scrolled = await wheelScroll(context.access, targetId, state, point, deltaX, deltaY);
+        const scrolled = await wheelScroll(context, targetId, state, point, deltaX, deltaY);
 
         return {
             ok    : true,
@@ -251,7 +257,7 @@ async function scrollToElement(
     await context.access.send(targetId, "Runtime.callFunctionOn", {
         functionDeclaration: SCROLL_INTO_VIEW_EXPRESSION,
         objectId           : element.objectId,
-        arguments          : [{ value: block }],
+        arguments          : [{ objectId: element.objectId }, { value: block }],
         returnByValue      : true,
     });
 
@@ -285,14 +291,7 @@ async function scrollToEdge(
     maxY  : number;
 }> {
     const wanted = to === "top" ? -before.y - before.maxY : before.maxY - before.y + before.maxY;
-    const scrolled = await wheelScroll(
-        context.access,
-        targetId,
-        before,
-        point,
-        0,
-        clampDelta(wanted),
-    );
+    const scrolled = await wheelScroll(context, targetId, before, point, 0, clampDelta(wanted));
 
     return {
         ok    : true,
