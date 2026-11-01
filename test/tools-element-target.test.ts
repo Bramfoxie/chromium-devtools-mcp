@@ -110,13 +110,22 @@ describe("ElementRegistry", () => {
         }));
         const uids = elements.assign("tab1", nodes);
 
-        expect(uids.slice(0, MAX_UIDS_PER_TAB).every((uid) => uid !== undefined)).toBe(true);
-        expect(uids.slice(MAX_UIDS_PER_TAB)).toEqual(Array(5).fill(undefined));
-        expect(elements.lookup("tab1", `0_${MAX_UIDS_PER_TAB}`)).toBeDefined();
+        expect(uids.every((uid) => uid !== undefined)).toBe(true);
+        expect(elements.lookup("tab1", `0_${MAX_UIDS_PER_TAB + 5}`)).toBeDefined();
+        expect(elements.lookup("tab1", "0_1")).toBeUndefined();
         elements.reset();
 
-        expect(elements.lookup("tab1", `0_1`)).toBeUndefined();
+        expect(elements.lookup("tab1", `0_${MAX_UIDS_PER_TAB + 5}`)).toBeUndefined();
         expect(elements.generation("tab1")).toBe(0);
+    });
+
+    it("keeps the uid of a repeated element instead of burning the budget", () => {
+        const elements = new ElementRegistry();
+        const [first] = elements.assign("tab1", [{ backendNodeId: 7 }]);
+        const [second] = elements.assign("tab1", [{ backendNodeId: 7 }]);
+
+        expect(first).toBeDefined();
+        expect(second).toBe(first);
     });
 });
 
