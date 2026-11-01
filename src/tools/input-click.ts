@@ -2,8 +2,10 @@ import { z } from "zod";
 import type { DaemonAccess } from "../mcp/index.js";
 import {
     type ActionableElement,
+    coveredMessage,
     type ElementState,
     ensureActionable,
+    hitTest,
 } from "./actionability.js";
 import { clickPointOf, type ClickPoint, TOP_LEVEL_ORIGIN } from "./coordinates.js";
 import { defineTool, type ToolContext } from "./define-tool.js";
@@ -129,6 +131,7 @@ async function mousePoint(
     verb    : string,
     force   : boolean,
 ): Promise<{ point: ClickPoint; state: ElementState; box: Rect }> {
+    // One scroll and one box: the hit test and the dispatch share the point.
     const scrolled = await ensureActionable(context.access, targetId, element, {
         checkDisabled: true,
     });
@@ -136,12 +139,17 @@ async function mousePoint(
 
     if (force) return { point, state: scrolled.state, box: scrolled.box };
 
-    const checked = await ensureActionable(context.access, targetId, element, {
-        checkDisabled: true,
-        hitTest      : { point, verb },
-    });
+    const hit = await hitTest(context.access, targetId, element, point);
 
-    return { point: pointOf(checked.box, position), state: checked.state, box: checked.box };
+    if (hit.kind === "covered") throw new ToolError(coveredMessage(hit.by, verb));
+
+    if (hit.kind === "outside") {
+        throw new ToolError(
+            "The target point lies outside the page viewport. Scroll the page and try again.",
+        );
+    }
+
+    return { point, state: scrolled.state, box: scrolled.box };
 }
 
 export const click = defineTool({
