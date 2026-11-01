@@ -11,7 +11,8 @@ import {
     IpcClosedError,
     IpcTimeoutError,
     LineDecoder,
-    MAX_LINE_BYTES,
+    MAX_REQUEST_BYTES,
+    MAX_RESPONSE_BYTES,
     type RequestHandler,
     RpcError,
 } from "../src/daemon/index.js";
@@ -96,7 +97,7 @@ async function rawClient(socketPath: string): Promise<RawClient> {
     });
 
     harness.track(async () => void socket.destroy());
-    const decoder = new LineDecoder();
+    const decoder = new LineDecoder(MAX_RESPONSE_BYTES);
     const lines: string[] = [];
 
     socket.on("data", (chunk: Buffer) => lines.push(...decoder.push(chunk)));
@@ -271,7 +272,7 @@ describe("requests", () => {
     it.each([
         ["a malformed request without an id", '{"method":""}\n'],
         ["invalid JSON", "{broken\n"],
-        ["an oversized line", `${"x".repeat(MAX_LINE_BYTES + 10)}\n`],
+        ["an oversized line", `${"x".repeat(MAX_REQUEST_BYTES + 10)}\n`],
     ])("drops the connection after %s", async (_name, text) => {
         quietStderr();
         const server = await startServer();
@@ -316,7 +317,9 @@ describe("requests", () => {
         circular.self = circular;
         await expect(client.request("echo", circular)).rejects.toThrow();
         await expect(client.request("echo", 1n)).rejects.toThrow();
-        await expect(client.request("echo", "x".repeat(MAX_LINE_BYTES + 1))).rejects.toThrow(/exceeds/);
+        await expect(client.request("echo", "x".repeat(MAX_REQUEST_BYTES + 1))).rejects.toThrow(
+            /exceeds/,
+        );
         await expect(client.request("echo", "ok")).resolves.toBe("ok");
     });
 
@@ -347,6 +350,28 @@ describe("requests", () => {
         });
     });
 
+    it("passes a response between 1 MiB and 32 MiB", async () => {
+        const server = await startServer({
+            handler: async ({ method }) =>
+                method === "big" ? "x".repeat(MAX_REQUEST_BYTES + 100) : "alive",
+        });
+        const client = await connectClient(server);
+
+        await expect(client.request("big")).resolves.toHaveLength(MAX_REQUEST_BYTES + 100);
+        await expect(client.request("other")).resolves.toBe("alive");
+    });
+
+    it("refuses a request above 1 MiB and keeps the connection usable", async () => {
+        const server = await startServer();
+        const client = await connectClient(server);
+        const failure = await client
+            .request("echo", "x".repeat(MAX_REQUEST_BYTES + 1))
+            .catch((error: unknown) => error);
+
+        expect(String((failure as Error).message)).toContain("exceeds");
+        await expect(client.request("echo", "ok")).resolves.toBe("ok");
+    });
+
     it("does not crash the server when a handler finishes after the client left", async () => {
         const server = await startServer();
         const client = await connectClient(server);
@@ -363,7 +388,7 @@ describe("requests", () => {
 
 describe("handler failures", () => {
     it.each([
-        ["a result above the size limit", async () => "x".repeat(MAX_LINE_BYTES + 100)],
+        ["a result above the size limit", async () => "x".repeat(MAX_RESPONSE_BYTES)],
         ["a BigInt result", async () => 10n],
         [
             "a circular result",

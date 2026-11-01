@@ -5,7 +5,8 @@ import {
     ErrorCode,
     generateToken,
     IpcClient,
-    MAX_LINE_BYTES,
+    MAX_REQUEST_BYTES,
+    MAX_RESPONSE_BYTES,
     RpcError,
 } from "../src/daemon/index.js";
 import { CdpProtocolError } from "../src/cdp/index.js";
@@ -378,7 +379,7 @@ describe("commands and events", () => {
         expect(error.message).toContain("Cannot navigate");
     });
 
-    it("answers an oversized CDP result with a dedicated error", async () => {
+    it("passes a CDP result above 1 MiB and refuses one above 32 MiB", async () => {
         vi.spyOn(process.stderr, "write").mockImplementation(() => true);
         const { backend, connect } = await start();
         const client = await connect();
@@ -389,13 +390,23 @@ describe("commands and events", () => {
         await client.request("cdp.send", { targetId, method: "Page.enable" });
         const session = backend.sessions.get(targetId);
 
-        if (session) session.send = async () => ({ data: "x".repeat(MAX_LINE_BYTES + 10) });
+        if (session) session.send = async () => ({ data: "x".repeat(MAX_REQUEST_BYTES + 100) });
+
+        const passed = (await client.request("cdp.send", {
+            targetId,
+            method: "Page.captureScreenshot",
+        })) as { data: string };
+
+        expect(passed.data).toHaveLength(MAX_REQUEST_BYTES + 100);
+
+        if (session) session.send = async () => ({ data: "x".repeat(MAX_RESPONSE_BYTES) });
 
         const error = await failure(
             client.request("cdp.send", { targetId, method: "Page.captureScreenshot" }),
         );
 
         expect(error.code).toBe(ErrorCode.resultTooLarge);
+        expect(error.message).toContain("32 MiB");
         await expect(client.request("tab.list")).resolves.toBeDefined();
     });
 

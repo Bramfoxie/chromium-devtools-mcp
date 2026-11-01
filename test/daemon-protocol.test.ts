@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
     encodeMessage,
     LineDecoder,
-    MAX_LINE_BYTES,
+    MAX_REQUEST_BYTES,
+    MAX_RESPONSE_BYTES,
     ProtocolViolationError,
 } from "../src/daemon/index.js";
 import {
@@ -17,67 +18,96 @@ describe("encodeMessage", () => {
         expect(encodeMessage({ id: 1, method: "ping" })).toBe('{"id":1,"method":"ping"}\n');
     });
 
-    it("accepts a message at the size limit and rejects one above it", () => {
-        const overhead = Buffer.byteLength(JSON.stringify({ s: "" }));
-        const fits = { s: "x".repeat(MAX_LINE_BYTES - overhead) };
+    it("uses a 1 MiB request limit and a 32 MiB response limit", () => {
+        expect(MAX_REQUEST_BYTES).toBe(1048576);
+        expect(MAX_RESPONSE_BYTES).toBe(33554432);
+    });
 
-        expect(encodeMessage(fits).length).toBe(MAX_LINE_BYTES + 1);
-        expect(() => encodeMessage({ s: "x".repeat(MAX_LINE_BYTES - overhead + 1) })).toThrow(
+    it("caps requests at 1 MiB", () => {
+        const overhead = Buffer.byteLength(JSON.stringify({ s: "" }));
+        const fits = { s: "x".repeat(MAX_REQUEST_BYTES - overhead) };
+
+        expect(encodeMessage(fits, MAX_REQUEST_BYTES).length).toBe(MAX_REQUEST_BYTES + 1);
+        expect(() =>
+            encodeMessage({ s: "x".repeat(MAX_REQUEST_BYTES - overhead + 1) }, MAX_REQUEST_BYTES),
+        ).toThrow(ProtocolViolationError);
+    });
+
+    it("accepts a response above 1 MiB and rejects one above 32 MiB", () => {
+        const overhead = Buffer.byteLength(JSON.stringify({ s: "" }));
+        const large = { s: "x".repeat(MAX_REQUEST_BYTES + 100) };
+
+        expect(encodeMessage(large).length).toBe(MAX_REQUEST_BYTES + overhead + 101);
+        const fits = { s: "x".repeat(MAX_RESPONSE_BYTES - overhead) };
+
+        expect(encodeMessage(fits).length).toBe(MAX_RESPONSE_BYTES + 1);
+        expect(() => encodeMessage({ s: "x".repeat(MAX_RESPONSE_BYTES - overhead + 1) })).toThrow(
             ProtocolViolationError,
         );
     });
 });
 
 describe("LineDecoder", () => {
-    it("uses a one mebibyte limit", () => {
-        expect(MAX_LINE_BYTES).toBe(1048576);
-    });
-
-    it("accepts exactly 1048576 bytes and rejects one more", () => {
-        expect(new LineDecoder().push(`${"x".repeat(1048576)}\n`)).toHaveLength(1);
-        expect(() => new LineDecoder().push(`${"x".repeat(1048577)}\n`)).toThrow(
+    it("enforces the limit it was built with on both boundaries", () => {
+        expect(new LineDecoder(MAX_REQUEST_BYTES).push(`${"x".repeat(1048576)}\n`)).toHaveLength(1);
+        expect(() => new LineDecoder(MAX_REQUEST_BYTES).push(`${"x".repeat(1048577)}\n`)).toThrow(
             ProtocolViolationError,
         );
+        expect(new LineDecoder(MAX_RESPONSE_BYTES).push(`${"x".repeat(1048577)}\n`)).toHaveLength(1);
     });
 
     it("handles a long unterminated line sent in tiny chunks in linear time", { timeout: 10_000 }, () => {
-        const decoder = new LineDecoder();
+        const decoder = new LineDecoder(MAX_REQUEST_BYTES);
 
         for (let i = 0; i < 100_000; i += 1) decoder.push("x");
         expect(decoder.push("\n")).toHaveLength(1);
     });
 
     it("handles many short lines in one chunk in linear time", { timeout: 10_000 }, () => {
-        const lines = new LineDecoder().push("a\n".repeat(200_000));
+        const lines = new LineDecoder(MAX_REQUEST_BYTES).push("a\n".repeat(200_000));
 
         expect(lines).toHaveLength(200_000);
     });
 
+    it("decodes a 31 MiB line in linear time", { timeout: 30_000 }, () => {
+        const decoder = new LineDecoder(MAX_RESPONSE_BYTES);
+        const line = "x".repeat(31 * 1024 * 1024);
+
+        expect(decoder.push(`${line}\n`)).toEqual([line]);
+    });
+
     it("keeps the byte count across chunks for a line that finally completes", () => {
-        const decoder = new LineDecoder();
+        const decoder = new LineDecoder(MAX_REQUEST_BYTES);
 
         decoder.push("x".repeat(1048576 - 1));
         expect(() => decoder.push("yy\n")).toThrow(ProtocolViolationError);
     });
 
     it("returns complete lines and keeps the rest", () => {
-        const decoder = new LineDecoder();
+        const decoder = new LineDecoder(MAX_REQUEST_BYTES);
 
         expect(decoder.push('{"a":1}\n{"b"')).toEqual(['{"a":1}']);
         expect(decoder.push(":2}\n")).toEqual(['{"b":2}']);
     });
 
     it("returns several lines from one chunk", () => {
-        expect(new LineDecoder().push("one\ntwo\nthree\n")).toEqual(["one", "two", "three"]);
+        expect(new LineDecoder(MAX_REQUEST_BYTES).push("one\ntwo\nthree\n")).toEqual([
+            "one",
+            "two",
+            "three",
+        ]);
     });
 
     it("accepts CRLF and skips empty lines", () => {
-        expect(new LineDecoder().push("one\r\n\r\n\ntwo\n")).toEqual(["one", "two"]);
+        expect(new LineDecoder(MAX_REQUEST_BYTES).push("one\r\n\r\n\ntwo\n")).toEqual([
+            "one",
+            "two",
+        ]);
     });
 
     it("does not split a multibyte character across chunks", () => {
         const bytes = Buffer.from("\u044f\u044f\n");
-        const decoder = new LineDecoder();
+        const decoder = new LineDecoder(MAX_REQUEST_BYTES);
 
         expect(decoder.push(bytes.subarray(0, 1))).toEqual([]);
         expect(decoder.push(bytes.subarray(1, 3))).toEqual([]);
@@ -85,28 +115,30 @@ describe("LineDecoder", () => {
     });
 
     it("accepts a line at the limit", () => {
-        const line = "x".repeat(MAX_LINE_BYTES);
+        const line = "x".repeat(MAX_REQUEST_BYTES);
 
-        expect(new LineDecoder().push(`${line}\n`)).toEqual([line]);
+        expect(new LineDecoder(MAX_REQUEST_BYTES).push(`${line}\n`)).toEqual([line]);
     });
 
     it("rejects a complete line above the limit", () => {
-        expect(() => new LineDecoder().push(`${"x".repeat(MAX_LINE_BYTES + 1)}\n`)).toThrow(
-            ProtocolViolationError,
-        );
+        expect(() =>
+            new LineDecoder(MAX_REQUEST_BYTES).push(`${"x".repeat(MAX_REQUEST_BYTES + 1)}\n`),
+        ).toThrow(ProtocolViolationError);
     });
 
     it("rejects an unterminated line that grows above the limit", () => {
-        const decoder = new LineDecoder();
+        const decoder = new LineDecoder(MAX_REQUEST_BYTES);
 
-        expect(decoder.push("x".repeat(MAX_LINE_BYTES))).toEqual([]);
+        expect(decoder.push("x".repeat(MAX_REQUEST_BYTES))).toEqual([]);
         expect(() => decoder.push("x")).toThrow(ProtocolViolationError);
     });
 
     it("measures the limit in bytes", () => {
-        const wide = "\u044f".repeat(MAX_LINE_BYTES / 2 + 1);
+        const wide = "\u044f".repeat(MAX_REQUEST_BYTES / 2 + 1);
 
-        expect(() => new LineDecoder().push(`${wide}\n`)).toThrow(ProtocolViolationError);
+        expect(() => new LineDecoder(MAX_REQUEST_BYTES).push(`${wide}\n`)).toThrow(
+            ProtocolViolationError,
+        );
     });
 });
 

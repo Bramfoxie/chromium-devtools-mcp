@@ -6,6 +6,8 @@ import {
     ErrorCode,
     helloParamsSchema,
     LineDecoder,
+    MAX_REQUEST_BYTES,
+    MAX_RESPONSE_BYTES,
     parseLine,
     requestSchema,
 } from "./protocol.js";
@@ -15,7 +17,7 @@ const DEFAULT_HELLO_TIMEOUT_MS = 5000;
 const MAX_IN_FLIGHT = 64;
 const MAX_WRITE_BUFFER_BYTES = 8 * 1024 * 1024;
 const INTERNAL_MESSAGE = "The daemon failed to handle the request.";
-const TOO_LARGE_MESSAGE = "The result is larger than the 1 MiB limit of the daemon protocol.";
+const TOO_LARGE_MESSAGE = "The result exceeds the 32 MiB limit of the daemon protocol. Ask for less data.";
 
 export interface ClientConnection {
     readonly clientName: string;
@@ -51,7 +53,7 @@ function guarded(label: string, action: (() => void) | undefined): void {
 }
 
 export function acceptConnection(socket: net.Socket, options: AcceptOptions): void {
-    const decoder = new LineDecoder();
+    const decoder = new LineDecoder(MAX_REQUEST_BYTES);
     let connection: ClientConnection | undefined;
     let inFlight = 0;
 
@@ -60,7 +62,7 @@ export function acceptConnection(socket: net.Socket, options: AcceptOptions): vo
     const write = (message: unknown) => {
         if (socket.destroyed || !socket.writable) return;
 
-        socket.write(encodeMessage(message));
+        socket.write(encodeMessage(message, MAX_RESPONSE_BYTES));
 
         if (socket.writableLength > MAX_WRITE_BUFFER_BYTES) {
             logDaemon("dropped a client that does not read its messages");

@@ -1,7 +1,14 @@
 import net from "node:net";
 import { IpcClosedError, IpcTimeoutError, RpcError } from "./errors.js";
 import { describeError, logDaemon, quoted } from "./log.js";
-import { encodeMessage, LineDecoder, parseLine, serverMessageSchema } from "./protocol.js";
+import {
+    encodeMessage,
+    LineDecoder,
+    MAX_REQUEST_BYTES,
+    MAX_RESPONSE_BYTES,
+    parseLine,
+    serverMessageSchema,
+} from "./protocol.js";
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 const DEFAULT_CONNECT_TIMEOUT_MS = 5000;
@@ -29,7 +36,7 @@ export class IpcClient {
     private isClosed = false;
     private readonly pending = new Map<number, Pending>();
     private readonly handlers = new Map<string, Set<IpcEventHandler>>();
-    private readonly decoder = new LineDecoder();
+    private readonly decoder = new LineDecoder(MAX_RESPONSE_BYTES);
     private readonly closedSignal: Promise<void>;
     private hello                : unknown;
 
@@ -94,7 +101,7 @@ export class IpcClient {
         let line: string;
 
         try {
-            line = encodeMessage({ id, method, params });
+            line = encodeMessage({ id, method, params }, MAX_REQUEST_BYTES);
         } catch (error) {
             return Promise.reject(error);
         }

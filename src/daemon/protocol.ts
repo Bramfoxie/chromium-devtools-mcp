@@ -2,7 +2,9 @@ import { StringDecoder } from "node:string_decoder";
 import { z } from "zod";
 import { ProtocolViolationError } from "./errors.js";
 
-export const MAX_LINE_BYTES = 1024 * 1024;
+export const MAX_REQUEST_BYTES = 1024 * 1024;
+
+export const MAX_RESPONSE_BYTES = 32 * 1024 * 1024;
 
 export const ErrorCode = {
     badRequest     : "bad_request",
@@ -60,11 +62,11 @@ export type ServerEvent = z.infer<typeof eventSchema>;
 
 export type HelloParams = z.infer<typeof helloParamsSchema>;
 
-export function encodeMessage(message: unknown): string {
+export function encodeMessage(message: unknown, maxBytes: number = MAX_RESPONSE_BYTES): string {
     const line = JSON.stringify(message);
 
-    if (Buffer.byteLength(line) > MAX_LINE_BYTES) {
-        throw new ProtocolViolationError(`a message exceeds ${MAX_LINE_BYTES} bytes`);
+    if (Buffer.byteLength(line) > maxBytes) {
+        throw new ProtocolViolationError(`a message exceeds ${maxBytes} bytes`);
     }
 
     return `${line}\n`;
@@ -83,6 +85,8 @@ export class LineDecoder {
     private pending = "";
     private pendingBytes = 0;
 
+    constructor(private readonly maxBytes: number = MAX_RESPONSE_BYTES) {}
+
     push(chunk: Buffer | string): string[] {
         const text = typeof chunk === "string" ? chunk : this.decoder.write(chunk);
         const lines: string[] = [];
@@ -93,8 +97,8 @@ export class LineDecoder {
             const segment = text.slice(start, end === -1 ? text.length : end);
             const bytes = this.pendingBytes + Buffer.byteLength(segment);
 
-            if (bytes > MAX_LINE_BYTES) {
-                throw new ProtocolViolationError(`a line exceeds ${MAX_LINE_BYTES} bytes`);
+            if (bytes > this.maxBytes) {
+                throw new ProtocolViolationError(`a line exceeds ${this.maxBytes} bytes`);
             }
 
             if (end === -1) {
