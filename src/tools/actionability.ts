@@ -95,6 +95,16 @@ export const HIT_EXPRESSION = `function (element, x, y) {
   const px = Number(x), py = Number(y);
   const doc = element.ownerDocument;
   if (doc === null || doc.defaultView === null) return { kind: "outside" };
+  const shown = (el) => {
+    if (el === null || el === undefined) return false;
+    if (el.getClientRects && el.getClientRects().length === 0) return false;
+    const style = el.ownerDocument && el.ownerDocument.defaultView
+      ? el.ownerDocument.defaultView.getComputedStyle(el)
+      : null;
+    if (style !== null && (style.visibility === "hidden" || style.display === "none")) return false;
+    return true;
+  };
+  if (!shown(element)) return { kind: "covered", tag: element.localName, id: element.id, classes: [...element.classList].slice(0, 10) };
   let top = doc.defaultView;
   while (top.parent !== top) top = top.parent;
   const topDoc = top.document;
@@ -104,7 +114,11 @@ export const HIT_EXPRESSION = `function (element, x, y) {
     const el = scope.elementFromPoint(sx, sy);
     if (el === null) return { kind: "outside" };
     if (el === element) return { kind: "hit" };
-    if (element.contains(el)) return { kind: "hit" };
+    if (element.contains(el)) {
+      // elementFromPoint skips pointer-events:none and visibility:hidden
+      // nodes: the point lands on the parent, not on the target.
+      return { kind: "covered", tag: el.localName, id: el.id, classes: [...el.classList].slice(0, 10) };
+    }
     let node = element;
     let ancestor = false;
     for (let i = 0; i < 60 && node !== null; i++) {
@@ -115,7 +129,7 @@ export const HIT_EXPRESSION = `function (element, x, y) {
     if (ancestor) {
       const shadow = el.shadowRoot;
       if (shadow) { scope = shadow; continue; }
-      return { kind: "hit" };
+      return { kind: "covered", tag: el.localName, id: el.id, classes: [...el.classList].slice(0, 10) };
     }
     const tag = el.localName;
     if ((tag === "iframe" || tag === "frame") && el.contentDocument) {
