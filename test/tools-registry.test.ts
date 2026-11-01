@@ -35,7 +35,7 @@ const readOnly: Config = {
 };
 
 describe("tool declarations", () => {
-    it("declares thirty three tools with unique names, descriptions and access", () => {
+    it("declares thirty four tools with unique names, descriptions and access", () => {
         expect(allTools.map((tool) => tool.name)).toEqual([
             "list_tabs",
             "list_sessions",
@@ -54,6 +54,7 @@ describe("tool declarations", () => {
             "page_dialogs",
             "page_wait",
             "storage_read",
+            "storage_write",
             "page_pdf",
             "page_metrics",
             "screenshot",
@@ -100,6 +101,7 @@ describe("tool declarations", () => {
             "page_dialogs",
             "page_navigate",
             "select_tab",
+            "storage_write",
         ]);
     });
 
@@ -262,7 +264,7 @@ describe("runTool", () => {
 });
 
 describe("tools/list", () => {
-    it("lists exactly the thirty three tools with their schemas", async () => {
+    it("lists exactly the thirty four tools with their schemas", async () => {
         const server = createMcpServer("1.0.0");
 
         registerTools({ server, tools: allTools, runtime: runtime() });
@@ -290,6 +292,7 @@ describe("tools/list", () => {
             "page_dialogs",
             "page_wait",
             "storage_read",
+            "storage_write",
             "page_pdf",
             "page_metrics",
             "screenshot",

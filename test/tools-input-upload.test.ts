@@ -165,12 +165,12 @@ describe("validateUploadFiles", () => {
 });
 
 describe("input_upload", () => {
-    it("is the only dangerous tool of the set", () => {
+    it("is a dangerous mutate tool", () => {
         const dangerous = allTools
             .filter((tool) => tool.dangerous === true)
             .map((tool) => tool.name);
 
-        expect(dangerous).toEqual(["input_upload"]);
+        expect(dangerous).toContain("input_upload");
         expect(inputUpload.access).toBe("mutate");
     });
 

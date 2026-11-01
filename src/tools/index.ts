@@ -195,6 +195,19 @@ export {
 } from "./storage-read.js";
 
 export {
+    checkCookieDomain,
+    cookieDomainAllowed,
+    pageHostOf,
+    storageWrite,
+    WRITE_MAX_COOKIES,
+    WRITE_MAX_COOKIE_NAME_CHARS,
+    WRITE_MAX_ENTRIES,
+    WRITE_MAX_KEY_CHARS,
+    WRITE_MAX_KEYS,
+    WRITE_MAX_VALUE_CHARS,
+} from "./storage-write.js";
+
+export {
     elementFunctionDeclaration,
     EVALUATE_DEFAULT_RESULT_CHARS,
     EVALUATE_DEFAULT_TIMEOUT_MS,
