@@ -160,47 +160,69 @@ export function shapeMatchedRules(
     entries : Array<z.infer<typeof matchedEntrySchema>>,
     maxRules: number,
 ): CssRule[] {
+    // CDP orders matched rules least specific first: the winner is the last
+    // important declaration when any is important, else the last declaration.
+    const scored = entries.map((entry, rule) => ({
+        entry,
+        rule,
+        important: entry.rule.style.cssProperties.some(
+            (property) => property.name !== "" && (property.important ?? false),
+        ),
+    }));
+    const anyImportant = scored.some((item) => item.important);
     const last = new Map<string, { rule: number; declaration: number }>();
-    const kept = entries.slice(0, maxRules);
 
-    kept.forEach((entry, rule) => {
-        entry.rule.style.cssProperties.forEach((property, declaration) => {
-            if (property.name !== "") last.set(property.name, { rule, declaration });
+    scored.forEach((item) => {
+        item.entry.rule.style.cssProperties.forEach((property, declaration) => {
+            const important = property.important ?? false;
+
+            if (property.name === "" || (anyImportant && !important)) return;
+
+            last.set(property.name, { rule: item.rule, declaration });
         });
     });
 
-    return kept.map((entry, rule) => ({
-        selector    : entry.rule.selectorList.selectors.map((selector) => selector.text).join(", "),
-        origin      : entry.rule.origin,
-        styleSheetId: entry.rule.styleSheetId,
-        declarations: entry.rule.style.cssProperties
-            .filter((property) => property.name !== "")
-            .map((property, declaration) => {
-                const winner = last.get(property.name);
+    // Keep the most specific rules: truncation drops the least specific.
+    const kept = scored.slice(-maxRules);
 
-                return {
-                    name     : property.name,
-                    value    : clipCssValue(property.value),
-                    important: property.important ?? false,
-                    winning  : winner?.rule === rule && winner?.declaration === declaration,
-                };
-            }),
-    }));
+    return kept.map((item) => {
+        const anchor = entries.indexOf(item.entry);
+
+        return {
+            selector    : item.entry.rule.selectorList.selectors.map((selector) => selector.text).join(", "),
+            origin      : item.entry.rule.origin,
+            styleSheetId: item.entry.rule.styleSheetId,
+            declarations: item.entry.rule.style.cssProperties
+                .filter((property) => property.name !== "")
+                .map((property, declaration) => {
+                    const winner = last.get(property.name);
+
+                    return {
+                        name     : property.name,
+                        value    : clipCssValue(property.value),
+                        important: property.important ?? false,
+                        winning  : winner?.rule === anchor && winner?.declaration === declaration,
+                    };
+                }),
+        };
+    });
 }
 
 export function shapeInherited(
     inherited: NonNullable<z.infer<typeof matchedSchema>["inherited"]>,
 ): InheritedStyle[] {
+    // Ancestor rules arrive least specific first: the last matching
+    // declaration per property wins, mirroring the cascade.
     const shaped: InheritedStyle[] = [];
     const seen = new Set<string>();
 
-    for (const entry of inherited) {
-        for (const matched of entry.matchedCSSRules ?? []) {
+    for (const entry of [...inherited].reverse()) {
+        for (const matched of [...(entry.matchedCSSRules ?? [])].reverse()) {
             const selector = matched.rule.selectorList.selectors
                 .map((item) => item.text)
                 .join(", ");
 
-            for (const property of matched.rule.style.cssProperties) {
+            for (const property of [...matched.rule.style.cssProperties].reverse()) {
                 if (!INHERITED_PROPERTIES.has(property.name) || seen.has(property.name)) continue;
 
                 seen.add(property.name);
@@ -213,7 +235,7 @@ export function shapeInherited(
         }
     }
 
-    return shaped;
+    return shaped.reverse();
 }
 
 export interface CssRect {

@@ -91,9 +91,49 @@ describe("shapeMatchedRules", () => {
     it("limits the number of rules", () => {
         expect(shapeMatchedRules([rule("a", []), rule("b", [])], 1)).toHaveLength(1);
     });
+
+    it("prefers important declarations over later plain ones", () => {
+        const shaped = shapeMatchedRules(
+            [
+                rule(".a", [{ name: "color", value: "red", important: true }]),
+                rule("#b", [{ name: "color", value: "blue" }]),
+            ],
+            30,
+        );
+
+        expect(shaped[0]?.declarations).toEqual([
+            { name: "color", value: "red", important: true, winning: true },
+        ]);
+        expect(shaped[1]?.declarations).toEqual([
+            { name: "color", value: "blue", important: false, winning: false },
+        ]);
+    });
+
+    it("keeps the most specific rules when truncating", () => {
+        const shaped = shapeMatchedRules(
+            [rule("a", [{ name: "color", value: "red" }]), rule("b", [{ name: "color", value: "blue" }])],
+            1,
+        );
+
+        expect(shaped).toHaveLength(1);
+        expect(shaped[0]?.selector).toBe("b");
+    });
 });
 
 describe("shapeInherited", () => {
+    it("prefers the most specific ancestor rule", () => {
+        expect(
+            shapeInherited([
+                {
+                    matchedCSSRules: [
+                        rule("p", [{ name: "color", value: "red" }]),
+                        rule("#x", [{ name: "color", value: "blue" }]),
+                    ],
+                },
+            ]),
+        ).toEqual([{ property: "color", value: "blue", selector: "#x" }]);
+    });
+
     it("keeps only inherited properties that are set", () => {
         expect(
             shapeInherited([
