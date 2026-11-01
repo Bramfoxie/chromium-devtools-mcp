@@ -156,6 +156,8 @@ describe("dom_query", () => {
         const { runtime } = setup(fake);
 
         await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+
         const result = await runTool(domQuery, { selector: "a" }, extra(), runtime);
 
         expect(result.structuredContent).toEqual({
@@ -194,6 +196,8 @@ describe("dom_query", () => {
         const { runtime } = setup(fake);
 
         await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+
         const result = await runTool(domQuery, { selector: "li", all: true, limit: 1 }, extra(), runtime);
 
         expect(result.structuredContent).toMatchObject({ total: 3, returned: 1 });
@@ -205,6 +209,8 @@ describe("dom_query", () => {
         const { runtime } = setup(fake);
 
         await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+
         const result = await runTool(
             domQuery,
             { selector: "li", all: true, text: "CHERRY", includeBox: false },
@@ -256,6 +262,8 @@ describe("dom_query", () => {
         const { runtime } = setup(fake);
 
         await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+
         const result = await runTool(domQuery, { selector: "input" }, extra(), runtime);
 
         expect(result.structuredContent).toMatchObject({
@@ -276,6 +284,8 @@ describe("dom_query", () => {
         const { runtime } = setup(fake);
 
         await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+
         const result = await runTool(domQuery, { selector: "??", all: true }, extra(), runtime);
 
         expect(result.isError).toBe(true);
@@ -287,6 +297,8 @@ describe("dom_query", () => {
         const { runtime } = setup(fake);
 
         await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+
         const result = await runTool(domQuery, { selector: ".missing" }, extra(), runtime);
 
         expect(result.isError).not.toBe(true);

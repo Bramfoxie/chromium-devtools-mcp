@@ -46,6 +46,9 @@ export const newTab = defineTool({
     target : (args) => (args.url === undefined ? undefined : { url: args.url }),
     handler: async (args, context) => {
         const targetId = await context.access.createTab(args.url);
+
+        await context.capture.ensureConsole(targetId).catch(() => undefined);
+
         const select = args.select === false ? context.state.selected : targetId;
         const tabs = await refresh(context, select);
         const tab = tabs.find((known) => known.targetId === targetId) ?? {
@@ -146,6 +149,7 @@ export const selectTab = defineTool({
         }
 
         context.tabs.refresh(tabs, tab.targetId);
+        await context.capture.ensureConsole(tab.targetId).catch(() => undefined);
 
         return {
             tab: {
@@ -184,6 +188,8 @@ export const closeTab = defineTool({
 
             throw error;
         }
+
+        context.capture.forget(targetId);
 
         const tabs = await context.access.listTabs("owned");
         const kept = tabs.some((tab) => tab.targetId === context.state.selected);

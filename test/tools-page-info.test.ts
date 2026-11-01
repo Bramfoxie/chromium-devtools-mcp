@@ -62,6 +62,8 @@ describe("page_info", () => {
         const { runtime } = setup(fake);
 
         await runTool(newTab, { url: "https://example.org/" }, extra(), runtime);
+        fake.sent.length = 0;
+
         const result = await runTool(pageInfo, {}, extra(), runtime);
 
         expect(result.structuredContent).toMatchObject({
@@ -89,7 +91,11 @@ describe("page_info", () => {
         const { runtime } = setup(fake);
 
         await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+
         await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+
         const result = await runTool(pageInfo, { tab: "tab1" }, extra(), runtime);
 
         expect(result.structuredContent).toMatchObject({ tab: "tab1", selected: false, source: "page" });
@@ -103,6 +109,8 @@ describe("page_info", () => {
         const { runtime } = setup(fake);
 
         await runTool(newTab, { url: "https://example.org/" }, extra(), runtime);
+        fake.sent.length = 0;
+
         const result = await runTool(pageInfo, {}, extra(), runtime);
 
         expect(result.isError).not.toBe(true);
@@ -119,6 +127,8 @@ describe("page_info", () => {
         const { runtime } = setup(fake);
 
         await runTool(newTab, { url: "https://example.org/" }, extra(), runtime);
+        fake.sent.length = 0;
+
         const result = await runTool(pageInfo, {}, extra(), runtime);
 
         expect(result.structuredContent).toMatchObject({ source: "tab-list" });

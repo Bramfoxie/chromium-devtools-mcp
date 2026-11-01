@@ -166,6 +166,8 @@ describe("js_evaluate", () => {
         const { runtime } = setup(fake);
 
         await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+
         const result = await runTool(jsEvaluate, { expression: "2 + 2" }, extra(), runtime);
 
         expect(result.structuredContent).toEqual({
@@ -196,6 +198,8 @@ describe("js_evaluate", () => {
         const { runtime } = setup(fake);
 
         await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+
         const result = await runTool(
             jsEvaluate,
             { expression: "'abcdefghij'", awaitPromise: false, timeoutMs: 5000, maxResultChars: 5 },
@@ -227,6 +231,8 @@ describe("js_evaluate", () => {
         const { runtime } = setup(fake);
 
         await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+
         const result = await runTool(jsEvaluate, { expression: "x" }, extra(), runtime);
 
         expect(result.isError).not.toBe(true);
@@ -260,6 +266,9 @@ describe("js_evaluate", () => {
         const { runtime } = setup(fake);
 
         await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+        calls.length = 0;
+
         const result = await runTool(jsEvaluate, { expression: "window" }, extra(), runtime);
 
         expect(result.structuredContent).toEqual({
@@ -301,6 +310,9 @@ describe("js_evaluate", () => {
         const { runtime } = setup(fake);
 
         await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+        calls.length = 0;
+
         const result = await runTool(jsEvaluate, { expression: "document.querySelector('h1')" }, extra(), runtime);
 
         expect(result.structuredContent).toEqual({
@@ -330,6 +342,9 @@ describe("js_evaluate", () => {
         const { runtime } = setup(fake);
 
         await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+        calls = 0;
+
         const result = await runTool(jsEvaluate, { expression: "({})" }, extra(), runtime);
 
         expect(result.structuredContent).toMatchObject({ ok: true, value: {} });
@@ -343,6 +358,8 @@ describe("js_evaluate", () => {
         const { runtime } = setup(fake);
 
         await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+
         const result = await runTool(jsEvaluate, { expression: "1" }, extra(), runtime);
 
         expect(result.isError).toBe(true);
@@ -365,6 +382,8 @@ describe("js_evaluate", () => {
         const { runtime } = setup(fake);
 
         await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+
         const result = await runTool(
             jsEvaluate,
             { expression: "while (true) {}", timeoutMs: 1000 },
@@ -387,6 +406,7 @@ describe("js_evaluate", () => {
         const { runtime } = setup(fake);
 
         await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
         runtime.elements.nextGeneration("tab1");
 
         const [uid] = runtime.elements.assign("tab1", [{ backendNodeId: 7 }]);
@@ -423,6 +443,8 @@ describe("js_evaluate", () => {
         const { fake, runtime } = setup();
 
         await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+
         const result = await runTool(
             jsEvaluate,
             { expression: "1", target: { uid: "9_9" } },

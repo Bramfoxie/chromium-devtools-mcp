@@ -174,6 +174,8 @@ describe("css_inspect", () => {
         const { runtime } = setup(fake);
 
         await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+
         runtime.elements.nextGeneration("tab1");
 
         const [uid] = runtime.elements.assign("tab1", [{ backendNodeId: 7 }]);
@@ -214,6 +216,8 @@ describe("css_inspect", () => {
         const { runtime } = setup(fake);
 
         await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+
         runtime.elements.nextGeneration("tab1");
 
         const [uid] = runtime.elements.assign("tab1", [{ backendNodeId: 7 }]);
@@ -239,6 +243,8 @@ describe("css_inspect", () => {
         const { fake, runtime } = setup();
 
         await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+
         const result = await runTool(cssInspect, { target: { uid: "5_5" } }, extra(), runtime);
 
         expect(result.isError).toBe(true);

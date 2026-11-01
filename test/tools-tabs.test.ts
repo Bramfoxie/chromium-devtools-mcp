@@ -85,6 +85,30 @@ describe("new_tab", () => {
         expect(textOf(result)).toContain("read-only mode");
         expect(fake.created).toEqual([]);
     });
+
+    it("starts console capture for the new tab", async () => {
+        const { fake, runtime } = setup();
+
+        await runTool(newTab, {}, extra(), runtime);
+
+        expect(runtime.capture.consoleEnabled("tab1")).toBe(true);
+        expect(fake.sent.map((call) => call.method)).toEqual(["Runtime.enable", "Log.enable"]);
+        expect(fake.subscribed).toContainEqual({
+            targetId: "tab1",
+            event   : "Runtime.consoleAPICalled",
+        });
+    });
+
+    it("opens the tab even when console capture fails", async () => {
+        const fake = new FakeAccess();
+
+        fake.failSend = () => new RpcError(ErrorCode.cdpError, "No such target");
+        const { runtime } = setup(managedConfig, fake);
+        const result = await runTool(newTab, {}, extra(), runtime);
+
+        expect(result.isError).not.toBe(true);
+        expect(result.structuredContent).toMatchObject({ tab: { tab: "tab1" } });
+    });
 });
 
 describe("list_tabs", () => {
@@ -169,6 +193,19 @@ describe("select_tab", () => {
         expect(runtime.tabs.selected()).toBe("user1");
     });
 
+    it("starts console capture for a claimed tab", async () => {
+        const fake = new FakeAccess({
+            tabs: [
+                { targetId: "user1", url: "https://user.example/", title: "user tab", owned: false, created: false },
+            ],
+        });
+        const { runtime } = setup(managedConfig, fake);
+
+        await runTool(selectTab, { tab: "user1" }, extra(), runtime);
+
+        expect(runtime.capture.consoleEnabled("user1")).toBe(true);
+    });
+
     it("reports an unknown tab with an action", async () => {
         const { runtime } = setup();
         const result = await runTool(selectTab, { tab: "nope" }, extra(), runtime);
@@ -238,6 +275,16 @@ describe("close_tab", () => {
         expect(result.isError).toBe(true);
         expect(textOf(result)).toContain("released when the session ends");
         expect(fake.tabs).toHaveLength(1);
+    });
+
+    it("forgets the capture of the closed tab", async () => {
+        const { runtime } = setup();
+
+        await runTool(newTab, {}, extra(), runtime);
+        expect(runtime.capture.consoleEnabled("tab1")).toBe(true);
+        await runTool(closeTab, {}, extra(), runtime);
+
+        expect(runtime.capture.consoleEnabled("tab1")).toBe(false);
     });
 
     it("names new_tab when no tab is selected", async () => {

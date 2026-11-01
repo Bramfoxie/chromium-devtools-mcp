@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { Config } from "../config/index.js";
 import type { DaemonAccess } from "../mcp/index.js";
+import type { CaptureManager } from "./capture/manager.js";
 import type { ElementRegistry } from "./element-target.js";
 import type { FocusEmulation } from "./focus-emulation.js";
 import type { SafetyAccess, SafetyDecision, SafetyTarget } from "./safety.js";
@@ -38,6 +39,7 @@ export interface ToolContext {
     tabs    : TabSelection;
     elements: ElementRegistry;
     focus   : FocusEmulation;
+    capture : CaptureManager;
     config  : Config;
     clock   : ToolClock;
     signal  : AbortSignal;

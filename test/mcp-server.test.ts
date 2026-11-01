@@ -19,8 +19,10 @@ import {
     daemonScriptPath,
     packageVersion,
     readPackageVersion,
+    registerServerTools,
     runMcpServer,
 } from "../src/mcp/index.js";
+import { FakeAccess } from "./helpers/fake-access.js";
 import { managedConfig } from "./helpers/daemon-env.js";
 
 afterEach(() => {
@@ -163,6 +165,34 @@ describe("createMcpServer", () => {
         expect((await client.listTools()).tools.map((tool) => tool.name)).toEqual(["ping"]);
         await client.close();
         await server.close();
+    });
+});
+
+describe("registerServerTools", () => {
+    it("routes daemon events to the capture manager and clears it on reset", async () => {
+        const fake = new FakeAccess();
+        const runtime = registerServerTools(createMcpServer("1.0.0"), managedConfig, undefined as unknown as DaemonLink, {
+            access: fake.asAccess(),
+            tools : [],
+        });
+
+        await runtime.capture.ensureConsole("tab1");
+        fake.emit("cdp.event", {
+            targetId: "tab1",
+            event   : "Runtime.consoleAPICalled",
+            params  : { type: "log", args: [{ type: "string", value: "hello" }] },
+        });
+
+        const read = runtime.capture.readConsole("tab1", { limit: 10, order: "oldest", clear: false });
+
+        expect(read.entries.map(({ entry }) => entry.text)).toEqual(["hello"]);
+
+        fake.emit("tab.closed", { targetId: "tab1" });
+        expect(runtime.capture.consoleEnabled("tab1")).toBe(false);
+
+        await runtime.capture.ensureConsole("tab1");
+        fake.bumpGeneration();
+        expect(runtime.capture.consoleEnabled("tab1")).toBe(false);
     });
 });
 

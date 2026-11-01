@@ -144,10 +144,12 @@ export function registerServerTools(
             runtime.focus.forget(targetId);
         }
     });
+    runtime.capture.attach();
     access.forgetStaleState(() => {
         runtime.tabs.reset();
         runtime.elements.reset();
         runtime.focus.reset();
+        runtime.capture.reset();
     });
     registerTools({ server, tools: options.tools ?? allTools, runtime });
 

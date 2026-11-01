@@ -101,6 +101,8 @@ describe("dom_snapshot", () => {
         const { runtime } = setup(fake);
 
         await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+
         runtime.elements.nextGeneration("tab1");
         const [old] = runtime.elements.assign("tab1", [{ backendNodeId: 99 }]);
         const result = await runTool(domSnapshot, {}, extra(), runtime);
@@ -128,6 +130,8 @@ describe("dom_snapshot", () => {
         const { runtime } = setup(fake);
 
         await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+
         const result = await runTool(domSnapshot, { maxChars: 20 }, extra(), runtime);
 
         expect(result.structuredContent).toMatchObject({ truncated: true });
@@ -163,6 +167,8 @@ describe("dom_snapshot", () => {
         const { runtime } = setup(fake);
 
         await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+
         runtime.elements.nextGeneration("tab1");
 
         const [uid] = runtime.elements.assign("tab1", [{ backendNodeId: 7 }]);
@@ -184,6 +190,8 @@ describe("dom_snapshot", () => {
         const { fake, runtime } = setup();
 
         await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+
         const result = await runTool(domSnapshot, { root: { uid: "3_3" } }, extra(), runtime);
 
         expect(result.isError).toBe(true);

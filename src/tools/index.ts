@@ -141,6 +141,48 @@ export {
 
 export { FocusEmulation } from "./focus-emulation.js";
 
+export { RingBuffer, type RingBufferOptions } from "./capture/ring-buffer.js";
+
+export {
+    CaptureManager,
+    type CaptureManagerOptions,
+    CONSOLE_BUFFER_BYTES,
+    CONSOLE_BUFFER_ENTRIES,
+    CONSOLE_EVENTS,
+    type ConsoleQuery,
+    NETWORK_BUFFER_BYTES,
+    NETWORK_BUFFER_ENTRIES,
+    NETWORK_EVENTS,
+    type NetworkQuery,
+} from "./capture/manager.js";
+
+export {
+    CONSOLE_ENTRY_CLIP_CHARS,
+    CONSOLE_STACK_FRAMES,
+    type ConsoleEntry,
+    type ConsoleLevel,
+    type ConsoleSource,
+    clipConsoleText,
+    formatConsoleArgument,
+    formatConsoleStack,
+    normalizeConsoleEvent,
+} from "./capture/console-log.js";
+
+export {
+    NETWORK_REGEX_MAX_CHARS,
+    NETWORK_URL_MATCH_CHARS,
+    type NetworkFilter,
+    type NetworkLookup,
+    type NetworkRecord,
+    type NetworkReduction,
+    REDACTED,
+    compileUrlPattern,
+    matchNetworkRecord,
+    redactHeaders,
+    redactUrl,
+    reduceNetworkEvent,
+} from "./capture/network-log.js";
+
 export {
     type ActionableElement,
     type ActionablePoint,

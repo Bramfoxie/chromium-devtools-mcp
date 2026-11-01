@@ -1,5 +1,6 @@
 import type { Config } from "../config/index.js";
 import type { DaemonAccess, DaemonTab } from "../mcp/index.js";
+import { CaptureManager } from "./capture/manager.js";
 import type { ToolClock, ToolContext } from "./define-tool.js";
 import { ElementRegistry } from "./element-target.js";
 import { FocusEmulation } from "./focus-emulation.js";
@@ -53,6 +54,7 @@ export interface ToolRuntimeOptions {
     tabs?    : SessionTabs;
     elements?: ElementRegistry;
     focus?   : FocusEmulation;
+    capture? : CaptureManager;
 }
 
 export class ToolRuntime {
@@ -62,6 +64,7 @@ export class ToolRuntime {
     readonly tabs    : SessionTabs;
     readonly elements: ElementRegistry;
     readonly focus   : FocusEmulation;
+    readonly capture : CaptureManager;
 
     constructor(options: ToolRuntimeOptions) {
         this.access = options.access;
@@ -73,6 +76,8 @@ export class ToolRuntime {
         this.tabs = options.tabs ?? new SessionTabs();
         this.elements = options.elements ?? new ElementRegistry();
         this.focus = options.focus ?? new FocusEmulation();
+        this.capture = options.capture ??
+            new CaptureManager({ access: options.access, clock: this.clock });
     }
 
     context(signal: AbortSignal): ToolContext {
@@ -83,6 +88,7 @@ export class ToolRuntime {
             tabs,
             elements: this.elements,
             focus   : this.focus,
+            capture : this.capture,
             config  : this.config,
             clock   : this.clock,
             signal,

@@ -198,6 +198,8 @@ describe("page_navigate", () => {
         const runtime = new ToolRuntime({ access: fake.asAccess(), config: managedConfig, clock });
 
         await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+
         const pending = runTool(
             pageNavigate,
             { url: "https://example.org/" },
@@ -247,6 +249,57 @@ describe("page_navigate", () => {
         expect(fake.sent[2]?.params).toEqual({ enabled: true });
         expect(fake.sent[7]?.params).toMatchObject({ expression: PAGE_STATE_EXPRESSION });
         expect(fake.unsubscribed).toHaveLength(4);
+    });
+
+    it("leaves network capture of the tab alone", async () => {
+        const fake = new FakeAccess();
+        const { clock } = trackingSleep();
+
+        fake.respond = (_targetId, method) => {
+            switch (method) {
+                case "Page.getFrameTree":
+                    return { frameTree: { frame: { id: "main" } } };
+                case "Page.navigate":
+                    return { loaderId: "loader-9" };
+                case "Runtime.evaluate":
+                    return pageState("https://example.org/", "Example");
+                default:
+                    return {};
+            }
+        };
+
+        const runtime = new ToolRuntime({ access: fake.asAccess(), config: managedConfig, clock });
+
+        await runTool(newTab, {}, extra(), runtime);
+        await runtime.capture.ensureNetwork("tab1");
+        fake.sent.length = 0;
+        fake.subscribed.length = 0;
+
+        const pending = runTool(
+            pageNavigate,
+            { url: "https://example.org/" },
+            extra(),
+            runtime,
+        );
+
+        await vi.waitFor(() =>
+            expect(fake.subscribed).toContainEqual({ targetId: "tab1", event: "Page.lifecycleEvent" }),
+        );
+        fake.emit("cdp.event", {
+            targetId: "tab1",
+            event   : "Page.lifecycleEvent",
+            params  : { frameId: "main", loaderId: "loader-9", name: "load" },
+        });
+        const result = await pending;
+
+        expect(result.structuredContent).toMatchObject({ waited: "load" });
+        expect(fake.sent.map((call) => call.method)).not.toContain("Network.enable");
+        expect(fake.sent.map((call) => call.method)).not.toContain("Network.disable");
+        expect(fake.unsubscribed).not.toContainEqual({
+            targetId: "tab1",
+            event   : "Network.responseReceived",
+        });
+        expect(runtime.capture.networkEnabled("tab1")).toBe(true);
     });
 
     it("ignores events of other tabs and other frames", async () => {
@@ -329,6 +382,9 @@ describe("page_navigate", () => {
         const { runtime } = setup(fake);
 
         await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+        fake.subscribed.length = 0;
+
         const back = await runTool(pageNavigate, { action: "back", waitUntil: "none" }, extra(), runtime);
 
         expect(back.structuredContent).toMatchObject({ waited: "none", navigationType: "back" });
@@ -365,6 +421,8 @@ describe("page_navigate", () => {
         const { runtime } = setup(fake);
 
         await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+
         const result = await runTool(
             pageNavigate,
             { action: "back", waitUntil: "none" },

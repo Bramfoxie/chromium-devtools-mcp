@@ -353,11 +353,13 @@ async function navigateAndWait(
         if (state.done) finish();
     };
     const off = context.access.on("cdp.event", onEvent);
+    const keepNetwork = context.capture.networkEnabled(targetId);
 
     try {
         await context.access.send(targetId, "Page.enable", {});
         await context.access.send(targetId, "Page.setLifecycleEventsEnabled", { enabled: true });
-        await context.access.send(targetId, "Network.enable", {});
+
+        if (!keepNetwork) await context.access.send(targetId, "Network.enable", {});
 
         for (const event of MAIN_FRAME_EVENTS) await context.access.subscribe(targetId, event);
 
@@ -392,11 +394,16 @@ async function navigateAndWait(
         off();
 
         for (const event of MAIN_FRAME_EVENTS) {
+            if (keepNetwork && event === "Network.responseReceived") continue;
+
             await context.access.unsubscribe(targetId, event).catch(() => undefined);
         }
 
         await context.access.send(targetId, "Page.disable", {}).catch(() => undefined);
-        await context.access.send(targetId, "Network.disable", {}).catch(() => undefined);
+
+        if (!keepNetwork) {
+            await context.access.send(targetId, "Network.disable", {}).catch(() => undefined);
+        }
     }
 }
 
