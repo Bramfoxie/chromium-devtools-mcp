@@ -295,6 +295,7 @@ export const cssInspect = defineTool({
             context.elements,
             targetId,
             args.target,
+            { frames: context.frames },
         );
         const wanted = args.properties ?? DEFAULT_CSS_PROPERTIES;
         const includeMatchedRules = args.includeMatchedRules ?? true;

@@ -276,14 +276,26 @@ export {
     ElementRegistry,
     type ElementTarget,
     elementTargetSchema,
+    MAX_FRAME_LENGTH,
     MAX_SELECTOR_LENGTH,
     MAX_UIDS_PER_TAB,
+    PIERCE_CHAIN_MAX_SEGMENTS,
+    PIERCE_CHAIN_SEPARATOR,
     type Rect,
     rectOfQuad,
+    type ResolveElementOptions,
     resolveElement,
     revealElement,
+    splitPierceChain,
     STALE_UID_MESSAGE,
 } from "./element-target.js";
+
+export {
+    FRAME_EVENTS,
+    type FrameInfo,
+    FrameState,
+    type FrameStateOptions,
+} from "./frames.js";
 
 export { FocusEmulation } from "./focus-emulation.js";
 

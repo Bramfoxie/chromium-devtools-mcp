@@ -138,8 +138,9 @@ async function targetBoxOf(
     elements: ElementRegistry,
     tab     : string,
     target  : ElementTarget,
+    frames  : ToolContext["frames"],
 ): Promise<ScreenshotClip> {
-    const element = await resolveElement(access, elements, tab, target);
+    const element = await resolveElement(access, elements, tab, target, { frames });
     const revealed = await revealElement(access, tab, { objectId: element.objectId });
     const measured = revealed.box === null
         ? await boxOf(access, tab, { objectId: element.objectId })
@@ -258,7 +259,13 @@ export const screenshot = defineTool({
 
         const targetBox = args.target === undefined
             ? undefined
-            : await targetBoxOf(context.access, context.elements, targetId, args.target);
+            : await targetBoxOf(
+                context.access,
+                context.elements,
+                targetId,
+                args.target,
+                context.frames,
+            );
         const viewport = targetBox !== undefined || args.clip !== undefined
             ? undefined
             : await viewportOf(context.access, targetId);

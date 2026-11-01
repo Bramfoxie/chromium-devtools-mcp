@@ -2,6 +2,7 @@ import { z } from "zod";
 import { ErrorCode, RpcError } from "../daemon/index.js";
 import type { DaemonAccess } from "../mcp/index.js";
 import { ToolError } from "./errors.js";
+import type { FrameState } from "./frames.js";
 
 export const MAX_SELECTOR_LENGTH = 1024;
 
@@ -10,10 +11,18 @@ export const MAX_UIDS_PER_TAB = 5000;
 export const STALE_UID_MESSAGE =
     "This element id is stale. Take a new dom_snapshot or run dom_query again.";
 
+export const PIERCE_CHAIN_SEPARATOR = ">>>";
+
+export const PIERCE_CHAIN_MAX_SEGMENTS = 10;
+
+export const MAX_FRAME_LENGTH = 1024;
+
 export const elementTargetSchema = z
     .strictObject({
         uid     : z.string().min(1).max(64).optional(),
         selector: z.string().min(1).max(MAX_SELECTOR_LENGTH).optional(),
+        pierce  : z.boolean().optional(),
+        frame   : z.string().min(1).max(MAX_FRAME_LENGTH).optional(),
     })
     .superRefine((value, ctx) => {
         if ((value.uid !== undefined) === (value.selector !== undefined)) {
@@ -22,13 +31,41 @@ export const elementTargetSchema = z
                 message: "Provide exactly one of uid or selector, not both and not neither.",
             });
         }
+
+        if (value.uid !== undefined && (value.pierce !== undefined || value.frame !== undefined)) {
+            ctx.addIssue({
+                code   : "custom",
+                message: "pierce and frame only combine with selector, not with uid.",
+            });
+        }
     });
 
 export type ElementTarget = z.infer<typeof elementTargetSchema>;
 
+export function splitPierceChain(selector: string): string[] | undefined {
+    if (!selector.includes(PIERCE_CHAIN_SEPARATOR)) return undefined;
+
+    const segments = selector.split(PIERCE_CHAIN_SEPARATOR).map((segment) => segment.trim());
+
+    if (segments.some((segment) => segment === "")) {
+        throw new ToolError(
+            `The selector chain ${JSON.stringify(selector)} has an empty segment. Every part around " >>> " must be a CSS selector.`,
+        );
+    }
+
+    if (segments.length > PIERCE_CHAIN_MAX_SEGMENTS) {
+        throw new ToolError(
+            `The selector chain has ${segments.length} segments, over the limit of ${PIERCE_CHAIN_MAX_SEGMENTS}. Shorten the chain.`,
+        );
+    }
+
+    return segments;
+}
+
 export interface ElementNode {
-    backendNodeId: number;
-    frameId?     : string;
+    backendNodeId   : number;
+    frameId?        : string;
+    frameGeneration?: number;
 }
 
 export interface ResolvedElement extends ElementNode {
@@ -89,7 +126,11 @@ export class ElementRegistry {
         });
     }
 
-    lookup(tab: string, uid: string): ElementNode | undefined {
+    lookup(
+        tab             : string,
+        uid             : string,
+        frameGeneration?: (frameId: string) => number,
+    ): ElementNode | undefined {
         const state = this.tabs.get(tab);
         const generation = state === undefined ? undefined : UID_PATTERN.exec(uid)?.[1];
 
@@ -98,7 +139,27 @@ export class ElementRegistry {
 
         const found = state.uids.get(uid);
 
-        return found === undefined ? undefined : { ...found };
+        if (found === undefined) return undefined;
+
+        if (
+            found.frameId !== undefined && found.frameGeneration !== undefined &&
+            frameGeneration !== undefined &&
+            frameGeneration(found.frameId) !== found.frameGeneration
+        ) {
+            return undefined;
+        }
+
+        return { ...found };
+    }
+
+    invalidateFrame(tab: string, frameId: string): void {
+        const state = this.tabs.get(tab);
+
+        if (state === undefined) return;
+
+        for (const [uid, node] of state.uids) {
+            if (node.frameId === frameId) state.uids.delete(uid);
+        }
     }
 
     reset(): void {
@@ -120,6 +181,17 @@ export class ElementRegistry {
 const documentSchema = z.object({ root: z.object({ nodeId: z.number() }) });
 const nodeIdSchema = z.object({ nodeId: z.number() });
 const resolvedSchema = z.object({ object: z.object({ objectId: z.string().optional() }) });
+const describedNodeSchema = z.object({
+    node: z.object({
+        nodeName       : z.string().optional(),
+        backendNodeId  : z.number().optional(),
+        frameId        : z.string().optional(),
+        contentDocument: z.object({ nodeId: z.number() }).passthrough().optional(),
+        shadowRoots    : z.array(z.object({ nodeId: z.number() }).passthrough()).optional(),
+    }).passthrough(),
+});
+const searchSchema = z.object({ searchId: z.string(), resultCount: z.number() });
+const searchResultsSchema = z.object({ nodeIds: z.array(z.number()) });
 const quadSchema = z
     .array(z.number())
     .length(8)
@@ -159,6 +231,15 @@ export function rectOfQuad(quad: number[]): Rect {
     };
 }
 
+export interface ResolverFrames {
+    resolve(tab: string, frame: string): Promise<{ frameId: string }>;
+    generation(tab: string, frameId: string): number;
+}
+
+function framesOf(frames: FrameState | undefined): ResolverFrames | undefined {
+    return frames;
+}
+
 async function resolveByUid(
     access: DaemonAccess,
     tab   : string,
@@ -181,23 +262,16 @@ async function resolveByUid(
     return objectId;
 }
 
-async function resolveBySelector(
+async function queryOne(
     access  : DaemonAccess,
     tab     : string,
+    nodeId  : number,
     selector: string,
-): Promise<{ objectId: string; backendNodeId: number }> {
-    const document = parseCdp(
-        "DOM.getDocument",
-        documentSchema,
-        await access.send(tab, "DOM.getDocument", { depth: 0, pierce: false }),
-    );
+): Promise<number> {
     let found: unknown;
 
     try {
-        found = await access.send(tab, "DOM.querySelector", {
-            nodeId: document.root.nodeId,
-            selector,
-        });
+        found = await access.send(tab, "DOM.querySelector", { nodeId, selector });
     } catch (error) {
         if (error instanceof RpcError && error.code === ErrorCode.cdpError) {
             throw new ToolError(`The selector ${JSON.stringify(selector)} is invalid: ${error.message}`);
@@ -206,14 +280,15 @@ async function resolveBySelector(
         throw error;
     }
 
-    const nodeId = parseCdp("DOM.querySelector", nodeIdSchema, found).nodeId;
+    return parseCdp("DOM.querySelector", nodeIdSchema, found).nodeId;
+}
 
-    if (nodeId === 0) {
-        throw new ToolError(
-            `No element matches the selector ${JSON.stringify(selector)}. Check the selector and try again.`,
-        );
-    }
-
+async function resolveNodeId(
+    access  : DaemonAccess,
+    tab     : string,
+    nodeId  : number,
+    selector: string,
+): Promise<{ objectId: string; backendNodeId: number }> {
     let resolved: unknown;
 
     try {
@@ -236,11 +311,14 @@ async function resolveBySelector(
         );
     }
 
-    const described = await access.send(tab, "DOM.describeNode", { nodeId, depth: 0 });
-    const backendNodeId = (described as { node?: { backendNodeId?: unknown } } | null)?.node
-        ?.backendNodeId;
+    const described = parseCdp(
+        "DOM.describeNode",
+        describedNodeSchema,
+        await access.send(tab, "DOM.describeNode", { nodeId, depth: 0 }),
+    );
+    const backendNodeId = described.node.backendNodeId;
 
-    if (typeof backendNodeId !== "number") {
+    if (backendNodeId === undefined) {
         throw new ToolError(
             "The browser sent an unexpected response to DOM.describeNode. Try the call again.",
         );
@@ -249,14 +327,206 @@ async function resolveBySelector(
     return { objectId, backendNodeId };
 }
 
+async function scopeNode(
+    access: DaemonAccess,
+    tab   : string,
+    rootId: number,
+    frame : string | undefined,
+    frames: ResolverFrames | undefined,
+): Promise<{ nodeId: number; frameId: string | undefined }> {
+    if (frame === undefined) return { nodeId: rootId, frameId: undefined };
+
+    if (frames !== undefined) {
+        try {
+            const resolved = await frames.resolve(tab, frame);
+
+            return { nodeId: rootId, frameId: resolved.frameId };
+        } catch {
+            // Fall through to the iframe selector path below.
+        }
+    }
+
+    const owner = await queryOne(access, tab, rootId, frame);
+    const described = parseCdp(
+        "DOM.describeNode",
+        describedNodeSchema,
+        await access.send(tab, "DOM.describeNode", { nodeId: owner, depth: 1, pierce: true }),
+    );
+
+    if (described.node.nodeName !== "IFRAME" && described.node.nodeName !== "FRAME") {
+        const tag = (described.node.nodeName ?? "unknown").toLowerCase();
+
+        throw new ToolError(
+            `The frame selector ${JSON.stringify(frame)} matched <${tag}>, not an iframe. Target an iframe element or pass a frame id from dom_snapshot.`,
+        );
+    }
+
+    const content = described.node.contentDocument;
+
+    if (content === undefined) {
+        throw new ToolError(
+            `The frame ${JSON.stringify(frame)} has no document yet. Wait for it to load and try again.`,
+        );
+    }
+
+    return { nodeId: content.nodeId, frameId: described.node.frameId };
+}
+
+async function resolvePlain(
+    access  : DaemonAccess,
+    tab     : string,
+    scope   : number,
+    selector: string,
+): Promise<number> {
+    const nodeId = await queryOne(access, tab, scope, selector);
+
+    if (nodeId === 0) {
+        throw new ToolError(
+            `No element matches the selector ${JSON.stringify(selector)}. Check the selector and try again.`,
+        );
+    }
+
+    return nodeId;
+}
+
+async function resolveChain(
+    access  : DaemonAccess,
+    tab     : string,
+    scope   : number,
+    selector: string,
+): Promise<number> {
+    const segments = splitPierceChain(selector) ?? [selector];
+    let nodeId = scope;
+
+    for (const [index, segment] of segments.entries()) {
+        const found = await queryOne(access, tab, nodeId, segment);
+
+        if (found === 0) {
+            throw new ToolError(
+                `No element matches the selector ${JSON.stringify(selector)} at segment ${JSON.stringify(segment)}. Check the selector and try again.`,
+            );
+        }
+
+        if (index === segments.length - 1) return found;
+
+        const described = parseCdp(
+            "DOM.describeNode",
+            describedNodeSchema,
+            await access.send(tab, "DOM.describeNode", { nodeId: found, depth: 1, pierce: true }),
+        );
+        const root = described.node.shadowRoots?.[0];
+
+        if (root === undefined) {
+            throw new ToolError(
+                `The element matched by ${JSON.stringify(segment)} has no shadow root to pierce. Check the selector and try again.`,
+            );
+        }
+
+        nodeId = root.nodeId;
+    }
+
+    throw new ToolError(
+        `No element matches the selector ${JSON.stringify(selector)}. Check the selector and try again.`,
+    );
+}
+
+async function resolvePierced(
+    access  : DaemonAccess,
+    tab     : string,
+    selector: string,
+): Promise<number> {
+    await access.send(tab, "DOM.enable", {});
+    await access.send(tab, "DOM.getDocument", { depth: -1, pierce: true });
+
+    const search = parseCdp(
+        "DOM.performSearch",
+        searchSchema,
+        await access.send(tab, "DOM.performSearch", {
+            query                    : selector,
+            includeUserAgentShadowDOM: true,
+        }),
+    );
+
+    try {
+        if (search.resultCount === 0) {
+            throw new ToolError(
+                `No element matches the selector ${JSON.stringify(selector)}. Check the selector and try again.`,
+            );
+        }
+
+        const results = parseCdp(
+            "DOM.getSearchResults",
+            searchResultsSchema,
+            await access.send(tab, "DOM.getSearchResults", {
+                searchId : search.searchId,
+                fromIndex: 0,
+                toIndex  : 1,
+            }),
+        );
+        const nodeId = results.nodeIds[0];
+
+        if (nodeId === undefined || nodeId === 0) {
+            throw new ToolError(
+                `No element matches the selector ${JSON.stringify(selector)}. Check the selector and try again.`,
+            );
+        }
+
+        return nodeId;
+    } finally {
+        await access.send(tab, "DOM.discardSearchResults", { searchId: search.searchId }).catch(
+            () => undefined,
+        );
+    }
+}
+
+async function resolveBySelector(
+    access  : DaemonAccess,
+    tab     : string,
+    selector: string,
+    options : { pierce?: boolean; frame?: string },
+    frames  : ResolverFrames | undefined,
+): Promise<{ objectId: string; backendNodeId: number; frameId?: string }> {
+    const document = parseCdp(
+        "DOM.getDocument",
+        documentSchema,
+        await access.send(tab, "DOM.getDocument", { depth: 0, pierce: false }),
+    );
+    const scope = await scopeNode(access, tab, document.root.nodeId, options.frame, frames);
+    const chained = splitPierceChain(selector) !== undefined;
+
+    if (chained && options.pierce === true) {
+        throw new ToolError("Pass pierce or a >>> chain, not both: they are two ways to cross shadow roots.");
+    }
+
+    const nodeId = options.pierce === true
+        ? await resolvePierced(access, tab, selector)
+        : chained
+            ? await resolveChain(access, tab, scope.nodeId, selector)
+            : await resolvePlain(access, tab, scope.nodeId, selector);
+    const resolved = await resolveNodeId(access, tab, nodeId, selector);
+
+    return { ...resolved, ...(scope.frameId === undefined ? {} : { frameId: scope.frameId }) };
+}
+
+export interface ResolveElementOptions {
+    frames?: FrameState;
+}
+
 export async function resolveElement(
     access  : DaemonAccess,
     elements: ElementRegistry,
     tab     : string,
     target  : ElementTarget,
+    options : ResolveElementOptions = {},
 ): Promise<ResolvedElement> {
+    const frames = framesOf(options.frames);
+
     if (target.uid !== undefined) {
-        const node = elements.lookup(tab, target.uid);
+        const node = elements.lookup(
+            tab,
+            target.uid,
+            frames === undefined ? undefined : (frameId) => frames.generation(tab, frameId),
+        );
 
         if (node === undefined) throw new ToolError(STALE_UID_MESSAGE);
 
@@ -267,9 +537,19 @@ export async function resolveElement(
         throw new ToolError("Provide exactly one of uid or selector, not both and not neither.");
     }
 
-    const resolved = await resolveBySelector(access, tab, target.selector);
+    const resolved = await resolveBySelector(
+        access,
+        tab,
+        target.selector,
+        { pierce: target.pierce, frame: target.frame },
+        frames,
+    );
 
-    return { backendNodeId: resolved.backendNodeId, objectId: resolved.objectId };
+    return {
+        backendNodeId: resolved.backendNodeId,
+        objectId     : resolved.objectId,
+        ...(resolved.frameId === undefined ? {} : { frameId: resolved.frameId }),
+    };
 }
 
 export async function boxOf(

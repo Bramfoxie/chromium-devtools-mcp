@@ -23,6 +23,18 @@ const tabListSchema = z.strictObject({ tabs: z.array(tabSchema) });
 
 const createdSchema = z.strictObject({ targetId: z.string() });
 
+const frameSchema = z.strictObject({
+    frameId      : z.string(),
+    parentFrameId: z.string().optional(),
+    url          : z.string(),
+    name         : z.string(),
+    isolated     : z.boolean(),
+});
+
+export type DaemonFrame = z.infer<typeof frameSchema>;
+
+const frameListSchema = z.strictObject({ frames: z.array(frameSchema) });
+
 const sessionSummarySchema = z.strictObject({
     sessionId : z.string(),
     clientName: z.string(),
@@ -125,26 +137,42 @@ export class DaemonAccess {
         return parse("session.list", sessionListSchema, result).sessions;
     }
 
+    async listFrames(targetId: string): Promise<DaemonFrame[]> {
+        const result = await this.request("frame.list", { targetId });
+
+        return parse("frame.list", frameListSchema, result).frames;
+    }
+
     async send(
         targetId  : string,
         method    : string,
         params?   : Record<string, unknown>,
         timeoutMs?: number,
+        frameId?  : string,
     ): Promise<unknown> {
         return this.request("cdp.send", {
             targetId,
             method,
             ...(params === undefined ? {} : { params }),
             ...(timeoutMs === undefined ? {} : { timeoutMs }),
+            ...(frameId === undefined ? {} : { frameId }),
         });
     }
 
-    async subscribe(targetId: string, event: string): Promise<void> {
-        await this.request("cdp.subscribe", { targetId, event });
+    async subscribe(targetId: string, event: string, frameId?: string): Promise<void> {
+        await this.request("cdp.subscribe", {
+            targetId,
+            event,
+            ...(frameId === undefined ? {} : { frameId }),
+        });
     }
 
-    async unsubscribe(targetId: string, event: string): Promise<void> {
-        await this.request("cdp.unsubscribe", { targetId, event });
+    async unsubscribe(targetId: string, event: string, frameId?: string): Promise<void> {
+        await this.request("cdp.unsubscribe", {
+            targetId,
+            event,
+            ...(frameId === undefined ? {} : { frameId }),
+        });
     }
 
     assertCurrent(generation: number): void {

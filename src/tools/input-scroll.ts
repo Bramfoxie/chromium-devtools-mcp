@@ -3,7 +3,12 @@ import type { DaemonAccess } from "../mcp/index.js";
 import { ensureActionable } from "./actionability.js";
 import { defineTool, type ToolContext } from "./define-tool.js";
 import { assertNoDialog } from "./dialogs.js";
-import { elementTargetSchema, resolveElement, type ResolvedElement } from "./element-target.js";
+import {
+    elementTargetSchema,
+    type ElementTarget,
+    resolveElement,
+    type ResolvedElement,
+} from "./element-target.js";
 import { ToolError } from "./errors.js";
 import { summarizeTarget, targetSummarySchema } from "./input-click.js";
 import { throwIfCancelled } from "./registry.js";
@@ -235,7 +240,7 @@ export const SCROLL_INTO_VIEW_EXPRESSION = "function (element, block) { element.
 async function scrollToElement(
     context : ToolContext,
     targetId: string,
-    target  : { uid?: string; selector?: string },
+    target  : ElementTarget,
     block   : ScrollBlock,
 ): Promise<{
     ok    : boolean;
@@ -252,6 +257,7 @@ async function scrollToElement(
         context.elements,
         targetId,
         target,
+        { frames: context.frames },
     );
     const checked = await ensureActionable(context.access, targetId, element, {
         checkDisabled: false,

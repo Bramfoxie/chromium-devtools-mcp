@@ -1,15 +1,17 @@
 import { ErrorCode, RpcError } from "../../src/daemon/index.js";
-import type { DaemonAccess, DaemonTab, SessionSummary } from "../../src/mcp/index.js";
+import type { DaemonAccess, DaemonFrame, DaemonTab, SessionSummary } from "../../src/mcp/index.js";
 
 export interface FakeAccessOptions {
     tabs?    : DaemonTab[];
     sessions?: SessionSummary[];
+    frames?  : DaemonFrame[];
     evaluate?: unknown;
 }
 
 export class FakeAccess {
     tabs            : DaemonTab[];
     sessions        : SessionSummary[];
+    frames          : DaemonFrame[];
     readonly created: string[] = [];
     readonly closed : string[] = [];
     readonly claimed: string[] = [];
@@ -18,9 +20,10 @@ export class FakeAccess {
         method    : string;
         params?   : Record<string, unknown>;
         timeoutMs?: number;
+        frameId?  : string;
     }> = [];
-    readonly subscribed  : Array<{ targetId: string; event: string }> = [];
-    readonly unsubscribed: Array<{ targetId: string; event: string }> = [];
+    readonly subscribed  : Array<{ targetId: string; event: string; frameId?: string }> = [];
+    readonly unsubscribed: Array<{ targetId: string; event: string; frameId?: string }> = [];
     readonly events = new Map<string, Set<(params: unknown) => void>>();
     readonly resets = new Set<() => void>();
     generation = 0;
@@ -36,6 +39,7 @@ export class FakeAccess {
     constructor(options: FakeAccessOptions = {}) {
         this.tabs = options.tabs ?? [];
         this.sessions = options.sessions ?? [];
+        this.frames = options.frames ?? [];
         this.evaluate = options.evaluate;
     }
 
@@ -127,13 +131,20 @@ export class FakeAccess {
         return [...this.sessions];
     }
 
+    async listFrames(targetId: string): Promise<DaemonFrame[]> {
+        void targetId;
+
+        return this.frames.map((frame) => ({ ...frame }));
+    }
+
     async send(
         targetId  : string,
         method    : string,
         params?   : Record<string, unknown>,
         timeoutMs?: number,
+        frameId?  : string,
     ): Promise<unknown> {
-        this.sent.push({ targetId, method, params, timeoutMs });
+        this.sent.push({ targetId, method, params, timeoutMs, frameId });
         const failure = this.failSend?.(targetId, method);
 
         if (failure) throw failure;
@@ -143,12 +154,12 @@ export class FakeAccess {
         };
     }
 
-    async subscribe(targetId: string, event: string): Promise<void> {
-        this.subscribed.push({ targetId, event });
+    async subscribe(targetId: string, event: string, frameId?: string): Promise<void> {
+        this.subscribed.push({ targetId, event, frameId });
     }
 
-    async unsubscribe(targetId: string, event: string): Promise<void> {
-        this.unsubscribed.push({ targetId, event });
+    async unsubscribe(targetId: string, event: string, frameId?: string): Promise<void> {
+        this.unsubscribed.push({ targetId, event, frameId });
     }
 
     emit(event: string, params: unknown): void {

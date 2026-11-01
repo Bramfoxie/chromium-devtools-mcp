@@ -2,6 +2,7 @@ export {
     DaemonAccess,
     type DaemonAccessOptions,
     type DaemonEventHandler,
+    type DaemonFrame,
     type DaemonTab,
     SessionResetError,
     type SessionSummary,

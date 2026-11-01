@@ -8,6 +8,7 @@ import {
     rectOfQuad,
     resolveElement,
     revealElement,
+    splitPierceChain,
     STALE_UID_MESSAGE,
     ToolError,
 } from "../src/tools/index.js";
@@ -331,5 +332,386 @@ describe("revealElement", () => {
         );
 
         expect((failure as Error).message).toContain("cannot be scrolled into view");
+    });
+});
+
+describe("elementTargetSchema piercing fields", () => {
+    it("accepts pierce and frame with a selector", () => {
+        expect(
+            elementTargetSchema.safeParse({ selector: "my-app", pierce: true }).success,
+        ).toBe(true);
+        expect(
+            elementTargetSchema.safeParse({ selector: "#inner", frame: "#frame" }).success,
+        ).toBe(true);
+    });
+
+    it("rejects pierce and frame with a uid", () => {
+        const pierced = elementTargetSchema.safeParse({ uid: "1_1", pierce: true });
+        const framed = elementTargetSchema.safeParse({ uid: "1_1", frame: "f" });
+
+        expect(pierced.success).toBe(false);
+        expect(framed.success).toBe(false);
+
+        if (!pierced.success) {
+            expect(pierced.error.issues[0]?.message).toContain("only combine with selector");
+        }
+    });
+
+    it("rejects an overlong frame value", () => {
+        expect(
+            elementTargetSchema.safeParse({ selector: "a", frame: "x".repeat(1025) }).success,
+        ).toBe(false);
+        expect(
+            elementTargetSchema.safeParse({ selector: "a", frame: "x".repeat(1024) }).success,
+        ).toBe(true);
+    });
+});
+
+describe("splitPierceChain", () => {
+    it("returns undefined for a plain selector", () => {
+        expect(splitPierceChain("#main .item")).toBeUndefined();
+    });
+
+    it("splits a chain around >>> and trims segments", () => {
+        expect(splitPierceChain("my-app >>> #inner >>> button")).toEqual([
+            "my-app",
+            "#inner",
+            "button",
+        ]);
+    });
+
+    it("rejects an empty segment with a clear message", () => {
+        expect(() => splitPierceChain("my-app >>>  >>> button")).toThrow("empty segment");
+    });
+
+    it("rejects a chain over the segment limit", () => {
+        expect(() => splitPierceChain(Array(12).fill("a").join(" >>> "))).toThrow(
+            "over the limit",
+        );
+    });
+});
+
+describe("ElementRegistry frame generations", () => {
+    it("reports a uid stale when its frame navigated", () => {
+        const elements = new ElementRegistry();
+
+        elements.nextGeneration("tab1");
+
+        const [uid] = elements.assign("tab1", [
+            { backendNodeId: 1, frameId: "f1", frameGeneration: 0 },
+            { backendNodeId: 2 },
+        ]);
+
+        expect(elements.lookup("tab1", uid ?? "", () => 0)?.backendNodeId).toBe(1);
+        expect(elements.lookup("tab1", uid ?? "", () => 1)).toBeUndefined();
+        expect(elements.lookup("tab1", "1_2", () => 1)?.backendNodeId).toBe(2);
+    });
+
+    it("drops only the uids of an invalidated frame", () => {
+        const elements = new ElementRegistry();
+
+        elements.nextGeneration("tab1");
+        elements.assign("tab1", [
+            { backendNodeId: 1, frameId: "f1" },
+            { backendNodeId: 2, frameId: "f2" },
+            { backendNodeId: 3 },
+        ]);
+        elements.invalidateFrame("tab1", "f1");
+
+        expect(elements.lookup("tab1", "1_1")).toBeUndefined();
+        expect(elements.lookup("tab1", "1_2")?.backendNodeId).toBe(2);
+        expect(elements.lookup("tab1", "1_3")?.backendNodeId).toBe(3);
+    });
+});
+
+describe("resolveElement piercing", () => {
+    function piercingSetup() {
+        const fake = new FakeAccess();
+        const elements = new ElementRegistry();
+
+        fake.respond = (_targetId, method, params) => {
+            switch (method) {
+                case "DOM.getDocument":
+                    return { root: { nodeId: 1 } };
+
+                case "DOM.querySelector": {
+                    const selector = params?.selector as string;
+
+                    if (selector === "my-app") return { nodeId: 13 };
+                    if (selector === "#inner") return { nodeId: 15 };
+                    if (selector === "#frame") return { nodeId: 10 };
+
+                    return { nodeId: selector === "#missing" ? 0 : 41 };
+                }
+
+                case "DOM.resolveNode":
+                    return { object: { objectId: "obj-1" } };
+
+                case "DOM.describeNode": {
+                    const nodeId = params?.nodeId as number;
+
+                    if (nodeId === 13) {
+                        return {
+                            node: {
+                                nodeName     : "MY-APP",
+                                backendNodeId: 5,
+                                shadowRoots  : [{ nodeId: 14 }],
+                            },
+                        };
+                    }
+
+                    if (nodeId === 10) {
+                        return {
+                            node: {
+                                nodeName       : "IFRAME",
+                                backendNodeId  : 20,
+                                frameId        : "frame1",
+                                contentDocument: { nodeId: 11 },
+                            },
+                        };
+                    }
+
+                    return { node: { nodeId, backendNodeId: 7 } };
+                }
+
+                case "DOM.enable":
+                    return {};
+                case "DOM.performSearch":
+                    return { searchId: "s1", resultCount: 1 };
+                case "DOM.getSearchResults":
+                    return { nodeIds: [15] };
+                case "DOM.discardSearchResults":
+                    return {};
+                default:
+                    throw new Error(`unexpected CDP call ${method}`);
+            }
+        };
+
+        return { fake, elements };
+    }
+
+    it("resolves a >>> chain through shadow roots", async () => {
+        const { fake, elements } = piercingSetup();
+        const resolved = await resolveElement(fake.asAccess(), elements, "tab1", {
+            selector: "my-app >>> #inner",
+        });
+
+        expect(resolved).toEqual({ backendNodeId: 7, objectId: "obj-1" });
+        expect(fake.sent.map((call) => call.method)).toEqual([
+            "DOM.getDocument",
+            "DOM.querySelector",
+            "DOM.describeNode",
+            "DOM.querySelector",
+            "DOM.resolveNode",
+            "DOM.describeNode",
+        ]);
+        expect(fake.sent[3]?.params).toEqual({ nodeId: 14, selector: "#inner" });
+    });
+
+    it("reports a chain segment with no match or no shadow root", async () => {
+        const { fake, elements } = piercingSetup();
+        const missing = await resolveElement(fake.asAccess(), elements, "tab1", {
+            selector: "my-app >>> #missing",
+        }).catch((error: unknown) => error);
+
+        expect((missing as Error).message).toContain("at segment");
+
+        fake.respond = (_targetId, method, params) => {
+            if (method === "DOM.getDocument") return { root: { nodeId: 1 } };
+            if (method === "DOM.querySelector") return { nodeId: 41 };
+
+            if (method === "DOM.describeNode") {
+                return { node: { nodeId: 41, backendNodeId: 7 } };
+            }
+
+            throw new Error(`unexpected CDP call ${method} ${JSON.stringify(params)}`);
+        };
+
+        const noRoot = await resolveElement(fake.asAccess(), elements, "tab1", {
+            selector: "#main >>> button",
+        }).catch((error: unknown) => error);
+
+        expect((noRoot as Error).message).toContain("no shadow root");
+    });
+
+    it("resolves pierce through performSearch and discards the search", async () => {
+        const { fake, elements } = piercingSetup();
+        const resolved = await resolveElement(fake.asAccess(), elements, "tab1", {
+            selector: "button",
+            pierce  : true,
+        });
+
+        expect(resolved).toEqual({ backendNodeId: 7, objectId: "obj-1" });
+        expect(fake.sent.map((call) => call.method)).toEqual([
+            "DOM.getDocument",
+            "DOM.enable",
+            "DOM.getDocument",
+            "DOM.performSearch",
+            "DOM.getSearchResults",
+            "DOM.discardSearchResults",
+            "DOM.resolveNode",
+            "DOM.describeNode",
+        ]);
+        expect(fake.sent[3]?.params).toMatchObject({ query: "button" });
+    });
+
+    it("reports no pierced match and rejects pierce with a chain", async () => {
+        const { fake, elements } = piercingSetup();
+
+        fake.respond = (_targetId, method) => {
+            switch (method) {
+                case "DOM.getDocument":
+                    return { root: { nodeId: 1 } };
+                case "DOM.enable":
+                    return {};
+                case "DOM.performSearch":
+                    return { searchId: "s1", resultCount: 0 };
+                case "DOM.discardSearchResults":
+                    return {};
+                default:
+                    throw new Error(`unexpected CDP call ${method}`);
+            }
+        };
+
+        const missing = await resolveElement(fake.asAccess(), elements, "tab1", {
+            selector: "button",
+            pierce  : true,
+        }).catch((error: unknown) => error);
+
+        expect((missing as Error).message).toContain("No element matches");
+
+        const both = await resolveElement(fake.asAccess(), elements, "tab1", {
+            selector: "a >>> b",
+            pierce  : true,
+        }).catch((error: unknown) => error);
+
+        expect((both as Error).message).toContain("not both");
+    });
+
+    it("resolves a frame given as an iframe selector", async () => {
+        const { fake, elements } = piercingSetup();
+        const resolved = await resolveElement(fake.asAccess(), elements, "tab1", {
+            selector: "#same-btn",
+            frame   : "#frame",
+        });
+
+        expect(resolved).toEqual({ backendNodeId: 7, objectId: "obj-1", frameId: "frame1" });
+        expect(fake.sent.map((call) => call.method)).toEqual([
+            "DOM.getDocument",
+            "DOM.querySelector",
+            "DOM.describeNode",
+            "DOM.querySelector",
+            "DOM.resolveNode",
+            "DOM.describeNode",
+        ]);
+        expect(fake.sent[3]?.params).toEqual({ nodeId: 11, selector: "#same-btn" });
+    });
+
+    it("rejects a frame selector that matches no iframe", async () => {
+        const { fake, elements } = piercingSetup();
+
+        fake.respond = (_targetId, method, params) => {
+            if (method === "DOM.getDocument") return { root: { nodeId: 1 } };
+
+            if (method === "DOM.querySelector") {
+                return { nodeId: params?.selector === "#frame" ? 10 : 41 };
+            }
+
+            if (method === "DOM.describeNode") {
+                return { node: { nodeId: 10, backendNodeId: 20, nodeName: "DIV" } };
+            }
+
+            throw new Error(`unexpected CDP call ${method}`);
+        };
+
+        const failure = await resolveElement(fake.asAccess(), elements, "tab1", {
+            selector: "#same-btn",
+            frame   : "#frame",
+        }).catch((error: unknown) => error);
+
+        expect((failure as Error).message).toContain("not an iframe");
+    });
+});
+
+describe("resolveElement frame ids", () => {
+    function frameSetup() {
+        const fake = new FakeAccess();
+        const elements = new ElementRegistry();
+
+        fake.frames = [
+            { frameId: "main", url: "https://a.example/", name: "", isolated: false },
+            {
+                frameId      : "cross",
+                parentFrameId: "main",
+                url          : "https://b.example/",
+                name         : "pay",
+                isolated     : true,
+            },
+        ];
+
+        fake.respond = (_targetId, method) => {
+            switch (method) {
+                case "DOM.getDocument":
+                    return { root: { nodeId: 1 } };
+                case "DOM.querySelector":
+                    return { nodeId: 41 };
+                case "DOM.resolveNode":
+                    return { object: { objectId: "obj-1" } };
+                case "DOM.describeNode":
+                    return { node: { nodeId: 41, backendNodeId: 7 } };
+                default:
+                    throw new Error(`unexpected CDP call ${method}`);
+            }
+        };
+
+        return { fake, elements };
+    }
+
+    it("resolves a frame id through the frame state", async () => {
+        const { fake, elements } = frameSetup();
+        const { FrameState } = await import("../src/tools/index.js");
+        const frames = new FrameState({ access: fake.asAccess() });
+
+        await frames.ensure("tab1");
+
+        const resolved = await resolveElement(fake.asAccess(), elements, "tab1", {
+            selector: "#pay-btn",
+            frame   : "cross",
+        }, { frames });
+
+        expect(resolved).toEqual({ backendNodeId: 7, objectId: "obj-1", frameId: "cross" });
+        expect(fake.sent.map((call) => call.method)).toEqual([
+            "DOM.getDocument",
+            "DOM.querySelector",
+            "DOM.resolveNode",
+            "DOM.describeNode",
+        ]);
+    });
+
+    it("reports a stale uid when its frame navigated", async () => {
+        const { fake, elements } = frameSetup();
+        const { FrameState } = await import("../src/tools/index.js");
+        const frames = new FrameState({ access: fake.asAccess() });
+
+        frames.attach();
+        await frames.ensure("tab1");
+        elements.nextGeneration("tab1");
+
+        const [uid] = elements.assign("tab1", [
+            { backendNodeId: 7, frameId: "cross", frameGeneration: 0 },
+        ]);
+
+        fake.emit("cdp.event", {
+            targetId: "tab1",
+            event   : "Page.frameNavigated",
+            params  : { frame: { id: "cross" } },
+        });
+
+        const failure = await resolveElement(fake.asAccess(), elements, "tab1", { uid }, { frames })
+            .catch((error: unknown) => error);
+
+        expect(failure).toBeInstanceOf(ToolError);
+        expect((failure as Error).message).toBe(STALE_UID_MESSAGE);
+        expect(fake.sent).toEqual([]);
     });
 });

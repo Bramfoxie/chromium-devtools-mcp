@@ -197,6 +197,7 @@ export const jsEvaluate = defineTool({
                 awaitPromise,
                 timeoutMs,
                 target    : args.target,
+                frames    : context.frames,
             }, returnByValue);
 
         let result: unknown;
@@ -284,6 +285,7 @@ interface EvaluateRequest {
     awaitPromise: boolean;
     timeoutMs   : number;
     target      : ElementTarget | undefined;
+    frames?     : import("./frames.js").FrameState;
 }
 
 async function evaluate(
@@ -322,7 +324,9 @@ async function evaluate(
         }
     }
 
-    const element = await resolveElement(access, elements, targetId, request.target);
+    const element = await resolveElement(access, elements, targetId, request.target, {
+        frames: request.frames,
+    });
 
     try {
         return await access.send(

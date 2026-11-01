@@ -141,6 +141,7 @@ export function registerServerTools(
 
         if (typeof targetId === "string") {
             runtime.tabs.forget(targetId);
+            runtime.frames.forget(targetId);
             runtime.focus.forget(targetId);
             runtime.dialogs.forget(targetId);
             void runtime.mock.forget(targetId);
@@ -149,10 +150,12 @@ export function registerServerTools(
     });
     runtime.capture.attach();
     runtime.dialogs.attach();
+    runtime.frames.attach();
     runtime.mock.attach();
     access.forgetStaleState(() => {
         runtime.tabs.reset();
         runtime.elements.reset();
+        runtime.frames.reset();
         runtime.focus.reset();
         runtime.capture.reset();
         runtime.dialogs.reset();

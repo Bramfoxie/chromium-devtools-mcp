@@ -172,6 +172,7 @@ export const inputUpload = defineTool({
             context.elements,
             targetId,
             args.target,
+            { frames: context.frames },
         );
         const checked = await ensureActionable(context.access, targetId, element, {
             checkDisabled: true,

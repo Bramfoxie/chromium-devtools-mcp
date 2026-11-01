@@ -8,6 +8,7 @@ import type { ElementRegistry } from "./element-target.js";
 import type { InterceptionManager } from "./mock/interception.js";
 import type { EmulationState } from "./emulation/state.js";
 import type { FocusEmulation } from "./focus-emulation.js";
+import type { FrameState } from "./frames.js";
 import type { SafetyAccess, SafetyDecision, SafetyTarget } from "./safety.js";
 
 export type ToolAccess = SafetyAccess;
@@ -42,6 +43,7 @@ export interface ToolContext {
     state    : SessionState;
     tabs     : TabSelection;
     elements : ElementRegistry;
+    frames   : FrameState;
     focus    : FocusEmulation;
     capture  : CaptureManager;
     dialogs  : DialogState;

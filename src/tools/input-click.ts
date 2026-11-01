@@ -10,6 +10,7 @@ import { defineTool, type ToolContext } from "./define-tool.js";
 import { assertNoDialog } from "./dialogs.js";
 import {
     elementTargetSchema,
+    type ElementTarget,
     type Rect,
     resolveElement,
     type ResolvedElement,
@@ -101,9 +102,11 @@ export function changedUrl(urlBefore: string, urlAfter: string): { urlAfter?: st
 async function resolveActionable(
     context : ToolContext,
     targetId: string,
-    target  : { uid?: string; selector?: string },
+    target  : ElementTarget,
 ): Promise<{ element: ResolvedElement; checked: ActionableElement; uid: string | undefined }> {
-    const element = await resolveElement(context.access, context.elements, targetId, target);
+    const element = await resolveElement(context.access, context.elements, targetId, target, {
+        frames: context.frames,
+    });
     const checked = await ensureActionable(context.access, targetId, element, {
         checkDisabled: true,
     });
@@ -241,6 +244,7 @@ export const inputClick = defineTool({
             context.elements,
             targetId,
             args.target,
+            { frames: context.frames },
         );
         const { point, state } = await mousePoint(
             context,
@@ -341,6 +345,7 @@ export const inputHover = defineTool({
             context.elements,
             targetId,
             args.target,
+            { frames: context.frames },
         );
         const { point, state } = await mousePoint(
             context,

@@ -6,6 +6,7 @@ import { DialogState } from "./dialogs.js";
 import { ElementRegistry } from "./element-target.js";
 import { EmulationState } from "./emulation/state.js";
 import { FocusEmulation } from "./focus-emulation.js";
+import { FrameState } from "./frames.js";
 import { InterceptionManager } from "./mock/interception.js";
 
 export type { ToolClock, ToolContext };
@@ -56,6 +57,7 @@ export interface ToolRuntimeOptions {
     clock?    : ToolClock;
     tabs?     : SessionTabs;
     elements? : ElementRegistry;
+    frames?   : FrameState;
     focus?    : FocusEmulation;
     capture?  : CaptureManager;
     dialogs?  : DialogState;
@@ -69,6 +71,7 @@ export class ToolRuntime {
     readonly clock    : ToolClock;
     readonly tabs     : SessionTabs;
     readonly elements : ElementRegistry;
+    readonly frames   : FrameState;
     readonly focus    : FocusEmulation;
     readonly capture  : CaptureManager;
     readonly dialogs  : DialogState;
@@ -84,6 +87,7 @@ export class ToolRuntime {
         };
         this.tabs = options.tabs ?? new SessionTabs();
         this.elements = options.elements ?? new ElementRegistry();
+        this.frames = options.frames ?? new FrameState({ access: options.access });
         this.focus = options.focus ?? new FocusEmulation();
         this.capture = options.capture ??
             new CaptureManager({ access: options.access, clock: this.clock });
@@ -101,6 +105,7 @@ export class ToolRuntime {
             access   : this.access,
             tabs,
             elements : this.elements,
+            frames   : this.frames,
             focus    : this.focus,
             capture  : this.capture,
             dialogs  : this.dialogs,

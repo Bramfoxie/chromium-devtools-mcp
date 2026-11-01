@@ -193,6 +193,7 @@ export const closeTab = defineTool({
 
         context.capture.forget(targetId);
         context.dialogs.forget(targetId);
+        context.frames.forget(targetId);
         await context.mock.forget(targetId);
         context.emulation.forget(targetId);
 
