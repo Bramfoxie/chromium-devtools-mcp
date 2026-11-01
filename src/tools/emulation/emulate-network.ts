@@ -76,7 +76,7 @@ export async function ensureNetworkForEmulation(
 export const emulateNetwork = defineTool({
     name: "emulate_network",
     description:
-        "Emulate network conditions on a tab: offline, slow-3g (2000 ms, 50/20 Kbps), fast-3g (562 ms, 187/93 Kbps), 4g (170 ms, 1125/750 Kbps), wifi (28 ms, 3750/1875 Kbps) or none. Shares Network.enable with the capture manager, never disables capture.",
+        "Emulate network conditions on a tab: offline, slow-3g (2000 ms, 400/400 Kbps), fast-3g (562 ms, 1600/750 Kbps), 4g (170 ms, 9000/9000 Kbps), wifi (28 ms, 30000/15000 Kbps) or none. Shares Network.enable with the capture manager, never disables capture.",
     access: "mutate",
     input : z.strictObject({
         tab         : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
@@ -113,11 +113,6 @@ export const emulateNetwork = defineTool({
         throwIfCancelled(context.signal);
 
         await ensureNoDialog(context.dialogs, targetId);
-        await ensureNetworkForEmulation(
-            context.access,
-            (tab) => context.capture.ensureNetwork(tab),
-            targetId,
-        );
 
         if (input.reset) {
             for (const command of buildNetworkResetCommands()) {
@@ -128,6 +123,12 @@ export const emulateNetwork = defineTool({
 
             return { tab: targetId, emulation: summarizeEmulation(state) };
         }
+
+        await ensureNetworkForEmulation(
+            context.access,
+            (tab) => context.capture.ensureNetwork(tab),
+            targetId,
+        );
 
         const previous = context.emulation.snapshot(targetId).network;
         const conditions = conditionsOf(input, previous);

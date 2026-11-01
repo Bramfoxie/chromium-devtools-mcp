@@ -355,8 +355,8 @@ describe("emulate_network", () => {
                     preset      : "slow-3g",
                     offline     : false,
                     latencyMs   : 2000,
-                    downloadKbps: 50,
-                    uploadKbps  : 20,
+                    downloadKbps: 400,
+                    uploadKbps  : 400,
                     blockUrls   : [],
                 },
             },
@@ -369,8 +369,8 @@ describe("emulate_network", () => {
         expect(fake.sent[1]?.params).toMatchObject({
             offline           : false,
             latency           : 2000,
-            downloadThroughput: 6400,
-            uploadThroughput  : 2560,
+            downloadThroughput: 50000,
+            uploadThroughput  : 50000,
         });
         expect(fake.subscribed.filter((entry) => entry.event.startsWith("Network."))).toHaveLength(6);
     });

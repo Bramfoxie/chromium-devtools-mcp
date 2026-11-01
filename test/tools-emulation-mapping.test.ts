@@ -323,10 +323,10 @@ describe("network mapping", () => {
     it("defines every preset with documented numbers", () => {
         expect(NETWORK_PRESETS).toEqual({
             offline  : { offline: true, latencyMs: 0, downloadKbps: 0, uploadKbps: 0 },
-            "slow-3g": { offline: false, latencyMs: 2000, downloadKbps: 50, uploadKbps: 20 },
-            "fast-3g": { offline: false, latencyMs: 562, downloadKbps: 187, uploadKbps: 93 },
-            "4g"     : { offline: false, latencyMs: 170, downloadKbps: 1125, uploadKbps: 750 },
-            wifi     : { offline: false, latencyMs: 28, downloadKbps: 3750, uploadKbps: 1875 },
+            "slow-3g": { offline: false, latencyMs: 2000, downloadKbps: 400, uploadKbps: 400 },
+            "fast-3g": { offline: false, latencyMs: 562, downloadKbps: 1600, uploadKbps: 750 },
+            "4g"     : { offline: false, latencyMs: 170, downloadKbps: 9000, uploadKbps: 9000 },
+            wifi     : { offline: false, latencyMs: 28, downloadKbps: 30000, uploadKbps: 15000 },
             none     : { offline: false, latencyMs: 0, downloadKbps: -1, uploadKbps: -1 },
         });
         expect(presetConditions("4g")).toEqual(NETWORK_PRESETS["4g"]);
@@ -339,8 +339,8 @@ describe("network mapping", () => {
             params: {
                 offline           : false,
                 latency           : 2000,
-                downloadThroughput: 6400,
-                uploadThroughput  : 2560,
+                downloadThroughput: 50000,
+                uploadThroughput  : 50000,
             },
         }]);
         expect(buildNetworkCommands(presetConditions("offline"))).toEqual([{

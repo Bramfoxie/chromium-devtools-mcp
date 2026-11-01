@@ -49,10 +49,10 @@ export type NetworkPresetName = "offline" | "slow-3g" | "fast-3g" | "4g" | "wifi
 
 export const NETWORK_PRESETS: Record<NetworkPresetName, NetworkConditions> = {
     offline  : { offline: true, latencyMs: 0, downloadKbps: 0, uploadKbps: 0 },
-    "slow-3g": { offline: false, latencyMs: 2000, downloadKbps: 50, uploadKbps: 20 },
-    "fast-3g": { offline: false, latencyMs: 562, downloadKbps: 187, uploadKbps: 93 },
-    "4g"     : { offline: false, latencyMs: 170, downloadKbps: 1125, uploadKbps: 750 },
-    wifi     : { offline: false, latencyMs: 28, downloadKbps: 3750, uploadKbps: 1875 },
+    "slow-3g": { offline: false, latencyMs: 2000, downloadKbps: 400, uploadKbps: 400 },
+    "fast-3g": { offline: false, latencyMs: 562, downloadKbps: 1600, uploadKbps: 750 },
+    "4g"     : { offline: false, latencyMs: 170, downloadKbps: 9000, uploadKbps: 9000 },
+    wifi     : { offline: false, latencyMs: 28, downloadKbps: 30000, uploadKbps: 15000 },
     none     : { offline: false, latencyMs: 0, downloadKbps: -1, uploadKbps: -1 },
 };
 
@@ -208,7 +208,7 @@ export function presetConditions(preset: NetworkPresetName): NetworkConditions {
 function toBytesPerSecond(kbps: number, offline: boolean): number {
     if (offline) return -1;
 
-    return Math.round((kbps * 1024) / 8);
+    return Math.round((kbps * 1000) / 8);
 }
 
 export function buildNetworkCommands(conditions: NetworkConditions): CdpCommand[] {
