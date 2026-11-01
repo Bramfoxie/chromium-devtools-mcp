@@ -260,3 +260,81 @@ describe("css_inspect", () => {
         expect(JSON.stringify(result.content)).toContain("new_tab");
     });
 });
+
+describe("css_inspect piercing", () => {
+    it("inspects an element inside a shadow root through a chain", async () => {
+        const fake = new FakeAccess();
+
+        fake.respond = (_targetId, method, params) => {
+            switch (method) {
+                case "DOM.getDocument":
+                    return { root: { nodeId: 1 } };
+
+                case "DOM.querySelector": {
+                    const selector = (params as { selector?: unknown })?.selector;
+
+                    if (selector === "my-app") return { nodeId: 13 };
+
+                    return { nodeId: 15 };
+                }
+
+                case "DOM.resolveNode":
+                    return { object: { objectId: "obj-1" } };
+
+                case "DOM.describeNode": {
+                    const nodeId = (params as { nodeId?: unknown })?.nodeId;
+
+                    if (nodeId === 13) {
+                        return {
+                            node: {
+                                nodeId       : 13,
+                                backendNodeId: 5,
+                                shadowRoots  : [{ nodeId: 14 }],
+                            },
+                        };
+                    }
+
+                    return { node: { nodeId: 15, backendNodeId: 9 } };
+                }
+
+                case "DOM.enable":
+                case "CSS.enable":
+                case "CSS.disable":
+                    return {};
+                case "CSS.getComputedStyleForNode":
+                    return { computedStyle: [{ name: "display", value: "inline-block" }] };
+                case "CSS.getMatchedStylesForNode":
+                    return { matchedCSSRules: [], inherited: [] };
+                case "DOM.getBoxModel":
+                    return {
+                        model: {
+                            content: [1, 2, 3, 2, 3, 4, 1, 4],
+                            padding: [1, 2, 3, 2, 3, 4, 1, 4],
+                            border : [1, 2, 3, 2, 3, 4, 1, 4],
+                            margin : [1, 2, 3, 2, 3, 4, 1, 4],
+                        },
+                    };
+                default:
+                    throw new Error(`unexpected CDP call ${method}`);
+            }
+        };
+
+        const { runtime } = setup(fake);
+
+        await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+
+        const result = await runTool(
+            cssInspect,
+            { target: { selector: "my-app >>> #inner" }, properties: ["display"] },
+            extra(),
+            runtime,
+        );
+
+        expect(result.isError).not.toBe(true);
+        expect(result.structuredContent).toMatchObject({
+            computed: { display: "inline-block" },
+        });
+        expect(fake.sent.map((call) => call.method)).toContain("DOM.querySelector");
+    });
+});

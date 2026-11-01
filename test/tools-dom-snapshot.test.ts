@@ -114,12 +114,13 @@ describe("dom_snapshot", () => {
             nodeCount : 2,
             omitted   : 1,
             truncated : false,
+            frames    : [],
         });
         expect(fake.sent.map((call) => call.method)).toEqual([
             "Accessibility.getFullAXTree",
             "DOM.getDocument",
         ]);
-        expect(fake.sent[1]?.params).toEqual({ depth: SNAPSHOT_DOM_DEPTH, pierce: false });
+        expect(fake.sent[1]?.params).toEqual({ depth: SNAPSHOT_DOM_DEPTH, pierce: true });
         expect(runtime.elements.lookup("tab1", "2_1")).toEqual({ backendNodeId: 11 });
         expect(runtime.elements.lookup("tab1", "2_2")).toEqual({ backendNodeId: 12 });
         expect(runtime.elements.lookup("tab1", old ?? "")).toBeUndefined();
@@ -205,5 +206,153 @@ describe("dom_snapshot", () => {
 
         expect(result.isError).toBe(true);
         expect(JSON.stringify(result.content)).toContain("new_tab");
+    });
+});
+
+describe("frame snapshot helpers", () => {
+    const FRAMED = {
+        root: {
+            backendNodeId: 1,
+            nodeName     : "HTML",
+            children     : [
+                {
+                    backendNodeId  : 20,
+                    nodeName       : "IFRAME",
+                    frameId        : "frame1",
+                    attributes     : ["title", "same-origin"],
+                    contentDocument: {
+                        backendNodeId: 21,
+                        nodeName     : "#document",
+                        children     : [
+                            { backendNodeId: 22, nodeName: "BUTTON", attributes: ["id", "same-btn"] },
+                        ],
+                    },
+                },
+                {
+                    backendNodeId: 30,
+                    nodeName     : "DIV",
+                    attributes   : ["id", "host"],
+                    shadowRoots  : [
+                        {
+                            backendNodeId: 31,
+                            nodeName     : "#document-fragment",
+                            children     : [
+                                { backendNodeId: 32, nodeName: "BUTTON", attributes: ["id", "open-btn"] },
+                            ],
+                        },
+                    ],
+                },
+            ],
+        },
+    };
+
+    it("maps iframe owners to frame ids and finds frame documents", async () => {
+        const { iframeFrameMap, frameDocBackends } = await import("../src/tools/index.js");
+
+        expect([...iframeFrameMap(FRAMED)]).toEqual([[20, "frame1"]]);
+        expect(frameDocBackends(FRAMED)).toEqual([{ frameId: "frame1", backendNodeId: 21 }]);
+    });
+
+    it("collects dom info through shadow roots and frame documents", async () => {
+        const { domInfoMap } = await import("../src/tools/index.js");
+        const map = domInfoMap(FRAMED);
+
+        expect(map.get(22)).toEqual({ tag: "button", attrs: { id: "same-btn" } });
+        expect(map.get(32)).toEqual({ tag: "button", attrs: { id: "open-btn" } });
+    });
+
+    it("renders a frame section under its boundary marker", async () => {
+        const fake = new FakeAccess({
+            frames: [
+                { frameId: "main", url: "https://a.example/", name: "", isolated: false },
+                {
+                    frameId      : "frame1",
+                    parentFrameId: "main",
+                    url          : "https://b.example/",
+                    name         : "pay",
+                    isolated     : true,
+                },
+            ],
+        });
+
+        fake.respond = (_targetId, method, params) => {
+            switch (method) {
+                case "Accessibility.getFullAXTree":
+                    return {
+                        nodes: [
+                            {
+                                nodeId          : "1",
+                                role            : { value: "Iframe" },
+                                name            : { value: "same-origin" },
+                                childIds        : [],
+                                backendDOMNodeId: 20,
+                            },
+                        ],
+                    };
+
+                case "Accessibility.getPartialAXTree": {
+                    const backend = (params as { backendNodeId?: unknown })?.backendNodeId;
+
+                    if (backend === 21) {
+                        return {
+                            nodes: [
+                                {
+                                    nodeId          : "2",
+                                    role            : { value: "button" },
+                                    name            : { value: "Pay" },
+                                    childIds        : [],
+                                    backendDOMNodeId: 22,
+                                },
+                            ],
+                        };
+                    }
+
+                    throw new Error(`unexpected partial ${JSON.stringify(params)}`);
+                }
+
+                case "DOM.getDocument":
+                    return FRAMED;
+                default:
+                    throw new Error(`unexpected CDP call ${method}`);
+            }
+        };
+
+        const { runtime } = setup(fake);
+
+        await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+
+        const result = await runTool(domSnapshot, {}, extra(), runtime);
+
+        expect(result.isError).not.toBe(true);
+        expect(result.structuredContent).toMatchObject({
+            snapshot : expect.stringContaining('iframe "same-origin" frame=frame1'),
+            nodeCount: 2,
+            frames   : [
+                {
+                    frameId  : "main",
+                    url      : "https://a.example/",
+                    isolated : false,
+                    nodeCount: 0,
+                    omitted  : false,
+                },
+                {
+                    frameId  : "frame1",
+                    parent   : "main",
+                    url      : "https://b.example/",
+                    isolated : true,
+                    nodeCount: 1,
+                    omitted  : false,
+                },
+            ],
+        });
+        expect(result.structuredContent).toMatchObject({
+            snapshot: expect.stringContaining('button "Pay"'),
+        });
+        expect(runtime.elements.lookup("tab1", "1_2")).toEqual({
+            backendNodeId  : 22,
+            frameId        : "frame1",
+            frameGeneration: 0,
+        });
     });
 });

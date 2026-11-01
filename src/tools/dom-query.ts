@@ -1,8 +1,9 @@
 import { z } from "zod";
 import { ErrorCode, RpcError } from "../daemon/index.js";
 import type { DaemonAccess } from "../mcp/index.js";
-import { defineTool } from "./define-tool.js";
+import { defineTool, type ToolContext } from "./define-tool.js";
 import { assertNoDialog } from "./dialogs.js";
+import { MAX_FRAME_LENGTH, splitPierceChain } from "./element-target.js";
 import { ToolError } from "./errors.js";
 
 export const QUERY_DEFAULT_LIMIT = 20;
@@ -30,6 +31,17 @@ export const DEFAULT_QUERY_ATTRIBUTES = [
 const documentSchema = z.object({ root: z.object({ nodeId: z.number() }) });
 const nodeIdSchema = z.object({ nodeId: z.number() });
 const nodeIdsSchema = z.object({ nodeIds: z.array(z.number()) });
+const worldSchema = z.object({ executionContextId: z.number() });
+const frameOwnerSchema = z.object({
+    node: z.object({
+        nodeName       : z.string(),
+        frameId        : z.string().optional(),
+        contentDocument: z.object({ nodeId: z.number() }).passthrough().optional(),
+        shadowRoots    : z.array(z.object({ nodeId: z.number() }).passthrough()).optional(),
+    }).passthrough(),
+});
+const searchSchema = z.object({ searchId: z.string(), resultCount: z.number() });
+const searchResultsSchema = z.object({ nodeIds: z.array(z.number()) });
 
 const describedSchema = z.object({
     node: z.object({
@@ -72,6 +84,49 @@ export function buildQueryScript(selector: string, attributes: string[], count: 
     return `(() => {
   const found = [...document.querySelectorAll(${matcher})].slice(0, ${limit});
   return found.map((el) => {
+    const rect = el.getBoundingClientRect();
+    const kept = {};
+    for (const name of ${names}) {
+      const value = el.getAttribute(name);
+      if (value !== null) kept[name] = value.slice(0, 500);
+    }
+    return {
+      tag: el.localName,
+      id: el.id,
+      classes: [...el.classList],
+      attributes: kept,
+      text: (el.innerText ?? "").slice(0, 500),
+      visible: el.getClientRects().length > 0,
+      rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+    };
+  });
+})()`;
+}
+
+export function buildPiercedQueryScript(
+    selector  : string,
+    attributes: string[],
+    count     : number,
+): string {
+    const matcher = JSON.stringify(selector);
+    const names = JSON.stringify(attributes);
+    const limit = JSON.stringify(count);
+
+    return `(() => {
+  const found = [];
+  const walk = (root) => {
+    for (const el of root.querySelectorAll(${matcher})) {
+      found.push(el);
+      if (found.length >= ${limit}) return true;
+    }
+    for (const el of root.querySelectorAll("*")) {
+      if (found.length >= ${limit}) return true;
+      if (el.shadowRoot && walk(el.shadowRoot)) return true;
+    }
+    return found.length >= ${limit};
+  };
+  walk(document);
+  return found.slice(0, ${limit}).map((el) => {
     const rect = el.getBoundingClientRect();
     const kept = {};
     for (const name of ${names}) {
@@ -140,12 +195,14 @@ export const domQuery = defineTool({
     access     : "read",
     input      : z.strictObject({
         tab       : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
-        selector  : z.string().min(1).max(1024).describe("CSS selector to match."),
+        selector  : z.string().min(1).max(1024).describe("CSS selector to match. Use >>> to chain through shadow roots, for example my-app >>> #inner."),
         all       : z.boolean().optional().describe("Return every match instead of the first. Defaults to false."),
         limit     : z.number().int().min(1).max(QUERY_MAX_LIMIT).optional().describe("Maximum matches to return. Defaults to 20."),
         text      : z.string().min(1).max(200).optional().describe("Keep only elements whose text contains this, case insensitively."),
         attributes: z.array(z.string().min(1).max(64)).max(50).optional().describe("Attribute names to include."),
         includeBox: z.boolean().optional().describe("Include bounding boxes. Defaults to true."),
+        pierce    : z.boolean().optional().describe("Match through open shadow roots. Closed shadow roots need a >>> chain. Defaults to false."),
+        frame     : z.string().min(1).max(MAX_FRAME_LENGTH).optional().describe("Frame id from dom_snapshot or an iframe CSS selector. Defaults to the main frame."),
     }),
     output: z.strictObject({
         matches : z.array(matchSchema).describe("Matched elements, in document order."),
@@ -165,6 +222,12 @@ export const domQuery = defineTool({
         const limit = all ? (args.limit ?? QUERY_DEFAULT_LIMIT) : 1;
         const names = args.attributes ?? DEFAULT_QUERY_ATTRIBUTES;
         const includeBox = args.includeBox ?? true;
+        const pierce = args.pierce ?? false;
+        const chained = splitPierceChain(args.selector) !== undefined;
+
+        if (pierce && chained) {
+            throw new ToolError("Pass pierce or a >>> chain, not both: they are two ways to cross shadow roots.");
+        }
 
         const root = documentSchema.safeParse(
             await context.access.send(targetId, "DOM.getDocument", { depth: 0, pierce: false }),
@@ -176,15 +239,34 @@ export const domQuery = defineTool({
             );
         }
 
-        const nodeIds = await matchingNodes(
-            context.access,
-            targetId,
-            root.data.root.nodeId,
-            args.selector,
-            all,
-        );
+        const scope = await queryScope(context, targetId, root.data.root.nodeId, args.frame);
+
+        const nodeIds = chained
+            ? await chainedNodes(context.access, targetId, scope.nodeId, args.selector, all)
+            : pierce
+                ? await piercedNodes(context.access, targetId, args.selector, all)
+                : await matchingNodes(
+                    context.access,
+                    targetId,
+                    scope.nodeId,
+                    args.selector,
+                    all,
+                );
 
         if (nodeIds.length === 0) return { matches: [], total: 0, returned: 0 };
+
+        if (chained) {
+            return chainedMatches(
+                context,
+                targetId,
+                nodeIds,
+                all,
+                limit,
+                args.text,
+                includeBox,
+                scope.frameId,
+            );
+        }
 
         const rows = await queryRows(
             context.access,
@@ -194,15 +276,23 @@ export const domQuery = defineTool({
             nodeIds.length,
             limit,
             args.text,
+            { pierce, contextId: scope.contextId },
         );
 
         if (rows.length === 0) return { matches: [], total: 0, returned: 0 };
 
         const wanted = rows.length;
         const described = await describeNodes(context.access, targetId, nodeIds.slice(0, wanted));
+        const frameGeneration = scope.frameId === undefined
+            ? undefined
+            : context.frames.generation(targetId, scope.frameId);
         const uids = context.elements.assign(
             targetId,
-            described.map((node) => ({ backendNodeId: node.backendNodeId })),
+            described.map((node) => ({
+                backendNodeId: node.backendNodeId,
+                ...(scope.frameId === undefined ? {} : { frameId: scope.frameId }),
+                ...(frameGeneration === undefined ? {} : { frameGeneration }),
+            })),
         );
 
         const matches = rows.flatMap((row, index) => {
@@ -277,6 +367,181 @@ async function matchingNodes(
     }
 }
 
+interface QueryScope {
+    nodeId   : number;
+    frameId  : string | undefined;
+    contextId: number | undefined;
+}
+
+async function queryScope(
+    context : ToolContext,
+    targetId: string,
+    rootId  : number,
+    frame   : string | undefined,
+): Promise<QueryScope> {
+    if (frame === undefined) return { nodeId: rootId, frameId: undefined, contextId: undefined };
+
+    await context.frames.ensure(targetId).catch(() => undefined);
+
+    const known = context.frames.frameOf(targetId, frame);
+
+    if (known !== undefined) {
+        const world = worldSchema.safeParse(
+            await context.access.send(targetId, "Page.createIsolatedWorld", {
+                frameId  : known.frameId,
+                worldName: "chromium-devtools-mcp-query",
+            }),
+        );
+
+        if (!world.success) {
+            throw new ToolError(
+                "The browser sent an unexpected response to Page.createIsolatedWorld. Try the call again.",
+            );
+        }
+
+        return { nodeId: rootId, frameId: known.frameId, contextId: world.data.executionContextId };
+    }
+
+    const owner = await matchingNodes(context.access, targetId, rootId, frame, false);
+    const first = owner[0];
+
+    if (first === undefined) {
+        throw new ToolError(
+            `No frame matches ${JSON.stringify(frame)}. Pass a frame id from dom_snapshot or an iframe selector.`,
+        );
+    }
+
+    const described = frameOwnerSchema.safeParse(
+        await context.access.send(targetId, "DOM.describeNode", {
+            nodeId: first,
+            depth : 1,
+            pierce: true,
+        }),
+    );
+
+    if (!described.success) {
+        throw new ToolError(
+            "The browser sent an unexpected response to DOM.describeNode. Try the call again.",
+        );
+    }
+
+    if (described.data.node.nodeName !== "IFRAME" && described.data.node.nodeName !== "FRAME") {
+        throw new ToolError(
+            `The frame selector ${JSON.stringify(frame)} matched <${described.data.node.nodeName.toLowerCase()}>, not an iframe. Target an iframe element or pass a frame id from dom_snapshot.`,
+        );
+    }
+
+    const content = described.data.node.contentDocument;
+
+    if (content === undefined) {
+        throw new ToolError(
+            `The frame ${JSON.stringify(frame)} has no document yet. Wait for it to load and try again.`,
+        );
+    }
+
+    return { nodeId: content.nodeId, frameId: described.data.node.frameId, contextId: undefined };
+}
+
+async function chainedNodes(
+    access  : DaemonAccess,
+    targetId: string,
+    scope   : number,
+    selector: string,
+    all     : boolean,
+): Promise<number[]> {
+    const segments = splitPierceChain(selector) ?? [selector];
+    let current = [scope];
+
+    for (const [index, segment] of segments.entries()) {
+        const last = index === segments.length - 1;
+        const next: number[] = [];
+
+        for (const nodeId of current) {
+            const found = await matchingNodes(access, targetId, nodeId, segment, last && all);
+
+            if (last) {
+                next.push(...found);
+
+                continue;
+            }
+
+            for (const match of found) {
+                const described = frameOwnerSchema.safeParse(
+                    await access.send(targetId, "DOM.describeNode", {
+                        nodeId: match,
+                        depth : 1,
+                        pierce: true,
+                    }),
+                );
+
+                if (!described.success) {
+                    throw new ToolError(
+                        "The browser sent an unexpected response to DOM.describeNode. Try the call again.",
+                    );
+                }
+
+                const root = described.data.node.shadowRoots?.[0];
+
+                if (root !== undefined) next.push(root.nodeId);
+            }
+        }
+
+        current = next;
+
+        if (current.length === 0) return [];
+    }
+
+    return current;
+}
+
+async function piercedNodes(
+    access  : DaemonAccess,
+    targetId: string,
+    selector: string,
+    all     : boolean,
+): Promise<number[]> {
+    await access.send(targetId, "DOM.enable", {});
+    await access.send(targetId, "DOM.getDocument", { depth: -1, pierce: true });
+
+    const search = searchSchema.safeParse(
+        await access.send(targetId, "DOM.performSearch", {
+            query                    : selector,
+            includeUserAgentShadowDOM: false,
+        }),
+    );
+
+    if (!search.success) {
+        throw new ToolError(
+            "The browser sent an unexpected response to DOM.performSearch. Try the call again.",
+        );
+    }
+
+    try {
+        if (search.data.resultCount === 0) return [];
+
+        const toIndex = all ? Math.min(search.data.resultCount, QUERY_MAX_LIMIT) : 1;
+        const results = searchResultsSchema.safeParse(
+            await access.send(targetId, "DOM.getSearchResults", {
+                searchId : search.data.searchId,
+                fromIndex: 0,
+                toIndex,
+            }),
+        );
+
+        if (!results.success) {
+            throw new ToolError(
+                "The browser sent an unexpected response to DOM.getSearchResults. Try the call again.",
+            );
+        }
+
+        return results.data.nodeIds.filter((nodeId) => nodeId !== 0);
+    } finally {
+        await access.send(targetId, "DOM.discardSearchResults", {
+            searchId: search.data.searchId,
+        }).catch(() => undefined);
+    }
+}
+
 async function queryRows(
     access  : DaemonAccess,
     targetId: string,
@@ -285,17 +550,25 @@ async function queryRows(
     total   : number,
     limit   : number,
     filter  : string | undefined,
+    scope   : { pierce: boolean; contextId: number | undefined },
 ): Promise<QueryRow[]> {
     const count = filter === undefined
         ? Math.min(total, limit)
         : Math.min(total, QUERY_MAX_TEXT_CHARS);
+    const expression = scope.pierce
+        ? buildPiercedQueryScript(selector, names, count)
+        : buildQueryScript(selector, names, count);
     let result: unknown;
 
     try {
         result = await access.send(
             targetId,
             "Runtime.evaluate",
-            { expression: buildQueryScript(selector, names, count), returnByValue: true },
+            {
+                expression,
+                returnByValue: true,
+                ...(scope.contextId === undefined ? {} : { contextId: scope.contextId }),
+            },
             10_000,
         );
     } catch (error) {
@@ -351,3 +624,136 @@ async function describeNodes(
 
     return described;
 }
+
+const chainedTextSchema = z.object({
+    result: z.object({
+        type : z.string().optional(),
+        value: z.string().optional(),
+    }),
+});
+
+const CHAINED_TEXT_EXPRESSION = "function (element) { return element.innerText ?? ''; }";
+
+const boxSchema = z.object({
+    model: z.object({ content: z.array(z.number()).length(8) }),
+});
+
+async function chainedMatches(
+    context   : ToolContext,
+    targetId  : string,
+    nodeIds   : number[],
+    all       : boolean,
+    limit     : number,
+    filter    : string | undefined,
+    includeBox: boolean,
+    frameId   : string | undefined,
+): Promise<{ matches: z.infer<typeof matchSchema>[]; total: number; returned: number }> {
+    void all;
+
+    const names = DEFAULT_QUERY_ATTRIBUTES;
+    const matches: z.infer<typeof matchSchema>[] = [];
+    const candidates = filter === undefined ? nodeIds.slice(0, limit) : nodeIds;
+
+    for (const nodeId of candidates) {
+        if (matches.length >= limit) break;
+
+        const parsed = describedSchema.safeParse(
+            await context.access.send(targetId, "DOM.describeNode", { nodeId, depth: 0 }),
+        );
+
+        if (!parsed.success) {
+            throw new ToolError(
+                "The browser sent an unexpected response to DOM.describeNode. Try the call again.",
+            );
+        }
+
+        const password = isPasswordInput(parsed.data.node.attributes ?? []);
+        const kept: Record<string, string> = {};
+        const flat = parsed.data.node.attributes ?? [];
+
+        for (let i = 0; i + 1 < flat.length; i += 2) {
+            const name = flat[i] ?? "";
+            const value = flat[i + 1] ?? "";
+
+            if (names.includes(name)) kept[name] = password && name === "value" ? "" : value.slice(0, 500);
+        }
+
+        const resolved = resolvedSchema.safeParse(
+            await context.access.send(targetId, "DOM.resolveNode", { nodeId }).catch(() => undefined),
+        );
+        let text = "";
+
+        if (resolved.success && resolved.data.object.objectId !== undefined) {
+            const read = chainedTextSchema.safeParse(
+                await context.access.send(targetId, "Runtime.callFunctionOn", {
+                    functionDeclaration: CHAINED_TEXT_EXPRESSION,
+                    objectId           : resolved.data.object.objectId,
+                    arguments          : [{ objectId: resolved.data.object.objectId }],
+                    returnByValue      : true,
+                }).catch(() => undefined),
+            );
+
+            text = read.success ? (read.data.result.value ?? "") : "";
+        }
+
+        if (filter !== undefined && !text.toLowerCase().includes(filter.toLowerCase())) continue;
+
+        let box: { x: number; y: number; width: number; height: number } | null = null;
+        let visible = false;
+
+        if (includeBox) {
+            const model = boxSchema.safeParse(
+                await context.access.send(targetId, "DOM.getBoxModel", { nodeId }).catch(() => undefined),
+            );
+
+            if (model.success) {
+                const quad = model.data.model.content;
+                const xs = [quad[0] ?? 0, quad[2] ?? 0, quad[4] ?? 0, quad[6] ?? 0];
+                const ys = [quad[1] ?? 0, quad[3] ?? 0, quad[5] ?? 0, quad[7] ?? 0];
+                const left = Math.min(...xs);
+                const top = Math.min(...ys);
+
+                box = {
+                    x     : Math.round(left),
+                    y     : Math.round(top),
+                    width : Math.round(Math.max(...xs) - left),
+                    height: Math.round(Math.max(...ys) - top),
+                };
+                visible = box.width > 0 && box.height > 0;
+
+                if (!visible) box = null;
+            }
+        }
+
+        const frameGeneration = frameId === undefined
+            ? undefined
+            : context.frames.generation(targetId, frameId);
+        const [uid] = context.elements.assign(targetId, [{
+            backendNodeId: parsed.data.node.backendNodeId,
+            ...(frameId === undefined ? {} : { frameId }),
+            ...(frameGeneration === undefined ? {} : { frameGeneration }),
+        }]);
+
+        if (uid === undefined) continue;
+
+        const classes = (kept.class ?? "").split(/\s+/).filter((entry) => entry !== "");
+
+        matches.push({
+            uid,
+            tag       : (parsed.data.node.localName ?? parsed.data.node.nodeName).toLowerCase(),
+            id        : kept.id ?? "",
+            classes,
+            attributes: Object.fromEntries(
+                Object.entries(kept).map(([name, value]) => [name, clipValue(value)]),
+            ),
+            text   : clipValue(text),
+            visible: includeBox ? visible : true,
+            box,
+            ...(password ? { redacted: true as const } : {}),
+        });
+    }
+
+    return { matches, total: nodeIds.length, returned: matches.length };
+}
+
+const resolvedSchema = z.object({ object: z.object({ objectId: z.string().optional() }) });

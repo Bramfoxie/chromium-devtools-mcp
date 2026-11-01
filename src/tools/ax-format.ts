@@ -91,6 +91,7 @@ export interface AxFormatOptions {
     uidFor          : (backendNodeId: number) => string | undefined;
     domFor          : (backendNodeId: number) => AxDomInfo | undefined;
     startBackendNode: number | undefined;
+    frameFor?       : (backendNodeId: number) => string | undefined;
 }
 
 export interface AxFormatResult {
@@ -251,6 +252,14 @@ function lineFor(node: AxNode, uid: string, options: AxFormatOptions): string {
 
     if (node.description !== "" && node.description !== node.name) {
         parts.push(`desc=${quote(node.description)}`);
+    }
+
+    if (node.role === "iframe" || node.role === "frame") {
+        const frameId = node.backendNodeId === undefined
+            ? undefined
+            : options.frameFor?.(node.backendNodeId);
+
+        if (frameId !== undefined) parts.push(`frame=${frameId}`);
     }
 
     return parts.join(" ");

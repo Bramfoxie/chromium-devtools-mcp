@@ -313,3 +313,273 @@ describe("dom_query", () => {
         expect(JSON.stringify(result.content)).toContain("new_tab");
     });
 });
+
+describe("dom_query piercing", () => {
+    function piercingFake() {
+        const fake = new FakeAccess();
+
+        fake.frames = [
+            { frameId: "main", url: "https://a.example/", name: "", isolated: false },
+            {
+                frameId      : "cross",
+                parentFrameId: "main",
+                url          : "https://b.example/",
+                name         : "pay",
+                isolated     : true,
+            },
+        ];
+
+        fake.respond = (_targetId, method, params) => {
+            switch (method) {
+                case "DOM.getDocument":
+                    return { root: { nodeId: 1 } };
+
+                case "DOM.querySelector": {
+                    const selector = (params as { selector?: unknown })?.selector;
+
+                    if (selector === "#frame") return { nodeId: 10 };
+                    if (selector === "my-app") return { nodeId: 13 };
+                    if (selector === "#inner") return { nodeId: 15 };
+
+                    return { nodeId: 41 };
+                }
+
+                case "DOM.querySelectorAll":
+                    return { nodeIds: [41, 42] };
+
+                case "DOM.describeNode": {
+                    const nodeId = (params as { nodeId?: unknown })?.nodeId;
+
+                    if (nodeId === 10) {
+                        return {
+                            node: {
+                                nodeName       : "IFRAME",
+                                localName      : "iframe",
+                                backendNodeId  : 20,
+                                frameId        : "cross",
+                                contentDocument: { nodeId: 11 },
+                            },
+                        };
+                    }
+
+                    if (nodeId === 13) {
+                        return {
+                            node: {
+                                nodeName     : "MY-APP",
+                                localName    : "my-app",
+                                backendNodeId: 5,
+                                attributes   : [],
+                                shadowRoots  : [{ nodeId: 14 }],
+                            },
+                        };
+                    }
+
+                    return {
+                        node: {
+                            nodeName     : "BUTTON",
+                            localName    : "button",
+                            backendNodeId: 100 + (nodeId as number),
+                            attributes   : ["id", "inner"],
+                        },
+                    };
+                }
+
+                case "DOM.resolveNode":
+                    return { object: { objectId: "obj-1" } };
+                case "DOM.getBoxModel":
+                    return {
+                        model: {
+                            content: [10, 20, 30, 20, 30, 40, 10, 40],
+                            padding: [10, 20, 30, 20, 30, 40, 10, 40],
+                            border : [10, 20, 30, 20, 30, 40, 10, 40],
+                            margin : [10, 20, 30, 20, 30, 40, 10, 40],
+                        },
+                    };
+                case "DOM.enable":
+                    return {};
+                case "DOM.performSearch":
+                    return { searchId: "s1", resultCount: 2 };
+                case "DOM.getSearchResults":
+                    return { nodeIds: [41, 42] };
+                case "DOM.discardSearchResults":
+                    return {};
+                case "Page.createIsolatedWorld":
+                    return { executionContextId: 7 };
+                case "Runtime.callFunctionOn":
+                    return { result: { type: "string", value: "Inner" } };
+                case "Runtime.evaluate":
+                    return {
+                        result: {
+                            type   : "object",
+                            subtype: "array",
+                            value  : [
+                                row({ tag: "button", text: "Pay" }),
+                                row({ tag: "button", text: "More" }),
+                            ],
+                        },
+                    };
+                default:
+                    throw new Error(`unexpected CDP call ${method}`);
+            }
+        };
+
+        return fake;
+    }
+
+    it("queries inside a frame selected by id through an isolated world", async () => {
+        const fake = piercingFake();
+        const { runtime } = setup(fake);
+
+        await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+
+        const result = await runTool(domQuery, { selector: "#pay-btn", frame: "cross" }, extra(), runtime);
+
+        expect(result.isError).not.toBe(true);
+        expect(fake.sent.map((call) => call.method)).toEqual([
+            "DOM.getDocument",
+            "Page.createIsolatedWorld",
+            "DOM.querySelector",
+            "Runtime.evaluate",
+            "DOM.describeNode",
+        ]);
+        expect(fake.sent[1]?.params).toMatchObject({ frameId: "cross" });
+        expect(fake.sent[3]?.params).toMatchObject({ contextId: 7 });
+        expect(runtime.elements.lookup("tab1", "0_1")).toEqual({
+            backendNodeId  : 141,
+            frameId        : "cross",
+            frameGeneration: 0,
+        });
+    });
+
+    it("queries inside a frame selected by an iframe selector", async () => {
+        const fake = piercingFake();
+        const { runtime } = setup(fake);
+
+        await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+
+        const result = await runTool(
+            domQuery,
+            { selector: "#same-btn", frame: "#frame" },
+            extra(),
+            runtime,
+        );
+
+        expect(result.isError).not.toBe(true);
+        expect(fake.sent.map((call) => call.method)).toEqual([
+            "DOM.getDocument",
+            "DOM.querySelector",
+            "DOM.describeNode",
+            "DOM.querySelector",
+            "Runtime.evaluate",
+            "DOM.describeNode",
+        ]);
+        expect(fake.sent[3]?.params).toEqual({ nodeId: 11, selector: "#same-btn" });
+        expect(fake.sent[4]?.params).not.toHaveProperty("contextId");
+    });
+
+    it("matches through shadow roots with pierce", async () => {
+        const fake = piercingFake();
+        const { runtime } = setup(fake);
+
+        await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+
+        const result = await runTool(
+            domQuery,
+            { selector: "button", all: true, pierce: true },
+            extra(),
+            runtime,
+        );
+
+        expect(result.isError).not.toBe(true);
+        expect(fake.sent.map((call) => call.method)).toEqual([
+            "DOM.getDocument",
+            "DOM.enable",
+            "DOM.getDocument",
+            "DOM.performSearch",
+            "DOM.getSearchResults",
+            "DOM.discardSearchResults",
+            "Runtime.evaluate",
+            "DOM.describeNode",
+            "DOM.describeNode",
+        ]);
+        const expression = (fake.sent[6]?.params as { expression?: string })?.expression ?? "";
+
+        expect(expression).toContain("shadowRoot");
+        expect(result.structuredContent).toMatchObject({ total: 2, returned: 2 });
+    });
+
+    it("resolves >>> chains element by element without page script order", async () => {
+        const fake = piercingFake();
+        const { runtime } = setup(fake);
+
+        await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+
+        const result = await runTool(
+            domQuery,
+            { selector: "my-app >>> #inner" },
+            extra(),
+            runtime,
+        );
+
+        expect(result.isError).not.toBe(true);
+        expect(result.structuredContent).toMatchObject({
+            matches: [
+                { tag: "button", id: "inner", text: "Inner", visible: true },
+            ],
+            total   : 1,
+            returned: 1,
+        });
+        expect(fake.sent.map((call) => call.method)).not.toContain("Runtime.evaluate");
+    });
+
+    it("rejects pierce together with a chain", async () => {
+        const { runtime } = setup(piercingFake());
+
+        await runTool(newTab, {}, extra(), runtime);
+
+        const result = await runTool(
+            domQuery,
+            { selector: "a >>> b", pierce: true },
+            extra(),
+            runtime,
+        );
+
+        expect(result.isError).toBe(true);
+        expect(JSON.stringify(result.content)).toContain("not both");
+    });
+});
+
+describe("buildPiercedQueryScript", () => {
+    it("walks shadow roots in a real JavaScript engine", async () => {
+        const { buildPiercedQueryScript } = await import("../src/tools/index.js");
+        const script = `const inner = {
+  localName: "button", id: "in", classList: [], getAttribute: () => null,
+  innerText: "In", getClientRects: () => [1],
+  getBoundingClientRect: () => ({ x: 1, y: 2, width: 3, height: 4 }) };
+const shadow = { querySelectorAll: (s) => s === "*" ? [] : (s === "button" ? [inner] : []) };
+const host = { shadowRoot: shadow, localName: "div" };
+const document = { querySelectorAll: (s) => s === "*" ? [host] : [] };
+console.log(JSON.stringify(eval(${JSON.stringify(buildPiercedQueryScript("button", ["id"], 10))})));`;
+        const output = await new Promise<string>((resolve, reject) => {
+            execFile(process.execPath, ["--input-type=module", "-e", script], (error, stdout) =>
+                error ? reject(error) : resolve(stdout),
+            );
+        });
+
+        expect(JSON.parse(output)).toEqual([
+            {
+                tag       : "button",
+                id        : "in",
+                classes   : [],
+                attributes: {},
+                text      : "In",
+                visible   : true,
+                rect      : { x: 1, y: 2, width: 3, height: 4 },
+            },
+        ]);
+    });
+});

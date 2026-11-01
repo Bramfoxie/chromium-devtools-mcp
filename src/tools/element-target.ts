@@ -347,6 +347,13 @@ async function scopeNode(
     }
 
     const owner = await queryOne(access, tab, rootId, frame);
+
+    if (owner === 0) {
+        throw new ToolError(
+            `No frame matches ${JSON.stringify(frame)}. Pass a frame id from dom_snapshot or an iframe selector.`,
+        );
+    }
+
     const described = parseCdp(
         "DOM.describeNode",
         describedNodeSchema,
