@@ -215,6 +215,7 @@ export const inputType = defineTool({
                 context.elements,
                 targetId,
                 args.target,
+                { frames: context.frames },
             );
             const checked = await ensureActionable(context.access, targetId, resolved, {
                 checkDisabled: true,
@@ -375,6 +376,7 @@ export const inputKey = defineTool({
                 context.elements,
                 targetId,
                 args.target,
+                { frames: context.frames },
             );
             const checked = await ensureActionable(context.access, targetId, resolved, {
                 checkDisabled: true,
