@@ -275,24 +275,39 @@ export class CaptureManager {
         return { records, nextAfterId, droppedCount, totalBuffered };
     }
 
-    idleNetworkMs(tab: string): number {
+    idleNetworkMs(tab: string, since?: number): number {
         const capture = this.tabs.get(tab);
 
         if (capture === undefined) return Number.MAX_SAFE_INTEGER;
 
         let latest: number | undefined;
+        let seen = false;
 
         for (const { value } of capture.network.after(0, Number.MAX_SAFE_INTEGER)) {
-            if (!value.finished) return 0;
+            if (value.finished) {
+                const fresh = value.finishedAt !== undefined &&
+                    (since === undefined || value.finishedAt >= since);
 
-            if (value.finishedAt !== undefined) {
-                latest = latest === undefined
-                    ? value.finishedAt
-                    : Math.max(latest, value.finishedAt);
+                if (fresh && value.finishedAt !== undefined) {
+                    seen = true;
+                    latest = latest === undefined
+                        ? value.finishedAt
+                        : Math.max(latest, value.finishedAt);
+                }
+
+                continue;
             }
+
+            if (value.requestId.includes(".") || since === undefined) return 0;
+
+            // Records replayed by Network.enable predate the wait and never finish.
+            if (value.startTime === undefined && value.finishedAt === undefined) continue;
+
+            seen = true;
         }
 
-        if (latest === undefined) return Number.MAX_SAFE_INTEGER;
+        if (!seen) return Number.MAX_SAFE_INTEGER;
+        if (latest === undefined) return 0;
 
         return Math.max(0, this.clock.now() - latest);
     }

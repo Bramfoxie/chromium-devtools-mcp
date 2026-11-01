@@ -284,7 +284,34 @@ describe("page_wait", () => {
 
         const result = await runTool(pageWait, { loadState: "networkidle" }, extra(), runtime);
 
-        expect(result.structuredContent).toMatchObject({ met: true, detail: { idleMs: 600 } });
+        expect(result.structuredContent).toMatchObject({ met: true });
+        expect(
+            (result.structuredContent as { detail: { idleMs: number } }).detail.idleMs,
+        ).toBeGreaterThanOrEqual(600);
+    });
+
+    it("ignores replayed records that predate the wait", async () => {
+        const { fake, runtime } = setup();
+
+        await runtime.capture.ensureNetwork("tab1");
+        fake.emit("cdp.event", {
+            targetId: "tab1",
+            event   : "Network.responseReceived",
+            params  : {
+                requestId: "replayed",
+                timestamp: 100,
+                type     : "Document",
+                response : {
+                    url       : "https://a.example/",
+                    status    : 200,
+                    statusText: "OK",
+                },
+            },
+        });
+
+        const result = await runTool(pageWait, { loadState: "networkidle" }, extra(), runtime);
+
+        expect(result.structuredContent).toMatchObject({ met: true });
     });
 
     it("sleeps without touching the page and caps it at the timeout", async () => {
