@@ -16,6 +16,7 @@ import {
     type NetworkConditions,
     type NetworkPresetName,
 } from "./commands.js";
+import { runSteps } from "./steps.js";
 import { emulationSummarySchema, summarizeEmulation } from "./summary.js";
 
 const presetSchema = z.enum(["offline", "slow-3g", "fast-3g", "4g", "wifi", "none"]);
@@ -115,9 +116,25 @@ export const emulateNetwork = defineTool({
         await ensureNoDialog(context.dialogs, targetId);
 
         if (input.reset) {
-            for (const command of buildNetworkResetCommands()) {
-                await context.access.send(targetId, command.method, command.params);
-            }
+            const [conditionsReset, blocksReset] = buildNetworkResetCommands();
+
+            await runSteps(context.access, context.signal, targetId, [
+                {
+                    commands: conditionsReset ? [conditionsReset] : [],
+                    record  : () => {
+                        const current = context.emulation.snapshot(targetId).network;
+
+                        if (current !== undefined) {
+                            context.emulation.applyNetwork(targetId, {
+                                ...presetConditions("none"),
+                                preset   : undefined,
+                                blockUrls: current.blockUrls,
+                            });
+                        }
+                    },
+                },
+                { commands: blocksReset ? [blocksReset] : [], record: () => undefined },
+            ]);
 
             const state = context.emulation.resetNetwork(targetId);
 
@@ -133,20 +150,39 @@ export const emulateNetwork = defineTool({
         const previous = context.emulation.snapshot(targetId).network;
         const conditions = conditionsOf(input, previous);
         const blockUrls = input.blockUrls ?? previous?.blockUrls ?? [];
+        const preset = input.preset ??
+            (input.blockUrls !== undefined ? previous?.preset : undefined);
+        const restore = () => {
+            if (previous === undefined) context.emulation.resetNetwork(targetId);
+            else context.emulation.applyNetwork(targetId, previous);
+        };
 
-        for (const command of buildNetworkCommands(conditions)) {
-            await context.access.send(targetId, command.method, command.params);
-        }
+        await runSteps(context.access, context.signal, targetId, [
+            {
+                commands: buildNetworkCommands(conditions),
+                record  : () => context.emulation.applyNetwork(targetId, {
+                    ...conditions,
+                    preset,
+                    blockUrls: previous?.blockUrls ?? [],
+                }),
+                undo: buildNetworkCommands(
+                    previous === undefined ? presetConditions("none") : previous,
+                ),
+                unrecord: restore,
+            },
+            {
+                commands: buildBlockedUrlsCommands(blockUrls),
+                record  : () => context.emulation.applyNetwork(targetId, {
+                    ...conditions,
+                    preset,
+                    blockUrls,
+                }),
+                undo    : buildBlockedUrlsCommands(previous?.blockUrls ?? []),
+                unrecord: restore,
+            },
+        ]);
 
-        for (const command of buildBlockedUrlsCommands(blockUrls)) {
-            await context.access.send(targetId, command.method, command.params);
-        }
-
-        const state = context.emulation.applyNetwork(targetId, {
-            ...conditions,
-            preset: input.preset ?? (input.blockUrls !== undefined ? previous?.preset : undefined),
-            blockUrls,
-        });
+        const state = context.emulation.snapshot(targetId);
 
         return { tab: targetId, emulation: summarizeEmulation(state) };
     },

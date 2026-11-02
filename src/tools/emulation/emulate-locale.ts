@@ -12,6 +12,7 @@ import {
     type LocaleSelection,
 } from "./commands.js";
 import { readLocale } from "./reads.js";
+import { runSteps } from "./steps.js";
 import { emulationSummarySchema, summarizeEmulation } from "./summary.js";
 
 export const ACCEPT_LANGUAGE_MAX_CHARS = 512;
@@ -90,82 +91,91 @@ export const emulateLocale = defineTool({
 
         await ensureNoDialog(context.dialogs, targetId);
 
-        if (selection.reset) {
-            const previous = context.emulation.snapshot(targetId).locale ??
-                { locale: undefined, timezone: undefined, acceptLanguage: undefined };
-
-            for (
-                const command of buildLocaleResetCommands({
-                    locale        : previous.locale,
-                    timezone      : previous.timezone,
-                    acceptLanguage: previous.acceptLanguage,
-                })
-            ) {
-                await context.access.send(targetId, command.method, command.params);
-            }
-
-            const userAgent = context.emulation.snapshot(targetId).device?.userAgent;
-            const agent = buildUserAgentCommand({ userAgent, acceptLanguage: undefined });
-
-            if (agent) await context.access.send(targetId, agent.method, agent.params);
-
-            const state = context.emulation.resetLocale(targetId);
+        const reportedOf = async () => {
             const reported = await readLocale(context.access, targetId);
 
-            return {
-                tab      : targetId,
-                emulation: summarizeEmulation(state),
-                ...(reported === undefined ? {} : {
-                    reported: {
-                        language : reported.language,
-                        ...(reported.timezone === undefined ? {} : { timezone: reported.timezone }),
-                        formatted: reported.formatted,
-                    },
-                }),
-            };
-        }
-
-        const merged: LocaleSelection = {
-            locale        : locale ?? context.emulation.snapshot(targetId).locale?.locale,
-            timezone      : timezone ?? context.emulation.snapshot(targetId).locale?.timezone,
-            acceptLanguage: selection.acceptLanguage ??
-                context.emulation.snapshot(targetId).locale?.acceptLanguage,
-        };
-
-        const delta = buildLocaleCommands({ locale, timezone, acceptLanguage: undefined });
-
-        for (const command of delta) {
-            await context.access.send(targetId, command.method, command.params);
-        }
-
-        const userAgent = context.emulation.snapshot(targetId).device?.userAgent;
-
-        if (selection.acceptLanguage !== undefined || userAgent !== undefined) {
-            const agent = buildUserAgentCommand({
-                userAgent,
-                acceptLanguage: merged.acceptLanguage,
-            });
-
-            if (agent) await context.access.send(targetId, agent.method, agent.params);
-        }
-
-        const state = context.emulation.applyLocale(targetId, {
-            locale        : merged.locale,
-            timezone      : merged.timezone,
-            acceptLanguage: merged.acceptLanguage,
-        });
-        const reported = await readLocale(context.access, targetId);
-
-        return {
-            tab      : targetId,
-            emulation: summarizeEmulation(state),
-            ...(reported === undefined ? {} : {
+            return reported === undefined ? {} : {
                 reported: {
                     language : reported.language,
                     ...(reported.timezone === undefined ? {} : { timezone: reported.timezone }),
                     formatted: reported.formatted,
                 },
-            }),
+            };
+        };
+
+        if (selection.reset) {
+            const recorded = context.emulation.snapshot(targetId).locale ??
+                { locale: undefined, timezone: undefined, acceptLanguage: undefined };
+            const userAgent = context.emulation.snapshot(targetId).device?.userAgent;
+            const agent = buildUserAgentCommand({ userAgent, acceptLanguage: undefined });
+
+            await runSteps(context.access, context.signal, targetId, [
+                {
+                    commands: [...buildLocaleResetCommands(recorded), ...(agent ? [agent] : [])],
+                    record  : () => context.emulation.resetLocale(targetId),
+                },
+            ]);
+
+            return {
+                tab      : targetId,
+                emulation: summarizeEmulation(context.emulation.snapshot(targetId)),
+                ...await reportedOf(),
+            };
+        }
+
+        const previous = context.emulation.snapshot(targetId).locale;
+        const merged: LocaleSelection = {
+            locale        : locale ?? previous?.locale,
+            timezone      : timezone ?? previous?.timezone,
+            acceptLanguage: selection.acceptLanguage ?? previous?.acceptLanguage,
+        };
+        const userAgent = context.emulation.snapshot(targetId).device?.userAgent;
+        const agent = selection.acceptLanguage !== undefined || userAgent !== undefined
+            ? buildUserAgentCommand({ userAgent, acceptLanguage: merged.acceptLanguage })
+            : undefined;
+        const previousAgent = buildUserAgentCommand({
+            userAgent,
+            acceptLanguage: previous?.acceptLanguage,
+        });
+        const restore = () => {
+            if (previous === undefined) context.emulation.resetLocale(targetId);
+            else context.emulation.applyLocale(targetId, previous);
+        };
+
+        await runSteps(context.access, context.signal, targetId, [
+            {
+                commands: [...buildLocaleCommands({ locale, timezone, acceptLanguage: undefined })],
+                record  : () => context.emulation.applyLocale(targetId, {
+                    locale        : merged.locale,
+                    timezone      : merged.timezone,
+                    acceptLanguage: previous?.acceptLanguage,
+                }),
+                undo: [
+                    ...buildLocaleResetCommands({
+                        locale        : locale === undefined ? previous?.locale : locale,
+                        timezone      : timezone === undefined ? previous?.timezone : timezone,
+                        acceptLanguage: undefined,
+                    }),
+                    ...buildLocaleCommands({
+                        locale        : previous?.locale,
+                        timezone      : previous?.timezone,
+                        acceptLanguage: undefined,
+                    }),
+                ],
+                unrecord: restore,
+            },
+            {
+                commands: agent ? [agent] : [],
+                record  : () => context.emulation.applyLocale(targetId, merged),
+                undo    : previousAgent ? [previousAgent] : [],
+                unrecord: restore,
+            },
+        ]);
+
+        return {
+            tab      : targetId,
+            emulation: summarizeEmulation(context.emulation.snapshot(targetId)),
+            ...await reportedOf(),
         };
     },
 });

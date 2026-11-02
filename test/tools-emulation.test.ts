@@ -227,13 +227,13 @@ describe("emulate_device", () => {
         });
         expect((result.structuredContent as { emulation: object }).emulation).not.toHaveProperty("device");
         expect(methods(fake)).toEqual([
+            "Emulation.setUserAgentOverride",
             "Emulation.clearDeviceMetricsOverride",
             "Emulation.setEmitTouchEventsForMouse",
             "Emulation.setTouchEmulationEnabled",
-            "Emulation.setUserAgentOverride",
             "Runtime.evaluate",
         ]);
-        expect(fake.sent[3]?.params).toEqual({ userAgent: "", acceptLanguage: "de-DE" });
+        expect(fake.sent[0]?.params).toEqual({ userAgent: "", acceptLanguage: "de-DE" });
     });
 
     it("suggests close names for an unknown device", async () => {
@@ -597,5 +597,142 @@ describe("emulation tools", () => {
         fake.emit("tab.closed", { targetId: "tab1" });
 
         expect(runtime.emulation.snapshot("tab1").device).toBeUndefined();
+    });
+});
+
+describe("emulation rollback", () => {
+    it("restores the connection when blocking urls fails after the conditions were sent", async () => {
+        const { fake, runtime } = setup();
+
+        await openTab(runtime);
+        fake.failSend = (_tab, method) =>
+            method === "Network.setBlockedURLs"
+                ? new RpcError(ErrorCode.cdpError, "blocked patterns rejected")
+                : undefined;
+        fake.sent.length = 0;
+
+        const result = await runTool(
+            emulateNetwork,
+            { preset: "offline", blockUrls: ["*/ads"] },
+            extra(),
+            runtime,
+        );
+
+        expect(result.isError).toBe(true);
+        expect(runtime.emulation.snapshot("tab1").network).toBeUndefined();
+
+        const conditions = fake.sent.filter((entry) => entry.method === "Network.emulateNetworkConditions");
+
+        expect(conditions).toHaveLength(2);
+        expect(conditions[1]?.params).toMatchObject({ offline: false, latency: 0 });
+    });
+
+    it("restores the previous network state when a later send fails", async () => {
+        const { fake, runtime } = setup();
+
+        await openTab(runtime);
+        await runTool(emulateNetwork, { preset: "4g" }, extra(), runtime);
+
+        fake.failSend = (_tab, method) =>
+            method === "Network.setBlockedURLs"
+                ? new RpcError(ErrorCode.cdpError, "blocked patterns rejected")
+                : undefined;
+
+        const result = await runTool(
+            emulateNetwork,
+            { preset: "offline", blockUrls: ["*/ads"] },
+            extra(),
+            runtime,
+        );
+
+        expect(result.isError).toBe(true);
+        expect(runtime.emulation.snapshot("tab1").network).toMatchObject({
+            preset   : "4g",
+            offline  : false,
+            latencyMs: 170,
+        });
+    });
+
+    it("undoes the network conditions when the call is cancelled between sends", async () => {
+        const { fake, runtime } = setup();
+        const controller = new AbortController();
+
+        await openTab(runtime);
+
+        fake.respond = (_tab, method) => {
+            if (method === "Network.emulateNetworkConditions") controller.abort();
+
+            return {};
+        };
+
+        fake.sent.length = 0;
+
+        const result = await runTool(
+            emulateNetwork,
+            { preset: "offline" },
+            { signal: controller.signal } as Extra,
+            runtime,
+        );
+
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(result.isError).toBe(true);
+        expect(runtime.emulation.snapshot("tab1").network).toBeUndefined();
+        expect(fake.sent.at(-1)?.method).toBe("Network.emulateNetworkConditions");
+        expect(fake.sent.at(-1)?.params).toMatchObject({ offline: false });
+        expect(methods(fake)).not.toContain("Network.setBlockedURLs");
+    });
+
+    it("clears the device metrics when the user agent send fails", async () => {
+        const { fake, runtime } = setup();
+
+        await openTab(runtime);
+        fake.failSend = (_tab, method) =>
+            method === "Emulation.setUserAgentOverride"
+                ? new RpcError(ErrorCode.cdpError, "user agent rejected")
+                : undefined;
+        fake.sent.length = 0;
+
+        const result = await runTool(emulateDevice, { device: "Pixel 7" }, extra(), runtime);
+
+        expect(result.isError).toBe(true);
+        expect(runtime.emulation.snapshot("tab1").device).toBeUndefined();
+        expect(methods(fake)).toContain("Emulation.clearDeviceMetricsOverride");
+    });
+
+    it("records the device before the read so a failing read keeps the applied state", async () => {
+        const { fake, runtime } = setup();
+
+        await openTab(runtime);
+        fake.failSend = (_tab, method) =>
+            method === "Runtime.evaluate"
+                ? new RpcError(ErrorCode.cdpError, "evaluate failed")
+                : undefined;
+
+        const result = await runTool(emulateDevice, { device: "Pixel 7" }, extra(), runtime);
+
+        expect(result.isError).not.toBe(true);
+        expect(runtime.emulation.snapshot("tab1").device?.name).toBe("Pixel 7");
+    });
+
+    it("undoes media and locale when a later send fails", async () => {
+        const { fake, runtime } = setup();
+
+        await openTab(runtime);
+        fake.failSend = (_tab, method) =>
+            method === "Emulation.setTimezoneOverride"
+                ? new RpcError(ErrorCode.cdpError, "timezone rejected")
+                : undefined;
+        fake.sent.length = 0;
+
+        const result = await runTool(
+            emulateLocale,
+            { locale: "de-DE", timezone: "Europe/Berlin" },
+            extra(),
+            runtime,
+        );
+
+        expect(result.isError).toBe(true);
+        expect(runtime.emulation.snapshot("tab1").locale).toBeUndefined();
+        expect(fake.sent.filter((entry) => entry.method === "Emulation.setLocaleOverride")).toHaveLength(2);
     });
 });

@@ -11,6 +11,7 @@ import {
     type MediaState,
 } from "./commands.js";
 import { readMedia, type MediaRead } from "./reads.js";
+import { runSteps } from "./steps.js";
 import { emulationSummarySchema, summarizeEmulation } from "./summary.js";
 
 export function hasMediaSelection(
@@ -78,16 +79,18 @@ export const emulateMedia = defineTool({
         await ensureNoDialog(context.dialogs, targetId);
 
         if (selection.reset) {
-            for (const command of buildMediaResetCommands()) {
-                await context.access.send(targetId, command.method, command.params);
-            }
+            await runSteps(context.access, context.signal, targetId, [
+                {
+                    commands: buildMediaResetCommands(),
+                    record  : () => context.emulation.resetMedia(targetId),
+                },
+            ]);
 
-            const state = context.emulation.resetMedia(targetId);
             const reported = await readMedia(context.access, targetId);
 
             return {
                 tab      : targetId,
-                emulation: summarizeEmulation(state),
+                emulation: summarizeEmulation(context.emulation.snapshot(targetId)),
                 ...(reported === undefined ? {} : { reported: toReported(reported) }),
             };
         }
@@ -95,16 +98,25 @@ export const emulateMedia = defineTool({
         const previous = context.emulation.snapshot(targetId).media;
         const merged: MediaState = mergeMedia(previous, selection);
 
-        for (const command of buildMediaCommands(merged)) {
-            await context.access.send(targetId, command.method, command.params);
-        }
+        await runSteps(context.access, context.signal, targetId, [
+            {
+                commands: buildMediaCommands(merged),
+                record  : () => context.emulation.applyMedia(targetId, merged),
+                undo    : previous === undefined
+                    ? buildMediaResetCommands()
+                    : buildMediaCommands(previous),
+                unrecord: () => {
+                    if (previous === undefined) context.emulation.resetMedia(targetId);
+                    else context.emulation.applyMedia(targetId, previous);
+                },
+            },
+        ]);
 
-        const state = context.emulation.applyMedia(targetId, merged);
         const reported = await readMedia(context.access, targetId);
 
         return {
             tab      : targetId,
-            emulation: summarizeEmulation(state),
+            emulation: summarizeEmulation(context.emulation.snapshot(targetId)),
             ...(reported === undefined ? {} : { reported: toReported(reported) }),
         };
     },

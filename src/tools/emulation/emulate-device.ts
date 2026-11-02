@@ -23,6 +23,7 @@ import {
     DEVICE_WIDTH_MIN,
 } from "./devices.js";
 import { readDevice, type DeviceRead } from "./reads.js";
+import { runSteps } from "./steps.js";
 import { emulationSummarySchema, summarizeEmulation } from "./summary.js";
 
 const reportedSchema = z.strictObject({
@@ -144,36 +145,75 @@ export const emulateDevice = defineTool({
 
         await ensureNoDialog(context.dialogs, targetId);
 
-        if (args.reset === true) {
-            await applyDeviceReset(context.access, targetId);
-            await sendUserAgent(context, targetId, undefined);
+        const acceptLanguage = context.emulation.snapshot(targetId).locale?.acceptLanguage;
 
-            const state = context.emulation.resetDevice(targetId);
+        if (args.reset === true) {
+            const agent = buildUserAgentCommand({ userAgent: undefined, acceptLanguage });
+
+            await runSteps(context.access, context.signal, targetId, [
+                { commands: agent ? [agent] : [], record: () => undefined },
+                {
+                    commands: buildDeviceResetCommands(),
+                    record  : () => context.emulation.resetDevice(targetId),
+                },
+            ]);
 
             return {
                 tab      : targetId,
-                emulation: summarizeEmulation(state),
+                emulation: summarizeEmulation(context.emulation.snapshot(targetId)),
                 ...await reportedOf(context, targetId),
             };
         }
 
         const selection = selectMetrics(args);
-        const commands = buildDeviceCommands(selection.metrics, selection.landscape);
-
-        await sendCommands(context.access, targetId, commands);
-        await sendUserAgent(context, targetId, selection.userAgent);
-
-        const reported = await readDevice(context.access, targetId);
-        const state = context.emulation.applyDevice(targetId, {
+        const previous = context.emulation.snapshot(targetId).device;
+        const agent = buildUserAgentCommand({ userAgent: selection.userAgent, acceptLanguage });
+        const previousAgent = buildUserAgentCommand({
+            userAgent: previous?.userAgent === "" ? undefined : previous?.userAgent,
+            acceptLanguage,
+        });
+        const restore = () => {
+            if (previous === undefined) context.emulation.resetDevice(targetId);
+            else context.emulation.applyDevice(targetId, previous);
+        };
+        const applied = {
             ...selection.metrics,
             name     : selection.name,
-            userAgent: selection.userAgent ?? reported?.userAgent ?? "",
             landscape: selection.landscape,
-        });
+        };
+
+        await runSteps(context.access, context.signal, targetId, [
+            {
+                commands: buildDeviceCommands(selection.metrics, selection.landscape),
+                record  : () => context.emulation.applyDevice(targetId, {
+                    ...applied,
+                    userAgent: previous?.userAgent ?? "",
+                }),
+                undo: previous === undefined
+                    ? buildDeviceResetCommands()
+                    : buildDeviceCommands(previous, previous.landscape),
+                unrecord: restore,
+            },
+            {
+                commands: agent ? [agent] : [],
+                record  : () => context.emulation.applyDevice(targetId, {
+                    ...applied,
+                    userAgent: selection.userAgent ?? "",
+                }),
+                undo    : previousAgent ? [previousAgent] : [],
+                unrecord: restore,
+            },
+        ]);
+
+        const reported = await readDevice(context.access, targetId);
+
+        if (selection.userAgent === undefined && reported !== undefined) {
+            context.emulation.applyDevice(targetId, { ...applied, userAgent: reported.userAgent });
+        }
 
         return {
             tab      : targetId,
-            emulation: summarizeEmulation(state),
+            emulation: summarizeEmulation(context.emulation.snapshot(targetId)),
             ...(reported === undefined ? {} : { reported }),
         };
     },
@@ -215,17 +255,6 @@ function selectMetrics(args: {
     });
 
     return { metrics, landscape, userAgent: args.userAgent, name: "Custom" };
-}
-
-async function sendUserAgent(
-    context  : ToolContext,
-    targetId : string,
-    userAgent: string | undefined,
-): Promise<void> {
-    const acceptLanguage = context.emulation.snapshot(targetId).locale?.acceptLanguage;
-    const command = buildUserAgentCommand({ userAgent, acceptLanguage });
-
-    if (command) await context.access.send(targetId, command.method, command.params);
 }
 
 async function reportedOf(
