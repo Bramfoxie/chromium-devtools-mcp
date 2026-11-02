@@ -1,3 +1,4 @@
+import { runInNewContext } from "node:vm";
 import { describe, expect, it } from "vitest";
 import { ErrorCode, RpcError } from "../src/daemon/index.js";
 import {
@@ -5,6 +6,7 @@ import {
     describeTarget,
     elementState,
     ensureActionable,
+    HIT_EXPRESSION,
     hitTest,
     readBox,
     ToolError,
@@ -161,6 +163,14 @@ describe("hitTest", () => {
             kind: "covered",
             by  : { tag: "div", id: "overlay", classes: ["modal"] },
         });
+    });
+
+    it("maps a hidden verdict to the hidden message", async () => {
+        const fake = actionableFake({ hit: { kind: "hidden" } });
+
+        await expect(hitTest(fake.asAccess(), "tab1", element, { x: 12, y: 34 })).rejects.toThrow(
+            "no box on the page",
+        );
     });
 });
 
@@ -387,5 +397,160 @@ describe("hitTest cross-origin fallback", () => {
             kind: "hit",
         });
         expect(calls).toBe(1);
+    });
+});
+
+interface HitScriptVerdict {
+    kind    : string;
+    tag?    : string;
+    id?     : string;
+    classes?: string[];
+}
+
+interface FakeStyle {
+    visibility: string;
+    display   : string;
+}
+
+interface FakeShadowHost {
+    host: FakeElement | null;
+}
+
+class FakeDocument {
+    defaultView: FakeView | null = null;
+    topHit     : FakeElement | null = null;
+
+    elementFromPoint(): FakeElement | null {
+        return this.topHit;
+    }
+}
+
+class FakeView {
+    parent  : FakeView;
+    document: FakeDocument;
+
+    constructor(document: FakeDocument) {
+        this.document = document;
+        this.parent = this;
+    }
+
+    getComputedStyle(element: FakeElement): FakeStyle {
+        return element.style;
+    }
+}
+
+class FakeElement {
+    localName    : string;
+    id           : string;
+    classList    : string[];
+    ownerDocument: FakeDocument;
+    parentNode   : FakeElement | null;
+    rootHost     : FakeElement | null;
+    shadowRoot   : FakeDocument | null;
+    style        : FakeStyle;
+    rects        : number;
+    children     : FakeElement[];
+
+    constructor(document: FakeDocument, tag: string, id = "", classes: string[] = []) {
+        this.localName = tag;
+        this.id = id;
+        this.classList = classes;
+        this.ownerDocument = document;
+        this.parentNode = null;
+        this.rootHost = null;
+        this.shadowRoot = null;
+        this.style = { visibility: "visible", display: "block" };
+        this.rects = 1;
+        this.children = [];
+    }
+
+    append(child: FakeElement): void {
+        child.parentNode = this;
+        this.children.push(child);
+    }
+
+    getClientRects(): unknown[] {
+        return Array.from({ length: this.rects });
+    }
+
+    getRootNode(): FakeShadowHost {
+        return { host: this.rootHost };
+    }
+
+    contains(other: FakeElement | null): boolean {
+        if (other === null) return false;
+
+        if (other === this) return true;
+
+        return this.children.some((child) => child.contains(other));
+    }
+}
+
+function hitFixture(): FakeDocument {
+    const document = new FakeDocument();
+    const view = new FakeView(document);
+
+    document.defaultView = view;
+
+    return document;
+}
+
+function runHitExpression(target: FakeElement, x = 60, y = 45): HitScriptVerdict {
+    const value: unknown = runInNewContext(`(${HIT_EXPRESSION})(element, x, y)`, {
+        element: target,
+        x,
+        y,
+    });
+
+    return JSON.parse(JSON.stringify(value)) as HitScriptVerdict;
+}
+
+describe("HIT_EXPRESSION in a real JavaScript engine", () => {
+    it("treats a hit on a strict descendant as a hit", () => {
+        const document = hitFixture();
+        const target = new FakeElement(document, "button", "save", ["primary"]);
+        const inner = new FakeElement(document, "span", "inner");
+
+        target.append(inner);
+        document.topHit = inner;
+
+        expect(runHitExpression(target)).toEqual({ kind: "hit" });
+    });
+
+    it("treats a closed shadow host as a hit", () => {
+        const document = hitFixture();
+        const host = new FakeElement(document, "div", "widget");
+        const target = new FakeElement(document, "button", "save");
+
+        target.rootHost = host;
+        document.topHit = host;
+
+        expect(runHitExpression(target)).toEqual({ kind: "hit" });
+    });
+
+    it("reports a light-DOM ancestor as covering", () => {
+        const document = hitFixture();
+        const parent = new FakeElement(document, "div", "panel");
+        const target = new FakeElement(document, "button", "save");
+
+        parent.append(target);
+        document.topHit = parent;
+
+        expect(runHitExpression(target)).toEqual({
+            kind   : "covered",
+            tag    : "div",
+            id     : "panel",
+            classes: [],
+        });
+    });
+
+    it("reports a hidden target as hidden", () => {
+        const document = hitFixture();
+        const target = new FakeElement(document, "button", "save");
+
+        target.rects = 0;
+        document.topHit = target;
+
+        expect(runHitExpression(target)).toEqual({ kind: "hidden" });
     });
 });

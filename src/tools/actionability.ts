@@ -62,7 +62,7 @@ const hitSchema = z.object({
         subtype: z.string().optional(),
         value  : z
             .object({
-                kind   : z.enum(["hit", "covered", "outside"]),
+                kind   : z.enum(["hit", "covered", "outside", "hidden"]),
                 tag    : z.string().optional(),
                 id     : z.string().optional(),
                 classes: z.array(z.string()).optional(),
@@ -104,7 +104,7 @@ export const HIT_EXPRESSION = `function (element, x, y) {
     if (style !== null && (style.visibility === "hidden" || style.display === "none")) return false;
     return true;
   };
-  if (!shown(element)) return { kind: "covered", tag: element.localName, id: element.id, classes: [...element.classList].slice(0, 10) };
+  if (!shown(element)) return { kind: "hidden" };
   let top = doc.defaultView;
   while (top.parent !== top) top = top.parent;
   const topDoc = top.document;
@@ -114,21 +114,21 @@ export const HIT_EXPRESSION = `function (element, x, y) {
     const el = scope.elementFromPoint(sx, sy);
     if (el === null) return { kind: "outside" };
     if (el === element) return { kind: "hit" };
-    if (element.contains(el)) {
-      // elementFromPoint skips pointer-events:none and visibility:hidden
-      // nodes: the point lands on the parent, not on the target.
-      return { kind: "covered", tag: el.localName, id: el.id, classes: [...el.classList].slice(0, 10) };
-    }
+    if (element.contains(el)) return { kind: "hit" };
     let node = element;
     let ancestor = false;
+    let shadowCrossed = false;
     for (let i = 0; i < 60 && node !== null; i++) {
       if (node === el) { ancestor = true; break; }
       const root = node.getRootNode ? node.getRootNode() : null;
-      node = node.parentNode || (root && root.host ? root.host : null);
+      const host = root && root.host ? root.host : null;
+      if (node.parentNode === null && host !== null) { shadowCrossed = true; }
+      node = node.parentNode || host;
     }
     if (ancestor) {
       const shadow = el.shadowRoot;
       if (shadow) { scope = shadow; continue; }
+      if (shadowCrossed) return { kind: "hit" };
       return { kind: "covered", tag: el.localName, id: el.id, classes: [...el.classList].slice(0, 10) };
     }
     const tag = el.localName;
@@ -278,6 +278,8 @@ export async function hitTest(
     }
 
     const value = parsed.data.result.value;
+
+    if (value.kind === "hidden") throw hiddenError();
 
     if (value.kind !== "covered") return { kind: value.kind };
 
