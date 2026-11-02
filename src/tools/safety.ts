@@ -7,6 +7,12 @@ export interface SafetyTarget {
     pattern?: string;
 }
 
+export interface SafetyFrame {
+    frameId: string;
+    url    : string;
+    origin?: string;
+}
+
 export type SafetyDecision = { allowed: true } | { allowed: false; reason: string; hint: string };
 
 export interface SafetyRequest {
@@ -15,6 +21,7 @@ export interface SafetyRequest {
     config    : Config;
     target?   : SafetyTarget;
     tabUrl?   : string;
+    frame?    : SafetyFrame;
     dangerous?: boolean;
 }
 

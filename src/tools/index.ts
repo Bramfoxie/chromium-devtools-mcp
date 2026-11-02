@@ -33,9 +33,12 @@ export {
     type SafetyAccess,
     checkSafety,
     type SafetyDecision,
+    type SafetyFrame,
     type SafetyRequest,
     type SafetyTarget,
 } from "./safety.js";
+
+export { safetyFrameOf } from "./safety-frame.js";
 
 export {
     buildPiercedQueryScript,

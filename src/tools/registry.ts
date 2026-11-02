@@ -10,6 +10,7 @@ import { ToolRuntime } from "./context.js";
 import { ToolError, toToolMessage } from "./errors.js";
 import { errorResult, jsonResult } from "./result.js";
 import { checkSafety, type SafetyAccess } from "./safety.js";
+import { safetyFrameOf } from "./safety-frame.js";
 import { SessionResetError } from "../mcp/index.js";
 
 export const CANCELLED_MESSAGE = "The request was cancelled. Call the tool again if needed.";
@@ -39,6 +40,14 @@ export function toolAnnotations(tool: AnyTool): {
         destructiveHint: dangerous,
         openWorldHint  : false,
     };
+}
+
+function selectedTab(args: unknown, runtime: ToolRuntime): string | undefined {
+    const argTab = (args as { tab?: unknown } | null)?.tab;
+
+    if (typeof argTab === "string" && argTab.length > 0) return argTab;
+
+    return runtime.tabs.selected();
 }
 
 async function resolveTabUrl(
@@ -131,12 +140,19 @@ export async function runTool(
     const tabUrl = access === "mutate"
         ? await resolveTabUrl(tool, parsed.data, runtime).catch(() => undefined)
         : undefined;
+    const tab = access === "mutate" ? selectedTab(parsed.data, runtime) : undefined;
+    const frame = tab === undefined
+        ? undefined
+        : await safetyFrameOf(parsed.data, tab, runtime.elements, runtime.frames).catch(
+            () => undefined,
+        );
     const decision = checkSafety({
         tool  : tool.name,
         access,
         config: runtime.config,
         target: tool.target?.(parsed.data as never),
         tabUrl,
+        ...(frame === undefined ? {} : { frame }),
         dangerous,
     });
 
