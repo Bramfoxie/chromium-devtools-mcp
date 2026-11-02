@@ -1,5 +1,4 @@
 import { z } from "zod";
-import type { DaemonAccess } from "../../mcp/index.js";
 import { defineTool, type ToolContext } from "../define-tool.js";
 import { ensureNoDialog } from "../dialogs.js";
 import { ToolError } from "../errors.js";
@@ -10,7 +9,6 @@ import {
     buildUserAgentCommand,
     deviceMetricsOf,
     resolveDevice,
-    type CdpCommand,
     type DeviceMetrics,
 } from "./commands.js";
 import {
@@ -82,23 +80,6 @@ export function explicitMetrics(input: DeviceInput): DeviceMetrics {
         mobile           : input.mobile as boolean,
         touch            : input.touch as boolean,
     };
-}
-
-export async function applyDeviceReset(
-    access  : DaemonAccess,
-    targetId: string,
-): Promise<void> {
-    await sendCommands(access, targetId, buildDeviceResetCommands());
-}
-
-async function sendCommands(
-    access  : DaemonAccess,
-    targetId: string,
-    commands: CdpCommand[],
-): Promise<void> {
-    for (const command of commands) {
-        await access.send(targetId, command.method, command.params);
-    }
 }
 
 export const emulateDevice = defineTool({

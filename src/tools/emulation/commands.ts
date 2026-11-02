@@ -14,12 +14,6 @@ export interface DeviceMetrics {
     touch            : boolean;
 }
 
-export interface DeviceSelection {
-    device   : DeviceSpec;
-    landscape: boolean;
-    touch    : boolean;
-}
-
 export interface MediaSelection {
     media?        : "" | "screen" | "print";
     colorScheme?  : "light" | "dark" | "no-preference";

@@ -10,7 +10,7 @@ import {
     type MediaSelection,
     type MediaState,
 } from "./commands.js";
-import { readMedia, type MediaRead } from "./reads.js";
+import { readMedia } from "./reads.js";
 import { runSteps } from "./steps.js";
 import { emulationSummarySchema, summarizeEmulation } from "./summary.js";
 
@@ -100,7 +100,7 @@ export const emulateMedia = defineTool({
             return {
                 tab      : targetId,
                 emulation: summarizeEmulation(context.emulation.snapshot(targetId)),
-                ...(reported === undefined ? {} : { reported: toReported(reported) }),
+                ...(reported === undefined ? {} : { reported: reported }),
             };
         }
 
@@ -126,18 +126,7 @@ export const emulateMedia = defineTool({
         return {
             tab      : targetId,
             emulation: summarizeEmulation(context.emulation.snapshot(targetId)),
-            ...(reported === undefined ? {} : { reported: toReported(reported) }),
+            ...(reported === undefined ? {} : { reported: reported }),
         };
     },
 });
-
-function toReported(reported: MediaRead): MediaRead {
-    return {
-        colorScheme  : reported.colorScheme,
-        reducedMotion: reported.reducedMotion,
-        contrast     : reported.contrast,
-        forcedColors : reported.forcedColors,
-        reducedData  : reported.reducedData,
-        mediaPrint   : reported.mediaPrint,
-    };
-}

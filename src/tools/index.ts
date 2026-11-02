@@ -575,7 +575,6 @@ export { listDevices } from "./emulation/list-devices.js";
 
 export {
     type DeviceInput,
-    applyDeviceReset,
     checkDeviceInput,
     emulateDevice,
     explicitMetrics,

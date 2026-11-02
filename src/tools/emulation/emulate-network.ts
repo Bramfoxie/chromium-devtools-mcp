@@ -1,5 +1,4 @@
 import { z } from "zod";
-import type { DaemonAccess } from "../../mcp/index.js";
 import { defineTool } from "../define-tool.js";
 import { ensureNoDialog } from "../dialogs.js";
 import { ToolError } from "../errors.js";
@@ -72,7 +71,6 @@ export function conditionsOf(
 }
 
 export async function ensureNetworkForEmulation(
-    access  : DaemonAccess,
     ensure  : (tab: string) => Promise<void>,
     targetId: string,
 ): Promise<void> {
@@ -147,11 +145,7 @@ export const emulateNetwork = defineTool({
             return { tab: targetId, emulation: summarizeEmulation(state) };
         }
 
-        await ensureNetworkForEmulation(
-            context.access,
-            (tab) => context.capture.ensureNetwork(tab),
-            targetId,
-        );
+        await ensureNetworkForEmulation((tab) => context.capture.ensureNetwork(tab), targetId);
 
         const previous = context.emulation.snapshot(targetId).network;
         const conditions = conditionsOf(input, previous);
