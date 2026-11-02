@@ -205,8 +205,8 @@ export async function startEnv(): Promise<Env> {
             await daemon?.stop().catch(() => undefined);
             await harness.dispose();
             await fixture.close();
-            await rm(profile, { recursive: true, force: true });
-            await rm(home, { recursive: true, force: true });
+            await rm(profile, { recursive: true, force: true, maxRetries: 40, retryDelay: 250 });
+            await rm(home, { recursive: true, force: true, maxRetries: 40, retryDelay: 250 });
         },
     };
 }
