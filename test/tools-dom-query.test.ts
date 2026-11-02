@@ -465,6 +465,7 @@ describe("dom_query piercing", () => {
                     if (nodeId === 10) {
                         return {
                             node: {
+                                nodeType       : 1,
                                 nodeName       : "IFRAME",
                                 localName      : "iframe",
                                 backendNodeId  : 20,
@@ -477,6 +478,7 @@ describe("dom_query piercing", () => {
                     if (nodeId === 13) {
                         return {
                             node: {
+                                nodeType     : 1,
                                 nodeName     : "MY-APP",
                                 localName    : "my-app",
                                 backendNodeId: 5,
@@ -488,6 +490,7 @@ describe("dom_query piercing", () => {
 
                     return {
                         node: {
+                            nodeType     : 1,
                             nodeName     : "BUTTON",
                             localName    : "button",
                             backendNodeId: 100 + (nodeId as number),
@@ -645,12 +648,14 @@ describe("dom_query piercing", () => {
             "DOM.getDocument",
             "DOM.performSearch",
             "DOM.getSearchResults",
+            "DOM.describeNode",
+            "DOM.describeNode",
             "DOM.discardSearchResults",
             "Runtime.evaluate",
             "DOM.describeNode",
             "DOM.describeNode",
         ]);
-        const expression = (fake.sent[6]?.params as { expression?: string })?.expression ?? "";
+        const expression = (fake.sent[8]?.params as { expression?: string })?.expression ?? "";
 
         expect(expression).toContain("shadowRoot");
         expect(result.structuredContent).toMatchObject({ total: 2, returned: 2 });
@@ -662,7 +667,10 @@ describe("dom_query piercing", () => {
 
         fake.respond = (targetId, method, params) => {
             if (method === "DOM.performSearch") return { searchId: "s1", resultCount: 350 };
-            if (method === "DOM.getSearchResults") return { nodeIds: [41, 42] };
+
+            if (method === "DOM.getSearchResults") {
+                return { nodeIds: Array.from({ length: 200 }, (_, at) => 41 + at) };
+            }
 
             return inner?.(targetId, method, params);
         };
@@ -680,8 +688,43 @@ describe("dom_query piercing", () => {
 
         expect(result.structuredContent).toMatchObject({
             total    : 350,
-            returned : 2,
             truncated: true,
+        });
+    });
+
+    it("excludes unusable search hits from the pierce total", async () => {
+        const fake = piercingFake();
+        const inner = fake.respond;
+
+        fake.respond = (targetId, method, params) => {
+            if (method === "DOM.performSearch") return { searchId: "s1", resultCount: 2 };
+            if (method === "DOM.getSearchResults") return { nodeIds: [41, 42] };
+
+            if (
+                method === "DOM.describeNode" &&
+                (params as { nodeId?: unknown })?.nodeId === 42
+            ) {
+                return { node: { nodeType: 3, nodeName: "#text", backendNodeId: 9 } };
+            }
+
+            return inner?.(targetId, method, params);
+        };
+
+        const { runtime } = setup(fake);
+
+        await runTool(newTab, {}, extra(), runtime);
+
+        const result = await runTool(
+            domQuery,
+            { selector: "button", all: true, pierce: true },
+            extra(),
+            runtime,
+        );
+
+        expect(result.structuredContent).toMatchObject({
+            total    : 1,
+            returned : 1,
+            truncated: false,
         });
     });
 

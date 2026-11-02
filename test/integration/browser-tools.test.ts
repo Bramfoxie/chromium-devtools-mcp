@@ -89,6 +89,7 @@ describe.skipIf(!present)("real browser", () => {
         const deep = (pierced.matches as Row[])[0];
 
         expect(pierced.matches as Row[]).toHaveLength(1);
+        expect(pierced).toMatchObject({ total: 1, returned: 1, truncated: false });
         await env.ok("input_click", { target: { uid: deep?.uid } });
         expect(await evaluate("window.deepClicks")).toBe(1);
 

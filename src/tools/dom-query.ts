@@ -43,6 +43,9 @@ const frameOwnerSchema = z.object({
 const searchSchema = z.object({ searchId: z.string(), resultCount: z.number() });
 const searchResultsSchema = z.object({ nodeIds: z.array(z.number()) });
 
+const ELEMENT_NODE = 1;
+const nodeTypeSchema = z.object({ node: z.object({ nodeType: z.number() }) });
+
 const describedSchema = z.object({
     node: z.object({
         nodeName     : z.string(),
@@ -691,14 +694,35 @@ async function piercedNodes(
             (nodeId) => nodeId !== 0 && (inFrame === undefined || inFrame.has(nodeId)),
         );
 
-        if (inFrame === undefined) return { nodeIds: ids, total: search.data.resultCount };
+        const elements = await elementNodeIds(access, targetId, ids);
+        const total = search.data.resultCount - (toIndex - elements.length);
 
-        return { nodeIds: ids.slice(0, all ? QUERY_MAX_LIMIT : 1), total: ids.length };
+        if (inFrame === undefined) return { nodeIds: elements, total };
+
+        return { nodeIds: elements.slice(0, all ? QUERY_MAX_LIMIT : 1), total: elements.length };
     } finally {
         await access.send(targetId, "DOM.discardSearchResults", {
             searchId: search.data.searchId,
         }).catch(() => undefined);
     }
+}
+
+async function elementNodeIds(
+    access  : DaemonAccess,
+    targetId: string,
+    nodeIds : number[],
+): Promise<number[]> {
+    const elements: number[] = [];
+
+    for (const nodeId of nodeIds) {
+        const parsed = nodeTypeSchema.safeParse(
+            await access.send(targetId, "DOM.describeNode", { nodeId, depth: 0 }),
+        );
+
+        if (parsed.success && parsed.data.node.nodeType === ELEMENT_NODE) elements.push(nodeId);
+    }
+
+    return elements;
 }
 
 async function queryRows(
