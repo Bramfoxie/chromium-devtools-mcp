@@ -356,4 +356,105 @@ describe("frame snapshot helpers", () => {
             frameGeneration: 0,
         });
     });
+
+    it("marks the snapshot when the DOM is deeper than the depth limit", async () => {
+        const deep = {
+            root: {
+                backendNodeId: 1,
+                nodeName     : "HTML",
+                children     : [
+                    { backendNodeId: 12, nodeName: "DIV", childNodeCount: 3 },
+                ],
+            },
+        };
+        const fake = snapshotFake(TREE, deep);
+        const { runtime } = setup(fake);
+
+        await runTool(newTab, {}, extra(), runtime);
+
+        const result = await runTool(domSnapshot, {}, extra(), runtime);
+
+        expect(result.structuredContent).toMatchObject({
+            snapshot : expect.stringContaining("[truncated: the DOM is deeper than 10 levels"),
+            truncated: true,
+        });
+    });
+
+    it("does not mark a complete DOM as depth limited", async () => {
+        const { runtime } = setup(snapshotFake());
+
+        await runTool(newTab, {}, extra(), runtime);
+
+        const result = await runTool(domSnapshot, {}, extra(), runtime);
+
+        expect(JSON.stringify(result.structuredContent)).not.toContain("deeper than");
+        expect(result.structuredContent).toMatchObject({ truncated: false });
+    });
+
+    it("applies interactiveOnly to frame sections", async () => {
+        const fake = new FakeAccess({
+            frames: [
+                { frameId: "main", url: "https://a.example/", name: "", isolated: false },
+                {
+                    frameId      : "frame1",
+                    parentFrameId: "main",
+                    url          : "https://b.example/",
+                    name         : "pay",
+                    isolated     : true,
+                },
+            ],
+        });
+
+        fake.respond = (_targetId, method, params) => {
+            switch (method) {
+                case "Accessibility.getFullAXTree":
+                    return {
+                        nodes: [
+                            {
+                                nodeId          : "1",
+                                role            : { value: "Iframe" },
+                                name            : { value: "same-origin" },
+                                childIds        : [],
+                                backendDOMNodeId: 20,
+                            },
+                        ],
+                    };
+                case "Accessibility.getPartialAXTree":
+                    expect((params as { backendNodeId?: unknown }).backendNodeId).toBe(21);
+
+                    return {
+                        nodes: [
+                            {
+                                nodeId          : "2",
+                                role            : { value: "heading" },
+                                name            : { value: "Title text" },
+                                childIds        : ["3"],
+                                backendDOMNodeId: 23,
+                            },
+                            {
+                                nodeId          : "3",
+                                role            : { value: "button" },
+                                name            : { value: "Pay" },
+                                childIds        : [],
+                                backendDOMNodeId: 22,
+                            },
+                        ],
+                    };
+                case "DOM.getDocument":
+                    return FRAMED;
+                default:
+                    throw new Error(`unexpected CDP call ${method}`);
+            }
+        };
+
+        const { runtime } = setup(fake);
+
+        await runTool(newTab, {}, extra(), runtime);
+
+        const result = await runTool(domSnapshot, { interactiveOnly: true }, extra(), runtime);
+        const text = (result.structuredContent as { snapshot: string }).snapshot;
+
+        expect(text).toContain('button "Pay"');
+        expect(text).not.toContain("Title text");
+    });
 });

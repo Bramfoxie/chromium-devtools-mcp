@@ -26,6 +26,7 @@ interface DomNodeShape {
     nodeName?       : unknown;
     attributes?     : unknown;
     frameId?        : unknown;
+    childNodeCount? : unknown;
     children?       : DomNodeShape[];
     shadowRoots?    : DomNodeShape[];
     contentDocument?: DomNodeShape;
@@ -36,6 +37,7 @@ const domNodeSchema: z.ZodType<DomNodeShape> = z.object({
     nodeName       : z.unknown().optional(),
     attributes     : z.unknown().optional(),
     frameId        : z.unknown().optional(),
+    childNodeCount : z.unknown().optional(),
     children       : z.array(z.lazy(() => domNodeSchema)).optional(),
     shadowRoots    : z.array(z.lazy(() => domNodeSchema)).optional(),
     contentDocument: z.lazy(() => domNodeSchema).optional(),
@@ -113,6 +115,28 @@ export function iframeFrameMap(root: unknown): Map<number, string> {
     return map;
 }
 
+export function domDepthLimited(root: unknown): boolean {
+    const parsed = documentSchema.safeParse(root);
+
+    if (!parsed.success) return false;
+
+    const visit = (node: z.infer<typeof domNodeSchema>): boolean => {
+        const count = typeof node.childNodeCount === "number" ? node.childNodeCount : 0;
+
+        if (count > 0 && node.children === undefined && node.contentDocument === undefined) {
+            return true;
+        }
+
+        return [
+            ...(node.children ?? []),
+            ...(node.shadowRoots ?? []),
+            ...(node.contentDocument === undefined ? [] : [node.contentDocument]),
+        ].some(visit);
+    };
+
+    return visit(parsed.data.root);
+}
+
 export function frameDocBackends(root: unknown): Array<{ frameId: string; backendNodeId: number }> {
     const parsed = documentSchema.safeParse(root);
 
@@ -176,7 +200,7 @@ export const domSnapshot = defineTool({
         generation: z.number().describe("Uid generation of the tab. Uids of older generations are stale."),
         nodeCount : z.number().describe("Nodes in the snapshot text."),
         omitted   : z.number().describe("Tree nodes left out of the text."),
-        truncated : z.boolean().describe("Whether the text was truncated at maxChars."),
+        truncated : z.boolean().describe("Whether the text was truncated at maxChars or the DOM was deeper than the depth limit."),
         frames    : z.array(z.strictObject({
             frameId  : z.string().describe("Frame id for the frame argument of element targets."),
             parent   : z.string().optional().describe("Parent frame id, absent for the main frame."),
@@ -239,21 +263,28 @@ export const domSnapshot = defineTool({
         });
 
         const collected = backendNodeId === undefined
-            ? await frameSections(context, targetId, dom.root, maxFrames)
+            ? await frameSections(context, targetId, dom.root, maxFrames, {
+                interactiveOnly,
+                includeHidden,
+            })
             : { sections: [], omitted: [] as string[] };
         const sections = [formatted.text, ...collected.sections.map((frame) => frame.text)].filter(
             (text) => text !== "",
         );
         const shaped = truncateText(sections.join("\n"), maxChars);
+        const depthLimited = backendNodeId === undefined && domDepthLimited(dom.root);
+        const snapshot = depthLimited
+            ? `${shaped.text}\n[truncated: the DOM is deeper than ${SNAPSHOT_DOM_DEPTH} levels, so content below that depth, including frames, is not listed]`
+            : shaped.text;
         const summaries = frameSummaries(context, targetId, collected.sections, collected.omitted);
 
         return {
-            snapshot : shaped.text,
+            snapshot,
             generation,
             nodeCount: formatted.nodeCount +
                 collected.sections.reduce((sum, frame) => sum + frame.count, 0),
             omitted  : formatted.omitted,
-            truncated: shaped.truncated,
+            truncated: shaped.truncated || depthLimited,
             frames   : summaries,
         };
     },
@@ -270,6 +301,7 @@ async function frameSections(
     targetId : string,
     root     : unknown,
     maxFrames: number,
+    options  : { interactiveOnly: boolean; includeHidden: boolean },
 ): Promise<{ sections: FrameSection[]; omitted: string[] }> {
     const docs = frameDocBackends(root);
 
@@ -301,8 +333,8 @@ async function frameSections(
         const nodes = toAxNodes(partial);
         const generation = context.frames.generation(targetId, doc.frameId);
         const formatted = formatAxTree(nodes, {
-            interactiveOnly: false,
-            includeHidden  : false,
+            interactiveOnly: options.interactiveOnly,
+            includeHidden  : options.includeHidden,
             uidFor         : (id) =>
                 context.elements.assign(targetId, [{
                     backendNodeId  : id,
