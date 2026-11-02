@@ -54,20 +54,3 @@ export function clickPointOf(
 
     return { x, y };
 }
-
-export function quadCenter(quad: number[], origin: FrameOrigin = TOP_LEVEL_ORIGIN): ClickPoint {
-    const xs = [quad[0] ?? 0, quad[2] ?? 0, quad[4] ?? 0, quad[6] ?? 0];
-    const ys = [quad[1] ?? 0, quad[3] ?? 0, quad[5] ?? 0, quad[7] ?? 0];
-
-    const x = Math.round((Math.min(...xs) + Math.max(...xs)) / 2) + origin.x;
-    const y = Math.round((Math.min(...ys) + Math.max(...ys)) / 2) + origin.y;
-
-    return { x, y };
-}
-
-export function insideViewport(
-    point   : ClickPoint,
-    viewport: { width: number; height: number },
-): boolean {
-    return point.x >= 0 && point.y >= 0 && point.x < viewport.width && point.y < viewport.height;
-}

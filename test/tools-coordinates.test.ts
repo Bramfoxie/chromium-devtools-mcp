@@ -2,8 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
     centerOf,
     clickPointOf,
-    insideViewport,
-    quadCenter,
     ToolError,
 } from "../src/tools/index.js";
 
@@ -40,26 +38,5 @@ describe("clickPointOf", () => {
         expect(() => clickPointOf({ x: 0, y: 0, width: 0, height: 5 }, undefined)).toThrow(
             ToolError,
         );
-    });
-});
-
-describe("quadCenter", () => {
-    it("reduces a content quad to a rounded center", () => {
-        expect(quadCenter([10, 20, 30, 20, 30, 40, 10, 40])).toEqual({ x: 20, y: 30 });
-        expect(quadCenter([10, 20, 30, 20, 30, 40, 10, 40], { x: 1, y: 2 })).toEqual({
-            x: 21,
-            y: 32,
-        });
-    });
-});
-
-describe("insideViewport", () => {
-    it("checks the viewport bounds", () => {
-        const viewport = { width: 800, height: 600 };
-
-        expect(insideViewport({ x: 0, y: 0 }, viewport)).toBe(true);
-        expect(insideViewport({ x: 799, y: 599 }, viewport)).toBe(true);
-        expect(insideViewport({ x: 800, y: 0 }, viewport)).toBe(false);
-        expect(insideViewport({ x: -1, y: 0 }, viewport)).toBe(false);
     });
 });

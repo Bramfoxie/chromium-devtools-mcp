@@ -396,8 +396,6 @@ export {
     type ClickPoint,
     type ElementOffset,
     type FrameOrigin,
-    insideViewport,
-    quadCenter,
     TOP_LEVEL_ORIGIN,
 } from "./coordinates.js";
 
