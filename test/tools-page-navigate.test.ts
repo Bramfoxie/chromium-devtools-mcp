@@ -345,13 +345,19 @@ describe("page_navigate", () => {
             await original(targetId, event, frameId);
         };
 
+        const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+
         const result = await runTool(
             pageNavigate,
             { url: "https://example.org/" },
             extra(),
             runtime,
         );
+        const logged = stderr.mock.calls.map((call) => String(call[0])).join("");
 
+        stderr.mockRestore();
+
+        expect(logged).toContain("subscribe failed");
         expect(result.isError).toBe(true);
         expect(fake.unsubscribed.map((entry) => entry.event)).toEqual(
             fake.subscribed.map((entry) => entry.event),
