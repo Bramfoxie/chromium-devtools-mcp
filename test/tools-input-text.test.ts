@@ -130,11 +130,14 @@ function textFake(world: TextWorld = {}): FakeAccess {
     return fake;
 }
 
+const instantClock = { now: () => 0, sleep: () => Promise.resolve() };
+
 function runtimeWith(fake: FakeAccess): { fake: FakeAccess; runtime: ToolRuntime } {
     const runtime = new ToolRuntime({
         access  : fake.asAccess(),
         config  : managedConfig,
         elements: new ElementRegistry(),
+        clock   : instantClock,
     });
 
     runtime.tabs.refresh(
@@ -393,6 +396,36 @@ describe("input_type", () => {
 
         expect(result.isError).not.toBe(true);
         expect(result.structuredContent).toMatchObject({ ok: false, contains: false });
+    });
+});
+
+describe("input_type budget", () => {
+    it("rejects a delay that would type for longer than 60 seconds", async () => {
+        const { fake, runtime } = runtimeWith(textFake());
+
+        const result = await runTool(
+            inputType,
+            { target: { uid: "1_1" }, text: "a".repeat(301), delayMs: 200 },
+            extra(),
+            runtime,
+        );
+
+        expect(result.isError).toBe(true);
+        expect(JSON.stringify(result.content)).toContain("60000 ms");
+        expect(fake.sent.filter((entry) => entry.method.startsWith("Input."))).toEqual([]);
+    });
+
+    it("accepts a delay that fits the budget", async () => {
+        const { runtime } = runtimeWith(textFake());
+
+        const result = await runTool(
+            inputType,
+            { target: { uid: "1_1" }, text: "a".repeat(300), delayMs: 200 },
+            extra(),
+            runtime,
+        );
+
+        expect(result.isError).not.toBe(true);
     });
 });
 

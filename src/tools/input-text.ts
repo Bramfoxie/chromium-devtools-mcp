@@ -18,6 +18,8 @@ export const TYPE_MAX_CHARS = 20000;
 
 export const TYPE_DELAY_MAX_MS = 200;
 
+export const TYPE_BUDGET_MS = 60000;
+
 export const TYPE_ECHO_CHARS = 50;
 
 export const KEY_REPEAT_MAX = 20;
@@ -182,7 +184,7 @@ export const inputType = defineTool({
         target : elementTargetSchema.optional().describe("Element uid from a snapshot or query, or a CSS selector. Omit to type into the focused element."),
         clear  : z.boolean().optional().describe("Select all and delete in the field first. Defaults to false."),
         submit : z.boolean().optional().describe("Press Enter after typing. Defaults to false."),
-        delayMs: z.number().int().min(0).max(TYPE_DELAY_MAX_MS).optional().describe("Delay between characters in ms, 0 to 200. With 0 the text is inserted at once. Defaults to 0."),
+        delayMs: z.number().int().min(0).max(TYPE_DELAY_MAX_MS).optional().describe("Delay between characters in ms, 0 to 200. With 0 the text is inserted at once. delayMs times the text length must not exceed 60000 ms. Defaults to 0."),
     }),
     output: z.strictObject({
         ok         : z.boolean().describe("Whether the field now contains the text."),
@@ -239,6 +241,12 @@ export const inputType = defineTool({
         }
 
         const delayMs = args.delayMs ?? 0;
+
+        if (delayMs * [...args.text].length > TYPE_BUDGET_MS) {
+            throw new ToolError(
+                `Typing ${[...args.text].length} characters with delayMs ${delayMs} would take longer than ${TYPE_BUDGET_MS} ms. Lower delayMs or type less text per call.`,
+            );
+        }
 
         const acted = await navigationOf(context.access, targetId, async () => {
             if (element !== undefined) await focusElement(context.access, targetId, element);
