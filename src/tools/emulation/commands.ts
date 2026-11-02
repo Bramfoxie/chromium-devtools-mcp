@@ -267,18 +267,11 @@ export function buildLocaleCommands(selection: LocaleSelection): CdpCommand[] {
     return commands;
 }
 
-export function buildLocaleResetCommands(previous: LocaleSelection): CdpCommand[] {
-    const commands: CdpCommand[] = [];
-
-    if (previous.locale !== undefined) {
-        commands.push({ method: "Emulation.setLocaleOverride", params: {} });
-    }
-
-    if (previous.timezone !== undefined) {
-        commands.push({ method: "Emulation.setTimezoneOverride", params: { timezoneId: "" } });
-    }
-
-    return commands;
+export function buildLocaleResetCommands(): CdpCommand[] {
+    return [
+        { method: "Emulation.setLocaleOverride", params: {} },
+        { method: "Emulation.setTimezoneOverride", params: { timezoneId: "" } },
+    ];
 }
 
 export function canonicalLocale(locale: string): string {

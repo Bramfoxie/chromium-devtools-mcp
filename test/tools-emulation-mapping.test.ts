@@ -431,14 +431,11 @@ describe("locale mapping", () => {
             ]);
     });
 
-    it("resets only the overrides that were set", () => {
-        expect(buildLocaleResetCommands({ locale: "de-DE", timezone: undefined, acceptLanguage: "de" }))
-            .toEqual([{ method: "Emulation.setLocaleOverride", params: {} }]);
-        expect(buildLocaleResetCommands({ locale: "de-DE", timezone: "Asia/Tokyo", acceptLanguage: undefined }))
-            .toEqual([
-                { method: "Emulation.setLocaleOverride", params: {} },
-                { method: "Emulation.setTimezoneOverride", params: { timezoneId: "" } },
-            ]);
+    it("resets locale and timezone regardless of recorded state", () => {
+        expect(buildLocaleResetCommands()).toEqual([
+            { method: "Emulation.setLocaleOverride", params: {} },
+            { method: "Emulation.setTimezoneOverride", params: { timezoneId: "" } },
+        ]);
     });
 
     it("validates BCP 47 locales and IANA timezones", () => {

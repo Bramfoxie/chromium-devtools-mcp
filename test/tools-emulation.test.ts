@@ -2,7 +2,7 @@ import type { RequestHandlerExtra } from "@modelcontextprotocol/sdk/shared/proto
 import type { ServerNotification, ServerRequest } from "@modelcontextprotocol/sdk/types.js";
 import { describe, expect, it } from "vitest";
 import type { Config } from "../src/config/index.js";
-import { ErrorCode, RpcError } from "../src/daemon/index.js";
+import { ErrorCode, IpcCancelledError, RpcError } from "../src/daemon/index.js";
 import {
     DEVICE_READ_EXPRESSION,
     emulateDevice,
@@ -15,6 +15,7 @@ import {
     MEDIA_READ_EXPRESSION,
     newTab,
     pageInfo,
+    readMedia,
     runTool,
     ToolRuntime,
 } from "../src/tools/index.js";
@@ -714,6 +715,17 @@ describe("emulation rollback", () => {
         expect(runtime.emulation.snapshot("tab1").device?.name).toBe("Pixel 7");
     });
 
+    it("rethrows a cancellation during a read and still swallows other read failures", async () => {
+        const fake = emulationFake();
+        const signal = new AbortController().signal;
+
+        fake.failSend = () => new IpcCancelledError("cdp.send");
+        await expect(readMedia(fake.asAccess(), "tab1", signal)).rejects.toBeInstanceOf(IpcCancelledError);
+
+        fake.failSend = () => new RpcError(ErrorCode.cdpError, "evaluate failed");
+        await expect(readMedia(fake.asAccess(), "tab1", signal)).resolves.toBeUndefined();
+    });
+
     it("undoes media and locale when a later send fails", async () => {
         const { fake, runtime } = setup();
 
@@ -773,5 +785,18 @@ describe("emulation input checks", () => {
         expect(media.isError).toBe(true);
         expect(locale.isError).toBe(true);
         expect(fake.sent).toEqual([]);
+    });
+
+    it("resets locale and timezone without any recorded state", async () => {
+        const { fake, runtime } = setup();
+
+        await openTab(runtime);
+        fake.sent.length = 0;
+
+        const result = await runTool(emulateLocale, { reset: true }, extra(), runtime);
+
+        expect(result.isError).not.toBe(true);
+        expect(methods(fake)).toContain("Emulation.setLocaleOverride");
+        expect(methods(fake)).toContain("Emulation.setTimezoneOverride");
     });
 });

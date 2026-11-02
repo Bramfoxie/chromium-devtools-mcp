@@ -95,7 +95,7 @@ export const emulateMedia = defineTool({
                 },
             ]);
 
-            const reported = await readMedia(context.access, targetId);
+            const reported = await readMedia(context.access, targetId, context.signal);
 
             return {
                 tab      : targetId,
@@ -121,7 +121,7 @@ export const emulateMedia = defineTool({
             },
         ]);
 
-        const reported = await readMedia(context.access, targetId);
+        const reported = await readMedia(context.access, targetId, context.signal);
 
         return {
             tab      : targetId,

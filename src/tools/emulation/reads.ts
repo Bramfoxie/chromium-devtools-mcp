@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { IpcCancelledError } from "../../daemon/index.js";
 import type { DaemonAccess } from "../../mcp/index.js";
 
 export const EMULATION_READ_TIMEOUT_MS = 5000;
@@ -94,6 +95,7 @@ async function readValue<T>(
     targetId  : string,
     expression: string,
     schema    : z.ZodType<{ result: { type?: string; value?: T } }>,
+    signal?   : AbortSignal,
 ): Promise<T | undefined> {
     try {
         const parsed = schema.safeParse(
@@ -102,13 +104,17 @@ async function readValue<T>(
                 "Runtime.evaluate",
                 { expression, returnByValue: true },
                 EMULATION_READ_TIMEOUT_MS,
+                undefined,
+                signal === undefined ? undefined : { signal },
             ),
         );
 
         if (!parsed.success || parsed.data.result.type === "undefined") return undefined;
 
         return parsed.data.result.value;
-    } catch {
+    } catch (error) {
+        if (error instanceof IpcCancelledError || signal?.aborted === true) throw error;
+
         return undefined;
     }
 }
@@ -116,20 +122,23 @@ async function readValue<T>(
 export async function readDevice(
     access  : DaemonAccess,
     targetId: string,
+    signal? : AbortSignal,
 ): Promise<DeviceRead | undefined> {
-    return readValue(access, targetId, DEVICE_READ_EXPRESSION, deviceReadSchema);
+    return readValue(access, targetId, DEVICE_READ_EXPRESSION, deviceReadSchema, signal);
 }
 
 export async function readMedia(
     access  : DaemonAccess,
     targetId: string,
+    signal? : AbortSignal,
 ): Promise<MediaRead | undefined> {
-    return readValue(access, targetId, MEDIA_READ_EXPRESSION, mediaReadSchema);
+    return readValue(access, targetId, MEDIA_READ_EXPRESSION, mediaReadSchema, signal);
 }
 
 export async function readLocale(
     access  : DaemonAccess,
     targetId: string,
+    signal? : AbortSignal,
 ): Promise<LocaleRead | undefined> {
-    return readValue(access, targetId, LOCALE_READ_EXPRESSION, localeReadSchema);
+    return readValue(access, targetId, LOCALE_READ_EXPRESSION, localeReadSchema, signal);
 }

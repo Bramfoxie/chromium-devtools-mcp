@@ -102,7 +102,7 @@ export const emulateLocale = defineTool({
         await ensureNoDialog(context.dialogs, targetId);
 
         const reportedOf = async () => {
-            const reported = await readLocale(context.access, targetId);
+            const reported = await readLocale(context.access, targetId, context.signal);
 
             return reported === undefined ? {} : {
                 reported: {
@@ -114,14 +114,12 @@ export const emulateLocale = defineTool({
         };
 
         if (selection.reset) {
-            const recorded = context.emulation.snapshot(targetId).locale ??
-                { locale: undefined, timezone: undefined, acceptLanguage: undefined };
             const userAgent = context.emulation.snapshot(targetId).device?.userAgent;
             const agent = buildUserAgentCommand({ userAgent, acceptLanguage: undefined });
 
             await runSteps(context.access, context.signal, targetId, [
                 {
-                    commands: [...buildLocaleResetCommands(recorded), ...(agent ? [agent] : [])],
+                    commands: [...buildLocaleResetCommands(), ...(agent ? [agent] : [])],
                     record  : () => context.emulation.resetLocale(targetId),
                 },
             ]);
@@ -161,11 +159,7 @@ export const emulateLocale = defineTool({
                     acceptLanguage: previous?.acceptLanguage,
                 }),
                 undo: [
-                    ...buildLocaleResetCommands({
-                        locale        : locale === undefined ? previous?.locale : locale,
-                        timezone      : timezone === undefined ? previous?.timezone : timezone,
-                        acceptLanguage: undefined,
-                    }),
+                    ...buildLocaleResetCommands(),
                     ...buildLocaleCommands({
                         locale        : previous?.locale,
                         timezone      : previous?.timezone,

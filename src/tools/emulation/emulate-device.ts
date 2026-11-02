@@ -205,7 +205,7 @@ export const emulateDevice = defineTool({
             },
         ]);
 
-        const reported = await readDevice(context.access, targetId);
+        const reported = await readDevice(context.access, targetId, context.signal);
 
         if (selection.userAgent === undefined && reported !== undefined) {
             context.emulation.applyDevice(targetId, { ...applied, userAgent: reported.userAgent });
@@ -261,7 +261,7 @@ async function reportedOf(
     context : ToolContext,
     targetId: string,
 ): Promise<{ reported?: DeviceRead }> {
-    const reported = await readDevice(context.access, targetId);
+    const reported = await readDevice(context.access, targetId, context.signal);
 
     return reported === undefined ? {} : { reported };
 }
