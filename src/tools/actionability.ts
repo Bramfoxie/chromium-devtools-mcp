@@ -289,8 +289,11 @@ export async function hitTest(
     };
 }
 
+const ISOLATED_HIT_MESSAGE = /SecurityError|Cannot find context|Could not find object/i;
+
 function isCrossOriginHitTest(error: unknown): boolean {
-    return error instanceof RpcError && error.code === ErrorCode.cdpError;
+    return error instanceof RpcError && error.code === ErrorCode.cdpError &&
+        ISOLATED_HIT_MESSAGE.test(error.message);
 }
 
 async function isolatedHitTest(

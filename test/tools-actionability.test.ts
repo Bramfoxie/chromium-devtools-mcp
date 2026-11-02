@@ -367,6 +367,44 @@ describe("hitTest piercing", () => {
 });
 
 describe("hitTest cross-origin fallback", () => {
+    it("falls back when the object belongs to another process", async () => {
+        const fake = new FakeAccess();
+
+        fake.respond = (_targetId, method) => {
+            if (method === "Runtime.callFunctionOn") {
+                throw new RpcError(ErrorCode.cdpError, "Could not find object with given id");
+            }
+
+            return {
+                result: { type: "object", subtype: "array", value: [{ tag: "iframe", id: "x", frame: true }] },
+            };
+        };
+
+        await expect(hitTest(fake.asAccess(), "tab1", element, { x: 1, y: 2 })).resolves.toEqual({
+            kind: "hit",
+        });
+    });
+
+    it("rethrows errors that are not isolated frame errors", async () => {
+        for (const error of [
+            new RpcError(ErrorCode.cdpError, "Invalid parameters"),
+            new RpcError(ErrorCode.browserClosed, "The browser closed."),
+            new Error("cancelled"),
+        ]) {
+            const fake = new FakeAccess();
+
+            fake.respond = (_targetId, method) => {
+                if (method === "Runtime.callFunctionOn") throw error;
+
+                throw new Error("the isolated fallback must not run: " + method);
+            };
+
+            await expect(
+                hitTest(fake.asAccess(), "tab1", element, { x: 1, y: 2 }),
+            ).rejects.toBe(error);
+        }
+    });
+
     it("falls back to the top-level stack when the script throws a SecurityError", async () => {
         const fake = new FakeAccess();
         let calls = 0;
