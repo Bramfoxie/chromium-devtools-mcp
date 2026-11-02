@@ -441,6 +441,8 @@ describe("locale mapping", () => {
     it("validates BCP 47 locales and IANA timezones", () => {
         expect(canonicalLocale("de-de")).toBe("de-DE");
         expect(checkedTimezone("Europe/Berlin")).toBe("Europe/Berlin");
+        expect(checkedTimezone("europe/berlin")).toBe("Europe/Berlin");
+        expect(checkedTimezone("utc")).toBe("UTC");
         expect(() => canonicalLocale("not a locale !!!")).toThrow(/not a valid BCP 47/);
         expect(() => checkedTimezone("Mars/Olympus")).toThrow(/not a valid IANA/);
     });

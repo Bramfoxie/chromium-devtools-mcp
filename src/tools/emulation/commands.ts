@@ -286,12 +286,10 @@ export function canonicalLocale(locale: string): string {
 
 export function checkedTimezone(timezone: string): string {
     try {
-        new Intl.DateTimeFormat("en-US", { timeZone: timezone });
+        return new Intl.DateTimeFormat("en-US", { timeZone: timezone }).resolvedOptions().timeZone;
     } catch {
         throw new ToolError(
             `The timezone ${JSON.stringify(timezone)} is not a valid IANA name. Use a name like Europe/Berlin.`,
         );
     }
-
-    return timezone;
 }
