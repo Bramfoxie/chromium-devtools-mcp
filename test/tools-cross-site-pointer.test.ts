@@ -1,6 +1,6 @@
 import type { RequestHandlerExtra } from "@modelcontextprotocol/sdk/shared/protocol.js";
 import type { ServerNotification, ServerRequest } from "@modelcontextprotocol/sdk/types.js";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
     ElementRegistry,
     inputClick,
@@ -33,6 +33,20 @@ function setup(world: CrossSiteWorld = {}): { fake: FakeAccess; runtime: ToolRun
 
     return { fake, runtime };
 }
+
+async function withFakeTime<T>(run: () => Promise<T>): Promise<T> {
+    vi.useFakeTimers();
+
+    const pending = run();
+
+    await vi.advanceTimersByTimeAsync(30000);
+
+    return pending;
+}
+
+afterEach(() => {
+    vi.useRealTimers();
+});
 
 function mouseEvents(fake: FakeAccess): Array<{ type: unknown; x: unknown; y: unknown }> {
     return fake.sent
@@ -112,11 +126,48 @@ describe("input_click in a cross-site frame", () => {
 
     it("fails without pressing when the frame never receives the move", async () => {
         const { fake, runtime } = setup({ dropMoves: 1000 });
-        const result = await runTool(inputClick, { target: { uid: "1_1" } }, extra(), runtime);
+        const result = await withFakeTime(() =>
+            runTool(inputClick, { target: { uid: "1_1" } }, extra(), runtime));
 
         expect(result.isError).toBe(true);
         expect(JSON.stringify(result.content)).toContain("did not receive pointer input");
         expect(mouseEvents(fake).some((event) => event.type === "mousePressed")).toBe(false);
+        expect(pointerCounters.get(fake)).toMatchObject({ installs: 1, removes: 1 });
+    });
+
+    it("measures the geometry again when the first measurement was taken before layout settled", async () => {
+        const { fake, runtime } = setup({ staleUntilSettle: true });
+        const result = await withFakeTime(() =>
+            runTool(inputClick, { target: { uid: "1_1" } }, extra(), runtime));
+        const events = mouseEvents(fake);
+
+        expect(result.isError).not.toBe(true);
+        expect(events[0]).toEqual({ type: "mouseMoved", x: 522, y: 182 });
+        expect(events.at(-2)).toEqual({ type: "mousePressed", x: 122, y: 182 });
+        expect(events.at(-1)).toEqual({ type: "mouseReleased", x: 122, y: 182 });
+        expect(events.filter((event) => event.type === "mouseMoved").at(-1)).toEqual({
+            type: "mouseMoved", x: 122, y: 182,
+        });
+    });
+
+    it("keeps retrying a move that arrives after more than two seconds", async () => {
+        const { fake, runtime } = setup({ moveDelayMs: 4000 });
+        const result = await withFakeTime(() =>
+            runTool(inputClick, { target: { uid: "1_1" } }, extra(), runtime));
+
+        expect(result.isError).not.toBe(true);
+        expect(pointerCounters.get(fake)).toMatchObject({ downs: 1, removes: 1 });
+    });
+
+    it("gives up after the budget and reports where the move landed", async () => {
+        const { fake, runtime } = setup({ dropMoves: 1000, misrouteTop: true });
+        const result = await withFakeTime(() =>
+            runTool(inputClick, { target: { uid: "1_1" } }, extra(), runtime));
+        const text = JSON.stringify(result.content);
+
+        expect(result.isError).toBe(true);
+        expect(text).toContain("Make sure the page is visible and not busy, then try again.\\nDiagnostics: ");
+        expect(text).toMatch(/attempts=\d+ elapsedMs=\d+ point=\(122,182\) depth=1 frames=\(50,120,324,224\) dpr=2 landed=top:1/);
         expect(pointerCounters.get(fake)).toMatchObject({ installs: 1, removes: 1 });
     });
 
@@ -256,7 +307,8 @@ describe("input_hover in a cross-site frame", () => {
 
     it("fails when the frame never receives the hover move", async () => {
         const { runtime } = setup({ dropMoves: 1000 });
-        const result = await runTool(inputHover, { target: { uid: "1_1" } }, extra(), runtime);
+        const result = await withFakeTime(() =>
+            runTool(inputHover, { target: { uid: "1_1" } }, extra(), runtime));
 
         expect(result.isError).toBe(true);
         expect(JSON.stringify(result.content)).toContain("did not receive pointer input");

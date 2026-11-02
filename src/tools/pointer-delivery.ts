@@ -1,22 +1,35 @@
 import { z } from "zod";
 import type { DaemonAccess } from "../mcp/index.js";
 import { ToolError } from "./errors.js";
-import { settleRendering } from "./frame-geometry.js";
+import type { Rect } from "./element-target.js";
+import { type FrameLink, type Point, settleRendering } from "./frame-geometry.js";
 
-export const MOVE_ATTEMPTS = 10;
-
-export const MOVE_BUDGET_MS = 2000;
+export const MOVE_BUDGET_MS = 10000;
 
 export const MOVE_WAIT_MS = 100;
 
+export const RETRY_PAUSE_MIN_MS = 50;
+
+export const RETRY_PAUSE_MAX_MS = 500;
+
+export const STABLE_ROUNDS = 4;
+
+export const LANDING_WAIT_MS = 300;
+
 export const PRESS_WAIT_MS = 300;
 
-export const RETRY_PAUSE_MS = 25;
+export interface Measurement {
+    point: Point;
+    boxes: Rect[];
+}
 
 export interface PointerRoute {
     owner     : DaemonAccess;
     objectId  : string;
     relays    : DaemonAccess[];
+    links     : FrameLink[];
+    initial   : Measurement;
+    measure   : () => Promise<Measurement>;
     stillOver?: () => Promise<boolean>;
 }
 
@@ -76,10 +89,14 @@ function pause(ms: number): Promise<void> {
 }
 
 export class PointerDelivery {
+    private current: Measurement;
+
     constructor(
         private readonly route: PointerRoute,
         private readonly tab  : string,
-    ) {}
+    ) {
+        this.current = route.initial;
+    }
 
     async install(): Promise<void> {
         await this.call(INSTALL, []);
@@ -89,36 +106,48 @@ export class PointerDelivery {
         await this.call(REMOVE, []).catch(() => undefined);
     }
 
-    async prepareMove(sendMove: () => Promise<void>): Promise<void> {
+    async prepareMove(sendMove: (point: Point) => Promise<void>): Promise<Point> {
         const base = (await this.read()).moves;
         const started = Date.now();
+        let pauseMs = RETRY_PAUSE_MIN_MS;
+        let attempts = 0;
 
-        for (let attempt = 1; attempt <= MOVE_ATTEMPTS; attempt += 1) {
-            await sendMove();
+        for (;;) {
+            attempts += 1;
+            await sendMove(this.current.point);
 
-            if (await this.wait("moves", base, MOVE_WAIT_MS) > base) return;
+            if (await this.wait("moves", base, MOVE_WAIT_MS) > base) return this.current.point;
 
             if (Date.now() - started >= MOVE_BUDGET_MS) break;
 
             await settleRendering(this.route.relays, this.tab);
-            await pause(RETRY_PAUSE_MS);
+            await pause(pauseMs);
+            pauseMs = Math.min(Math.round(pauseMs * 1.5), RETRY_PAUSE_MAX_MS);
+            await this.remeasure();
         }
 
         throw new ToolError(
-            "The frame did not receive pointer input from the browser. Make sure the page is visible and not busy, then try again.",
+            `The frame did not receive pointer input from the browser. Make sure the page is visible and not busy, then try again.\n${
+                await this.diagnostics(attempts, Date.now() - started, sendMove)}`,
         );
     }
 
-    async press(press: () => Promise<void>, release: () => Promise<void>): Promise<void> {
+    async press(
+        press  : (point: Point) => Promise<void>,
+        release: (point: Point) => Promise<void>,
+    ): Promise<void> {
         const first = (await this.read()).downs;
 
         for (let attempt = 1; attempt <= 2; attempt += 1) {
-            const base = (await this.read()).downs;
+            if (attempt > 1) await this.remeasure();
 
-            await press();
+            const base = (await this.read()).downs;
+            const point = this.current.point;
+
+            await press(point);
             const seen = await this.wait("downs", base, PRESS_WAIT_MS);
 
-            await release();
+            await release(point);
 
             if (seen <= base) {
                 await settleRendering(this.route.relays, this.tab);
@@ -142,6 +171,115 @@ export class PointerDelivery {
         throw new ToolError(
             "The frame did not receive the mouse press from the browser. Make sure the page is visible and not busy, then try again.",
         );
+    }
+
+    private async remeasure(): Promise<void> {
+        try {
+            let latest = await this.route.measure();
+
+            for (let round = 1; round < STABLE_ROUNDS; round += 1) {
+                await settleRendering(this.route.relays, this.tab);
+
+                const next = await this.route.measure();
+                const same = JSON.stringify(next) === JSON.stringify(latest);
+
+                latest = next;
+
+                if (same) break;
+            }
+
+            this.current = latest;
+        } catch {
+            return;
+        }
+    }
+
+    private async diagnostics(
+        attempts: number,
+        elapsed : number,
+        sendMove: (point: Point) => Promise<void>,
+    ): Promise<string> {
+        const { point, boxes } = this.current;
+        const landed = await this.landing(point, sendMove);
+        const dpr = await this.pixelRatio();
+        const frames = boxes.map((box) => `(${box.x},${box.y},${box.width},${box.height})`).join(" ");
+
+        return `Diagnostics: attempts=${attempts} elapsedMs=${elapsed} point=(${point.x},${point.y}) depth=${boxes.length} frames=${frames} dpr=${dpr} landed=${landed}`;
+    }
+
+    private async landing(
+        point   : Point,
+        sendMove: (point: Point) => Promise<void>,
+    ): Promise<string> {
+        const probes: Array<{ access: DaemonAccess; objectId: string }> = [];
+
+        try {
+            for (const link of this.route.links) {
+                const resolved = await link.access.send(this.tab, "DOM.resolveNode", {
+                    backendNodeId: link.backendNodeId,
+                }) as { object?: { objectId?: string } } | null;
+                const objectId = resolved?.object?.objectId;
+
+                if (objectId === undefined) continue;
+
+                await link.access.send(this.tab, "Runtime.callFunctionOn", {
+                    functionDeclaration: INSTALL,
+                    objectId,
+                    arguments          : [],
+                    returnByValue      : true,
+                });
+                probes.push({ access: link.access, objectId });
+            }
+
+            await sendMove(point);
+            await pause(LANDING_WAIT_MS);
+
+            const seen: string[] = [];
+
+            for (const [index, probe] of probes.entries()) {
+                const parsed = readSchema.safeParse(
+                    await probe.access.send(this.tab, "Runtime.callFunctionOn", {
+                        functionDeclaration: READ,
+                        objectId           : probe.objectId,
+                        arguments          : [],
+                        returnByValue      : true,
+                    }),
+                );
+                const moves = parsed.success ? parsed.data.result.value?.moves ?? -1 : -1;
+
+                seen.push(`${probes.length - 1 - index === 0 ? "top" : `up${probes.length - 1 - index}`}:${moves}`);
+            }
+
+            return seen.join(",");
+        } catch {
+            return "unknown";
+        } finally {
+            for (const probe of probes) {
+                await probe.access.send(this.tab, "Runtime.callFunctionOn", {
+                    functionDeclaration: REMOVE,
+                    objectId           : probe.objectId,
+                    arguments          : [],
+                    returnByValue      : true,
+                }).catch(() => undefined);
+            }
+        }
+    }
+
+    private async pixelRatio(): Promise<string> {
+        const top = this.route.relays[0];
+
+        try {
+            const parsed = z.object({ result: z.object({ value: z.number() }) }).safeParse(
+                await top?.send(this.tab, "Runtime.evaluate", {
+                    expression   : "window.devicePixelRatio",
+                    returnByValue: true,
+                }),
+            );
+
+            return parsed.success ? String(parsed.data.result.value) : "unknown";
+        } catch {
+            return "unknown";
+        }
     }
 
     private async pointerStillOver(): Promise<boolean> {

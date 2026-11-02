@@ -192,7 +192,7 @@ export async function frameChain(
 async function ownerModel(
     link: FrameLink,
     tab : string,
-): Promise<OwnerGeometry> {
+): Promise<OwnerGeometry & { box: Rect }> {
     let result: unknown;
 
     try {
@@ -215,21 +215,39 @@ async function ownerModel(
         );
     }
 
-    return ownerGeometry(parsed.data.model);
+    const border = boundsOf(parsed.data.model.border);
+
+    return {
+        ...ownerGeometry(parsed.data.model),
+        box: {
+            x     : Math.round(border.left),
+            y     : Math.round(border.top),
+            width : Math.round(border.right - border.left),
+            height: Math.round(border.bottom - border.top),
+        },
+    };
 }
 
 export interface MeasuredChain {
     steps: FrameTransform[];
+    boxes: Rect[];
     toTop: FrameTransform;
 }
 
 export async function measureChain(chain: FrameChain, tab: string): Promise<MeasuredChain> {
     const steps: FrameTransform[] = [];
+    const boxes: Rect[] = [];
 
-    for (const link of chain.links) steps.push((await ownerModel(link, tab)).transform);
+    for (const link of chain.links) {
+        const model = await ownerModel(link, tab);
+
+        steps.push(model.transform);
+        boxes.push(model.box);
+    }
 
     return {
         steps,
+        boxes,
         toTop: steps.reduceRight(
             (outer, inner) => composeTransform(outer, inner),
             IDENTITY_TRANSFORM,

@@ -9,12 +9,13 @@ import {
 import { clickPointOf, type ClickPoint, TOP_LEVEL_ORIGIN } from "./coordinates.js";
 import { defineTool, type ToolContext } from "./define-tool.js";
 import { ensureNoDialog } from "./dialogs.js";
-import { withPointerDelivery, type PointerRoute } from "./pointer-delivery.js";
+import { type Measurement, withPointerDelivery, type PointerRoute } from "./pointer-delivery.js";
 import { frameChain, mapPoint, measureChain, outerHitTest, revealChain } from "./frame-geometry.js";
 import {
     elementTargetSchema,
     type Rect,
     elementAccess,
+    revealElement,
     withElement,
     type ResolvedElement,
 } from "./element-target.js";
@@ -122,6 +123,7 @@ async function mousePoint(
             element,
             verb,
             force,
+            position,
         });
 
         return { point: found.point, state: scrolled.state, box: scrolled.box, route: found.route };
@@ -148,7 +150,13 @@ async function isolatedPoint(
     frameId : string,
     box     : Rect,
     local   : ClickPoint,
-    request : { owner: DaemonAccess; element: ResolvedElement; verb: string; force: boolean },
+    request : {
+        owner   : DaemonAccess;
+        element : ResolvedElement;
+        verb    : string;
+        force   : boolean;
+        position: { x: number; y: number } | undefined;
+    },
 ): Promise<{ point: ClickPoint; route?: PointerRoute }> {
     const chain = await frameChain(context.access, context.frames, targetId, frameId);
 
@@ -156,10 +164,33 @@ async function isolatedPoint(
 
     const measured = await measureChain(chain, targetId);
     const point = mapPoint(measured.toTop, local);
+    const measure = async (): Promise<Measurement> => {
+        const ref = { objectId: request.element.objectId };
+        const revealed = await revealElement(request.owner, targetId, ref);
+
+        if (revealed.box === null || !revealed.visible) {
+            throw new ToolError("The element is hidden: it has no box on the page. Make it visible and try again.");
+        }
+
+        await revealChain(chain, targetId, revealed.box);
+
+        const fresh = await measureChain(chain, targetId);
+
+        return {
+            point: mapPoint(
+                fresh.toTop,
+                clickPointOf(revealed.box, request.position, TOP_LEVEL_ORIGIN),
+            ),
+            boxes: fresh.boxes,
+        };
+    };
     const route: PointerRoute | undefined = chain.links.length === 0 ? undefined : {
         owner    : request.owner,
         objectId : request.element.objectId,
         relays   : [context.access, ...chain.links.map((link) => link.access), request.owner],
+        links    : chain.links,
+        initial  : { point, boxes: measured.boxes },
+        measure,
         stillOver: request.force
             ? undefined
             : async () => (await hitTest(request.owner, targetId, request.element, local, true)).kind === "hit",
@@ -309,11 +340,11 @@ export const inputClick = defineTool({
 
             throwIfCancelled(context.signal);
 
-            const sendMove = async (): Promise<void> => {
+            const sendMove = async (at: { x: number; y: number }): Promise<void> => {
                 await context.access.send(targetId, "Input.dispatchMouseEvent", {
                     type      : "mouseMoved",
-                    x         : point.x,
-                    y         : point.y,
+                    x         : at.x,
+                    y         : at.y,
                     modifiers,
                     button,
                     buttons   : 0,
@@ -323,39 +354,45 @@ export const inputClick = defineTool({
 
             const acted = await withPointerDelivery(route, targetId, (delivery) =>
                 navigationOf(context.access, targetId, async () => {
-                    if (delivery === undefined) await sendMove();
+                    if (delivery === undefined) await sendMove(point);
                     else await delivery.prepareMove(sendMove);
 
                     for (let count = 1; count <= clickCount; count += 1) {
-                        const at = { x: point.x, y: point.y, modifiers, button, buttons };
-                        const press = async (): Promise<void> => {
+                        const press = async (from: { x: number; y: number }): Promise<void> => {
                             await context.access.send(targetId, "Input.dispatchMouseEvent", {
                                 type      : "mousePressed",
-                                ...at,
+                                x         : from.x,
+                                y         : from.y,
+                                modifiers,
+                                button,
+                                buttons,
                                 clickCount: count,
                             });
                         };
-                        const release = async (): Promise<void> => {
+                        const release = async (from: { x: number; y: number }): Promise<void> => {
+                            const event = {
+                                type      : "mouseReleased",
+                                x         : from.x,
+                                y         : from.y,
+                                modifiers,
+                                button,
+                                buttons,
+                                clickCount: count,
+                            };
+
                             try {
-                                await context.access.send(targetId, "Input.dispatchMouseEvent", {
-                                    type      : "mouseReleased",
-                                    ...at,
-                                    clickCount: count,
-                                });
+                                await context.access.send(targetId, "Input.dispatchMouseEvent", event);
                             } catch (error) {
-                                await context.access.send(targetId, "Input.dispatchMouseEvent", {
-                                    type      : "mouseReleased",
-                                    ...at,
-                                    clickCount: count,
-                                }).catch(() => undefined);
+                                await context.access.send(targetId, "Input.dispatchMouseEvent", event)
+                                    .catch(() => undefined);
 
                                 throw error;
                             }
                         };
 
                         if (delivery === undefined) {
-                            await press();
-                            await release();
+                            await press(point);
+                            await release(point);
                         } else {
                             await delivery.press(press, release);
                         }
@@ -422,13 +459,11 @@ export const inputHover = defineTool({
 
             throwIfCancelled(context.signal);
 
-            const leadInX = point.x >= 1 ? point.x - 1 : point.x + 1;
-
-            const moveTo = async (x: number): Promise<void> => {
+            const moveTo = async (x: number, y: number): Promise<void> => {
                 await context.access.send(targetId, "Input.dispatchMouseEvent", {
                     type      : "mouseMoved",
                     x,
-                    y         : point.y,
+                    y,
                     modifiers : 0,
                     button    : "none",
                     buttons   : 0,
@@ -437,10 +472,12 @@ export const inputHover = defineTool({
             };
 
             await withPointerDelivery(route, targetId, async (delivery) => {
-                await delivery?.prepareMove(() => moveTo(point.x));
+                const moved = await delivery?.prepareMove((target) => moveTo(target.x, target.y));
+                const at = moved ?? point;
+                const leadIn = at.x >= 1 ? at.x - 1 : at.x + 1;
 
                 for (let step = 0; step < HOVER_DEFAULT_STEPS; step += 1) {
-                    await moveTo(step === HOVER_DEFAULT_STEPS - 1 ? point.x : leadInX);
+                    await moveTo(step === HOVER_DEFAULT_STEPS - 1 ? at.x : leadIn, at.y);
                 }
             });
 
