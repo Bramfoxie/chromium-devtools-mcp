@@ -89,18 +89,16 @@ describe("parseKeyChord", () => {
         expect(parseKeyChord("!")).toMatchObject({ shifted: true });
     });
 
-    it("rejects unknown modifiers, duplicated modifiers and empty keys", () => {
+    it("accepts duplicated modifiers once and rejects unknown modifiers and empty keys", () => {
         expect(() => parseKeyChord("Hyper+A")).toThrow("Unknown modifier");
-        expect(() => parseKeyChord("Control+Control+A")).toThrow("Unknown modifier");
+        expect(parseKeyChord("Control+Control+A").modifiers).toEqual(["Control"]);
         expect(() => parseKeyChord("Control+")).toThrow("names no key");
         expect(() => parseKeyChord("")).toThrow("names no key");
         expect(() => parseKeyChord("Control")).toThrow("names no key");
         expect(() => parseKeyChord("ControlOrMeta")).toThrow("names no key");
         expect(() => parseKeyChord("Nope")).toThrow("Unknown key");
         expect(() => parseKeyChord("+")).not.toThrow();
-        expect(() => parseKeyChord("ControlOrMeta+ControlOrMeta+A")).toThrow(
-            "Duplicate ControlOrMeta",
-        );
+        expect(parseKeyChord("ControlOrMeta+ControlOrMeta+A").controlOrMeta).toBe(true);
     });
 
     it("lists accepted names in the error", () => {
@@ -241,18 +239,55 @@ describe("planKeyPress", () => {
         expect(win[1]).toMatchObject({ key: "c", commands: ["copy"], modifiers: 2 });
     });
 
-    it("repeats the key triple without repeating the modifiers", () => {
+    it("releases every press of a repeated key", () => {
         const events = planKeyPress(parseKeyChord("b"), "Win32", 3);
 
         expect(events.map((event) => event.type)).toEqual([
             "rawKeyDown",
             "char",
+            "keyUp",
             "rawKeyDown",
             "char",
+            "keyUp",
             "rawKeyDown",
             "char",
             "keyUp",
         ]);
+    });
+
+    it("holds the modifiers across repeated presses", () => {
+        const events = planKeyPress(parseKeyChord("Control+ArrowLeft"), "Win32", 2);
+
+        expect(events.map((event) => `${event.type}:${event.key}`)).toEqual([
+            "rawKeyDown:Control",
+            "rawKeyDown:ArrowLeft",
+            "keyUp:ArrowLeft",
+            "rawKeyDown:ArrowLeft",
+            "keyUp:ArrowLeft",
+            "keyUp:Control",
+        ]);
+    });
+
+    it("presses a duplicated Control once", () => {
+        const events = planKeyPress(parseKeyChord("ControlOrMeta+Control+C"), "Win32", 1);
+
+        expect(events.map((event) => `${event.type}:${event.key}`)).toEqual([
+            "rawKeyDown:Control",
+            "rawKeyDown:c",
+            "keyUp:c",
+            "keyUp:Control",
+        ]);
+    });
+
+    it("sends the shifted character with the unshifted base for Shift chords", () => {
+        const digit = planKeyPress(parseKeyChord("Shift+1"), "Win32", 1);
+        const letter = planKeyPress(parseKeyChord("Shift+a"), "Win32", 1);
+        const capital = planKeyPress(parseKeyChord("A"), "Win32", 1);
+
+        expect(digit[1]).toMatchObject({ key: "!", text: "!", unmodifiedText: "1", code: "Digit1" });
+        expect(digit[2]).toMatchObject({ type: "char", text: "!", unmodifiedText: "1" });
+        expect(letter[1]).toMatchObject({ key: "A", text: "A", unmodifiedText: "a" });
+        expect(capital[1]).toMatchObject({ key: "A", text: "A", unmodifiedText: "a" });
     });
 
     it("sends text and a char event for a bare Enter", () => {
@@ -296,7 +331,12 @@ describe("planTypedChar", () => {
             "keyUp",
         ]);
         expect(events?.[0]).toMatchObject({ key: "Shift", code: "ShiftLeft", modifiers: 8 });
-        expect(events?.[1]).toMatchObject({ key: "A", modifiers: 8, text: "A" });
+        expect(events?.[1]).toMatchObject({
+            key           : "A",
+            modifiers     : 8,
+            text          : "A",
+            unmodifiedText: "a",
+        });
         expect(events?.[4]).toMatchObject({ type: "keyUp", key: "Shift" });
     });
 
@@ -305,10 +345,11 @@ describe("planTypedChar", () => {
 
         expect(events?.[0]).toMatchObject({ key: "Shift", modifiers: 8 });
         expect(events?.[1]).toMatchObject({
-            key      : "!",
-            code     : "Digit1",
-            modifiers: 8,
-            text     : "!",
+            key           : "!",
+            code          : "Digit1",
+            modifiers     : 8,
+            text          : "!",
+            unmodifiedText: "1",
         });
     });
 

@@ -515,7 +515,7 @@ describe("input_key", () => {
         clearPlatformCache();
     });
 
-    it("focuses the target first and repeats the triple without the modifiers", async () => {
+    it("focuses the target first and releases every repeated press", async () => {
         const { fake, runtime } = runtimeWith(textFake());
 
         const result = await runTool(
@@ -536,8 +536,10 @@ describe("input_key", () => {
         expect(keys.map((entry) => entry.params?.type)).toEqual([
             "rawKeyDown",
             "char",
+            "keyUp",
             "rawKeyDown",
             "char",
+            "keyUp",
             "rawKeyDown",
             "char",
             "keyUp",

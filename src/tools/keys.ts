@@ -125,6 +125,45 @@ function buildTable(): Map<string, KeySpec> {
 
 const TABLE = buildTable();
 
+function buildShiftMaps(): { shiftedOf: Map<string, string>; baseOf: Map<string, string> } {
+    const shiftedOf = new Map<string, string>();
+    const baseOf = new Map<string, string>();
+    const pair = (base: string, shifted: string): void => {
+        shiftedOf.set(base, shifted);
+        baseOf.set(shifted, base);
+    };
+
+    for (const letter of "abcdefghijklmnopqrstuvwxyz") pair(letter, letter.toUpperCase());
+
+    const baseByCode = new Map<string, string>();
+
+    for (const spec of TABLE.values()) {
+        if (spec.key.length === 1 && !/[A-Z]/.test(spec.key) && !baseByCode.has(spec.code)) {
+            baseByCode.set(spec.code, spec.key);
+        }
+    }
+
+    for (const spec of TABLE.values()) {
+        const base = baseByCode.get(spec.code);
+
+        if (base !== undefined && base !== spec.key && !/[A-Z]/.test(spec.key)) {
+            pair(base, spec.key);
+        }
+    }
+
+    return { shiftedOf, baseOf };
+}
+
+const SHIFT_MAPS = buildShiftMaps();
+
+export function shiftedKey(key: string): string {
+    return SHIFT_MAPS.shiftedOf.get(key) ?? key;
+}
+
+export function unshiftedKey(key: string): string {
+    return SHIFT_MAPS.baseOf.get(key) ?? key;
+}
+
 export function acceptedKeyNames(): string[] {
     return [...TABLE.keys()];
 }
@@ -159,23 +198,17 @@ export function parseKeyChord(text: string): ParsedKey {
 
     for (const part of parts.slice(0, -1)) {
         if (part === "ControlOrMeta") {
-            if (controlOrMeta) {
-                throw new ToolError(
-                    `Duplicate ControlOrMeta in key ${JSON.stringify(text)}. Name it once.`,
-                );
-            }
-
             controlOrMeta = true;
             continue;
         }
 
-        if (!isKeyModifier(part) || modifiers.includes(part)) {
+        if (!isKeyModifier(part)) {
             throw new ToolError(
                 `Unknown modifier ${JSON.stringify(part)} in key ${JSON.stringify(text)}. ${keyHints()}`,
             );
         }
 
-        modifiers.push(part);
+        if (!modifiers.includes(part)) modifiers.push(part);
     }
 
     const name = plusKey ? "+" : (parts[parts.length - 1] ?? "");
@@ -228,9 +261,7 @@ export function producedText(
         return spec.key === " " ? " " : undefined;
     }
 
-    if (spec.key.length === 1 && /[a-z]/.test(spec.key) && shiftHeld) return spec.key.toUpperCase();
-
-    return spec.key;
+    return shiftHeld ? shiftedKey(spec.key) : spec.key;
 }
 
 export function modifiersMask(modifiers: KeyModifier[]): number {
@@ -242,9 +273,9 @@ export function modifiersMask(modifiers: KeyModifier[]): number {
 }
 
 export function resolveControlOrMeta(platform: string, modifiers: KeyModifier[]): KeyModifier[] {
-    const meta = /mac/i.test(platform);
+    const resolved: KeyModifier = /mac/i.test(platform) ? "Meta" : "Control";
 
-    return [...modifiers, meta ? "Meta" : "Control"];
+    return modifiers.includes(resolved) ? [...modifiers] : [...modifiers, resolved];
 }
 
 export interface KeyEventPlan {
@@ -284,23 +315,24 @@ export function planKeyPress(parsed: ParsedKey, platform: string, repeat: number
         });
     }
 
-    const key = parsed.spec.key;
+    const shiftHeld = held.includes("Shift");
+    const key = shiftHeld ? shiftedKey(parsed.spec.key) : parsed.spec.key;
+    const location = parsed.spec.location === undefined ? {} : { location: parsed.spec.location };
 
     for (let press = 0; press < repeat; press += 1) {
-        const text = producedText(parsed.spec, held, held.includes("Shift"));
+        const text = producedText(parsed.spec, held, shiftHeld);
         const params: KeyEventPlan = {
             type                 : "rawKeyDown",
             key,
             code                 : parsed.spec.code,
             windowsVirtualKeyCode: parsed.spec.windowsCode,
             modifiers            : mask,
+            ...location,
         };
-
-        if (parsed.spec.location !== undefined) params.location = parsed.spec.location;
 
         if (text !== undefined) {
             params.text = text;
-            params.unmodifiedText = text;
+            params.unmodifiedText = unshiftedKey(text);
         }
 
         if (command !== undefined) params.commands = [command];
@@ -315,19 +347,19 @@ export function planKeyPress(parsed: ParsedKey, platform: string, repeat: number
                 windowsVirtualKeyCode: 0,
                 modifiers            : mask,
                 text,
-                unmodifiedText       : text,
+                unmodifiedText       : unshiftedKey(text),
             });
         }
-    }
 
-    events.push({
-        type                 : "keyUp",
-        key,
-        code                 : parsed.spec.code,
-        windowsVirtualKeyCode: parsed.spec.windowsCode,
-        modifiers            : mask,
-        ...(parsed.spec.location === undefined ? {} : { location: parsed.spec.location }),
-    });
+        events.push({
+            type                 : "keyUp",
+            key,
+            code                 : parsed.spec.code,
+            windowsVirtualKeyCode: parsed.spec.windowsCode,
+            modifiers            : mask,
+            ...location,
+        });
+    }
 
     for (const modifier of upOrder) {
         const spec = modifierSpec(modifier);
@@ -387,7 +419,7 @@ export function planTypedChar(text: string): KeyEventPlan[] | undefined {
             windowsVirtualKeyCode: spec.windowsCode,
             modifiers            : mask,
             text,
-            unmodifiedText       : text,
+            unmodifiedText       : unshiftedKey(text),
         },
         {
             type                 : "char",
@@ -396,7 +428,7 @@ export function planTypedChar(text: string): KeyEventPlan[] | undefined {
             windowsVirtualKeyCode: 0,
             modifiers            : mask,
             text,
-            unmodifiedText       : text,
+            unmodifiedText       : unshiftedKey(text),
         },
         {
             type                 : "keyUp",
