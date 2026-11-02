@@ -252,7 +252,13 @@ export const domQuery = defineTool({
         }
 
         const found = pierce && !chained
-            ? await piercedNodes(context.access, targetId, args.selector, all)
+            ? await piercedNodes(
+                context.access,
+                targetId,
+                args.selector,
+                all,
+                scope.frameId === undefined ? undefined : scope.nodeId,
+            )
             : await (chained ? chainedNodes : matchingNodes)(
                 context.access,
                 targetId,
@@ -261,7 +267,7 @@ export const domQuery = defineTool({
                 all,
             ).then((ids) => ({ nodeIds: ids, total: ids.length }));
         const { nodeIds, total } = found;
-        const viaRows = !chained && !(pierce && scope.frameId !== undefined);
+        const viaRows = !chained;
         const textCapped = viaRows && args.text !== undefined &&
             nodeIds.length > QUERY_MAX_TEXT_CANDIDATES;
         const truncated = nodeIds.length < total || textCapped;
@@ -276,11 +282,11 @@ export const domQuery = defineTool({
                 context,
                 targetId,
                 nodeIds,
-                all,
                 limit,
                 args.text,
                 includeBox,
                 scope.frameId,
+                names,
             ));
         }
 
@@ -608,14 +614,47 @@ async function chainedNodes(
     return current;
 }
 
+function frameNodeIds(root: PiercedDocNode, documentId: number): Set<number> {
+    const ids = new Set<number>();
+    const collect = (node: PiercedDocNode): void => {
+        ids.add(node.nodeId);
+
+        for (const child of [...node.children, ...node.shadowRoots]) collect(child);
+    };
+    const find = (node: PiercedDocNode): boolean => {
+        if (node.nodeId === documentId) {
+            collect(node);
+
+            return true;
+        }
+
+        const inner = node.contentDocument === undefined ? [] : [node.contentDocument];
+
+        return [...node.children, ...node.shadowRoots, ...inner].some(find);
+    };
+
+    find(root);
+
+    return ids;
+}
+
 async function piercedNodes(
-    access  : DaemonAccess,
-    targetId: string,
-    selector: string,
-    all     : boolean,
+    access   : DaemonAccess,
+    targetId : string,
+    selector : string,
+    all      : boolean,
+    frameRoot: number | undefined,
 ): Promise<{ nodeIds: number[]; total: number }> {
     await access.send(targetId, "DOM.enable", {});
-    await access.send(targetId, "DOM.getDocument", { depth: -1, pierce: true });
+
+    const tree = z.object({ root: piercedDocSchema }).safeParse(
+        await access.send(targetId, "DOM.getDocument", { depth: -1, pierce: true }),
+    );
+    const inFrame = frameRoot === undefined
+        ? undefined
+        : tree.success
+            ? frameNodeIds(tree.data.root, frameRoot)
+            : new Set<number>();
 
     const search = searchSchema.safeParse(
         await access.send(targetId, "DOM.performSearch", {
@@ -633,7 +672,9 @@ async function piercedNodes(
     try {
         if (search.data.resultCount === 0) return { nodeIds: [], total: 0 };
 
-        const toIndex = all ? Math.min(search.data.resultCount, QUERY_MAX_LIMIT) : 1;
+        const toIndex = inFrame !== undefined
+            ? search.data.resultCount
+            : all ? Math.min(search.data.resultCount, QUERY_MAX_LIMIT) : 1;
         const results = searchResultsSchema.safeParse(
             await access.send(targetId, "DOM.getSearchResults", {
                 searchId : search.data.searchId,
@@ -648,10 +689,13 @@ async function piercedNodes(
             );
         }
 
-        return {
-            nodeIds: results.data.nodeIds.filter((nodeId) => nodeId !== 0),
-            total  : search.data.resultCount,
-        };
+        const ids = results.data.nodeIds.filter(
+            (nodeId) => nodeId !== 0 && (inFrame === undefined || inFrame.has(nodeId)),
+        );
+
+        if (inFrame === undefined) return { nodeIds: ids, total: search.data.resultCount };
+
+        return { nodeIds: ids.slice(0, all ? QUERY_MAX_LIMIT : 1), total: ids.length };
     } finally {
         await access.send(targetId, "DOM.discardSearchResults", {
             searchId: search.data.searchId,
@@ -759,15 +803,12 @@ async function chainedMatches(
     context   : ToolContext,
     targetId  : string,
     nodeIds   : number[],
-    all       : boolean,
     limit     : number,
     filter    : string | undefined,
     includeBox: boolean,
     frameId   : string | undefined,
+    names     : string[],
 ): Promise<{ matches: z.infer<typeof matchSchema>[]; returned: number }> {
-    void all;
-
-    const names = DEFAULT_QUERY_ATTRIBUTES;
     const matches: z.infer<typeof matchSchema>[] = [];
     const candidates = filter === undefined ? nodeIds.slice(0, limit) : nodeIds;
 
@@ -787,10 +828,13 @@ async function chainedMatches(
         const password = isPasswordInput(parsed.data.node.attributes ?? []);
         const kept: Record<string, string> = {};
         const flat = parsed.data.node.attributes ?? [];
+        const all: Record<string, string> = {};
 
         for (let i = 0; i + 1 < flat.length; i += 2) {
             const name = flat[i] ?? "";
             const value = flat[i + 1] ?? "";
+
+            all[name] = value;
 
             if (names.includes(name)) kept[name] = password && name === "value" ? "" : value.slice(0, 500);
         }
@@ -858,12 +902,12 @@ async function chainedMatches(
 
         if (uid === undefined) continue;
 
-        const classes = (kept.class ?? "").split(/\s+/).filter((entry) => entry !== "");
+        const classes = (all.class ?? "").split(/\s+/).filter((entry) => entry !== "");
 
         matches.push({
             uid,
             tag       : (parsed.data.node.localName ?? parsed.data.node.nodeName).toLowerCase(),
-            id        : kept.id ?? "",
+            id        : all.id ?? "",
             classes,
             attributes: Object.fromEntries(
                 Object.entries(kept).map(([name, value]) => [name, clipValue(value)]),

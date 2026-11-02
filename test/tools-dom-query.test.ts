@@ -711,6 +711,95 @@ describe("dom_query piercing", () => {
         expect(fake.sent.map((call) => call.method)).not.toContain("Runtime.evaluate");
     });
 
+    it("keeps pierce matches inside the selected frame and returns attributes", async () => {
+        const fake = piercingFake();
+        const inner = fake.respond;
+
+        fake.respond = (targetId, method, params) => {
+            if (method === "DOM.getDocument" && (params as { pierce?: unknown })?.pierce === true) {
+                return {
+                    root: {
+                        nodeId  : 1,
+                        nodeName: "#document",
+                        children: [
+                            { nodeId: 99, nodeName: "BUTTON" },
+                            {
+                                nodeId         : 10,
+                                nodeName       : "IFRAME",
+                                frameId        : "cross",
+                                contentDocument: {
+                                    nodeId  : 11,
+                                    nodeName: "#document",
+                                    children: [
+                                        { nodeId: 41, nodeName: "BUTTON" },
+                                        { nodeId: 42, nodeName: "BUTTON" },
+                                    ],
+                                },
+                            },
+                        ],
+                    },
+                };
+            }
+
+            if (method === "DOM.performSearch") return { searchId: "s1", resultCount: 3 };
+            if (method === "DOM.getSearchResults") return { nodeIds: [99, 41, 42] };
+
+            return inner?.(targetId, method, params);
+        };
+
+        const { runtime } = setup(fake);
+
+        await runTool(newTab, {}, extra(), runtime);
+
+        const result = await runTool(
+            domQuery,
+            { selector: "button", all: true, pierce: true, frame: "cross" },
+            extra(),
+            runtime,
+        );
+
+        expect(result.isError).not.toBe(true);
+        expect(result.structuredContent).toMatchObject({ total: 2, returned: 2 });
+        expect(runtime.elements.lookup("tab1", "0_1")).toMatchObject({ frameId: "cross" });
+        expect(runtime.elements.lookup("tab1", "0_3")).toBeUndefined();
+    });
+
+    it("returns the requested attributes for a chained selector", async () => {
+        const fake = piercingFake();
+        const inner = fake.respond;
+
+        fake.respond = (targetId, method, params) => {
+            if (method === "DOM.describeNode" && (params as { nodeId?: unknown })?.nodeId === 15) {
+                return {
+                    node: {
+                        nodeName     : "BUTTON",
+                        localName    : "button",
+                        backendNodeId: 115,
+                        attributes   : ["id", "inner", "title", "Save", "name", "n"],
+                    },
+                };
+            }
+
+            return inner?.(targetId, method, params);
+        };
+
+        const { runtime } = setup(fake);
+
+        await runTool(newTab, {}, extra(), runtime);
+
+        const result = await runTool(
+            domQuery,
+            { selector: "my-app >>> #inner", attributes: ["title"] },
+            extra(),
+            runtime,
+        );
+
+        expect(result.structuredContent).toMatchObject({
+            matches: [{ id: "inner", attributes: { title: "Save" } }],
+        });
+        expect(JSON.stringify(result.structuredContent)).not.toContain('"name"');
+    });
+
     it("rejects pierce together with a chain", async () => {
         const { runtime } = setup(piercingFake());
 
