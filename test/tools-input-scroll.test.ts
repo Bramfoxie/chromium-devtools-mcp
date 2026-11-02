@@ -192,6 +192,21 @@ describe("input_scroll", () => {
         expect(wheel?.params).toMatchObject({ x: 10, y: 500, deltaY: 100 });
     });
 
+    it("refuses a wheel point outside the viewport before scrolling", async () => {
+        const { fake, runtime } = runtimeWith(scrollFake());
+
+        const result = await runTool(
+            inputScroll,
+            { deltaY: 100, at: { x: 900, y: 10 } },
+            extra(),
+            runtime,
+        );
+
+        expect(result.isError).toBe(true);
+        expect(contentOf(result)).toContain("outside the viewport");
+        expect(fake.sent.some((entry) => entry.method === "Input.dispatchMouseEvent")).toBe(false);
+    });
+
     it("reports the window position when the wheel moves nothing", async () => {
         const still = { x: 0, y: 0, maxX: 0, maxY: 1000, width: 800, height: 600 };
         const { fake, runtime } = runtimeWith(scrollFake({ positions: [still] }));

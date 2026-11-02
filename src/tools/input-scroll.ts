@@ -210,6 +210,13 @@ export const inputScroll = defineTool({
         }
 
         const state = await scrollState(context.access, targetId);
+
+        if (args.at !== undefined && !insideViewport(args.at, state)) {
+            throw new ToolError(
+                `The point (${args.at.x}, ${args.at.y}) is outside the viewport of ${state.width}x${state.height}. Choose a point inside it or omit at.`,
+            );
+        }
+
         const point = args.at ?? {
             x: Math.round(state.width / 2),
             y: Math.round(state.height / 2),
@@ -332,6 +339,10 @@ async function scrollToEdge(
         maxX: current.maxX,
         maxY: current.maxY,
     };
+}
+
+function insideViewport(point: { x: number; y: number }, state: ScrollPosition): boolean {
+    return point.x >= 0 && point.y >= 0 && point.x < state.width && point.y < state.height;
 }
 
 function clampDelta(delta: number): number {
