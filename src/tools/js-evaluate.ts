@@ -27,14 +27,35 @@ export const EVALUATE_MAX_RESULT_CHARS = 200_000;
 
 export const EVALUATE_MAX_STACK_CHARS = 2000;
 
+function arrowParametersEnd(text: string, open: number): boolean {
+    let depth = 0;
+
+    for (let index = open; index < text.length; index += 1) {
+        const char = text[index];
+
+        if (char === "(") depth += 1;
+
+        if (char === ")") {
+            depth -= 1;
+
+            if (depth === 0) return /^\s*=>/.test(text.slice(index + 1));
+        }
+    }
+
+    return false;
+}
+
 export function isFunctionExpression(source: string): boolean {
     const text = source.trimStart();
 
     if (/^(async\s+)?function\b/.test(text)) return true;
-    if (/^async\s*\(/.test(text)) return true;
-    if (/^\(/.test(text)) return text.includes("=>");
 
-    return /^[A-Za-z_$][\w$]*\s*=>/.test(text);
+    const asyncParen = /^async\s*\(/.exec(text);
+
+    if (asyncParen) return arrowParametersEnd(text, asyncParen[0].length - 1);
+    if (text.startsWith("(")) return arrowParametersEnd(text, 0);
+
+    return /^(async\s+)?[A-Za-z_$][\w$]*\s*=>/.test(text);
 }
 
 export function elementFunctionDeclaration(expression: string): string {

@@ -45,6 +45,8 @@ describe("isFunctionExpression", () => {
         ["async (el) => el.textContent", true],
         ["el => el.textContent", true],
         ["  function () {}", true],
+        ["(a, b = (1)) => a + b", true],
+        ["async el => el.id", true],
     ])("classifies %s as a function", (source, expected) => {
         expect(isFunctionExpression(source)).toBe(expected);
     });
@@ -55,6 +57,9 @@ describe("isFunctionExpression", () => {
         ["document.title", false],
         ["(1 + 2) * 3", false],
         ["let x = 1; return x;", false],
+        ["(this.items.map((x) => x.id))", false],
+        ["(a ? b : c) + (() => 1)()", false],
+        ["async (1)", false],
     ])("classifies %s as a body", (source, expected) => {
         expect(isFunctionExpression(source)).toBe(expected);
     });
