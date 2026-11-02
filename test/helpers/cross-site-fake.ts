@@ -42,15 +42,18 @@ export interface CrossSiteWorld {
     moveDelayMs?     : number;
     staleUntilSettle?: boolean;
     misrouteTop?     : boolean;
+    renderGated?     : boolean;
 }
 
 export interface PointerCounters {
-    moves   : number;
-    downs   : number;
-    pending : number;
-    installs: number;
-    removes : number;
-    topMoves: number;
+    moves           : number;
+    downs           : number;
+    pending         : number;
+    installs        : number;
+    removes         : number;
+    topMoves        : number;
+    screencastStarts: number;
+    screencastStops : number;
 }
 
 export const MID_FRAME = "mid";
@@ -60,13 +63,17 @@ export const pointerCounters = new WeakMap<FakeAccess, PointerCounters>();
 export function crossSiteFake(world: CrossSiteWorld = {}): FakeAccess {
     const fake = new FakeAccess();
     const counters: PointerCounters = {
-        moves   : 0,
-        downs   : 0,
-        pending : 0,
-        installs: 0,
-        removes : 0,
-        topMoves: 0,
+        moves           : 0,
+        downs           : 0,
+        pending         : 0,
+        installs        : 0,
+        removes         : 0,
+        topMoves        : 0,
+        screencastStarts: 0,
+        screencastStops : 0,
     };
+    let screencast = false;
+    const routed = (): boolean => world.renderGated !== true || screencast;
     let dropMoves = world.dropMoves ?? 0;
     let dropDowns = world.dropDowns ?? 0;
     let settled = world.staleUntilSettle !== true;
@@ -114,13 +121,13 @@ export function crossSiteFake(world: CrossSiteWorld = {}): FakeAccess {
 
                     const early = Date.now() - firstMoveAt < (world.moveDelayMs ?? 0);
 
-                    if (dropMoves > 0 || !inside || early) {
+                    if (dropMoves > 0 || !inside || early || !routed()) {
                         if (dropMoves > 0) dropMoves -= 1;
                         if (world.misrouteTop === true && topProbe) counters.topMoves += 1;
                     } else counters.moves += 1;
                 }
 
-                if (type === "mousePressed") {
+                if (type === "mousePressed" && routed()) {
                     if (dropDowns > 0) {
                         dropDowns -= 1;
                         if (world.lateDowns === true) counters.pending += 1;
@@ -129,6 +136,18 @@ export function crossSiteFake(world: CrossSiteWorld = {}): FakeAccess {
 
                 return {};
             }
+
+            case "Page.startScreencast":
+                screencast = true;
+                counters.screencastStarts += 1;
+
+                return {};
+
+            case "Page.stopScreencast":
+                screencast = false;
+                counters.screencastStops += 1;
+
+                return {};
 
             case "DOM.scrollIntoViewIfNeeded":
             case "Emulation.setFocusEmulationEnabled":
@@ -143,6 +162,10 @@ export function crossSiteFake(world: CrossSiteWorld = {}): FakeAccess {
 
                 if (expression === "location.href") {
                     return { result: { type: "string", value: "http://a.example/" } };
+                }
+
+                if (expression === "document.visibilityState") {
+                    return { result: { type: "string", value: routed() ? "visible" : "hidden" } };
                 }
 
                 if (expression === "window.devicePixelRatio") {

@@ -314,3 +314,103 @@ describe("input_hover in a cross-site frame", () => {
         expect(JSON.stringify(result.content)).toContain("did not receive pointer input");
     });
 });
+
+function indexOfMethod(fake: FakeAccess, method: string, from = 0): number {
+    return fake.sent.findIndex((call, index) => index >= from && call.method === method);
+}
+
+function lastIndexWhere(
+    fake : FakeAccess,
+    match: (call: FakeAccess["sent"][number]) => boolean,
+): number {
+    for (let index = fake.sent.length - 1; index >= 0; index -= 1) {
+        if (match(fake.sent[index] as FakeAccess["sent"][number])) return index;
+    }
+
+    return -1;
+}
+
+function lastIndexOfMouse(fake: FakeAccess, type: string): number {
+    return lastIndexWhere(fake, (call) => call.params?.type === type);
+}
+
+const ONE_HOLD = { screencastStarts: 1, screencastStops: 1 };
+
+const NO_HOLD = { screencastStarts: 0, screencastStops: 0 };
+
+describe("rendering during cross-site pointer input", () => {
+    it("delivers the click when the tab only routes input while it renders", async () => {
+        const { fake, runtime } = setup({ renderGated: true });
+        const result = await runTool(inputClick, { target: { uid: "1_1" } }, extra(), runtime);
+
+        expect(result.isError).not.toBe(true);
+        expect(pointerCounters.get(fake)).toMatchObject({ downs: 1 });
+    });
+
+    it("starts the screencast before measuring and stops it after the release", async () => {
+        const { fake, runtime } = setup({ renderGated: true });
+
+        await runTool(inputClick, { target: { uid: "1_1" } }, extra(), runtime);
+
+        const start = indexOfMethod(fake, "Page.startScreencast");
+        const stop = indexOfMethod(fake, "Page.stopScreencast");
+
+        expect(start).toBeGreaterThanOrEqual(0);
+        expect(start).toBeLessThan(
+            fake.sent.findIndex((call) => call.method === "DOM.getBoxModel" && call.params?.backendNodeId === 6),
+        );
+        expect(stop).toBeGreaterThan(lastIndexOfMouse(fake, "mouseReleased"));
+        expect(pointerCounters.get(fake)).toMatchObject(ONE_HOLD);
+    });
+
+    it("holds the screencast once across retries", async () => {
+        const { fake, runtime } = setup({ renderGated: true, dropMoves: 3 });
+
+        await runTool(inputClick, { target: { uid: "1_1" } }, extra(), runtime);
+
+        expect(pointerCounters.get(fake)).toMatchObject(ONE_HOLD);
+    });
+
+    it("stops the screencast when delivery fails", async () => {
+        const { fake, runtime } = setup({ renderGated: true, dropMoves: 1000 });
+        const result = await withFakeTime(() =>
+            runTool(inputClick, { target: { uid: "1_1" } }, extra(), runtime));
+
+        expect(result.isError).toBe(true);
+        expect(pointerCounters.get(fake)).toMatchObject(ONE_HOLD);
+        expect(indexOfMethod(fake, "Page.stopScreencast")).toBeGreaterThan(
+            lastIndexWhere(fake, (call) => call.method === "Input.dispatchMouseEvent"),
+        );
+    });
+
+    it("stops the screencast when the point is covered", async () => {
+        const { fake, runtime } = setup({
+            renderGated: true,
+            innerHit   : { kind: "covered", tag: "div", id: "veil", classes: [] },
+        });
+        const result = await runTool(inputClick, { target: { uid: "1_1" } }, extra(), runtime);
+
+        expect(result.isError).toBe(true);
+        expect(pointerCounters.get(fake)).toMatchObject(ONE_HOLD);
+    });
+
+    it("holds rendering for hover", async () => {
+        const { fake, runtime } = setup({ renderGated: true });
+        const result = await runTool(inputHover, { target: { uid: "1_1" } }, extra(), runtime);
+
+        expect(result.isError).not.toBe(true);
+        expect(pointerCounters.get(fake)).toMatchObject({ ...ONE_HOLD });
+    });
+
+    it("does not start a screencast for an element in the same process", async () => {
+        const { fake, runtime } = setup();
+
+        const [uid] = runtime.elements.assign("tab1", [{ backendNodeId: 101 }]);
+        const target = { uid: uid as string };
+        const result = await runTool(inputClick, { target }, extra(), runtime);
+
+        expect(result.isError).not.toBe(true);
+        expect(mouseEvents(fake)).toHaveLength(3);
+        expect(pointerCounters.get(fake)).toMatchObject(NO_HOLD);
+    });
+});

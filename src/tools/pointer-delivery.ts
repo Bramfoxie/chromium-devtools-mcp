@@ -30,6 +30,7 @@ export interface PointerRoute {
     links     : FrameLink[];
     initial   : Measurement;
     measure   : () => Promise<Measurement>;
+    release   : () => Promise<void>;
     stillOver?: () => Promise<boolean>;
 }
 
@@ -339,5 +340,6 @@ export async function withPointerDelivery<T>(
         return await run(delivery);
     } finally {
         await delivery.remove();
+        await route.release();
     }
 }

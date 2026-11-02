@@ -10,6 +10,7 @@ import { clickPointOf, type ClickPoint, TOP_LEVEL_ORIGIN } from "./coordinates.j
 import { defineTool, type ToolContext } from "./define-tool.js";
 import { ensureNoDialog } from "./dialogs.js";
 import { type Measurement, withPointerDelivery, type PointerRoute } from "./pointer-delivery.js";
+import { startRendering } from "./hold-rendering.js";
 import { frameChain, mapPoint, measureChain, outerHitTest, revealChain } from "./frame-geometry.js";
 import {
     elementTargetSchema,
@@ -144,22 +145,45 @@ async function mousePoint(
     return { point: local, state: scrolled.state, box: scrolled.box };
 }
 
+interface IsolatedRequest {
+    owner   : DaemonAccess;
+    element : ResolvedElement;
+    verb    : string;
+    force   : boolean;
+    position: { x: number; y: number } | undefined;
+}
+
 async function isolatedPoint(
     context : ToolContext,
     targetId: string,
     frameId : string,
     box     : Rect,
     local   : ClickPoint,
-    request : {
-        owner   : DaemonAccess;
-        element : ResolvedElement;
-        verb    : string;
-        force   : boolean;
-        position: { x: number; y: number } | undefined;
-    },
+    request : IsolatedRequest,
 ): Promise<{ point: ClickPoint; route?: PointerRoute }> {
     const chain = await frameChain(context.access, context.frames, targetId, frameId);
+    const release = chain.links.length === 0
+        ? async (): Promise<void> => undefined
+        : await startRendering(context.access, targetId);
 
+    try {
+        return await measuredPoint(context, targetId, chain, box, local, request, release);
+    } catch (error) {
+        await release();
+
+        throw error;
+    }
+}
+
+async function measuredPoint(
+    context : ToolContext,
+    targetId: string,
+    chain   : Awaited<ReturnType<typeof frameChain>>,
+    box     : Rect,
+    local   : ClickPoint,
+    request : IsolatedRequest,
+    release : () => Promise<void>,
+): Promise<{ point: ClickPoint; route?: PointerRoute }> {
     await revealChain(chain, targetId, box);
 
     const measured = await measureChain(chain, targetId);
@@ -190,6 +214,7 @@ async function isolatedPoint(
         relays   : [context.access, ...chain.links.map((link) => link.access), request.owner],
         links    : chain.links,
         initial  : { point, boxes: measured.boxes },
+        release,
         measure,
         stillOver: request.force
             ? undefined
@@ -338,8 +363,6 @@ export const inputClick = defineTool({
             const modifiers = modifiersMask(held);
             const buttons = MOUSE_BUTTON_BIT[button];
 
-            throwIfCancelled(context.signal);
-
             const sendMove = async (at: { x: number; y: number }): Promise<void> => {
                 await context.access.send(targetId, "Input.dispatchMouseEvent", {
                     type      : "mouseMoved",
@@ -354,6 +377,8 @@ export const inputClick = defineTool({
 
             const acted = await withPointerDelivery(route, targetId, (delivery) =>
                 navigationOf(context.access, targetId, async () => {
+                    throwIfCancelled(context.signal);
+
                     if (delivery === undefined) await sendMove(point);
                     else await delivery.prepareMove(sendMove);
 
@@ -457,8 +482,6 @@ export const inputHover = defineTool({
                 args.force ?? false,
             );
 
-            throwIfCancelled(context.signal);
-
             const moveTo = async (x: number, y: number): Promise<void> => {
                 await context.access.send(targetId, "Input.dispatchMouseEvent", {
                     type      : "mouseMoved",
@@ -472,6 +495,8 @@ export const inputHover = defineTool({
             };
 
             await withPointerDelivery(route, targetId, async (delivery) => {
+                throwIfCancelled(context.signal);
+
                 const moved = await delivery?.prepareMove((target) => moveTo(target.x, target.y));
                 const at = moved ?? point;
                 const leadIn = at.x >= 1 ? at.x - 1 : at.x + 1;
