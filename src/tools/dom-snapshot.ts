@@ -272,6 +272,9 @@ async function frameSections(
     maxFrames: number,
 ): Promise<{ sections: FrameSection[]; omitted: string[] }> {
     const docs = frameDocBackends(root);
+
+    await context.frames.ensure(targetId).catch(() => undefined);
+
     const frames = await context.frames.refresh(targetId).catch(() => []);
     const known = new Map(frames.map((frame) => [frame.frameId, frame]));
     const sections: FrameSection[] = [];

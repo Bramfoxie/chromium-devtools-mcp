@@ -24,6 +24,8 @@ interface TabFrames {
     generations: Map<string, number>;
 }
 
+export type FrameNavigatedListener = (tab: string, frameId: string, main: boolean) => void;
+
 export interface FrameStateOptions {
     access: DaemonAccess;
 }
@@ -57,8 +59,9 @@ function parseFrameEvent(params: unknown): { frameId: string; parent?: string } 
 }
 
 export class FrameState {
-    private readonly access: DaemonAccess;
+    private readonly access   : DaemonAccess;
     private readonly tabs = new Map<string, TabFrames>();
+    private readonly navigated: FrameNavigatedListener[] = [];
     private attached = false;
 
     constructor(options: FrameStateOptions) {
@@ -75,6 +78,10 @@ export class FrameState {
 
             if (typeof targetId === "string") this.forget(targetId);
         });
+    }
+
+    onNavigated(listener: FrameNavigatedListener): void {
+        this.navigated.push(listener);
     }
 
     ensured(tab: string): boolean {
@@ -173,6 +180,10 @@ export class FrameState {
 
         if (envelope.event === "Page.frameNavigated") {
             state.generations.set(parsed.frameId, (state.generations.get(parsed.frameId) ?? 0) + 1);
+
+            for (const listener of this.navigated) {
+                listener(envelope.targetId, parsed.frameId, parsed.parent === undefined);
+            }
 
             return;
         }

@@ -88,6 +88,10 @@ export class ToolRuntime {
         this.tabs = options.tabs ?? new SessionTabs();
         this.elements = options.elements ?? new ElementRegistry();
         this.frames = options.frames ?? new FrameState({ access: options.access });
+        this.frames.onNavigated((tab, frameId, main) => {
+            if (main) this.elements.nextGeneration(tab);
+            else this.elements.invalidateFrame(tab, frameId);
+        });
         this.focus = options.focus ?? new FocusEmulation();
         this.capture = options.capture ??
             new CaptureManager({ access: options.access, clock: this.clock });
