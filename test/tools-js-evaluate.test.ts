@@ -181,11 +181,41 @@ describe("js_evaluate", () => {
                 returnByValue  : false,
                 awaitPromise   : true,
                 userGesture    : false,
-                replMode       : false,
+                replMode       : true,
                 generatePreview: true,
             },
             timeoutMs: 10000,
         });
+    });
+
+    it("awaits a promise result through Runtime.awaitPromise and releases it", async () => {
+        const fake = new FakeAccess();
+
+        fake.respond = (_targetId, method) => {
+            if (method === "Runtime.evaluate") {
+                return { result: { type: "object", subtype: "promise", className: "Promise", objectId: "p1" } };
+            }
+
+            if (method === "Runtime.awaitPromise") {
+                return { result: { type: "string", value: "done" } };
+            }
+
+            return {};
+        };
+
+        const { runtime } = setup(fake);
+
+        await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+
+        const result = await runTool(jsEvaluate, { expression: "Promise.resolve('done')" }, extra(), runtime);
+
+        expect(result.structuredContent).toMatchObject({ ok: true, type: "string", value: "done" });
+        expect(fake.sent.map((call) => call.method)).toEqual([
+            "Runtime.evaluate",
+            "Runtime.awaitPromise",
+            "Runtime.releaseObject",
+        ]);
     });
 
     it("honors awaitPromise, timeoutMs and maxResultChars", async () => {

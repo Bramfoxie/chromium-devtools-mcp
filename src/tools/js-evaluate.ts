@@ -360,6 +360,35 @@ async function extractStructuredValue(
     }
 }
 
+async function settlePromise(
+    access  : DaemonAccess,
+    targetId: string,
+    request : EvaluateRequest,
+    response: unknown,
+): Promise<unknown> {
+    const parsed = evaluatedSchema.safeParse(response);
+
+    if (!request.awaitPromise || !parsed.success) return response;
+    if (parsed.data.exceptionDetails !== undefined) return response;
+
+    const promiseObjectId = parsed.data.result.objectId;
+
+    if (parsed.data.result.subtype !== "promise" || promiseObjectId === undefined) return response;
+
+    try {
+        return await access.send(
+            targetId,
+            "Runtime.awaitPromise",
+            { promiseObjectId, returnByValue: false, generatePreview: true },
+            request.deadline.remainingMs(),
+            undefined,
+            { signal: request.deadline.signal },
+        );
+    } finally {
+        await releaseObjects(access, targetId, [promiseObjectId]);
+    }
+}
+
 async function evaluate(
     access  : DaemonAccess,
     elements: ElementRegistry,
@@ -375,7 +404,7 @@ async function evaluate(
                 returnByValue  : false,
                 awaitPromise   : request.awaitPromise,
                 userGesture    : false,
-                replMode       : false,
+                replMode       : true,
                 generatePreview: true,
             },
             request.deadline.remainingMs(),
@@ -383,7 +412,9 @@ async function evaluate(
             { signal: request.deadline.signal },
         );
 
-        return { response, elementObjectId: undefined };
+        const settled = await settlePromise(access, targetId, request, response);
+
+        return { response: settled, elementObjectId: undefined };
     }
 
     const element = await resolveElement(access, elements, targetId, request.target, {

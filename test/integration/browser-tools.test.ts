@@ -51,6 +51,16 @@ describe.skipIf(!present)("real browser", () => {
         expect(await evaluate("window.evals")).toBe(1);
     });
 
+    it("js_evaluate accepts a repeated top level declaration and still evaluates once", async () => {
+        await env.open("/main");
+        await env.ok("js_evaluate", { expression: "const repeated = 1; window.evals += 1" });
+        const second = await env.ok("js_evaluate", { expression: "const repeated = 2; repeated" });
+
+        expect(second).toMatchObject({ ok: true, value: 2 });
+        expect(await evaluate("window.evals")).toBe(1);
+        expect(await evaluate("({ a: 1 })")).toEqual({ a: 1 });
+    });
+
     it("js_evaluate stops a blocking alert at timeoutMs", async () => {
         const tab = await env.open("/other");
         const started = Date.now();
