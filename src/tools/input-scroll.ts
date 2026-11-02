@@ -17,6 +17,8 @@ export const SCROLL_DELTA_MAX = 20000;
 
 export const WHEEL_SETTLE_MS = 350;
 
+export const EDGE_WHEEL_LIMIT = 50;
+
 export const SCROLL_BLOCKS = ["start", "center", "end", "nearest"] as const;
 
 export type ScrollBlock = (typeof SCROLL_BLOCKS)[number];
@@ -299,19 +301,36 @@ async function scrollToEdge(
     maxX  : number;
     maxY  : number;
 }> {
-    const wanted = to === "top" ? -before.y - before.maxY : before.maxY - before.y + before.maxY;
-    const scrolled = await wheelScroll(context, targetId, before, point, 0, clampDelta(wanted));
+    const atEdge = (position: ScrollPosition): boolean =>
+        to === "top" ? position.y <= 0 : position.y >= position.maxY;
+    let current = before;
+    let method: "wheel" | "script" = "wheel";
+
+    for (let wheel = 0; wheel < EDGE_WHEEL_LIMIT && !atEdge(current); wheel += 1) {
+        const remaining = to === "top" ? -current.y : current.maxY - current.y;
+        const delta = clampDelta(remaining);
+        const scrolled = await wheelScroll(context, targetId, current, point, 0, delta);
+        const progressed = scrollMoved(current, scrolled.position);
+
+        current = scrolled.position;
+        method = scrolled.method;
+
+        if (!progressed) break;
+    }
+
+    const reached = atEdge(current);
+    const edge = to === "top" ? "top" : "bottom";
 
     return {
-        ok    : true,
-        effect: to === "top"
-            ? "The page was scrolled to the top."
-            : "The page was scrolled to the bottom.",
-        method: scrolled.method,
-        x     : scrolled.position.x,
-        y     : scrolled.position.y,
-        maxX  : scrolled.position.maxX,
-        maxY  : scrolled.position.maxY,
+        ok    : reached,
+        effect: reached
+            ? `The page was scrolled to the ${edge}.`
+            : `The page stopped at y=${current.y} of ${current.maxY} before reaching the ${edge}.`,
+        method,
+        x   : current.x,
+        y   : current.y,
+        maxX: current.maxX,
+        maxY: current.maxY,
     };
 }
 

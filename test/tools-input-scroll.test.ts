@@ -222,7 +222,55 @@ describe("input_scroll", () => {
         expect(top.structuredContent).toMatchObject({ method: "wheel", y: 0 });
         const wheel = fake.sent.find((entry) => entry.method === "Input.dispatchMouseEvent");
 
-        expect(wheel?.params).toMatchObject({ type: "mouseWheel", deltaY: -1500 });
+        expect(wheel?.params).toMatchObject({ type: "mouseWheel", deltaY: -500 });
+    });
+
+    it("keeps wheeling until the bottom of a long page", async () => {
+        const fake = scrollFake();
+        const base = fake.respond ?? (() => ({}));
+        let y = 0;
+
+        fake.respond = (targetId, method, params) => {
+            if (method === "Input.dispatchMouseEvent") {
+                const delta = (params as { deltaY: number }).deltaY;
+
+                y = Math.max(0, Math.min(99616, y + Math.min(20000, delta)));
+
+                return {};
+            }
+
+            const expression = String((params as { expression?: unknown })?.expression ?? "");
+
+            if (method === "Runtime.evaluate" && expression.includes("scrollWidth")) {
+                return {
+                    result: {
+                        type : "object",
+                        value: { x: 0, y, maxX: 0, maxY: 99616, width: 800, height: 600 },
+                    },
+                };
+            }
+
+            return base(targetId, method, params);
+        };
+
+        const { fake: used, runtime } = runtimeWith(fake);
+
+        const result = await runTool(inputScroll, { to: "bottom" }, extra(), runtime);
+
+        expect(result.isError).not.toBe(true);
+        expect(result.structuredContent).toMatchObject({ ok: true, y: 99616, maxY: 99616 });
+        expect(
+            used.sent.filter((entry) => entry.method === "Input.dispatchMouseEvent").length,
+        ).toBeGreaterThan(4);
+    });
+
+    it("reports the real position when the page stops short of the edge", async () => {
+        const stuck = { x: 0, y: 20000, maxX: 0, maxY: 99616, width: 800, height: 600 };
+        const { runtime } = runtimeWith(scrollFake({ positions: [stuck] }));
+
+        const result = await runTool(inputScroll, { to: "bottom" }, extra(), runtime);
+
+        expect(result.structuredContent).toMatchObject({ ok: false, y: 20000, maxY: 99616 });
     });
 
     it("scrolls an element into view with the requested block", async () => {
