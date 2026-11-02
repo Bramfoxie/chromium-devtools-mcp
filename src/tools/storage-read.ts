@@ -137,11 +137,21 @@ export async function pageLocation(
         );
     }
 
+    let origin: string;
+
     try {
-        return { href: value, origin: storageOriginOf(value) };
+        origin = storageOriginOf(value);
     } catch {
         throw new ToolError("The page URL is not available, so its storage cannot be read.");
     }
+
+    if (origin === "null") {
+        throw new ToolError(
+            "The page has an opaque origin (for example about:blank, a data: or a file: page), so it has no storage or cookies of its own. Navigate the tab to an http or https page first.",
+        );
+    }
+
+    return { href: value, origin };
 }
 
 export async function pageOrigin(access: DaemonAccess, targetId: string): Promise<string> {

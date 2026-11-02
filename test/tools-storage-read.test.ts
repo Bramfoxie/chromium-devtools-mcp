@@ -88,6 +88,15 @@ describe("storage helpers", () => {
     });
 });
 
+describe("opaque origins", () => {
+    it("explains that an about:blank page has no storage", async () => {
+        const { fake } = setup();
+
+        fake.respond = () => ({ result: { value: "about:blank" } });
+        await expect(pageOrigin(fake.asAccess(), "tab1")).rejects.toThrow("opaque origin");
+    });
+});
+
 describe("storage_read", () => {
     it("flags only the cookie part as dangerous", () => {
         const found = allTools.find((tool) => tool.name === "storage_read");

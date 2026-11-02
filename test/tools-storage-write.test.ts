@@ -139,6 +139,23 @@ describe("storage_write", () => {
             .toHaveLength(2);
     });
 
+    it("explains an opaque origin instead of calling DOMStorage", async () => {
+        const { fake, runtime } = setup();
+
+        fake.respond = () => ({ result: { value: "about:blank" } });
+
+        const result = await runTool(
+            storageWrite,
+            { kind: "local", action: "set", entries: { a: "1" } },
+            extra(),
+            runtime,
+        );
+
+        expect(result.isError).toBe(true);
+        expect(textOf(result)).toContain("opaque origin");
+        expect(fake.sent.map((call) => call.method)).not.toContain("DOMStorage.setDOMStorageItem");
+    });
+
     it("refuses clear without confirm", async () => {
         const { fake, runtime } = setup();
         const result = await runTool(
