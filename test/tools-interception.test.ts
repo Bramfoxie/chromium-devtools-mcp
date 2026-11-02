@@ -321,6 +321,88 @@ describe("InterceptionManager", () => {
         expect(fake.sent.map((call) => call.method)).toContain("Fetch.disable");
     });
 
+    describe("deferred requests", () => {
+        const delayedRule = {
+            urlPattern  : "*",
+            method      : undefined,
+            resourceType: undefined,
+            response    : {
+                status     : 200,
+                headers    : [],
+                bodyBase64 : undefined,
+                contentType: undefined,
+            },
+            fail   : undefined,
+            delayMs: 60_000,
+            times  : undefined,
+        };
+
+        async function pausedDelayed() {
+            const fake = new FakeAccess();
+            const manager = new InterceptionManager({
+                access: fake.asAccess(),
+                clock : {
+                    now  : () => 1_700_000_000_000,
+                    sleep: () => new Promise<void>(() => undefined),
+                },
+            });
+
+            manager.attach();
+            manager.add("tab1", delayedRule);
+            await manager.sync("tab1");
+            fake.sent.length = 0;
+
+            const handled = manager.handleCdpEvent({
+                targetId: "tab1",
+                event   : "Fetch.requestPaused",
+                params  : {
+                    requestId   : "slow1",
+                    request     : { url: "https://a.example/x", method: "GET" },
+                    resourceType: "XHR",
+                },
+            });
+
+            return { fake, manager, handled };
+        }
+
+        const continued = (fake: FakeAccess) => fake.sent
+            .filter((call) => call.method === "Fetch.continueRequest")
+            .map((call) => call.params);
+
+        it("continues a delayed request when the tab is forgotten", async () => {
+            const { fake, manager, handled } = await pausedDelayed();
+
+            await manager.forget("tab1");
+            await handled;
+
+            expect(continued(fake)).toEqual([{ requestId: "slow1" }]);
+            expect(fake.sent.map((call) => call.method)).not.toContain("Fetch.fulfillRequest");
+        });
+
+        it("continues a delayed request when the rules are cleared", async () => {
+            const { fake, manager, handled } = await pausedDelayed();
+
+            manager.clear("tab1");
+            await manager.sync("tab1");
+            await handled;
+
+            expect(continued(fake)).toEqual([{ requestId: "slow1" }]);
+            expect(fake.sent.map((call) => call.method)).not.toContain("Fetch.fulfillRequest");
+        });
+
+        it("continues a delayed request before Fetch.disable", async () => {
+            const { fake, manager, handled } = await pausedDelayed();
+
+            manager.clear("tab1");
+            await manager.sync("tab1");
+            await handled;
+
+            const methods = fake.sent.map((call) => call.method);
+
+            expect(methods.indexOf("Fetch.continueRequest")).toBeLessThan(methods.indexOf("Fetch.disable"));
+        });
+    });
+
     it("continues when the fulfill command fails", async () => {
         const { fake, manager } = interception();
 

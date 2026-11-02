@@ -63,13 +63,18 @@ export interface RuleInput extends MockAction {
     resourceType: string | undefined;
 }
 
+interface DeferredRequest {
+    released: boolean;
+    release : () => void;
+}
+
 interface TabInterception {
     enabled   : boolean;
     enableSent: boolean;
     subscribed: boolean;
     counter   : number;
     rules     : MockRule[];
-    pending   : Map<string, NodeJS.Timeout>;
+    deferred  : Map<string, DeferredRequest>;
 }
 
 export interface InterceptionOptions {
@@ -260,6 +265,7 @@ export class InterceptionManager {
         const count = state.rules.length;
 
         state.rules = [];
+        void this.releaseDeferred(tab, state);
 
         return count;
     }
@@ -298,7 +304,26 @@ export class InterceptionManager {
 
         const expired = rule.times !== undefined && rule.applications >= rule.times;
 
-        if (rule.delayMs > 0) await this.clock.sleep(rule.delayMs);
+        if (rule.delayMs > 0) {
+            let wake: () => void = () => undefined;
+            const entry: DeferredRequest = {
+                released: false,
+                release : () => {
+                    entry.released = true;
+                    wake();
+                },
+            };
+            const woken = new Promise<void>((resolveWake) => {
+                wake = resolveWake;
+            });
+
+            state.deferred.set(paused.requestId, entry);
+            await Promise.race([this.clock.sleep(rule.delayMs), woken]);
+
+            if (entry.released) return;
+
+            state.deferred.delete(paused.requestId);
+        }
 
         if (rule.response !== undefined) {
             const body = rule.response.bodyBase64;
@@ -329,9 +354,11 @@ export class InterceptionManager {
 
         this.tabs.delete(tab);
 
-        if (state === undefined || !state.enableSent) return;
+        if (state === undefined) return;
 
-        for (const timer of state.pending.values()) clearTimeout(timer);
+        await this.releaseDeferred(tab, state);
+
+        if (!state.enableSent) return;
 
         await this.access.send(tab, "Fetch.disable", {}).catch(() => undefined);
     }
@@ -394,12 +421,24 @@ export class InterceptionManager {
         }
     }
 
+    private async releaseDeferred(tab: string, state: TabInterception): Promise<void> {
+        const entries = [...state.deferred.entries()];
+
+        state.deferred.clear();
+
+        await Promise.all(entries.map(async ([requestId, entry]) => {
+            entry.release();
+            await this.access.send(tab, "Fetch.continueRequest", { requestId }).catch(() => undefined);
+        }));
+    }
+
     private async disable(tab: string): Promise<void> {
         const state = this.tabs.get(tab);
 
         if (state === undefined) return;
 
         state.enabled = false;
+        await this.releaseDeferred(tab, state);
 
         if (!state.enableSent) return;
 
@@ -418,7 +457,7 @@ export class InterceptionManager {
                 subscribed: false,
                 counter   : 0,
                 rules     : [],
-                pending   : new Map(),
+                deferred  : new Map(),
             };
             this.tabs.set(tab, state);
         }
