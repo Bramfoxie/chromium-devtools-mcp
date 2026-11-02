@@ -463,6 +463,8 @@ describe("input_upload in frames", () => {
         const inner = fake.respond?.bind(fake);
 
         fake.respond = (_targetId, method, params) => {
+            if (method === "DOM.querySelectorAll") return { nodeIds: [10] };
+
             if (method === "DOM.querySelector") {
                 const selector = (params as { selector?: unknown })?.selector;
 

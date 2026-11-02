@@ -443,6 +443,9 @@ describe("resolveElement piercing", () => {
                 case "DOM.getDocument":
                     return { root: { nodeId: 1 } };
 
+                case "DOM.querySelectorAll":
+                    return { nodeIds: [10] };
+
                 case "DOM.querySelector": {
                     const selector = params?.selector as string;
 
@@ -607,7 +610,7 @@ describe("resolveElement piercing", () => {
         expect(resolved).toEqual({ backendNodeId: 7, objectId: "obj-1", frameId: "frame1" });
         expect(fake.sent.map((call) => call.method)).toEqual([
             "DOM.getDocument",
-            "DOM.querySelector",
+            "DOM.querySelectorAll",
             "DOM.describeNode",
             "DOM.querySelector",
             "DOM.resolveNode",
@@ -616,11 +619,45 @@ describe("resolveElement piercing", () => {
         expect(fake.sent[3]?.params).toEqual({ nodeId: 11, selector: "#same-btn" });
     });
 
+    it("lists the candidates when a frame selector matches several iframes", async () => {
+        const { fake, elements } = piercingSetup();
+        const inner = fake.respond;
+
+        fake.respond = (targetId, method, params) => {
+            if (method === "DOM.querySelectorAll") return { nodeIds: [10, 12] };
+
+            if (method === "DOM.describeNode" && params?.nodeId === 12) {
+                return {
+                    node: {
+                        nodeName       : "IFRAME",
+                        backendNodeId  : 22,
+                        attributes     : ["name", "ads", "src", "https://c.example/"],
+                        frameId        : "ads-frame",
+                        contentDocument: { nodeId: 13, documentURL: "https://c.example/ad" },
+                    },
+                };
+            }
+
+            return inner?.(targetId, method, params);
+        };
+
+        const failure = await resolveElement(fake.asAccess(), elements, "tab1", {
+            selector: "#same-btn",
+            frame   : "iframe",
+        }).catch((error: unknown) => error);
+        const message = (failure as Error).message;
+
+        expect(message).toContain("matches 2 iframes");
+        expect(message).toContain("1: <iframe> id=\"\" name=\"ads\" url=\"https://c.example/ad\" frame=ads-frame");
+        expect(message).toContain("frame id from dom_snapshot");
+    });
+
     it("rejects a frame selector that matches no iframe", async () => {
         const { fake, elements } = piercingSetup();
 
         fake.respond = (_targetId, method, params) => {
             if (method === "DOM.getDocument") return { root: { nodeId: 1 } };
+            if (method === "DOM.querySelectorAll") return { nodeIds: [10] };
 
             if (method === "DOM.querySelector") {
                 return { nodeId: params?.selector === "#frame" ? 10 : 41 };

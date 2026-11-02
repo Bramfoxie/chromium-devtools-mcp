@@ -311,6 +311,81 @@ async function queryOne(
     return parseCdp("DOM.querySelector", nodeIdSchema, found).nodeId;
 }
 
+const nodeIdsSchema = z.object({ nodeIds: z.array(z.number()) });
+
+const candidateSchema = z.object({
+    node: z.object({
+        nodeName       : z.string().optional(),
+        attributes     : z.array(z.string()).optional(),
+        frameId        : z.string().optional(),
+        contentDocument: z.object({ documentURL: z.string().optional() }).passthrough().optional(),
+    }).passthrough(),
+});
+
+const MAX_FRAME_CANDIDATES = 10;
+
+async function queryAll(
+    access  : DaemonAccess,
+    tab     : string,
+    nodeId  : number,
+    selector: string,
+): Promise<number[]> {
+    let found: unknown;
+
+    try {
+        found = await access.send(tab, "DOM.querySelectorAll", { nodeId, selector });
+    } catch (error) {
+        if (error instanceof RpcError && error.code === ErrorCode.cdpError) {
+            throw new ToolError(`The selector ${JSON.stringify(selector)} is invalid: ${error.message}`);
+        }
+
+        throw error;
+    }
+
+    return parseCdp("DOM.querySelectorAll", nodeIdsSchema, found).nodeIds;
+}
+
+function attributeOf(flat: string[], name: string): string {
+    for (let i = 0; i + 1 < flat.length; i += 2) {
+        if (flat[i] === name) return flat[i + 1] ?? "";
+    }
+
+    return "";
+}
+
+export async function ambiguousFrameError(
+    access : DaemonAccess,
+    tab    : string,
+    frame  : string,
+    nodeIds: number[],
+): Promise<ToolError> {
+    const lines: string[] = [];
+
+    for (const [index, nodeId] of nodeIds.slice(0, MAX_FRAME_CANDIDATES).entries()) {
+        const parsed = candidateSchema.safeParse(
+            await access.send(tab, "DOM.describeNode", { nodeId, depth: 1, pierce: true }),
+        );
+
+        if (!parsed.success) continue;
+
+        const flat = parsed.data.node.attributes ?? [];
+        const url = parsed.data.node.contentDocument?.documentURL ?? attributeOf(flat, "src");
+        const frameId = parsed.data.node.frameId;
+
+        lines.push(
+            `  ${index}: <${(parsed.data.node.nodeName ?? "unknown").toLowerCase()}> id=${JSON.stringify(attributeOf(flat, "id"))} name=${JSON.stringify(attributeOf(flat, "name"))} url=${JSON.stringify(url)}${frameId === undefined ? "" : ` frame=${frameId}`}`,
+        );
+    }
+
+    const more = nodeIds.length > MAX_FRAME_CANDIDATES
+        ? `\n  and ${nodeIds.length - MAX_FRAME_CANDIDATES} more`
+        : "";
+
+    return new ToolError(
+        `The frame selector ${JSON.stringify(frame)} matches ${nodeIds.length} iframes:\n${lines.join("\n")}${more}\nPass the frame id from dom_snapshot or narrow the selector to match one iframe.`,
+    );
+}
+
 async function resolveNodeId(
     access  : DaemonAccess,
     tab     : string,
@@ -381,13 +456,16 @@ async function scopeNode(
         }
     }
 
-    const owner = await queryOne(access, tab, rootId, frame);
+    const owners = await queryAll(access, tab, rootId, frame);
+    const owner = owners[0];
 
-    if (owner === 0) {
+    if (owner === undefined) {
         throw new ToolError(
             `No frame matches ${JSON.stringify(frame)}. Pass a frame id from dom_snapshot or an iframe selector.`,
         );
     }
+
+    if (owners.length > 1) throw await ambiguousFrameError(access, tab, frame, owners);
 
     const described = parseCdp(
         "DOM.describeNode",

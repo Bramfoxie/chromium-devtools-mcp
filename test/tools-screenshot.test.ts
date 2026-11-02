@@ -465,6 +465,9 @@ describe("screenshot of framed elements", () => {
                 case "DOM.getDocument":
                     return { root: { nodeId: 1 } };
 
+                case "DOM.querySelectorAll":
+                    return { nodeIds: [10] };
+
                 case "DOM.querySelector": {
                     const selector = (params as { selector?: unknown })?.selector;
 

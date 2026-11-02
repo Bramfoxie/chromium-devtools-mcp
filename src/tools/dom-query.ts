@@ -3,7 +3,7 @@ import { ErrorCode, RpcError } from "../daemon/index.js";
 import type { DaemonAccess } from "../mcp/index.js";
 import { defineTool, type ToolContext } from "./define-tool.js";
 import { ensureNoDialog } from "./dialogs.js";
-import { MAX_FRAME_LENGTH, splitPierceChain } from "./element-target.js";
+import { ambiguousFrameError, MAX_FRAME_LENGTH, splitPierceChain } from "./element-target.js";
 import { ToolError } from "./errors.js";
 import { elementCollector } from "./walk-script.js";
 
@@ -198,7 +198,7 @@ export const domQuery = defineTool({
         attributes: z.array(z.string().min(1).max(64)).max(50).optional().describe("Attribute names to include."),
         includeBox: z.boolean().optional().describe("Include bounding boxes. Defaults to true."),
         pierce    : z.boolean().optional().describe("Match through open shadow roots. Closed shadow roots need a >>> chain. Defaults to false."),
-        frame     : z.string().min(1).max(MAX_FRAME_LENGTH).optional().describe("Frame id from dom_snapshot or an iframe CSS selector. Defaults to the main frame."),
+        frame     : z.string().min(1).max(MAX_FRAME_LENGTH).optional().describe("Frame id from dom_snapshot or an iframe CSS selector that matches exactly one iframe. Defaults to the main frame."),
     }),
     output: z.strictObject({
         matches  : z.array(matchSchema).describe("Matched elements, in document order."),
@@ -427,13 +427,17 @@ async function queryScope(
         };
     }
 
-    const owner = await matchingNodes(context.access, targetId, rootId, frame, false);
+    const owner = await matchingNodes(context.access, targetId, rootId, frame, true);
     const first = owner[0];
 
     if (first === undefined) {
         throw new ToolError(
             `No frame matches ${JSON.stringify(frame)}. Pass a frame id from dom_snapshot or an iframe selector.`,
         );
+    }
+
+    if (owner.length > 1) {
+        throw await ambiguousFrameError(context.access, targetId, frame, owner);
     }
 
     const described = frameOwnerSchema.safeParse(

@@ -674,6 +674,10 @@ describe("dom_query piercing", () => {
                 }
 
                 case "DOM.querySelectorAll":
+                    if ((params as { selector?: unknown })?.selector === "#frame") {
+                        return { nodeIds: [10] };
+                    }
+
                     return { nodeIds: [41, 42] };
 
                 case "DOM.describeNode": {
@@ -845,7 +849,7 @@ describe("dom_query piercing", () => {
         expect(result.isError).not.toBe(true);
         expect(fake.sent.map((call) => call.method)).toEqual([
             "DOM.getDocument",
-            "DOM.querySelector",
+            "DOM.querySelectorAll",
             "DOM.describeNode",
             "Page.createIsolatedWorld",
             "DOM.querySelector",
@@ -858,6 +862,48 @@ describe("dom_query piercing", () => {
         expect(fake.sent[3]?.params).toMatchObject({ frameId: "cross" });
         expect(fake.sent[4]?.params).toEqual({ nodeId: 11, selector: "#same-btn" });
         expect(fake.sent[5]?.params).toMatchObject({ contextId: 7 });
+    });
+
+    it("lists the candidates when a frame selector matches several iframes", async () => {
+        const fake = piercingFake();
+        const inner = fake.respond;
+
+        fake.respond = (targetId, method, params) => {
+            if (method === "DOM.querySelectorAll" && (params as { selector?: unknown })?.selector === "iframe") {
+                return { nodeIds: [10, 12] };
+            }
+
+            if (method === "DOM.describeNode" && (params as { nodeId?: unknown })?.nodeId === 12) {
+                return {
+                    node: {
+                        nodeType       : 1,
+                        nodeName       : "IFRAME",
+                        localName      : "iframe",
+                        backendNodeId  : 22,
+                        attributes     : ["id", "second", "name", "ads", "src", "https://c.example/"],
+                        frameId        : "ads-frame",
+                        contentDocument: { nodeId: 13, documentURL: "https://c.example/ad" },
+                    },
+                };
+            }
+
+            return inner?.(targetId, method, params);
+        };
+
+        const { runtime } = setup(fake);
+
+        await runTool(newTab, {}, extra(), runtime);
+
+        const result = await runTool(domQuery, { selector: "a", frame: "iframe" }, extra(), runtime);
+        const text = JSON.stringify(result.content);
+
+        expect(result.isError).toBe(true);
+        expect(text).toContain("matches 2 iframes");
+        expect(text).toContain("0: <iframe>");
+        expect(text).toContain("frame=cross");
+        expect(text).toContain("1: <iframe> id=\\\"second\\\" name=\\\"ads\\\"");
+        expect(text).toContain("https://c.example/ad");
+        expect(text).toContain("frame id from dom_snapshot");
     });
 
     it("matches through shadow roots with pierce", async () => {

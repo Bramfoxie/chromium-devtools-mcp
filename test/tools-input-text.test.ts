@@ -603,6 +603,8 @@ describe("input_type and input_key in frames", () => {
         fake.respond = (_targetId, method, params) => {
             if (method === "DOM.getDocument") return { root: { nodeId: 1 } };
 
+            if (method === "DOM.querySelectorAll") return { nodeIds: [10] };
+
             if (method === "DOM.querySelector") {
                 const selector = (params as { selector?: unknown })?.selector;
 

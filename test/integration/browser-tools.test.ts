@@ -13,6 +13,7 @@ const PAGES: Record<string, string> = {
 const root=document.getElementById("host").attachShadow({mode:"open"});
 root.innerHTML='<button class="deep" onclick="window.deepClicks=(window.deepClicks||0)+1">deep</button>';</script>`,
     "/deep"    : `${"<section aria-label=s>".repeat(80)}<button>bottom</button>${"</section>".repeat(80)}`,
+    "/frames"  : '<iframe id="one" name="first" src="/other"></iframe><iframe id="two" src="/cookie"></iframe>',
     "/other"   : "<h1>other</h1>",
     "/tall"    : '<div style="height:100000px">tall</div><span id="end">end</span>',
     "/form"    : '<form action="/other" method="get"><input id="q" name="q"></form>',
@@ -173,6 +174,25 @@ describe.skipIf(!present)("real browser", () => {
 
         expect(snap.truncated).toBe(true);
         expect(String(snap.snapshot)).toContain("accessibility tree has more than");
+    });
+
+    it("a frame selector matching several iframes lists them and one iframe still works", async () => {
+        await env.open("/frames");
+        const ambiguous = await env.call("dom_query", { selector: "h1", frame: "iframe" });
+
+        expect(ambiguous.isError).toBe(true);
+        expect(ambiguous.text).toContain("matches 2 iframes");
+        expect(ambiguous.text).toContain('id="two"');
+        expect(ambiguous.text).toContain("frame id from dom_snapshot");
+
+        const single = await eventually(async () => {
+            const read = await env.ok("dom_query", { selector: "h1", frame: "#one" });
+
+            return (read.matches as Row[]).length > 0 ? read : undefined;
+        });
+
+        expect(single.matches as Row[]).toHaveLength(1);
+        await env.ok("click", { target: { selector: "h1", frame: "#one" } });
     });
 
     it("input_click works on a button with a nested span", async () => {
