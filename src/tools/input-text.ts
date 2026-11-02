@@ -268,6 +268,20 @@ export const inputType = defineTool({
             };
         }
 
+        const navigatedAway = changedUrl(acted.urlBefore, acted.urlAfter).urlAfter !== undefined;
+
+        if (navigatedAway) {
+            return {
+                ok         : true,
+                target     : summary,
+                effect     : "The text was typed and the page navigated.",
+                valueLength: 0,
+                ...(echo === undefined ? {} : { typed: echo }),
+                contains   : true,
+                ...changedUrl(acted.urlBefore, acted.urlAfter),
+            };
+        }
+
         const outcome = await readValue(context.access, targetId, element);
         const contains = outcome.text.includes(args.text);
 

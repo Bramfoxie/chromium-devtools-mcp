@@ -28,13 +28,15 @@ const BOX_MODEL = {
 };
 
 interface TextWorld {
-    state?   : Record<string, unknown>;
-    value?   : { length: number; text: string };
-    platform?: string;
+    state?          : Record<string, unknown>;
+    value?          : { length: number; text: string };
+    platform?       : string;
+    navigateOnEnter?: boolean;
 }
 
 function textFake(world: TextWorld = {}): FakeAccess {
     const fake = new FakeAccess();
+    let navigated = false;
 
     fake.respond = (_targetId, method, params) => {
         switch (method) {
@@ -57,13 +59,25 @@ function textFake(world: TextWorld = {}): FakeAccess {
             case "Input.insertText":
                 return {};
             case "Input.dispatchKeyEvent":
+                if (
+                    world.navigateOnEnter === true &&
+                    (params as { key?: unknown })?.key === "Enter"
+                ) {
+                    navigated = true;
+                }
+
                 return {};
 
             case "Runtime.evaluate": {
                 const expression = (params as { expression?: unknown })?.expression;
 
                 if (expression === "location.href") {
-                    return { result: { type: "string", value: "https://page.example/" } };
+                    return {
+                        result: {
+                            type : "string",
+                            value: navigated ? "https://page.example/results" : "https://page.example/",
+                        },
+                    };
                 }
 
                 if (typeof expression === "string" && expression.includes("navigator.platform")) {
@@ -80,6 +94,8 @@ function textFake(world: TextWorld = {}): FakeAccess {
                 if (
                     typeof declaration === "string" && declaration.includes("innerText")
                 ) {
+                    if (navigated) throw new Error("Cannot find context with specified id");
+
                     return {
                         result: {
                             type : "object",
@@ -256,6 +272,23 @@ describe("input_type", () => {
             commands: ["selectAll"],
         });
         expect(keys[keys.length - 1]?.params).toMatchObject({ type: "keyUp", key: "Enter" });
+    });
+
+    it("reports success with the new url when submit navigates the page", async () => {
+        const { runtime } = runtimeWith(textFake({ navigateOnEnter: true }));
+
+        const result = await runTool(
+            inputType,
+            { target: { uid: "1_1" }, text: "hello", submit: true },
+            extra(),
+            runtime,
+        );
+
+        expect(result.isError).not.toBe(true);
+        expect(result.structuredContent).toMatchObject({
+            ok      : true,
+            urlAfter: "https://page.example/results",
+        });
     });
 
     it("dispatches per character key events with a delay, falling back for other scripts", async () => {
