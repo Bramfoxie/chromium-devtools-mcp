@@ -372,7 +372,6 @@ export {
 
 export {
     type ActionableElement,
-    type ActionablePoint,
     type ActionabilityOptions,
     coveredMessage,
     describeTarget,
@@ -385,7 +384,6 @@ export {
     type HitStackEntry,
     type HitTarget,
     hitTest,
-    readBox,
     stackEntriesOf,
     STACK_EXPRESSION,
     stackExpression,

@@ -8,8 +8,6 @@ import {
     ensureActionable,
     HIT_EXPRESSION,
     hitTest,
-    readBox,
-    ToolError,
 } from "../src/tools/index.js";
 import { FakeAccess } from "./helpers/fake-access.js";
 
@@ -246,61 +244,6 @@ describe("ensureActionable", () => {
         await expect(
             ensureActionable(fake.asAccess(), "tab1", element, { checkDisabled: true }),
         ).rejects.toThrow("no box on the page");
-    });
-
-    it("reports a covered element by tag, id and classes instead of acting", async () => {
-        const fake = actionableFake({
-            hit: { kind: "covered", tag: "div", id: "overlay", classes: ["modal"] },
-        });
-
-        const failure = ensureActionable(fake.asAccess(), "tab1", element, {
-            checkDisabled: true,
-            hitTest      : { point: { x: 60, y: 45 }, verb: "click" },
-        });
-
-        await expect(failure).rejects.toThrow("div#overlay.modal");
-        await expect(failure).rejects.toThrow(ToolError);
-    });
-
-    it("refuses a point outside the viewport", async () => {
-        const fake = actionableFake({ hit: { kind: "outside" } });
-
-        await expect(
-            ensureActionable(fake.asAccess(), "tab1", element, {
-                checkDisabled: true,
-                hitTest      : { point: { x: 6000, y: 45 }, verb: "click" },
-            }),
-        ).rejects.toThrow("outside the page viewport");
-    });
-});
-
-describe("readBox", () => {
-    it("reads a fresh box without scrolling", async () => {
-        const fake = actionableFake({});
-
-        await expect(readBox(fake.asAccess(), "tab1", element)).resolves.toEqual({
-            x     : 10,
-            y     : 20,
-            width : 100,
-            height: 50,
-        });
-        expect(fake.sent.map((entry) => entry.method)).toEqual(["DOM.getBoxModel"]);
-    });
-
-    it("refuses a hidden element", async () => {
-        const fake = new FakeAccess();
-
-        fake.respond = (targetId, method) => {
-            if (method === "DOM.getBoxModel") {
-                throw new RpcError(ErrorCode.cdpError, "No box model.");
-            }
-
-            throw new Error(`unexpected CDP call ${method} on ${targetId}`);
-        };
-
-        await expect(readBox(fake.asAccess(), "tab1", element)).rejects.toThrow(
-            "no box on the page",
-        );
     });
 });
 

@@ -2,7 +2,6 @@ import { z } from "zod";
 import { ErrorCode, RpcError } from "../daemon/index.js";
 import type { DaemonAccess } from "../mcp/index.js";
 import {
-    boxOf,
     type Rect,
     type ResolvedElement,
     revealElement,
@@ -327,15 +326,9 @@ async function isolatedHitTest(
     return { kind: "hit" };
 }
 
-export interface ActionablePoint {
-    point: { x: number; y: number };
-    verb : string;
-}
-
 export interface ActionabilityOptions {
     checkDisabled: boolean;
     checkVisible?: boolean;
-    hitTest?     : ActionablePoint | undefined;
 }
 
 function notAttachedError(): ToolError {
@@ -370,30 +363,5 @@ export async function ensureActionable(
 
     if (box.box === null || !box.visible) throw hiddenError();
 
-    if (options.hitTest !== undefined) {
-        const hit = await hitTest(access, tab, element, options.hitTest.point);
-
-        if (hit.kind === "covered") throw new ToolError(coveredMessage(hit.by, options.hitTest.verb));
-
-        if (hit.kind === "outside") {
-            throw new ToolError(
-                "The target point lies outside the page viewport. Scroll the page and try again.",
-            );
-        }
-    }
-
     return { state, box: box.box };
-}
-
-export async function readBox(
-    access : DaemonAccess,
-    tab    : string,
-    element: ResolvedElement,
-): Promise<Rect> {
-    // A fresh box for hit testing: elements move between the scroll and the click.
-    const box = await boxOf(access, tab, { objectId: element.objectId });
-
-    if (box.box === null || !box.visible) throw hiddenError();
-
-    return box.box;
 }
