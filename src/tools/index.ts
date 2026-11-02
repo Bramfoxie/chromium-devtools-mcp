@@ -187,7 +187,9 @@ export {
 } from "./page-wait.js";
 
 export {
+    pageLocation,
     pageOrigin,
+    cookieMatchesUrl,
     STORAGE_DEFAULT_ENTRIES,
     STORAGE_DEFAULT_VALUE_CHARS,
     STORAGE_KEY_CLIP_CHARS,

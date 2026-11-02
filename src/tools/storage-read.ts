@@ -90,7 +90,38 @@ export function storageKeysOf(keys: string[] | undefined, names: string[]): stri
     return names.filter((name) => wanted.has(name));
 }
 
-export async function pageOrigin(access: DaemonAccess, targetId: string): Promise<string> {
+function domainMatches(host: string, domain: string): boolean {
+    if (!domain.startsWith(".")) return host === domain;
+
+    return host === domain.slice(1) || host.endsWith(domain);
+}
+
+function pathMatches(requestPath: string, cookiePath: string): boolean {
+    if (requestPath === cookiePath) return true;
+
+    if (!requestPath.startsWith(cookiePath)) return false;
+
+    return cookiePath.endsWith("/") || requestPath.charAt(cookiePath.length) === "/";
+}
+
+export function cookieMatchesUrl(
+    cookie: Pick<StorageCookie, "domain" | "path" | "secure">,
+    url   : string,
+): boolean {
+    const target = new URL(url);
+    const secureContext = target.protocol === "https:" || target.hostname === "localhost";
+
+    if (cookie.secure && !secureContext) return false;
+
+    return (
+        domainMatches(target.hostname, cookie.domain) && pathMatches(target.pathname, cookie.path)
+    );
+}
+
+export async function pageLocation(
+    access  : DaemonAccess,
+    targetId: string,
+): Promise<{ href: string; origin: string }> {
     const result = await access.send(
         targetId,
         "Runtime.evaluate",
@@ -107,10 +138,14 @@ export async function pageOrigin(access: DaemonAccess, targetId: string): Promis
     }
 
     try {
-        return storageOriginOf(value);
+        return { href: value, origin: storageOriginOf(value) };
     } catch {
         throw new ToolError("The page URL is not available, so its storage cannot be read.");
     }
+}
+
+export async function pageOrigin(access: DaemonAccess, targetId: string): Promise<string> {
+    return (await pageLocation(access, targetId)).origin;
 }
 
 async function readDomStorage(
@@ -163,15 +198,12 @@ async function readDomStorage(
 async function readCookies(
     access    : DaemonAccess,
     targetId  : string,
-    origin    : string,
+    href      : string,
     maxEntries: number,
     maxChars  : number,
     withValues: boolean,
 ): Promise<Pick<z.infer<typeof storageOutput>, "count" | "returned" | "truncated" | "cookies">> {
-    // No urls parameter: only cookies of the page's own URL come back.
     const parsed = cookiesSchema.safeParse(await access.send(targetId, "Network.getCookies"));
-
-    void origin;
 
     if (!parsed.success) {
         throw new ToolError(
@@ -179,12 +211,13 @@ async function readCookies(
         );
     }
 
-    const sliced = parsed.data.cookies.slice(0, maxEntries);
+    const matching = parsed.data.cookies.filter((cookie) => cookieMatchesUrl(cookie, href));
+    const sliced = matching.slice(0, maxEntries);
 
     return {
-        count    : parsed.data.cookies.length,
+        count    : matching.length,
         returned : sliced.length,
-        truncated: parsed.data.cookies.length > sliced.length,
+        truncated: matching.length > sliced.length,
         cookies  : sliced.map((cookie) => {
             const shaped = truncateText(cookie.value, maxChars);
 
@@ -232,7 +265,7 @@ export const storageRead = defineTool({
         await ensureNoDialog(context.dialogs, targetId);
         throwIfCancelled(context.signal);
 
-        const origin = await pageOrigin(context.access, targetId);
+        const { href, origin } = await pageLocation(context.access, targetId);
         const maxEntries = args.maxEntries ?? STORAGE_DEFAULT_ENTRIES;
         const maxChars = args.maxValueChars ?? STORAGE_DEFAULT_VALUE_CHARS;
         const withValues = args.includeValues ?? args.kind !== "cookies";
@@ -241,7 +274,7 @@ export const storageRead = defineTool({
             const read = await readCookies(
                 context.access,
                 targetId,
-                origin,
+                href,
                 maxEntries,
                 maxChars,
                 withValues,

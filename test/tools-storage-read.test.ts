@@ -3,6 +3,7 @@ import type { ServerNotification, ServerRequest } from "@modelcontextprotocol/sd
 import { describe, expect, it } from "vitest";
 import {
     allTools,
+    cookieMatchesUrl,
     pageOrigin,
     runTool,
     storageKeysOf,
@@ -36,6 +37,37 @@ function setup() {
 function textOf(result: Awaited<ReturnType<typeof runTool>>): string {
     return JSON.stringify(result.content);
 }
+
+describe("cookie matching", () => {
+    const c = (domain: string, path = "/", secure = false) => ({ domain, path, secure });
+
+    it("matches host-only cookies by exact host", () => {
+        expect(cookieMatchesUrl(c("a.example"), "https://a.example/x")).toBe(true);
+        expect(cookieMatchesUrl(c("a.example"), "https://sub.a.example/x")).toBe(false);
+        expect(cookieMatchesUrl(c("b.example"), "https://a.example/x")).toBe(false);
+    });
+
+    it("matches domain cookies on subdomains but not on look-alike hosts", () => {
+        expect(cookieMatchesUrl(c(".a.example"), "https://a.example/")).toBe(true);
+        expect(cookieMatchesUrl(c(".a.example"), "https://sub.a.example/")).toBe(true);
+        expect(cookieMatchesUrl(c(".a.example"), "https://nota.example/")).toBe(false);
+        expect(cookieMatchesUrl(c(".a.example"), "https://a.example.evil.test/")).toBe(false);
+    });
+
+    it("matches paths on segment boundaries", () => {
+        expect(cookieMatchesUrl(c("a.example", "/app"), "https://a.example/app")).toBe(true);
+        expect(cookieMatchesUrl(c("a.example", "/app"), "https://a.example/app/x")).toBe(true);
+        expect(cookieMatchesUrl(c("a.example", "/app"), "https://a.example/apple")).toBe(false);
+        expect(cookieMatchesUrl(c("a.example", "/app/"), "https://a.example/app/x")).toBe(true);
+        expect(cookieMatchesUrl(c("a.example", "/app"), "https://a.example/")).toBe(false);
+    });
+
+    it("keeps secure cookies off insecure pages", () => {
+        expect(cookieMatchesUrl(c("a.example", "/", true), "http://a.example/")).toBe(false);
+        expect(cookieMatchesUrl(c("a.example", "/", true), "https://a.example/")).toBe(true);
+        expect(cookieMatchesUrl(c("localhost", "/", true), "http://localhost:3000/")).toBe(true);
+    });
+});
 
 describe("storage helpers", () => {
     it("derives the origin from a page URL", () => {
@@ -217,6 +249,43 @@ describe("storage_read", () => {
         const cookiesCall = fake.sent.find((call) => call.method === "Network.getCookies");
 
         expect(cookiesCall?.params).toBeUndefined();
+    });
+
+    it("excludes cookies of other origins and counts only matching ones", async () => {
+        const { fake, runtime } = setup();
+        const cookie = (name: string, domain: string, path = "/", secure = false) => ({
+            name,
+            value   : "v",
+            domain,
+            path,
+            expires : -1,
+            size    : 2,
+            httpOnly: false,
+            secure,
+            session : true,
+        });
+
+        fake.respond = (_tab, method) => {
+            if (method === "Runtime.evaluate") return { result: { value: "https://a.example/page" } };
+
+            return {
+                cookies: [
+                    cookie("own", "a.example"),
+                    cookie("shared", ".example.test"),
+                    cookie("tracker", ".ads.test"),
+                    cookie("other", "b.example"),
+                    cookie("elsewhere", "a.example", "/admin"),
+                ],
+            };
+        };
+
+        const result = await runTool(storageRead, { kind: "cookies" }, extra(), runtime);
+        const names = (result.structuredContent as { cookies: { name: string }[] }).cookies.map(
+            (entry) => entry.name,
+        );
+
+        expect(names).toEqual(["own"]);
+        expect(result.structuredContent).toMatchObject({ count: 1, returned: 1 });
     });
 
     it("returns cookie values only with includeValues", async () => {
