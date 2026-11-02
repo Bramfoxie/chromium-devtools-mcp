@@ -178,7 +178,7 @@ export async function runTool(
     } catch (error) {
         if (error instanceof SessionResetError) return errorResult(error.message);
 
-        if (runtime.access.sessionGeneration !== generation) {
+        if (generation > 0 && runtime.access.sessionGeneration !== generation) {
             return errorResult(new SessionResetError().message);
         }
 

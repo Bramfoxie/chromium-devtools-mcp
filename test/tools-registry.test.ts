@@ -15,6 +15,7 @@ import {
     registerTools,
     runTool,
     throwIfCancelled,
+    ToolError,
     ToolRuntime,
 } from "../src/tools/index.js";
 import { FakeAccess } from "./helpers/fake-access.js";
@@ -246,10 +247,33 @@ describe("tool declarations", () => {
                 throw new RpcError(ErrorCode.notFound, "The tab was closed.");
             },
         });
+
+        access.bumpGeneration();
         const result = await runTool(stale, {}, extra(), underTest);
 
         expect(result.isError).toBe(true);
         expect(JSON.stringify(result.content)).toContain("was restarted");
+    });
+
+    it("passes a real error through when the first call opens the session", async () => {
+        const access = new FakeAccess({ tabs: [] });
+        const first = defineTool({
+            name       : "first",
+            description: "Opens the session, then refuses.",
+            access     : "read",
+            input      : z.strictObject({}),
+            output     : z.strictObject({}),
+            handler    : async () => {
+                access.bumpGeneration();
+
+                throw new ToolError("Only http, https and about:blank URLs can be opened.");
+            },
+        });
+        const result = await runTool(first, {}, extra(), runtime(managedConfig, access));
+
+        expect(result.isError).toBe(true);
+        expect(JSON.stringify(result.content)).toContain("Only http, https and about:blank");
+        expect(JSON.stringify(result.content)).not.toContain("was restarted");
     });
 
     it("returns the completed result instead of a late cancellation", async () => {
