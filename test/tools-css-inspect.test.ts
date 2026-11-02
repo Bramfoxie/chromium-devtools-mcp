@@ -10,6 +10,7 @@ import {
     runTool,
     shapeComputed,
     shapeInherited,
+    droppedWinners,
     shapeMatchedRules,
     ToolRuntime,
 } from "../src/tools/index.js";
@@ -90,6 +91,22 @@ describe("shapeMatchedRules", () => {
 
     it("limits the number of rules", () => {
         expect(shapeMatchedRules([rule("a", []), rule("b", [])], 1)).toHaveLength(1);
+    });
+
+    it("names properties whose winning declaration is in a dropped rule", () => {
+        const entries = [
+            rule(".a", [
+                { name: "color", value: "red", important: true },
+                { name: "margin", value: "0" },
+            ]),
+            rule("#b", [
+                { name: "color", value: "blue" },
+                { name: "margin", value: "5px" },
+            ]),
+        ];
+
+        expect(droppedWinners(entries, 1)).toEqual(["color"]);
+        expect(droppedWinners(entries, 2)).toEqual([]);
     });
 
     it("prefers important declarations over later plain ones", () => {
@@ -280,8 +297,9 @@ describe("css_inspect", () => {
                 border : { x: 0, y: 1, width: 12, height: 12 },
                 margin : { x: -5, y: -5, width: 22, height: 23 },
             },
-            totalRules: 1,
-            truncated : false,
+            totalRules    : 1,
+            truncated     : false,
+            droppedWinners: [],
         });
         expect(fake.sent.map((call) => call.method)).toEqual([
             "DOM.resolveNode",
@@ -314,12 +332,13 @@ describe("css_inspect", () => {
         );
 
         expect(result.structuredContent).toMatchObject({
-            computed    : { color: "rgb(255, 0, 0)" },
-            matchedRules: [],
-            inherited   : [],
-            box         : null,
-            totalRules  : 0,
-            truncated   : false,
+            computed      : { color: "rgb(255, 0, 0)" },
+            matchedRules  : [],
+            inherited     : [],
+            box           : null,
+            totalRules    : 0,
+            truncated     : false,
+            droppedWinners: [],
         });
         expect(fake.sent.map((call) => call.method)).not.toContain("CSS.getMatchedStylesForNode");
         expect(fake.sent.map((call) => call.method)).not.toContain("DOM.getBoxModel");
@@ -373,8 +392,9 @@ describe("css_inspect", () => {
                     declarations: [{ name: "color", value: "blue", winning: false }],
                 },
             ],
-            totalRules: 2,
-            truncated : true,
+            totalRules    : 2,
+            truncated     : true,
+            droppedWinners: ["color"],
         });
     });
 

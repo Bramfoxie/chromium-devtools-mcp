@@ -156,35 +156,53 @@ export function shapeComputed(
     return shaped;
 }
 
-export function shapeMatchedRules(
-    entries : Array<z.infer<typeof matchedEntrySchema>>,
-    maxRules: number,
-): CssRule[] {
+type MatchedEntry = z.infer<typeof matchedEntrySchema>;
+
+type Winner = { rule: number; declaration: number };
+
+function cascadeWinners(entries: MatchedEntry[]): Map<string, Winner> {
     // CDP orders matched rules least specific first. Per property the
     // winner is the last important declaration when any is important,
     // else the last declaration.
-    const scored = entries.map((entry, rule) => ({ entry, rule }));
     const importantByName = new Set<string>();
 
-    for (const item of scored) {
-        for (const property of item.entry.rule.style.cssProperties) {
+    for (const entry of entries) {
+        for (const property of entry.rule.style.cssProperties) {
             if (property.name !== "" && (property.important ?? false)) {
                 importantByName.add(property.name);
             }
         }
     }
 
-    const last = new Map<string, { rule: number; declaration: number }>();
+    const last = new Map<string, Winner>();
 
-    scored.forEach((item) => {
-        item.entry.rule.style.cssProperties.forEach((property, declaration) => {
+    entries.forEach((entry, rule) => {
+        entry.rule.style.cssProperties.forEach((property, declaration) => {
             const important = property.important ?? false;
 
             if (property.name === "" || (importantByName.has(property.name) && !important)) return;
 
-            last.set(property.name, { rule: item.rule, declaration });
+            last.set(property.name, { rule, declaration });
         });
     });
+
+    return last;
+}
+
+export function droppedWinners(entries: MatchedEntry[], maxRules: number): string[] {
+    const firstKept = Math.max(0, entries.length - maxRules);
+
+    return [...cascadeWinners(entries)]
+        .filter(([, winner]) => winner.rule < firstKept)
+        .map(([name]) => name);
+}
+
+export function shapeMatchedRules(
+    entries : MatchedEntry[],
+    maxRules: number,
+): CssRule[] {
+    const scored = entries.map((entry, rule) => ({ entry, rule }));
+    const last = cascadeWinners(entries);
 
     // Keep the most specific rules: truncation drops the least specific.
     const kept = scored.slice(-maxRules);
@@ -306,8 +324,9 @@ export const cssInspect = defineTool({
             border : rectSchema.describe("Border rectangle."),
             margin : rectSchema.describe("Margin rectangle."),
         }).nullable().describe("Box model rectangles, null when includeBox is false or the element has none."),
-        totalRules: z.number().describe("Matched rules before the maxRules limit."),
-        truncated : z.boolean().describe("Whether maxRules dropped rules."),
+        totalRules    : z.number().describe("Matched rules before the maxRules limit."),
+        truncated     : z.boolean().describe("Whether maxRules dropped rules."),
+        droppedWinners: z.array(z.string()).describe("Properties whose winning declaration is in a rule dropped by maxRules."),
     }),
     handler: async (args, context) => {
         const targetId = args.tab ?? context.state.selected;
@@ -368,6 +387,7 @@ export const cssInspect = defineTool({
             let inherited: InheritedStyle[] = [];
             let totalRules = 0;
             let truncated = false;
+            let dropped: string[] = [];
 
             if (includeMatchedRules) {
                 const matched = matchedSchema.safeParse(
@@ -386,17 +406,19 @@ export const cssInspect = defineTool({
                 inherited = shapeInherited(matched.data.inherited ?? []);
                 totalRules = rules.length;
                 truncated = rules.length > maxRules;
+                dropped = droppedWinners(rules, maxRules);
             }
 
             const box = includeBox ? await readBox(context.access, targetId, nodeId) : null;
 
             return {
-                computed: shapeComputed(computed.data.computedStyle, wanted),
+                computed      : shapeComputed(computed.data.computedStyle, wanted),
                 matchedRules,
                 inherited,
                 box,
                 totalRules,
                 truncated,
+                droppedWinners: dropped,
             };
         } finally {
             await context.access.send(targetId, "CSS.disable", {}).catch(() => undefined);

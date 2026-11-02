@@ -61,7 +61,7 @@ Each session keeps its own tab selection. `new_tab` opens a background tab and s
 - `js_evaluate`: run JavaScript in a tab. Page exceptions come back as data, not as tool errors.
 - `dom_query`: find elements by a CSS selector and read their text, attributes and boxes.
 - `dom_snapshot`: read a compact text snapshot of the page with element ids.
-- `css_inspect`: read the computed style, matched CSS rules and box of an element.
+- `css_inspect`: read the computed style, matched CSS rules and box of an element. The result carries `totalRules`, `truncated` and `droppedWinners`, the properties whose winning declaration is in a rule that `maxRules` dropped.
 - `click`: click an element at the DOM level with `element.click()` semantics. Works on covered elements and background tabs; the event is not trusted.
 - `input_click`: click with trusted CDP mouse events, like a real user. Refuses a covered element unless `force` is passed.
 - `input_hover`: hover an element with trusted CDP mouse events, so hover styles and menus react.

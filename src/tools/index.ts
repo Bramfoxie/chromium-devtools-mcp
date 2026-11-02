@@ -92,6 +92,7 @@ export {
     quadToRect,
     shapeComputed,
     shapeInherited,
+    droppedWinners,
     shapeMatchedRules,
 } from "./css-inspect.js";
 
