@@ -72,7 +72,7 @@ Each session keeps its own tab selection. `new_tab` opens a background tab and s
 - `input_upload`: attach local files to a file input. This is the most sensitive tool: it sends local files to a web page. Paths are validated on the server machine (absolute, existing regular readable files under 100 MiB, at most 20), symlinks are followed, and results carry file names and sizes only, never contents.
 - `console_logs`: read console messages, uncaught exceptions and browser messages of a tab, with level and text filters, paging and clear.
 - `network_requests`: read HTTP requests of a tab with URL, method, resource type, status and failure filters.
-- `network_response_body`: read the response body of a request from `network_requests`. Binary bodies need `asBase64`; without it the result has `needsBase64: true` and no body. `maxChars` defaults to 50000 and allows up to 500000. Bodies over the 32 MiB transport limit are refused. Redirect responses have no body.
+- `network_response_body`: read the response body of a request from `network_requests`. Binary bodies need `asBase64`; without it the result has `needsBase64: true` and no body. `maxChars` defaults to 50000 and allows up to 500000; a base64 body is cut at a multiple of 4 characters and always keeps at least 4. Bodies over the 32 MiB transport limit are refused. Redirect responses have no body.
 - `network_mock`: mock responses or fail requests by Fetch wildcard pattern, with delay and a use count. First match in insertion order wins.
 - `page_dialogs`: see and resolve JavaScript dialogs, or set an automatic accept or dismiss policy for later ones.
 - `page_wait`: wait for a selector, text, URL, load state or expression. A timeout returns `met: false`, not an error.

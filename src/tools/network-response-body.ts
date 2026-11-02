@@ -129,7 +129,7 @@ export const networkResponseBody = defineTool({
         }
 
         if (parsed.data.base64Encoded && !isTextMimeType(mimeType)) {
-            const chars = Math.floor(maxChars / 4) * 4;
+            const chars = Math.max(4, Math.floor(maxChars / 4) * 4);
             const totalLength = parsed.data.body.length;
             const truncated = totalLength > chars;
             const body = truncated ? parsed.data.body.slice(0, chars) : parsed.data.body;

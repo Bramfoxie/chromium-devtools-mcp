@@ -206,6 +206,35 @@ describe("network_response_body", () => {
         ).toBe(0);
     });
 
+    it("returns at least one base64 group when maxChars is below 4", async () => {
+        const fake = new FakeAccess();
+        const bytes = Buffer.from("0123456789").toString("base64");
+
+        fake.respond = (_targetId, method) =>
+            method === "Network.getResponseBody" ? { body: bytes, base64Encoded: true } : {};
+        const { runtime } = setup(fake);
+
+        await runTool(newTab, {}, extra(), runtime);
+
+        for (const event of finishedRequest("tab1", "r1", "image/png")) fake.emit("cdp.event", event);
+
+        for (const maxChars of [1, 2, 3]) {
+            const result = await runTool(
+                networkResponseBody,
+                { requestId: 1, asBase64: true, maxChars },
+                extra(),
+                runtime,
+            );
+
+            expect(result.structuredContent).toMatchObject({
+                base64     : true,
+                body       : bytes.slice(0, 4),
+                truncated  : true,
+                totalLength: bytes.length,
+            });
+        }
+    });
+
     it("maps unknown ids, redirects, loading and evicted bodies", async () => {
         const fake = new FakeAccess();
 
