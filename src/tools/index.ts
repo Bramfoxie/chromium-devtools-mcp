@@ -166,6 +166,7 @@ export { pageDetails, pageInfo, pageInfoExpression } from "./page-info.js";
 export { DIALOG_PROMPT_TEXT_MAX_CHARS, pageDialogs } from "./page-dialogs.js";
 
 export {
+    cancelWaitScript,
     checkConditions,
     expressionScript,
     pageWait,

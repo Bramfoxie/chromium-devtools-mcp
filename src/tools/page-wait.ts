@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { DaemonAccess } from "../mcp/index.js";
 import { compileUrlPattern } from "./capture/network-log.js";
@@ -40,6 +41,29 @@ const conditionSchema = z.strictObject({
 
 export type WaitCondition = z.infer<typeof conditionSchema>;
 
+export const WAIT_REGISTRY = "__chromiumDevtoolsMcpWaits";
+
+function waitPrelude(token: string): string {
+    return `const waits = (globalThis[${JSON.stringify(WAIT_REGISTRY)}] ??= new Map());
+  let cancelled = false;
+  let timer;
+  let wake;
+  const nap = (ms) => new Promise((resolve) => {
+    if (cancelled) return resolve();
+    wake = resolve;
+    timer = setTimeout(resolve, ms);
+  });
+  waits.set(${JSON.stringify(token)}, () => {
+    cancelled = true;
+    clearTimeout(timer);
+    if (wake) wake();
+  });`;
+}
+
+export function cancelWaitScript(token: string): string {
+    return `(() => { const stop = globalThis[${JSON.stringify(WAIT_REGISTRY)}]?.get(${JSON.stringify(token)}); if (stop) stop(); })()`;
+}
+
 export interface SelectorDetail {
     matched: number;
     visible: number;
@@ -51,6 +75,7 @@ export function selectorScript(
     pollMs   : number,
     timeoutMs: number,
     pierce?  : boolean,
+    token    : string = "wait",
 ): string {
     const matcher = JSON.stringify(selector);
     const want = JSON.stringify(state);
@@ -66,6 +91,7 @@ export function selectorScript(
         : `const found = [...document.querySelectorAll(selector)];`;
 
     return `(async () => {
+  ${waitPrelude(token)}
   const selector = ${matcher};
   const want = ${want};
   const deadline = Date.now() + ${JSON.stringify(timeoutMs)};
@@ -84,15 +110,16 @@ export function selectorScript(
     : detail.matched === 0;
   let detail = query();
   try {
-    while (Date.now() < deadline) {
+    while (!cancelled && Date.now() < deadline) {
       if (met(detail)) return { met: true, detail };
-      await new Promise((resolve) => setTimeout(resolve, ${JSON.stringify(pollMs)}));
-      if (Date.now() >= deadline) break;
+      await nap(${JSON.stringify(pollMs)});
+      if (cancelled || Date.now() >= deadline) break;
       detail = query();
     }
     return { met: met(detail), detail };
   } finally {
-    void 0;
+    clearTimeout(timer);
+    waits.delete(${JSON.stringify(token)});
   }
 })()`;
 }
@@ -102,11 +129,13 @@ export function textScript(
     selector : string | undefined,
     pollMs   : number,
     timeoutMs: number,
+    token    : string = "wait",
 ): string {
     const needle = JSON.stringify(text);
     const scope = JSON.stringify(selector ?? "");
 
     return `(async () => {
+  ${waitPrelude(token)}
   const needle = ${needle};
   const scope = ${scope};
   const deadline = Date.now() + ${JSON.stringify(timeoutMs)};
@@ -119,17 +148,19 @@ export function textScript(
     for (;;) {
       const detail = read();
       if (detail.found) return { met: true, detail };
-      if (Date.now() >= deadline) return { met: false, detail };
-      await new Promise((resolve) => setTimeout(resolve, ${JSON.stringify(pollMs)}));
+      if (cancelled || Date.now() >= deadline) return { met: false, detail };
+      await nap(${JSON.stringify(pollMs)});
     }
   } finally {
-    void 0;
+    clearTimeout(timer);
+    waits.delete(${JSON.stringify(token)});
   }
 })()`;
 }
 
-export function expressionScript(expression: string, pollMs: number, timeoutMs: number): string {
+export function expressionScript(expression: string, pollMs: number, timeoutMs: number, token: string = "wait"): string {
     return `(async () => {
+  ${waitPrelude(token)}
   const check = () => (${expression});
   const deadline = Date.now() + ${JSON.stringify(timeoutMs)};
   let last = undefined;
@@ -141,11 +172,12 @@ export function expressionScript(expression: string, pollMs: number, timeoutMs: 
         last = undefined;
       }
       if (last) return { met: true, detail: { truthy: true } };
-      if (Date.now() >= deadline) return { met: false, detail: { truthy: false } };
-      await new Promise((resolve) => setTimeout(resolve, ${JSON.stringify(pollMs)}));
+      if (cancelled || Date.now() >= deadline) return { met: false, detail: { truthy: false } };
+      await nap(${JSON.stringify(pollMs)});
     }
   } finally {
-    void 0;
+    clearTimeout(timer);
+    waits.delete(${JSON.stringify(token)});
   }
 })()`;
 }
@@ -232,10 +264,23 @@ async function runScript(
     script    : string,
     timeoutMs : number,
     started   : number,
+    token     : string,
     contextId?: number,
 ): Promise<{ met: boolean; elapsedMs: number; detail: unknown }> {
     const margin = Math.min(5000, Math.floor(timeoutMs / 4) + 1000);
     let result: unknown;
+    const cancelInPage = (): Promise<unknown> => context.access.send(
+        targetId,
+        "Runtime.evaluate",
+        {
+            expression: cancelWaitScript(token),
+            ...(contextId === undefined ? {} : { contextId }),
+        },
+        5000,
+    ).catch(() => undefined);
+    const onAbort = (): void => { void cancelInPage(); };
+
+    context.signal.addEventListener("abort", onAbort, { once: true });
 
     try {
         result = await context.access.send(
@@ -250,9 +295,12 @@ async function runScript(
             timeoutMs + margin,
         );
     } catch (error) {
+        await cancelInPage();
         await context.access.send(targetId, "Runtime.terminateExecution", {}).catch(() => undefined);
 
         throw error;
+    } finally {
+        context.signal.removeEventListener("abort", onAbort);
     }
 
     const outcome = waitOutcomeOf(result);
@@ -449,6 +497,7 @@ export const pageWait = defineTool({
         const pollMs = args.pollMs ?? WAIT_DEFAULT_POLL_MS;
         const condition = describeCondition(conditionArgs, kind);
         const started = context.clock.now();
+        const token = randomUUID();
 
         if (kind === "ms") {
             throwIfCancelled(context.signal);
@@ -489,9 +538,11 @@ export const pageWait = defineTool({
                         pollMs,
                         timeoutMs,
                         args.pierce,
+                        token,
                     ),
                     timeoutMs,
                     started,
+                    token,
                     contextId,
                 ),
             };
@@ -504,9 +555,10 @@ export const pageWait = defineTool({
                 ...await runScript(
                     context,
                     targetId,
-                    textScript(args.text ?? "", args.selector, pollMs, timeoutMs),
+                    textScript(args.text ?? "", args.selector, pollMs, timeoutMs, token),
                     timeoutMs,
                     started,
+                    token,
                 ),
             };
         }
@@ -518,9 +570,10 @@ export const pageWait = defineTool({
                 ...await runScript(
                     context,
                     targetId,
-                    expressionScript(args.expression ?? "false", pollMs, timeoutMs),
+                    expressionScript(args.expression ?? "false", pollMs, timeoutMs, token),
                     timeoutMs,
                     started,
+                    token,
                 ),
             };
         }

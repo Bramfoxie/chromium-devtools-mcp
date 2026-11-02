@@ -1,8 +1,10 @@
 import type { RequestHandlerExtra } from "@modelcontextprotocol/sdk/shared/protocol.js";
 import type { ServerNotification, ServerRequest } from "@modelcontextprotocol/sdk/types.js";
+import vm from "node:vm";
 import { describe, expect, it } from "vitest";
 import { ErrorCode, RpcError } from "../src/daemon/index.js";
 import {
+    cancelWaitScript,
     checkConditions,
     expressionScript,
     pageWait,
@@ -73,6 +75,50 @@ describe("checkConditions", () => {
 });
 
 describe("wait scripts", () => {
+    function pageWorld() {
+        const live = new Set<unknown>();
+        const world = {
+            document        : { querySelectorAll: () => [], body: { innerText: "" } },
+            getComputedStyle: () => ({ visibility: "visible" }),
+            Date,
+            Map,
+            Promise,
+            setTimeout      : (fn: () => void, ms: number) => {
+                const handle = setTimeout(() => {
+                    live.delete(handle);
+                    fn();
+                }, ms);
+
+                live.add(handle);
+
+                return handle;
+            },
+            clearTimeout: (handle: ReturnType<typeof setTimeout>) => {
+                live.delete(handle);
+                clearTimeout(handle);
+            },
+        };
+
+        return { live, context: vm.createContext(world) };
+    }
+
+    it.each([
+        ["selector", (t: string) => selectorScript(".x", "visible", 50, 60_000, false, t)],
+        ["text", (t: string) => textScript("zzz", undefined, 50, 60_000, t)],
+        ["expression", (t: string) => expressionScript("false", 50, 60_000, t)],
+    ])("leaves no timer behind after a %s wait is cancelled", async (_name, build) => {
+        const { live, context } = pageWorld();
+        const running = vm.runInContext(build("tok"), context) as Promise<{ met: boolean }>;
+
+        await new Promise((resolve) => setTimeout(resolve, 120));
+        expect(live.size).toBe(1);
+        vm.runInContext(cancelWaitScript("tok"), context);
+
+        await expect(running).resolves.toMatchObject({ met: false });
+        expect(live.size).toBe(0);
+        expect(vm.runInContext("globalThis.__chromiumDevtoolsMcpWaits.size", context)).toBe(0);
+    });
+
     it("builds selector waits that embed the selector and the state", () => {
         const script = selectorScript(".x", "attached", 100, 1000);
 
@@ -341,6 +387,26 @@ describe("page_wait", () => {
 
         expect(result.isError).toBe(true);
         expect(textOf(result)).toContain("cancelled");
+    });
+
+    it("cancels the page wait when the script call times out", async () => {
+        const { fake, runtime } = setup();
+
+        fake.respond = (method) => {
+            if (method === "Runtime.evaluate" && fake.sent.length === 1) {
+                throw new RpcError(ErrorCode.cdpTimeout, "Timed out.");
+            }
+
+            return {};
+        };
+
+        await runTool(pageWait, { selector: ".x" }, extra(), runtime);
+
+        const expressions = fake.sent
+            .filter((call) => call.method === "Runtime.evaluate")
+            .map((call) => JSON.stringify(call.params));
+
+        expect(expressions.some((text) => text.includes("__chromiumDevtoolsMcpWaits"))).toBe(true);
     });
 
     it("terminates execution when a script wait fails", async () => {
