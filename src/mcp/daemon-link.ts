@@ -133,8 +133,8 @@ export class DaemonLink {
                 if (client.failure) {
                     throw new DaemonError(
                         `The browser could not be started: ${client.failure.replace(/\.$/, "")}. ` +
-                            "Check the browser installation, close other windows that use the same profile, or raise the wait, then try the call again." +
-                            `  See ${this.deps.logFile} for the daemon messages.`,
+                            "Check the browser installation, close other windows that use the same profile, or raise the wait." +
+                            ` See ${this.deps.logFile} for the daemon messages.`,
                     );
                 }
 
