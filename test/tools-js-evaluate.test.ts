@@ -251,9 +251,25 @@ describe("js_evaluate", () => {
     it("shapes an object result from one evaluation and releases it", async () => {
         const fake = new FakeAccess();
 
-        fake.respond = () => ({
-            result: { type: "object", className: "Object", description: "Object", objectId: "obj-9" },
-        });
+        fake.respond = (_targetId, method) => {
+            if (method === "Runtime.callFunctionOn") {
+                return {
+                    result          : { type: "undefined" },
+                    exceptionDetails: {
+                        text: "Uncaught TypeError: Converting circular structure to JSON",
+                    },
+                };
+            }
+
+            return {
+                result: {
+                    type       : "object",
+                    className  : "Object",
+                    description: "Object",
+                    objectId   : "obj-9",
+                },
+            };
+        };
 
         const { runtime } = setup(fake);
 
@@ -270,6 +286,7 @@ describe("js_evaluate", () => {
         });
         expect(fake.sent.map((call) => call.method)).toEqual([
             "Runtime.evaluate",
+            "Runtime.callFunctionOn",
             "Runtime.releaseObject",
         ]);
         expect(fake.sent[0]?.params).toMatchObject({ returnByValue: false });
@@ -312,8 +329,10 @@ describe("js_evaluate", () => {
         const fake = new FakeAccess();
         let calls = 0;
 
-        fake.respond = () => {
+        fake.respond = (_targetId, method) => {
             calls += 1;
+
+            if (method === "Runtime.callFunctionOn") return { result: { type: "string", value: "{}" } };
 
             return { result: { type: "object", value: {} } };
         };
@@ -328,6 +347,307 @@ describe("js_evaluate", () => {
 
         expect(result.structuredContent).toMatchObject({ ok: true });
         expect(calls).toBe(1);
+    });
+
+    it("returns a structured value from one evaluation plus one serialization", async () => {
+        const fake = new FakeAccess();
+
+        fake.respond = (_targetId, method) => {
+            if (method === "Runtime.callFunctionOn") {
+                return { result: { type: "string", value: "{\"a\":1,\"b\":[1,2,3]}" } };
+            }
+
+            return {
+                result: {
+                    type       : "object",
+                    className  : "Object",
+                    description: "Object",
+                    objectId   : "obj-1",
+                },
+            };
+        };
+
+        const { runtime } = setup(fake);
+
+        await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+
+        const result = await runTool(jsEvaluate, { expression: "({a:1,b:[1,2,3]})" }, extra(), runtime);
+
+        expect(result.structuredContent).toEqual({
+            ok       : true,
+            type     : "object",
+            value    : { a: 1, b: [1, 2, 3] },
+            truncated: false,
+        });
+        expect(fake.sent.map((call) => call.method)).toEqual([
+            "Runtime.evaluate",
+            "Runtime.callFunctionOn",
+            "Runtime.releaseObject",
+        ]);
+        expect(fake.sent.filter((call) => call.method === "Runtime.evaluate")).toHaveLength(1);
+        expect(fake.sent[1]?.params).toEqual({
+            functionDeclaration: "function(){return JSON.stringify(this)}",
+            objectId           : "obj-1",
+            returnByValue      : true,
+        });
+        expect(fake.sent[2]?.params).toEqual({ objectId: "obj-1" });
+    });
+
+    it("evaluates a Map once without re-running the expression", async () => {
+        const fake = new FakeAccess();
+
+        fake.respond = () => ({
+            result: {
+                type       : "object",
+                subtype    : "map",
+                className  : "Map",
+                description: "Map(1)",
+                objectId   : "obj-map",
+            },
+        });
+
+        const { runtime } = setup(fake);
+
+        await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+
+        const result = await runTool(jsEvaluate, { expression: "new Map([['a',1]])" }, extra(), runtime);
+
+        expect(result.structuredContent).toEqual({
+            ok       : true,
+            type     : "map",
+            value    : "Map(1)",
+            truncated: false,
+        });
+        expect(fake.sent.map((call) => call.method)).toEqual([
+            "Runtime.evaluate",
+            "Runtime.releaseObject",
+        ]);
+        expect(fake.sent.filter((call) => call.method === "Runtime.evaluate")).toHaveLength(1);
+    });
+
+    it("falls back to the description when the value cannot be serialized", async () => {
+        const fake = new FakeAccess();
+
+        fake.respond = (_targetId, method) => {
+            if (method === "Runtime.callFunctionOn") {
+                return {
+                    result          : { type: "undefined" },
+                    exceptionDetails: {
+                        text: "Uncaught TypeError: Converting circular structure to JSON",
+                    },
+                };
+            }
+
+            return {
+                result: {
+                    type       : "object",
+                    className  : "Object",
+                    description: "Object",
+                    objectId   : "obj-cyclic",
+                },
+            };
+        };
+
+        const { runtime } = setup(fake);
+
+        await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+
+        const result = await runTool(
+            jsEvaluate,
+            { expression: "const o={}; o.self=o; o" },
+            extra(),
+            runtime,
+        );
+
+        expect(result.structuredContent).toEqual({
+            ok       : true,
+            type     : "object",
+            value    : "Object",
+            truncated: false,
+        });
+        expect(fake.sent.map((call) => call.method)).toEqual([
+            "Runtime.evaluate",
+            "Runtime.callFunctionOn",
+            "Runtime.releaseObject",
+        ]);
+        expect(fake.sent.filter((call) => call.method === "Runtime.evaluate")).toHaveLength(1);
+    });
+
+    it("releases both the element and the result of a targeted evaluation", async () => {
+        const fake = new FakeAccess();
+
+        const { runtime } = setup(fake);
+
+        await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+        runtime.elements.nextGeneration("tab1");
+
+        const [uid] = runtime.elements.assign("tab1", [{ backendNodeId: 7 }]);
+
+        fake.respond = (_targetId, method) => {
+            if (method === "DOM.resolveNode") return { object: { objectId: "obj-7" } };
+
+            if (method === "Runtime.callFunctionOn" && fake.sent.length > 2) {
+                return { result: { type: "string", value: "{\"text\":\"hi\"}" } };
+            }
+
+            if (method === "Runtime.callFunctionOn") {
+                return {
+                    result: {
+                        type       : "object",
+                        className  : "Object",
+                        description: "Object",
+                        objectId   : "obj-result",
+                    },
+                };
+            }
+
+            return { result: { type: "undefined" } };
+        };
+
+        const result = await runTool(
+            jsEvaluate,
+            { expression: "return {text: this.textContent};", target: { uid } },
+            extra(),
+            runtime,
+        );
+
+        expect(result.structuredContent).toEqual({
+            ok       : true,
+            type     : "object",
+            value    : { text: "hi" },
+            truncated: false,
+        });
+        expect(fake.sent.map((call) => call.method)).toEqual([
+            "DOM.resolveNode",
+            "Runtime.callFunctionOn",
+            "Runtime.callFunctionOn",
+            "Runtime.releaseObject",
+            "Runtime.releaseObject",
+        ]);
+        expect(fake.sent[1]?.params).toMatchObject({ objectId: "obj-7" });
+        expect(fake.sent[2]?.params).toMatchObject({ objectId: "obj-result" });
+        expect(fake.sent[3]?.params).toEqual({ objectId: "obj-result" });
+        expect(fake.sent[4]?.params).toEqual({ objectId: "obj-7" });
+    });
+
+    it("releases the element when a targeted response does not parse", async () => {
+        const fake = new FakeAccess();
+
+        const { runtime } = setup(fake);
+
+        await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+        runtime.elements.nextGeneration("tab1");
+
+        const [uid] = runtime.elements.assign("tab1", [{ backendNodeId: 7 }]);
+
+        fake.respond = (_targetId, method) => {
+            if (method === "DOM.resolveNode") return { object: { objectId: "obj-7" } };
+
+            return { notAResult: true };
+        };
+
+        const result = await runTool(
+            jsEvaluate,
+            { expression: "return this.textContent;", target: { uid } },
+            extra(),
+            runtime,
+        );
+
+        expect(result.isError).toBe(true);
+        expect(JSON.stringify(result.content)).toContain("unexpected response");
+        expect(fake.sent.map((call) => call.method)).toEqual([
+            "DOM.resolveNode",
+            "Runtime.callFunctionOn",
+            "Runtime.releaseObject",
+        ]);
+        expect(fake.sent[2]?.params).toEqual({ objectId: "obj-7" });
+    });
+
+    it("releases result, exception and element when a targeted call throws", async () => {
+        const fake = new FakeAccess();
+
+        const { runtime } = setup(fake);
+
+        await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+        runtime.elements.nextGeneration("tab1");
+
+        const [uid] = runtime.elements.assign("tab1", [{ backendNodeId: 7 }]);
+
+        fake.respond = (_targetId, method) => {
+            if (method === "DOM.resolveNode") return { object: { objectId: "obj-7" } };
+
+            return {
+                result          : { type: "object", objectId: "obj-result" },
+                exceptionDetails: {
+                    text     : "Uncaught Error: boom",
+                    exception: { type: "object", objectId: "obj-thrown" },
+                },
+            };
+        };
+
+        const result = await runTool(
+            jsEvaluate,
+            { expression: "throw new Error('boom');", target: { uid } },
+            extra(),
+            runtime,
+        );
+
+        expect(result.isError).not.toBe(true);
+        expect(result.structuredContent).toMatchObject({ ok: false });
+        expect(fake.sent.map((call) => call.method)).toEqual([
+            "DOM.resolveNode",
+            "Runtime.callFunctionOn",
+            "Runtime.releaseObject",
+            "Runtime.releaseObject",
+            "Runtime.releaseObject",
+        ]);
+        expect(fake.sent[2]?.params).toEqual({ objectId: "obj-result" });
+        expect(fake.sent[3]?.params).toEqual({ objectId: "obj-thrown" });
+        expect(fake.sent[4]?.params).toEqual({ objectId: "obj-7" });
+    });
+
+    it("releases the element when the targeted call fails", async () => {
+        const fake = new FakeAccess();
+
+        fake.respond = (_targetId, method) => {
+            if (method === "DOM.resolveNode") return { object: { objectId: "obj-7" } };
+
+            if (method === "Runtime.callFunctionOn") {
+                throw new RpcError(ErrorCode.cdpError, "Cannot find context with specified id");
+            }
+
+            return { result: { type: "undefined" } };
+        };
+
+        const { runtime } = setup(fake);
+
+        await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+        runtime.elements.nextGeneration("tab1");
+
+        const [uid] = runtime.elements.assign("tab1", [{ backendNodeId: 7 }]);
+
+        const result = await runTool(
+            jsEvaluate,
+            { expression: "return this.textContent;", target: { uid } },
+            extra(),
+            runtime,
+        );
+
+        expect(result.isError).toBe(true);
+        expect(JSON.stringify(result.content)).toContain("Cannot find context with specified id");
+        expect(fake.sent.map((call) => call.method)).toEqual([
+            "DOM.resolveNode",
+            "Runtime.callFunctionOn",
+            "Runtime.releaseObject",
+        ]);
+        expect(fake.sent[2]?.params).toEqual({ objectId: "obj-7" });
     });
 
     it("reports the protocol error from one evaluation", async () => {
@@ -408,6 +728,7 @@ describe("js_evaluate", () => {
         expect(fake.sent.map((call) => call.method)).toEqual([
             "DOM.resolveNode",
             "Runtime.callFunctionOn",
+            "Runtime.releaseObject",
         ]);
         expect(fake.sent[1]?.params).toEqual({
             functionDeclaration: "function (element) { return this.textContent; }",
@@ -418,6 +739,7 @@ describe("js_evaluate", () => {
             userGesture        : false,
             generatePreview    : true,
         });
+        expect(fake.sent[2]?.params).toEqual({ objectId: "obj-7" });
     });
 
     it("reports a stale uid without calling the page", async () => {
@@ -528,6 +850,7 @@ describe("js_evaluate against shadow elements", () => {
             "DOM.resolveNode",
             "DOM.describeNode",
             "Runtime.callFunctionOn",
+            "Runtime.releaseObject",
         ]);
     });
 });

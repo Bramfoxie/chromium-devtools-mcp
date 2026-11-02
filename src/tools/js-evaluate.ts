@@ -192,15 +192,19 @@ export const jsEvaluate = defineTool({
         const maxChars = args.maxResultChars ?? EVALUATE_DEFAULT_RESULT_CHARS;
 
         let result: unknown;
+        let elementObjectId: string | undefined;
 
         try {
-            result = await evaluate(context.access, context.elements, targetId, {
+            const outcome = await evaluate(context.access, context.elements, targetId, {
                 expression: args.expression,
                 awaitPromise,
                 timeoutMs,
                 target    : args.target,
                 frames    : context.frames,
             });
+
+            result = outcome.response;
+            elementObjectId = outcome.elementObjectId;
         } catch (error) {
             if (error instanceof RpcError && error.code === ErrorCode.cdpTimeout) {
                 await context.access.send(targetId, "Runtime.terminateExecution", {}).catch(() => undefined);
@@ -216,6 +220,8 @@ export const jsEvaluate = defineTool({
         const parsed = evaluatedSchema.safeParse(result);
 
         if (!parsed.success) {
+            await releaseObjects(context.access, targetId, [elementObjectId]);
+
             throw new ToolError(
                 "The browser sent an unexpected response to Runtime.evaluate. Try the call again.",
             );
@@ -236,17 +242,11 @@ export const jsEvaluate = defineTool({
                 ? {}
                 : { columnNumber: exception.columnNumber };
 
-            if (resultObjectId !== undefined) {
-                await context.access.send(targetId, "Runtime.releaseObject", {
-                    objectId: resultObjectId,
-                }).catch(() => undefined);
-            }
-
-            if (exceptionObjectId !== undefined) {
-                await context.access.send(targetId, "Runtime.releaseObject", {
-                    objectId: exceptionObjectId,
-                }).catch(() => undefined);
-            }
+            await releaseObjects(context.access, targetId, [
+                resultObjectId,
+                exceptionObjectId,
+                elementObjectId,
+            ]);
 
             return {
                 ok       : false as const,
@@ -260,13 +260,13 @@ export const jsEvaluate = defineTool({
         }
 
         const objectId = resultObjectId;
-        const shaped = shapeRemoteValue(parsed.data.result, maxChars);
+        const remote = parsed.data.result;
+        const extracted = await extractStructuredValue(context.access, targetId, remote, timeoutMs);
+        const shaped = extracted === undefined
+            ? shapeRemoteValue(remote, maxChars)
+            : shapeJsonValue(extracted.type, extracted.value, maxChars);
 
-        if (objectId !== undefined) {
-            await context.access.send(targetId, "Runtime.releaseObject", { objectId }).catch(
-                () => undefined,
-            );
-        }
+        await releaseObjects(context.access, targetId, [objectId, elementObjectId]);
 
         return {
             ok       : true as const,
@@ -285,15 +285,88 @@ interface EvaluateRequest {
     frames?     : import("./frames.js").FrameState;
 }
 
+interface EvaluateOutcome {
+    response       : unknown;
+    elementObjectId: string | undefined;
+}
+
+// Best effort: a failed release must not hide the tool result.
+async function releaseObjects(
+    access   : DaemonAccess,
+    targetId : string,
+    objectIds: Array<string | undefined>,
+): Promise<void> {
+    for (const objectId of objectIds) {
+        if (objectId === undefined) continue;
+
+        await access.send(targetId, "Runtime.releaseObject", { objectId }).catch(() => undefined);
+    }
+}
+
+const SERIALIZE_DECLARATION = "function(){return JSON.stringify(this)}";
+
+export function shapeJsonValue(type: string, value: unknown, maxChars: number): ShapedValue {
+    const text = JSON.stringify(value) ?? "undefined";
+    const shaped = truncateText(text, maxChars);
+
+    if (!shaped.truncated) {
+        return { type, value, truncated: false, totalLength: shaped.totalLength };
+    }
+
+    return { type, value: shaped.text, truncated: true, totalLength: shaped.totalLength };
+}
+
+async function extractStructuredValue(
+    access   : DaemonAccess,
+    targetId : string,
+    remote   : RemoteObject,
+    timeoutMs: number,
+): Promise<{ type: string; value: unknown } | undefined> {
+    const objectId = remote.objectId;
+    const serializable = remote.subtype === undefined || remote.subtype === "array";
+
+    // Nodes, errors, maps and values already present keep the description.
+    if (
+        objectId === undefined || remote.type !== "object" || !serializable ||
+        ("value" in remote && remote.value !== undefined)
+    ) {
+        return undefined;
+    }
+
+    try {
+        const response = await access.send(
+            targetId,
+            "Runtime.callFunctionOn",
+            { functionDeclaration: SERIALIZE_DECLARATION, objectId, returnByValue: true },
+            timeoutMs,
+        );
+        const parsed = evaluatedSchema.safeParse(response);
+
+        if (!parsed.success || parsed.data.exceptionDetails !== undefined) return undefined;
+
+        const serialized = parsed.data.result;
+
+        if (serialized.type !== "string" || typeof serialized.value !== "string") return undefined;
+
+        const value: unknown = JSON.parse(serialized.value);
+
+        if (value === undefined) return undefined;
+
+        return { type: remote.subtype ?? remote.type, value };
+    } catch {
+        return undefined;
+    }
+}
+
 async function evaluate(
     access  : DaemonAccess,
     elements: ElementRegistry,
     targetId: string,
     request : EvaluateRequest,
-): Promise<unknown> {
+): Promise<EvaluateOutcome> {
     // One evaluation only: retrying would run page side effects twice.
     if (request.target === undefined) {
-        return await access.send(
+        const response = await access.send(
             targetId,
             "Runtime.evaluate",
             {
@@ -306,24 +379,36 @@ async function evaluate(
             },
             request.timeoutMs,
         );
+
+        return { response, elementObjectId: undefined };
     }
 
     const element = await resolveElement(access, elements, targetId, request.target, {
         frames: request.frames,
     });
 
-    return await access.send(
-        targetId,
-        "Runtime.callFunctionOn",
-        {
-            functionDeclaration: elementFunctionDeclaration(request.expression),
-            objectId           : element.objectId,
-            arguments          : [{ objectId: element.objectId }],
-            returnByValue      : false,
-            awaitPromise       : request.awaitPromise,
-            userGesture        : false,
-            generatePreview    : true,
-        },
-        request.timeoutMs,
-    );
+    let response: unknown;
+
+    try {
+        response = await access.send(
+            targetId,
+            "Runtime.callFunctionOn",
+            {
+                functionDeclaration: elementFunctionDeclaration(request.expression),
+                objectId           : element.objectId,
+                arguments          : [{ objectId: element.objectId }],
+                returnByValue      : false,
+                awaitPromise       : request.awaitPromise,
+                userGesture        : false,
+                generatePreview    : true,
+            },
+            request.timeoutMs,
+        );
+    } catch (error) {
+        await releaseObjects(access, targetId, [element.objectId]);
+
+        throw error;
+    }
+
+    return { response, elementObjectId: element.objectId };
 }
