@@ -334,6 +334,7 @@ describe("input_upload", () => {
             expect(result.isError).not.toBe(true);
             expect(result.structuredContent).toMatchObject({ ok: true });
             expect(fake.sent.find((entry) => entry.method === "DOM.setFileInputFiles")).toBeDefined();
+            expect(fake.sent.filter((entry) => entry.method === "DOM.getBoxModel")).toEqual([]);
         } finally {
             await fs.rm(dir, { recursive: true, force: true });
         }

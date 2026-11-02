@@ -507,6 +507,29 @@ describe("CaptureManager", () => {
         expect(fake.subscribed.filter(({ event }) => event.startsWith("Network."))).toHaveLength(6);
     });
 
+    it("subscribes to every event before the domain is enabled", async () => {
+        const { fake, capture } = manager();
+
+        await capture.ensureConsole("tab1");
+        expect(fake.order).toEqual([
+            "subscribe Runtime.consoleAPICalled",
+            "subscribe Runtime.exceptionThrown",
+            "subscribe Log.entryAdded",
+            "send Runtime.enable",
+            "send Log.enable",
+        ]);
+
+        fake.order.length = 0;
+        await capture.ensureNetwork("tab1");
+        const enable = fake.order.indexOf("send Network.enable");
+
+        expect(enable).toBe(fake.order.length - 1);
+        expect(fake.order.slice(0, enable).every((entry) => entry.startsWith("subscribe Network."))).toBe(
+            true,
+        );
+        expect(enable).toBe(6);
+    });
+
     it("buffers console entries with paging and dropped counts", async () => {
         const { fake, capture } = manager();
 

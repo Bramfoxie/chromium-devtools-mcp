@@ -122,6 +122,7 @@ describe("InterceptionManager", () => {
 
         expect(subscribeIndex).toBe(0);
         expect(order[0]).toBe("Fetch.enable");
+        expect(fake.order.slice(0, 2)).toEqual(["subscribe Fetch.requestPaused", "send Fetch.enable"]);
         const enables = fake.sent.filter((call) => call.method === "Fetch.enable");
 
         expect(enables).toHaveLength(2);

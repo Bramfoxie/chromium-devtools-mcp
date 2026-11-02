@@ -22,6 +22,7 @@ export class FakeAccess {
         timeoutMs?: number;
         frameId?  : string;
     }> = [];
+    readonly order       : string[] = [];
     readonly subscribed  : Array<{ targetId: string; event: string; frameId?: string }> = [];
     readonly unsubscribed: Array<{ targetId: string; event: string; frameId?: string }> = [];
     readonly events = new Map<string, Set<(params: unknown) => void>>();
@@ -146,6 +147,7 @@ export class FakeAccess {
         options?  : { signal?: AbortSignal },
     ): Promise<unknown> {
         this.sent.push({ targetId, method, params, timeoutMs, frameId });
+        this.order.push(`send ${method}`);
         const failure = this.failSend?.(targetId, method);
 
         if (failure) throw failure;
@@ -163,6 +165,7 @@ export class FakeAccess {
 
     async subscribe(targetId: string, event: string, frameId?: string): Promise<void> {
         this.subscribed.push({ targetId, event, frameId });
+        this.order.push(`subscribe ${event}`);
     }
 
     async unsubscribe(targetId: string, event: string, frameId?: string): Promise<void> {
