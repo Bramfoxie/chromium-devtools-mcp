@@ -79,6 +79,48 @@ describe.skipIf(!present)("real browser", () => {
         expect(result).toMatchObject({ waited: "load", status: 200 });
     });
 
+    it("page_navigate reports a download and an empty response without waiting", async () => {
+        const tab = await env.open("/other");
+
+        env.fixture.pages.set("/file", {
+            body   : "payload",
+            status : 200,
+            type   : "application/octet-stream",
+            headers: { "content-disposition": "attachment; filename=a.bin" },
+        });
+        env.fixture.pages.set("/empty", { body: "", status: 204, type: "text/plain" });
+
+        const expected = { "/file": "file download", "/empty": "aborted" };
+
+        for (const route of ["/file", "/empty"] as const) {
+            const started = Date.now();
+            const outcome = await env.call("page_navigate", {
+                url      : `${env.fixture.origin}${route}`,
+                timeoutMs: 20_000,
+                tab,
+            });
+
+            expect(Date.now() - started).toBeLessThan(8000);
+            expect(outcome.isError).toBe(true);
+            expect(outcome.text).toContain(expected[route]);
+        }
+
+        expect(await evaluate("location.pathname", tab)).toBe("/other");
+    });
+
+    it("page_navigate to a fragment of the current page finishes promptly", async () => {
+        const tab = await env.open("/other");
+        const started = Date.now();
+        const result = await env.ok("page_navigate", {
+            url      : `${env.fixture.origin}/other#part`,
+            timeoutMs: 20_000,
+            tab,
+        });
+
+        expect(Date.now() - started).toBeLessThan(8000);
+        expect(result).toMatchObject({ waited: "load", url: `${env.fixture.origin}/other#part` });
+    });
+
     it("a page initiated navigation invalidates old uids", async () => {
         await env.open("/jump");
         const found = await env.ok("dom_query", { selector: "#go" });

@@ -96,8 +96,9 @@ const historySchema = z.object({
 });
 
 const navigateSchema = z.object({
-    loaderId : z.string().optional(),
-    errorText: z.string().optional(),
+    loaderId  : z.string().optional(),
+    errorText : z.string().optional(),
+    isDownload: z.boolean().optional(),
 });
 
 const frameSchema = z.object({
@@ -341,6 +342,18 @@ async function navigate(
             if (!result.success) {
                 throw new ToolError(
                     "The browser sent an unexpected response to Page.navigate. Try the call again.",
+                );
+            }
+
+            if (result.data.isDownload === true) {
+                throw new ToolError(
+                    "The URL is a file download, so the tab was not navigated and still shows its previous page.",
+                );
+            }
+
+            if (result.data.errorText === "net::ERR_ABORTED") {
+                throw new ToolError(
+                    "The navigation was aborted, for example by an empty 204 response or a download, so the tab still shows its previous page.",
                 );
             }
 

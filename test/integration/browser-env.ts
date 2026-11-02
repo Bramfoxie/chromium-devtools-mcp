@@ -32,8 +32,11 @@ export type Page = (url: string, body: string, status?: number) => void;
 
 export interface Fixture {
     origin: string;
-    pages : Map<string, { body: string; status: number; type: string }>;
-    hits  : Map<string, number>;
+    pages : Map<
+        string,
+        { body: string; status: number; type: string; headers?: Record<string, string> }
+    >;
+    hits: Map<string, number>;
     close(): Promise<void>;
 }
 
@@ -53,6 +56,7 @@ export async function startFixture(): Promise<Fixture> {
         }
 
         response.writeHead(page.status, {
+            ...page.headers,
             "content-type": page.type,
             "set-cookie"  : url.pathname === "/cookie" ? "fixture=1; Path=/" : [],
         });

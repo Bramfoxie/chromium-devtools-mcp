@@ -579,6 +579,30 @@ describe("page_navigate", () => {
         expect(JSON.stringify(result.content)).toContain("net::ERR_NAME_NOT_RESOLVED");
     });
 
+    it.each([
+        [{ errorText: "net::ERR_ABORTED", isDownload: true }, "file download"],
+        [{ errorText: "net::ERR_ABORTED", isDownload: false }, "aborted"],
+    ])("explains an aborted navigation %j", async (reply, text) => {
+        const fake = new FakeAccess();
+
+        fake.respond = (_targetId, method) => (method === "Page.navigate" ? reply : {});
+
+        const { runtime } = setup(fake);
+
+        await runTool(newTab, {}, extra(), runtime);
+
+        const result = await runTool(
+            pageNavigate,
+            { url: "https://x.example/file", waitUntil: "none" },
+            extra(),
+            runtime,
+        );
+
+        expect(result.isError).toBe(true);
+        expect(JSON.stringify(result.content)).toContain(text);
+        expect(JSON.stringify(result.content)).not.toContain("net::");
+    });
+
     it("returns the known page state when the wait times out", async () => {
         const fake = new FakeAccess();
         let releaseSleep: () => void = () => undefined;
