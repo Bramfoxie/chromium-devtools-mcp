@@ -6,7 +6,13 @@ export {
     type SessionSendOptions,
 } from "./client.js";
 
-export { CdpClosedError, CdpError, CdpProtocolError, CdpTimeoutError } from "./errors.js";
+export {
+    CdpClosedError,
+    CdpError,
+    CdpProtocolError,
+    CdpSessionDetachedError,
+    CdpTimeoutError,
+} from "./errors.js";
 
 export { CdpSession } from "./session.js";
 

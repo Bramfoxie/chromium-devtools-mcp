@@ -1,4 +1,10 @@
-import { CdpClosedError, CdpError, CdpProtocolError, CdpTimeoutError } from "./errors.js";
+import {
+    CdpClosedError,
+    CdpError,
+    CdpProtocolError,
+    CdpSessionDetachedError,
+    CdpTimeoutError,
+} from "./errors.js";
 import { CdpSession } from "./session.js";
 import { type Transport, type TransportFactory, wsTransportFactory } from "./transport.js";
 
@@ -251,7 +257,7 @@ export class CdpClient {
         }
 
         const gone = (name: string) =>
-            new CdpProtocolError(name, undefined, `the session ${sessionId} was detached`);
+            new CdpSessionDetachedError(name, sessionId);
 
         for (const [id, pending] of this.pending) {
             if (pending.sessionId !== sessionId) continue;

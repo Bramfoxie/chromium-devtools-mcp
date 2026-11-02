@@ -19,6 +19,19 @@ export class CdpProtocolError extends CdpError {
     }
 }
 
+export class CdpSessionDetachedError extends CdpError {
+    constructor(
+        readonly method   : string,
+        readonly sessionId: string,
+    ) {
+        super(
+            `CDP method ${method} failed: the session ${sessionId} was detached. ` +
+        "Check the method name, its parameters and that the target is still open.",
+        );
+        this.name = "CdpSessionDetachedError";
+    }
+}
+
 export class CdpTimeoutError extends CdpError {
     constructor(
         readonly method   : string,

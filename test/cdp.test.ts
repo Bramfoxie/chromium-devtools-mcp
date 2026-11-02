@@ -9,6 +9,7 @@ import {
     CdpClosedError,
     CdpError,
     CdpProtocolError,
+    CdpSessionDetachedError,
     CdpTimeoutError,
     createWsTransportFactory,
     type Transport,
@@ -548,9 +549,14 @@ describe("sessions", () => {
         client.dropSession(session.sessionId);
         const failure = await pending;
 
-        expect(failure).toBeInstanceOf(CdpProtocolError);
-        expect((failure as CdpProtocolError).method).toBe("Hold");
-        expect((failure as Error).message).toContain("detached");
+        expect(failure).toBeInstanceOf(CdpSessionDetachedError);
+        expect(failure).not.toBeInstanceOf(CdpProtocolError);
+        expect((failure as CdpSessionDetachedError).method).toBe("Hold");
+        expect((failure as CdpSessionDetachedError).sessionId).toBe(session.sessionId);
+        expect((failure as Error).message).toBe(
+            `CDP method Hold failed: the session ${session.sessionId} was detached. ` +
+                "Check the method name, its parameters and that the target is still open.",
+        );
         expect(client.closed).toBe(false);
     });
 
@@ -564,8 +570,8 @@ describe("sessions", () => {
         client.dropSession(session.sessionId);
         const failure = await waiting;
 
-        expect(failure).toBeInstanceOf(CdpProtocolError);
-        expect((failure as CdpProtocolError).method).toBe("Page.loadEventFired");
+        expect(failure).toBeInstanceOf(CdpSessionDetachedError);
+        expect((failure as CdpSessionDetachedError).method).toBe("Page.loadEventFired");
         expect((failure as Error).message).toContain("detached");
     });
 });

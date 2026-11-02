@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CdpClosedError, CdpProtocolError, CdpTimeoutError } from "../src/cdp/index.js";
+import {
+    CdpClosedError,
+    CdpProtocolError,
+    CdpSessionDetachedError,
+    CdpTimeoutError,
+} from "../src/cdp/index.js";
 import { ErrorCode, RpcError, SessionRegistry } from "../src/daemon/index.js";
 import { FakeBackend } from "./helpers/fake-backend.js";
 
@@ -683,6 +688,7 @@ describe("races with closing", () => {
 describe("CDP failures", () => {
     it.each([
         [new CdpProtocolError("Page.navigate", -32000, "bad url"), ErrorCode.cdpError],
+        [new CdpSessionDetachedError("Page.navigate", "s1"), ErrorCode.cdpError],
         [new CdpTimeoutError("Page.navigate", 100), ErrorCode.cdpTimeout],
         [new CdpClosedError("socket closed"), ErrorCode.browserClosed],
     ])("maps %s to a typed daemon error", async (failure, expected) => {

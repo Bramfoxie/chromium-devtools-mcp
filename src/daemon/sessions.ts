@@ -1,4 +1,9 @@
-import { CdpClosedError, CdpProtocolError, CdpTimeoutError } from "../cdp/errors.js";
+import {
+    CdpClosedError,
+    CdpProtocolError,
+    CdpSessionDetachedError,
+    CdpTimeoutError,
+} from "../cdp/errors.js";
 import { frameSummaries, type FrameSummary } from "./frames.js";
 import type {
     BackendSession,
@@ -80,7 +85,10 @@ function tabGone(): RpcError {
 }
 
 function translate(error: unknown): unknown {
-    if (error instanceof CdpProtocolError) return new RpcError(ErrorCode.cdpError, error.message);
+    if (error instanceof CdpProtocolError || error instanceof CdpSessionDetachedError) {
+        return new RpcError(ErrorCode.cdpError, error.message);
+    }
+
     if (error instanceof CdpTimeoutError) return new RpcError(ErrorCode.cdpTimeout, error.message);
 
     if (error instanceof CdpClosedError) {
