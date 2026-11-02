@@ -188,10 +188,6 @@ export const emulateDevice = defineTool({
 
         const reported = await readDevice(context.access, targetId, context.signal);
 
-        if (selection.userAgent === undefined && reported !== undefined) {
-            context.emulation.applyDevice(targetId, { ...applied, userAgent: reported.userAgent });
-        }
-
         return {
             tab      : targetId,
             emulation: summarizeEmulation(context.emulation.snapshot(targetId)),

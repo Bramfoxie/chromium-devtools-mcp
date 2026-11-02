@@ -491,6 +491,30 @@ describe("emulate_locale", () => {
         expect(agents[0]?.params).not.toHaveProperty("acceptLanguage");
     });
 
+    it("does not pin the real user agent when the device has none of its own", async () => {
+        const { fake, runtime } = setup();
+
+        await openTab(runtime);
+        const applied = await runTool(emulateDevice, {
+            width            : 600,
+            height           : 800,
+            deviceScaleFactor: 2,
+            mobile           : false,
+            touch            : false,
+        }, extra(), runtime);
+
+        expect(applied.isError).not.toBe(true);
+        await runTool(emulateLocale, { acceptLanguage: "de-DE" }, extra(), runtime);
+        fake.sent.length = 0;
+
+        await runTool(emulateLocale, { reset: true }, extra(), runtime);
+
+        const agents = fake.sent.filter((entry) => entry.method === "Emulation.setUserAgentOverride");
+
+        expect(agents).toHaveLength(1);
+        expect(agents[0]?.params).toEqual({ userAgent: "" });
+    });
+
     it("validates every field and names new_tab without a tab", async () => {
         const { runtime } = setup();
         const missing = await runTool(emulateLocale, { locale: "de-DE" }, extra(), runtime);
