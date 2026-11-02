@@ -2,6 +2,7 @@ import { z } from "zod";
 import { ErrorCode, RpcError } from "../daemon/index.js";
 import type { DaemonAccess } from "../mcp/index.js";
 import { ToolError } from "./errors.js";
+import { bindAccess, isolatedDocumentNode } from "./frame-scope.js";
 import type { FrameState } from "./frames.js";
 
 export const MAX_SELECTOR_LENGTH = 1024;
@@ -65,6 +66,7 @@ export function splitPierceChain(selector: string): string[] | undefined {
 export interface ElementNode {
     backendNodeId   : number;
     frameId?        : string;
+    isolated?       : boolean;
     frameGeneration?: number;
 }
 
@@ -260,7 +262,8 @@ export function rectOfQuad(quad: number[]): Rect {
 }
 
 export interface ResolverFrames {
-    resolve(tab: string, frame: string): Promise<{ frameId: string }>;
+    resolve(tab: string, frame: string): Promise<{ frameId: string; isolated?: boolean }>;
+    refresh?(tab: string): Promise<unknown>;
     generation(tab: string, frameId: string): number;
 }
 
@@ -436,12 +439,17 @@ async function scopeNode(
     rootId: number,
     frame : string | undefined,
     frames: ResolverFrames | undefined,
-): Promise<{ nodeId: number; frameId: string | undefined }> {
+): Promise<{ nodeId: number; frameId: string | undefined; access?: DaemonAccess }> {
     if (frame === undefined) return { nodeId: rootId, frameId: undefined };
 
     if (frames !== undefined) {
         try {
             const resolved = await frames.resolve(tab, frame);
+
+            if (resolved.isolated === true) {
+                return isolatedScope(access, tab, frame, resolved.frameId);
+            }
+
             const scope = await frameContentNode(access, tab, rootId, resolved.frameId);
 
             if (scope === undefined) {
@@ -484,12 +492,47 @@ async function scopeNode(
     const content = described.node.contentDocument;
 
     if (content === undefined) {
+        const remote = await isolatedOwner(frames, tab, described.node.frameId);
+
+        if (remote !== undefined) return isolatedScope(access, tab, frame, remote);
+
         throw new ToolError(
             `The frame ${JSON.stringify(frame)} has no document yet. Wait for it to load and try again.`,
         );
     }
 
     return { nodeId: content.nodeId, frameId: described.node.frameId };
+}
+
+async function isolatedOwner(
+    frames : ResolverFrames | undefined,
+    tab    : string,
+    frameId: string | undefined,
+): Promise<string | undefined> {
+    if (frames === undefined || frameId === undefined) return undefined;
+
+    await frames.refresh?.(tab).catch(() => undefined);
+    const info = await frames.resolve(tab, frameId).catch(() => undefined);
+
+    return info?.isolated === true ? info.frameId : undefined;
+}
+
+async function isolatedScope(
+    access : DaemonAccess,
+    tab    : string,
+    frame  : string,
+    frameId: string,
+): Promise<{ nodeId: number; frameId: string; access: DaemonAccess }> {
+    const bound = bindAccess(access, frameId);
+    const nodeId = await isolatedDocumentNode(bound, tab, frameId);
+
+    if (nodeId === undefined) {
+        throw new ToolError(
+            `The frame ${JSON.stringify(frame)} has no document yet. Wait for it to load and try again.`,
+        );
+    }
+
+    return { nodeId, frameId, access: bound };
 }
 
 async function frameContentNode(
@@ -675,7 +718,7 @@ async function resolveBySelector(
     selector: string,
     options : { pierce?: boolean; frame?: string },
     frames  : ResolverFrames | undefined,
-): Promise<{ objectId: string; backendNodeId: number; frameId?: string }> {
+): Promise<{ objectId: string; backendNodeId: number; frameId?: string; isolated?: boolean }> {
     const document = parseCdp(
         "DOM.getDocument",
         documentSchema,
@@ -688,18 +731,33 @@ async function resolveBySelector(
         throw new ToolError("Pass pierce or a >>> chain, not both: they are two ways to cross shadow roots.");
     }
 
+    const scoped = scope.access ?? access;
     const nodeId = options.pierce === true
-        ? await resolvePierced(access, tab, selector)
+        ? await resolvePierced(scoped, tab, selector)
         : chained
-            ? await resolveChain(access, tab, scope.nodeId, selector)
-            : await resolvePlain(access, tab, scope.nodeId, selector);
-    const resolved = await resolveNodeId(access, tab, nodeId, selector);
+            ? await resolveChain(scoped, tab, scope.nodeId, selector)
+            : await resolvePlain(scoped, tab, scope.nodeId, selector);
+    const resolved = await resolveNodeId(scoped, tab, nodeId, selector);
 
-    return { ...resolved, ...(scope.frameId === undefined ? {} : { frameId: scope.frameId }) };
+    return {
+        ...resolved,
+        ...(scope.frameId === undefined ? {} : { frameId: scope.frameId }),
+        ...(scope.access === undefined ? {} : { isolated: true }),
+    };
 }
 
 export interface ResolveElementOptions {
-    frames?: FrameState;
+    frames?       : FrameState;
+    allowIsolated?: boolean;
+}
+
+const ISOLATED_UNSUPPORTED =
+    "The element is inside a cross-site frame, which this tool cannot act on. Use click or dom_query for elements in that frame.";
+
+export function elementAccess(access: DaemonAccess, element: ElementNode): DaemonAccess {
+    return element.isolated === true && element.frameId !== undefined
+        ? bindAccess(access, element.frameId)
+        : access;
 }
 
 export async function resolveElement(
@@ -708,6 +766,22 @@ export async function resolveElement(
     tab     : string,
     target  : ElementTarget,
     options : ResolveElementOptions = {},
+): Promise<ResolvedElement> {
+    const element = await resolveAnyElement(access, elements, tab, target, options);
+
+    if (element.isolated === true && options.allowIsolated !== true) {
+        throw new ToolError(ISOLATED_UNSUPPORTED);
+    }
+
+    return element;
+}
+
+async function resolveAnyElement(
+    access  : DaemonAccess,
+    elements: ElementRegistry,
+    tab     : string,
+    target  : ElementTarget,
+    options : ResolveElementOptions,
 ): Promise<ResolvedElement> {
     const frames = framesOf(options.frames);
 
@@ -720,7 +794,11 @@ export async function resolveElement(
 
         if (node === undefined) throw new ToolError(STALE_UID_MESSAGE);
 
-        return { ...node, objectId: await resolveByUid(access, tab, node) };
+        const owner = node.isolated === true && node.frameId !== undefined
+            ? bindAccess(access, node.frameId)
+            : access;
+
+        return { ...node, objectId: await resolveByUid(owner, tab, node) };
     }
 
     if (target.selector === undefined) {
@@ -739,6 +817,7 @@ export async function resolveElement(
         backendNodeId: resolved.backendNodeId,
         objectId     : resolved.objectId,
         ...(resolved.frameId === undefined ? {} : { frameId: resolved.frameId }),
+        ...(resolved.isolated === true ? { isolated: true } : {}),
     };
 }
 

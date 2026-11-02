@@ -40,7 +40,7 @@ export interface Fixture {
     close(): Promise<void>;
 }
 
-export async function startFixture(): Promise<Fixture> {
+export async function startFixture(host: string = "127.0.0.1"): Promise<Fixture> {
     const pages: Fixture["pages"] = new Map();
     const hits = new Map<string, number>();
     const server: Server = createHttpServer((request, response) => {
@@ -68,7 +68,7 @@ export async function startFixture(): Promise<Fixture> {
     const port = typeof address === "object" && address ? address.port : 0;
 
     return {
-        origin: `http://127.0.0.1:${port}`,
+        origin: `http://${host}:${port}`,
         pages,
         hits,
         close : () =>
@@ -105,6 +105,7 @@ export interface ToolOutcome {
 
 export interface Env {
     fixture: Fixture;
+    other  : Fixture;
     tools(): Promise<unknown>;
     call(name: string, args?: Record<string, unknown>): Promise<ToolOutcome>;
     ok(name: string, args?: Record<string, unknown>): Promise<Record<string, unknown>>;
@@ -118,6 +119,7 @@ export async function startEnv(): Promise<Env> {
     const profile = await mkdtemp(path.join(os.tmpdir(), "cdm-it-profile-"));
     const port = await freePort();
     const fixture = await startFixture();
+    const other = await startFixture("localhost");
     const config: Config = {
         browser   : "chrome",
         mode      : "managed",
@@ -190,6 +192,7 @@ export async function startEnv(): Promise<Env> {
 
     return {
         fixture,
+        other,
         tools: async () => (await client.listTools()).tools,
         call,
         ok,
@@ -205,6 +208,7 @@ export async function startEnv(): Promise<Env> {
             await daemon?.stop().catch(() => undefined);
             await harness.dispose();
             await fixture.close();
+            await other.close();
             await rm(profile, { recursive: true, force: true, maxRetries: 40, retryDelay: 250 });
             await rm(home, { recursive: true, force: true, maxRetries: 40, retryDelay: 250 });
         },

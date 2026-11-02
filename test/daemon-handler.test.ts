@@ -484,10 +484,7 @@ describe("client lifetime", () => {
 describe("frame addressing through the daemon", () => {
     const TREE = {
         frameTree: {
-            frame      : { id: "main", url: "https://a.example/", name: "" },
-            childFrames: [
-                { frame: { id: "cross", parentId: "main", url: "https://b.example/", name: "pay" } },
-            ],
+            frame: { id: "main", url: "https://a.example/", name: "" },
         },
     };
 
@@ -504,7 +501,7 @@ describe("frame addressing through the daemon", () => {
         if (session) session.reply = (method) => method === "Page.getFrameTree" ? TREE : {};
 
         await client.request("frame.list", { targetId });
-        started.backend.childHandles[0]?.addChild("cross");
+        started.backend.childHandles[0]?.addChild("cross", true, { url: "https://b.example/", name: "pay" });
 
         return { ...started, client, targetId };
     }
@@ -533,7 +530,7 @@ describe("frame addressing through the daemon", () => {
 
         const child = backend.childHandles[0]?.childSession("cross");
 
-        expect(child?.sent.map((call) => call.method)).toEqual(["Runtime.evaluate"]);
+        expect(child?.sent.filter((call) => call.method === "Runtime.evaluate")).toHaveLength(1);
         const error = await failure(
             client.request("cdp.send", { targetId, method: "Page.enable", frameId: "nope" }),
         );

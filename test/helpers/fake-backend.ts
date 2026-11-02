@@ -72,13 +72,26 @@ export class FakeChildHandle implements ChildSessionHandle {
         private readonly options: ChildSessionOptions,
     ) {}
 
-    addChild(key: string, named: boolean = true): FakeSession {
+    addChild(
+        key  : string,
+        named: boolean = true,
+        frame: { parentId?: string; url?: string; name?: string } = {},
+    ): FakeSession {
         const session = new FakeSession(`${this.targetId}/${key}`, this.backend.log);
         const frameId = named ? key : undefined;
 
         session.reply = (method) =>
             method === "Page.getFrameTree"
-                ? { frameTree: { frame: { id: key, url: "" }, childFrames: [] } }
+                ? {
+                    frameTree: {
+                        frame: {
+                            id      : key,
+                            parentId: frame.parentId ?? "main",
+                            url     : frame.url ?? "",
+                            name    : frame.name ?? "",
+                        },
+                    },
+                }
                 : undefined;
         this.childrenOf.set(key, session);
         this.infos.set(key, {

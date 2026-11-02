@@ -634,7 +634,7 @@ describe("dom_query piercing", () => {
                 parentFrameId: "main",
                 url          : "https://b.example/",
                 name         : "pay",
-                isolated     : true,
+                isolated     : false,
             },
         ];
 

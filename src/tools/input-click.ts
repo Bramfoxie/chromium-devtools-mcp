@@ -14,6 +14,7 @@ import {
     elementTargetSchema,
     type ElementTarget,
     type Rect,
+    elementAccess,
     resolveElement,
     type ResolvedElement,
 } from "./element-target.js";
@@ -107,9 +108,11 @@ async function resolveActionable(
     target  : ElementTarget,
 ): Promise<{ element: ResolvedElement; checked: ActionableElement; uid: string | undefined }> {
     const element = await resolveElement(context.access, context.elements, targetId, target, {
-        frames: context.frames,
+        frames       : context.frames,
+        allowIsolated: true,
     });
-    const checked = await ensureActionable(context.access, targetId, element, {
+    const owner = elementAccess(context.access, element);
+    const checked = await ensureActionable(owner, targetId, element, {
         checkDisabled: true,
     });
 
@@ -187,8 +190,9 @@ export const click = defineTool({
         }
 
         const scroll = args.scrollIntoView ?? true;
+        const owner = elementAccess(context.access, element);
         const acted = await navigationOf(context.access, targetId, () =>
-            context.access.send(targetId, "Runtime.callFunctionOn", {
+            owner.send(targetId, "Runtime.callFunctionOn", {
                 functionDeclaration: CLICK_EXPRESSION,
                 objectId           : element.objectId,
                 arguments          : [{ objectId: element.objectId }, { value: scroll }],

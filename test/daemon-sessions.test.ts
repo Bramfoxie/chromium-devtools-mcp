@@ -935,23 +935,16 @@ describe("frame targets", () => {
                         name    : "inner",
                     },
                 },
-                {
-                    frame: {
-                        id      : "cross",
-                        parentId: "main",
-                        url     : "https://b.example/",
-                        name    : "pay",
-                    },
-                },
             ],
         },
     };
+    const CROSS = { url: "https://b.example/", name: "pay" };
 
     function mainTree(): (method: string) => unknown {
         return (method) => (method === "Page.getFrameTree" ? TREE : { echoed: method });
     }
 
-    it("lists the frame tree and marks frames without child sessions as shared", async () => {
+    it("lists the same site frames of the main tree as shared", async () => {
         const { backend, open } = setup();
         const a = await open("a");
         const tab = await a.createTab("https://a.example/");
@@ -964,7 +957,6 @@ describe("frame targets", () => {
         expect(await a.listFrames(tab)).toEqual([
             { frameId: "main", parentFrameId: undefined, url: "https://a.example/", name: "", isolated: false, truncated: false },
             { frameId: "same", parentFrameId: "main", url: "https://a.example/inner", name: "inner", isolated: false, truncated: false },
-            { frameId: "cross", parentFrameId: "main", url: "https://b.example/", name: "pay", isolated: false, truncated: false },
         ]);
         expect(backend.childHandles.map((handle) => handle.targetId)).toEqual([tab]);
     });
@@ -980,7 +972,7 @@ describe("frame targets", () => {
         if (session) session.reply = mainTree();
 
         await a.listFrames(tab);
-        backend.childHandles[0]?.addChild("cross");
+        backend.childHandles[0]?.addChild("cross", true, CROSS);
         const frames = await a.listFrames(tab);
 
         expect(frames.find((frame) => frame.frameId === "cross")).toMatchObject({ isolated: true });
@@ -998,12 +990,12 @@ describe("frame targets", () => {
         if (session) session.reply = mainTree();
 
         await a.listFrames(tab);
-        const child = backend.childHandles[0]?.addChild("cross");
+        const child = backend.childHandles[0]?.addChild("cross", true, CROSS);
 
         await a.listFrames(tab);
         await a.send(tab, "Runtime.evaluate", { expression: "1" }, undefined, "cross");
 
-        expect(child?.sent.map((call) => call.method)).toEqual(["Runtime.evaluate"]);
+        expect(child?.sent.filter((call) => call.method === "Runtime.evaluate")).toHaveLength(1);
         expect(session?.sent.map((call) => call.method)).not.toContain("Runtime.evaluate");
     });
 
@@ -1031,8 +1023,11 @@ describe("frame targets", () => {
         const a = await open("a");
         const tab = await a.createTab("https://a.example/");
 
+        backend.failures.attachChildren = [
+            new Error("auto attach refused"),
+            new Error("auto attach refused"),
+        ];
         await a.send(tab, "Page.enable", undefined);
-        backend.failures.attachChildren = [new Error("auto attach refused")];
 
         const error = await a
             .send(tab, "Page.enable", undefined, undefined, "cross")
@@ -1063,7 +1058,7 @@ describe("frame targets", () => {
         expect(backend.childHandles[0]?.confirmed).toEqual(["child-cross"]);
     });
 
-    it("keeps a child session unmatched until the frame tree names its frame", async () => {
+    it("lists a cross site frame that only its child session knows, under its parent", async () => {
         const { backend, open } = setup();
         const a = await open("a");
         const tab = await a.createTab("https://a.example/");
@@ -1074,24 +1069,81 @@ describe("frame targets", () => {
         if (session) session.reply = mainTree();
 
         await a.listFrames(tab);
-        backend.childHandles[0]?.addChild("late");
+        backend.childHandles[0]?.addChild("cross", false, CROSS);
+
+        expect(await a.listFrames(tab)).toEqual([
+            { frameId: "main", parentFrameId: undefined, url: "https://a.example/", name: "", isolated: false, truncated: false },
+            { frameId: "same", parentFrameId: "main", url: "https://a.example/inner", name: "inner", isolated: false, truncated: false },
+            { frameId: "cross", parentFrameId: "main", url: "https://b.example/", name: "pay", isolated: true, truncated: false },
+        ]);
+    });
+
+    it("targets a cross site frame by id before the frames were listed", async () => {
+        const { backend, open } = setup();
+        const a = await open("a");
+        const tab = await a.createTab("https://a.example/");
+
+        await a.send(tab, "Page.enable", undefined);
+        await a.listFrames(tab);
+        const child = backend.childHandles[0]?.addChild("cross", false, CROSS);
+
+        await a.send(tab, "Runtime.evaluate", { expression: "1" }, undefined, "cross");
+
+        expect(child?.sent.filter((call) => call.method === "Runtime.evaluate")).toHaveLength(1);
+    });
+
+    it("lists the frames inside a cross site frame as isolated too", async () => {
+        const { backend, open } = setup();
+        const a = await open("a");
+        const tab = await a.createTab("https://a.example/");
+
+        await a.send(tab, "Page.enable", undefined);
+        await a.listFrames(tab);
+        const child = backend.childHandles[0]?.addChild("cross", true, CROSS);
+
+        if (child) {
+            child.reply = (method) =>
+                method === "Page.getFrameTree"
+                    ? {
+                        frameTree: {
+                            frame      : { id: "cross", parentId: "main", url: "https://b.example/", name: "pay" },
+                            childFrames: [{ frame: { id: "inside", parentId: "cross", url: "https://b.example/in", name: "in" } }],
+                        },
+                    }
+                    : undefined;
+        }
+
+        const frames = await a.listFrames(tab);
+
+        const isolated = frames.filter((frame) => frame.isolated);
+
+        expect(isolated.map((frame) => [frame.frameId, frame.parentFrameId]))
+            .toEqual([["cross", "main"], ["inside", "cross"]]);
+    });
+
+    it("keeps a child session unmatched until its frame tree answers", async () => {
+        const { backend, open } = setup();
+        const a = await open("a");
+        const tab = await a.createTab("https://a.example/");
+
+        await a.send(tab, "Page.enable", undefined);
+        const session = backend.sessions.get(tab);
+
+        if (session) session.reply = mainTree();
+
+        await a.listFrames(tab);
+        const child = backend.childHandles[0]?.addChild("late", false, CROSS);
+        const answer = child?.reply;
+
+        if (child) child.reply = () => ({ frameTree: {} });
+
         await a.listFrames(tab);
         expect(backend.childHandles[0]?.confirmed).toEqual([]);
         expect(await code(a.send(tab, "Page.enable", undefined, undefined, "late"))).toBe(
             ErrorCode.notFound,
         );
 
-        if (session) {
-            session.reply = (method) =>
-                method === "Page.getFrameTree"
-                    ? {
-                        frameTree: {
-                            frame      : { id: "main", url: "https://a.example/" },
-                            childFrames: [{ frame: { id: "late", parentId: "main", url: "" } }],
-                        },
-                    }
-                    : { echoed: method };
-        }
+        if (child) child.reply = answer;
 
         await a.listFrames(tab);
         expect(backend.childHandles[0]?.confirmed).toEqual(["child-late"]);
@@ -1112,7 +1164,7 @@ describe("frame targets", () => {
         if (session) session.reply = mainTree();
 
         await a.listFrames(tab);
-        backend.childHandles[0]?.addChild("cross");
+        backend.childHandles[0]?.addChild("cross", true, CROSS);
         await a.listFrames(tab);
         expect(await code(b.send(tab, "Page.enable", undefined, undefined, "cross"))).toBe(
             ErrorCode.notOwned,
@@ -1131,7 +1183,7 @@ describe("frame targets", () => {
         if (session) session.reply = mainTree();
 
         await a.listFrames(tab);
-        const child = backend.childHandles[0]?.addChild("cross");
+        const child = backend.childHandles[0]?.addChild("cross", true, CROSS);
 
         await a.listFrames(tab);
         await a.subscribe(tab, "Page.loadEventFired", "cross");
@@ -1164,12 +1216,12 @@ describe("frame targets", () => {
         if (session) session.reply = mainTree();
 
         await a.listFrames(tab);
-        backend.childHandles[0]?.addChild("cross");
+        backend.childHandles[0]?.addChild("cross", true, CROSS);
         await a.listFrames(tab);
         backend.childHandles[0]?.removeChild("cross");
         const frames = await a.listFrames(tab);
 
-        expect(frames.find((frame) => frame.frameId === "cross")).toMatchObject({ isolated: false });
+        expect(frames.find((frame) => frame.frameId === "cross")).toBeUndefined();
         expect(await code(a.send(tab, "Page.enable", undefined, undefined, "cross"))).toBe(
             ErrorCode.notFound,
         );
@@ -1186,7 +1238,7 @@ describe("frame targets", () => {
         if (session) session.reply = mainTree();
 
         await a.listFrames(tab);
-        backend.childHandles[0]?.addChild("cross");
+        backend.childHandles[0]?.addChild("cross", true, CROSS);
         await a.listFrames(tab);
 
         if (session) {
@@ -1196,10 +1248,11 @@ describe("frame targets", () => {
                     : { echoed: method };
         }
 
+        backend.childHandles[0]?.removeChild("cross");
         expect(await a.listFrames(tab)).toEqual([
             { frameId: "main", parentFrameId: undefined, url: "https://a.example/", name: "", isolated: false, truncated: false },
         ]);
-        backend.childHandles[0]?.addChild("cross");
+        backend.childHandles[0]?.addChild("cross", true, CROSS);
         await a.closeTab(tab);
         expect(backend.childHandles[0]?.detachedAll).toBe(true);
         expect(backend.log).toContain(`detachChildren ${tab}`);

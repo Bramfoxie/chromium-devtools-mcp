@@ -21,7 +21,9 @@ interface FakeChild {
     sessionId: string;
     frameId  : string;
     url      : string;
+    name     : string;
     parent   : string;
+    waiting  : boolean;
 }
 
 export class FakeBrowser {
@@ -38,7 +40,7 @@ export class FakeBrowser {
     private discovering = false;
     private counter = 0;
     private sessions = new Map<string, string>();
-    private autoAttached = new Set<string>();
+    private autoAttached = new Map<string, boolean>();
     private readonly children = new Map<string, FakeChild>();
 
     async start(): Promise<string> {
@@ -85,29 +87,36 @@ export class FakeBrowser {
         return [...this.children.keys()];
     }
 
-    attachChild(parentTargetId: string, frameId: string, url: string): string {
+    attachChild(parentTargetId: string, frameId: string, url: string, name: string = ""): string {
         const parent = [...this.sessions].find(([, target]) => target === parentTargetId)?.[0];
 
-        return parent === undefined ? "" : this.attachUnder(parent, frameId, url);
+        return parent === undefined ? "" : this.attachUnder(parent, frameId, url, name);
     }
 
-    attachNestedChild(parentChildSessionId: string, frameId: string, url: string): string {
-        return this.attachUnder(parentChildSessionId, frameId, url);
+    attachNestedChild(
+        parentChildSessionId: string,
+        frameId             : string,
+        url                 : string,
+        name                : string = "",
+    ): string {
+        return this.attachUnder(parentChildSessionId, frameId, url, name);
     }
 
-    private attachUnder(parent: string, frameId: string, url: string): string {
+    private attachUnder(parent: string, frameId: string, url: string, name: string): string {
         if (!this.autoAttached.has(parent)) return "";
 
         const sessionId = `S${++this.counter}`;
         const targetId = `T${++this.counter}`;
 
-        this.children.set(sessionId, { targetId, sessionId, frameId, url, parent });
+        const waiting = this.autoAttached.get(parent) === true;
+
+        this.children.set(sessionId, { targetId, sessionId, frameId, url, name, parent, waiting });
         this.broadcast({
             method: "Target.attachedToTarget",
             params: {
                 sessionId,
                 targetInfo        : { targetId, type: "iframe", url },
-                waitingForDebugger: false,
+                waitingForDebugger: waiting,
             },
             sessionId: parent,
         });
@@ -117,32 +126,35 @@ export class FakeBrowser {
 
     private frameTree(sessionId: string): unknown {
         const child = this.children.get(sessionId);
-        const target = this.targets.get(this.sessions.get(sessionId) ?? "");
-        const nodes = (parent: string, parentFrameId: string): unknown[] =>
-            [...this.children.values()]
-                .filter((entry) => entry.parent === parent)
-                .map((entry) => ({
-                    frame      : { id: entry.frameId, parentId: parentFrameId, url: entry.url },
-                    childFrames: nodes(entry.sessionId, entry.frameId),
-                }));
 
         if (child) {
             return {
                 frameTree: {
-                    frame      : { id: child.frameId, url: child.url },
-                    childFrames: nodes(child.sessionId, child.frameId),
+                    frame: {
+                        id      : child.frameId,
+                        parentId: this.parentFrameId(child),
+                        name    : child.name,
+                        url     : child.url,
+                    },
                 },
             };
         }
 
-        const mainId = `main-${this.sessions.get(sessionId)}`;
+        const target = this.targets.get(this.sessions.get(sessionId) ?? "");
 
         return {
             frameTree: {
-                frame      : { id: mainId, url: target?.url ?? "" },
-                childFrames: nodes(sessionId, mainId),
+                frame: { id: `main-${this.sessions.get(sessionId)}`, url: target?.url ?? "" },
             },
         };
+    }
+
+    private parentFrameId(child: FakeChild): string {
+        const parent = this.children.get(child.parent);
+
+        return parent === undefined
+            ? `main-${this.sessions.get(child.parent)}`
+            : parent.frameId;
     }
 
     detachChild(sessionId: string): void {
@@ -313,7 +325,9 @@ export class FakeBrowser {
                 return;
 
             case "Target.setAutoAttach":
-                if (rpc.sessionId !== undefined) this.autoAttached.add(rpc.sessionId);
+                if (rpc.sessionId !== undefined) {
+                    this.autoAttached.set(rpc.sessionId, params.waitForDebuggerOnStart === true);
+                }
 
                 reply({});
 

@@ -54,6 +54,7 @@ export type { FrameSummary } from "./frames.js";
 interface FrameEntry {
     summary : FrameSummary;
     session?: FrameChildSession;
+    remote? : boolean;
 }
 
 interface OwnedTab {
@@ -345,7 +346,9 @@ export class ClientSession {
 
             for (const [frameId, entry] of tab.frames) {
                 if (entry.session !== undefined && !live.has(entry.session.child.sessionId)) {
-                    tab.frames.set(frameId, { summary: entry.summary });
+                    if (entry.remote === true) tab.frames.delete(frameId);
+                    else tab.frames.set(frameId, { summary: entry.summary });
+
                     this.unsubscribeAll(tab, frameId);
                 }
             }
@@ -354,10 +357,13 @@ export class ClientSession {
                 tab.frames.get(frameId)?.session !== undefined);
 
             this.syncFrames(tab, summaries);
-            await this.matchChildren(tab, children);
+            await this.matchChildren(tab, children?.children(), children);
             const truncated = (children?.droppedCount() ?? 0) > 0;
+            const remote = [...tab.frames.values()]
+                .filter((entry) => entry.remote === true)
+                .map((entry) => entry.summary);
 
-            return summaries.map((summary) => ({
+            return [...summaries, ...remote].map((summary) => ({
                 ...summary,
                 isolated: tab.frames.get(summary.frameId)?.session !== undefined,
                 truncated,
@@ -496,7 +502,9 @@ export class ClientSession {
                         for (const [frameId, entry] of tab.frames) {
                             if (entry.session?.child.sessionId !== child.sessionId) continue;
 
-                            tab.frames.set(frameId, { summary: entry.summary });
+                            if (entry.remote === true) tab.frames.delete(frameId);
+                            else tab.frames.set(frameId, { summary: entry.summary });
+
                             this.unsubscribeAll(tab, frameId);
                         }
                     },
@@ -523,7 +531,7 @@ export class ClientSession {
         const entry = tab.frames.get(frameId);
 
         if (entry?.session === undefined) {
-            await this.matchChildren(tab, children);
+            await this.matchChildren(tab, children.takeUnmatched(), children);
         }
 
         const matched = tab.frames.get(frameId);
@@ -549,25 +557,30 @@ export class ClientSession {
 
     private async matchChildren(
         tab     : OwnedTab,
+        sessions: FrameChildSession[] | undefined,
         children: ChildSessionHandle | undefined,
     ): Promise<void> {
-        if (children === undefined) return;
+        if (sessions === undefined || children === undefined) return;
 
-        for (const child of children.takeUnmatched()) {
-            if (child.child.frameId === undefined) {
-                const frames = await child.send("Page.getFrameTree", undefined).catch(() => undefined);
-                const root = frameSummaries(frames, () => false)[0];
+        for (const child of sessions) {
+            const frames = await child.send("Page.getFrameTree", undefined).catch(() => undefined);
+            const tree = frameSummaries(frames, () => true);
+            const root = tree[0];
 
-                if (root === undefined) continue;
+            if (root === undefined) continue;
 
-                child.child.frameId = root.frameId;
+            child.child.frameId = root.frameId;
+
+            for (const summary of tree) {
+                const entry = tab.frames.get(summary.frameId);
+
+                if (entry === undefined) {
+                    tab.frames.set(summary.frameId, { summary, session: child, remote: true });
+                } else if (summary.frameId === root.frameId || entry.remote === true) {
+                    entry.session = child;
+                }
             }
 
-            const entry = tab.frames.get(child.child.frameId);
-
-            if (entry === undefined) continue;
-
-            entry.session = child;
             children.confirmMatched(child.child.sessionId);
         }
     }

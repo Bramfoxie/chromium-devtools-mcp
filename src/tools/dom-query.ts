@@ -5,6 +5,7 @@ import { defineTool, type ToolContext } from "./define-tool.js";
 import { ensureNoDialog } from "./dialogs.js";
 import { ambiguousFrameError, MAX_FRAME_LENGTH, splitPierceChain } from "./element-target.js";
 import { ToolError } from "./errors.js";
+import { bindAccess, isolatedDocumentNode } from "./frame-scope.js";
 import { elementCollector } from "./walk-script.js";
 
 export const QUERY_DEFAULT_LIMIT = 20;
@@ -244,16 +245,19 @@ export const domQuery = defineTool({
             );
         }
 
+        const scoped = scope.access === undefined
+            ? context
+            : { ...context, access: scope.access };
         const found = pierce && !chained
             ? await piercedNodes(
-                context.access,
+                scoped.access,
                 targetId,
                 args.selector,
                 all,
                 scope.frameId === undefined ? undefined : scope.nodeId,
             )
             : await (chained ? chainedNodes : matchingNodes)(
-                context.access,
+                scoped.access,
                 targetId,
                 scope.nodeId,
                 args.selector,
@@ -273,7 +277,7 @@ export const domQuery = defineTool({
 
         if (!viaRows) {
             return finish(await chainedMatches(
-                context,
+                scoped,
                 targetId,
                 nodeIds,
                 limit,
@@ -285,7 +289,7 @@ export const domQuery = defineTool({
         }
 
         const { queried, walkCapped } = await queryElements(
-            context.access,
+            scoped.access,
             targetId,
             args.selector,
             names,
@@ -305,6 +309,7 @@ export const domQuery = defineTool({
             queried.map(({ node }) => ({
                 backendNodeId: node.backendNodeId,
                 ...(scope.frameId === undefined ? {} : { frameId: scope.frameId }),
+                ...(scope.access === undefined ? {} : { isolated: true }),
                 ...(frameGeneration === undefined ? {} : { frameGeneration }),
             })),
         );
@@ -384,6 +389,7 @@ interface QueryScope {
     nodeId   : number;
     frameId  : string | undefined;
     contextId: number | undefined;
+    access?  : DaemonAccess;
 }
 
 async function queryScope(
@@ -397,6 +403,10 @@ async function queryScope(
     await context.frames.ensure(targetId).catch(() => undefined);
 
     const known = context.frames.frameOf(targetId, frame);
+
+    if (known !== undefined && known.isolated) {
+        return isolatedQueryScope(context, targetId, frame, known.frameId);
+    }
 
     if (known !== undefined) {
         const world = worldSchema.safeParse(
@@ -463,6 +473,17 @@ async function queryScope(
     const content = described.data.node.contentDocument;
 
     if (content === undefined) {
+        const owner = described.data.node.frameId;
+
+        if (owner !== undefined) {
+            await context.frames.refresh(targetId).catch(() => undefined);
+            const remote = context.frames.frameOf(targetId, owner);
+
+            if (remote?.isolated === true) {
+                return isolatedQueryScope(context, targetId, frame, remote.frameId);
+            }
+        }
+
         throw new ToolError(
             `The frame ${JSON.stringify(frame)} has no document yet. Wait for it to load and try again.`,
         );
@@ -484,6 +505,35 @@ async function queryScope(
     }
 
     return { nodeId: content.nodeId, frameId, contextId: undefined };
+}
+
+async function isolatedQueryScope(
+    context : ToolContext,
+    targetId: string,
+    frame   : string,
+    frameId : string,
+): Promise<QueryScope> {
+    const bound = bindAccess(context.access, frameId);
+    const world = worldSchema.safeParse(
+        await bound.send(targetId, "Page.createIsolatedWorld", {
+            frameId,
+            worldName: "chromium-devtools-mcp-query",
+        }),
+    );
+    const nodeId = await isolatedDocumentNode(bound, targetId, frameId);
+
+    if (nodeId === undefined) {
+        throw new ToolError(
+            `The frame ${JSON.stringify(frame)} has no document yet. Wait for it to load and try again.`,
+        );
+    }
+
+    return {
+        nodeId,
+        frameId,
+        contextId: world.success ? world.data.executionContextId : undefined,
+        access   : bound,
+    };
 }
 
 interface PiercedDocNode {

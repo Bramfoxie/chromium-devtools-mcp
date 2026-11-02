@@ -691,7 +691,7 @@ describe("resolveElement frame ids", () => {
                 parentFrameId: "main",
                 url          : "https://b.example/",
                 name         : "pay",
-                isolated     : true,
+                isolated     : false,
             },
         ];
 
