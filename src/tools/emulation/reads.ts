@@ -40,7 +40,6 @@ export const MEDIA_READ_EXPRESSION = `(() => ({
   contrast: matchMedia("(prefers-contrast: more)").matches ? "more"
     : matchMedia("(prefers-contrast: less)").matches ? "less" : "no-preference",
   forcedColors: matchMedia("(forced-colors: active)").matches ? "active" : "none",
-  reducedData: matchMedia("(prefers-reduced-data: reduce)").matches ? "reduce" : "no-preference",
   mediaPrint: matchMedia("print").matches,
 }))()`;
 
@@ -52,7 +51,6 @@ const mediaReadSchema = z.strictObject({
             reducedMotion: z.string(),
             contrast     : z.string(),
             forcedColors : z.string(),
-            reducedData  : z.string(),
             mediaPrint   : z.boolean(),
         }).optional(),
     }),
@@ -63,7 +61,6 @@ export interface MediaRead {
     reducedMotion: string;
     contrast     : string;
     forcedColors : string;
-    reducedData  : string;
     mediaPrint   : boolean;
 }
 

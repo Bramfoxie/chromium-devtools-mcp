@@ -257,7 +257,6 @@ describe("media mapping", () => {
                 reducedMotion: "reduce",
                 contrast     : undefined,
                 forcedColors : undefined,
-                reducedData  : undefined,
             },
             { colorScheme: "light" },
         );
@@ -268,7 +267,6 @@ describe("media mapping", () => {
             reducedMotion: "reduce",
             contrast     : undefined,
             forcedColors : undefined,
-            reducedData  : undefined,
         });
     });
 
@@ -279,7 +277,6 @@ describe("media mapping", () => {
             reducedMotion: undefined,
             contrast     : undefined,
             forcedColors : undefined,
-            reducedData  : undefined,
         });
     });
 
@@ -290,7 +287,6 @@ describe("media mapping", () => {
             reducedMotion: undefined,
             contrast     : undefined,
             forcedColors : undefined,
-            reducedData  : undefined,
         });
 
         expect(commands).toEqual([{

@@ -28,7 +28,7 @@ export function hasMediaSelection(
     return selection.reset ||
         selection.media !== undefined || selection.colorScheme !== undefined ||
         selection.reducedMotion !== undefined || selection.contrast !== undefined ||
-        selection.forcedColors !== undefined || selection.reducedData !== undefined;
+        selection.forcedColors !== undefined;
 }
 
 const reportedSchema = z.strictObject({
@@ -36,7 +36,6 @@ const reportedSchema = z.strictObject({
     reducedMotion: z.string().describe("prefers-reduced-motion the page reports."),
     contrast     : z.string().describe("prefers-contrast the page reports."),
     forcedColors : z.string().describe("forced-colors the page reports."),
-    reducedData  : z.string().describe("prefers-reduced-data the page reports."),
     mediaPrint   : z.boolean().describe("Whether the page matches the print medium."),
 });
 
@@ -51,7 +50,6 @@ export const emulateMedia = defineTool({
         reducedMotion: z.enum(["reduce", "no-preference"]).optional().describe("Emulated prefers-reduced-motion."),
         contrast     : z.enum(["more", "less", "no-preference"]).optional().describe("Emulated prefers-contrast."),
         forcedColors : z.enum(["active", "none"]).optional().describe("Emulated forced-colors."),
-        reducedData  : z.enum(["reduce", "no-preference"]).optional().describe("Emulated prefers-reduced-data."),
         reset        : z.boolean().optional().describe("Remove the media overrides of this tab. Defaults to false."),
     }),
     output: z.strictObject({
@@ -72,7 +70,6 @@ export const emulateMedia = defineTool({
             reducedMotion: args.reducedMotion,
             contrast     : args.contrast,
             forcedColors : args.forcedColors,
-            reducedData  : args.reducedData,
             reset        : args.reset ?? false,
         };
 

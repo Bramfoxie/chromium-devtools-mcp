@@ -18,7 +18,6 @@ export const emulationSummarySchema = z.strictObject({
         reducedMotion: z.string().optional().describe("Emulated prefers-reduced-motion, when set."),
         contrast     : z.string().optional().describe("Emulated prefers-contrast, when set."),
         forcedColors : z.string().optional().describe("Emulated forced-colors, when set."),
-        reducedData  : z.string().optional().describe("Emulated prefers-reduced-data, when set."),
     }).optional().describe("Media overrides, when active."),
     network: z.strictObject({
         preset      : z.string().optional().describe("Preset name, when set from a preset."),
@@ -58,7 +57,6 @@ export function summarizeEmulation(state: TabEmulation): EmulationSummary {
                 reducedMotion: state.media.reducedMotion,
                 contrast     : state.media.contrast,
                 forcedColors : state.media.forcedColors,
-                reducedData  : state.media.reducedData,
             },
         }),
         ...(state.network === undefined ? {} : {

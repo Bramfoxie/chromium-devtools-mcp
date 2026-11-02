@@ -20,7 +20,6 @@ export interface MediaSelection {
     reducedMotion?: "reduce" | "no-preference";
     contrast?     : "more" | "less" | "no-preference";
     forcedColors? : "active" | "none";
-    reducedData?  : "reduce" | "no-preference";
 }
 
 export interface MediaState {
@@ -29,7 +28,6 @@ export interface MediaState {
     reducedMotion: "reduce" | "no-preference" | undefined;
     contrast     : "more" | "less" | "no-preference" | undefined;
     forcedColors : "active" | "none" | undefined;
-    reducedData  : "reduce" | "no-preference" | undefined;
 }
 
 export interface NetworkConditions {
@@ -173,7 +171,6 @@ export function mergeMedia(
         reducedMotion: selection.reducedMotion ?? previous?.reducedMotion,
         contrast     : selection.contrast ?? previous?.contrast,
         forcedColors : selection.forcedColors ?? previous?.forcedColors,
-        reducedData  : selection.reducedData ?? previous?.reducedData,
     };
 }
 
@@ -182,7 +179,6 @@ const MEDIA_FEATURE_OF = {
     reducedMotion: "prefers-reduced-motion",
     contrast     : "prefers-contrast",
     forcedColors : "forced-colors",
-    reducedData  : "prefers-reduced-data",
 } as const;
 
 export function buildMediaCommands(state: MediaState): CdpCommand[] {
@@ -192,7 +188,6 @@ export function buildMediaCommands(state: MediaState): CdpCommand[] {
             reducedMotion: state.reducedMotion,
             contrast     : state.contrast,
             forcedColors : state.forcedColors,
-            reducedData  : state.reducedData,
         }) as Array<[keyof typeof MEDIA_FEATURE_OF, string | undefined]>
     ).flatMap(([key, value]) =>
         value === undefined ? [] : [{ name: MEDIA_FEATURE_OF[key], value }],

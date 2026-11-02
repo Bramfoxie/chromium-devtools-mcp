@@ -44,7 +44,6 @@ const MEDIA_VALUE = {
     reducedMotion: "no-preference",
     contrast     : "no-preference",
     forcedColors : "none",
-    reducedData  : "no-preference",
     mediaPrint   : true,
 };
 
