@@ -61,7 +61,10 @@ export class FakeSession implements BackendSession {
 
 export class FakeChildHandle implements ChildSessionHandle {
     readonly childrenOf = new Map<string, FakeSession>();
+    readonly confirmed: string[] = [];
     detachedAll = false;
+    private readonly infos = new Map<string, FrameChildSession["child"]>();
+    private readonly unmatched = new Set<string>();
 
     constructor(
         private readonly backend: FakeBackend,
@@ -69,37 +72,51 @@ export class FakeChildHandle implements ChildSessionHandle {
         private readonly options: ChildSessionOptions,
     ) {}
 
-    addChild(frameId: string): FakeSession {
-        const session = new FakeSession(`${this.targetId}/${frameId}`, this.backend.log);
+    addChild(key: string, named: boolean = true): FakeSession {
+        const session = new FakeSession(`${this.targetId}/${key}`, this.backend.log);
+        const frameId = named ? key : undefined;
 
-        this.childrenOf.set(frameId, session);
+        session.reply = (method) =>
+            method === "Page.getFrameTree"
+                ? { frameTree: { frame: { id: key, url: "" }, childFrames: [] } }
+                : undefined;
+        this.childrenOf.set(key, session);
+        this.infos.set(key, {
+            targetId : `${this.targetId}/${key}`,
+            sessionId: `child-${key}`,
+            frameId,
+            url      : "",
+        });
+        this.unmatched.add(key);
 
         return session;
     }
 
-    removeChild(frameId: string): void {
-        const session = this.childrenOf.get(frameId);
+    removeChild(key: string): void {
+        const info = this.infos.get(key);
 
-        if (!session) return;
+        if (!this.childrenOf.delete(key) || info === undefined) return;
 
-        this.childrenOf.delete(frameId);
-        this.options.onDetached({
-            targetId : `${this.targetId}/${frameId}`,
-            sessionId: `child-${frameId}`,
-            frameId,
-            url      : "",
-        });
+        this.infos.delete(key);
+        this.unmatched.delete(key);
+        this.options.onDetached(info);
     }
 
     children(): FrameChildSession[] {
-        return [...this.childrenOf].map(([frameId, session]) => this.wrap(frameId, session));
+        return [...this.childrenOf.keys()].map((key) => this.wrap(key));
     }
 
     takeUnmatched(): FrameChildSession[] {
-        return this.children();
+        return [...this.unmatched].map((key) => this.wrap(key));
     }
 
-    confirmMatched(): void {}
+    confirmMatched(sessionId: string): void {
+        this.confirmed.push(sessionId);
+
+        for (const key of [...this.unmatched]) {
+            if (this.infos.get(key)?.sessionId === sessionId) this.unmatched.delete(key);
+        }
+    }
 
     droppedCount(): number {
         return 0;
@@ -109,20 +126,19 @@ export class FakeChildHandle implements ChildSessionHandle {
         this.detachedAll = true;
         this.backend.log.push(`detachChildren ${this.targetId}`);
         this.childrenOf.clear();
+        this.unmatched.clear();
     }
 
-    childSession(frameId: string): FakeSession | undefined {
-        return this.childrenOf.get(frameId);
+    childSession(key: string): FakeSession | undefined {
+        return this.childrenOf.get(key);
     }
 
-    private wrap(frameId: string, session: FakeSession): FrameChildSession {
+    private wrap(key: string): FrameChildSession {
+        const session = this.childrenOf.get(key) as FakeSession;
+        const child = this.infos.get(key) as FrameChildSession["child"];
+
         return {
-            child: {
-                targetId : `${this.targetId}/${frameId}`,
-                sessionId: `child-${frameId}`,
-                frameId,
-                url      : "",
-            },
+            child,
             send  : (method, params, timeoutMs) => session.send(method, params, timeoutMs),
             on    : (event, handler) => session.on(event, handler),
             detach: () => session.detach(),

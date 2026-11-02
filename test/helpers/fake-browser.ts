@@ -88,7 +88,15 @@ export class FakeBrowser {
     attachChild(parentTargetId: string, frameId: string, url: string): string {
         const parent = [...this.sessions].find(([, target]) => target === parentTargetId)?.[0];
 
-        if (parent === undefined || !this.autoAttached.has(parent)) return "";
+        return parent === undefined ? "" : this.attachUnder(parent, frameId, url);
+    }
+
+    attachNestedChild(parentChildSessionId: string, frameId: string, url: string): string {
+        return this.attachUnder(parentChildSessionId, frameId, url);
+    }
+
+    private attachUnder(parent: string, frameId: string, url: string): string {
+        if (!this.autoAttached.has(parent)) return "";
 
         const sessionId = `S${++this.counter}`;
         const targetId = `T${++this.counter}`;
@@ -105,6 +113,36 @@ export class FakeBrowser {
         });
 
         return sessionId;
+    }
+
+    private frameTree(sessionId: string): unknown {
+        const child = this.children.get(sessionId);
+        const target = this.targets.get(this.sessions.get(sessionId) ?? "");
+        const nodes = (parent: string, parentFrameId: string): unknown[] =>
+            [...this.children.values()]
+                .filter((entry) => entry.parent === parent)
+                .map((entry) => ({
+                    frame      : { id: entry.frameId, parentId: parentFrameId, url: entry.url },
+                    childFrames: nodes(entry.sessionId, entry.frameId),
+                }));
+
+        if (child) {
+            return {
+                frameTree: {
+                    frame      : { id: child.frameId, url: child.url },
+                    childFrames: nodes(child.sessionId, child.frameId),
+                },
+            };
+        }
+
+        const mainId = `main-${this.sessions.get(sessionId)}`;
+
+        return {
+            frameTree: {
+                frame      : { id: mainId, url: target?.url ?? "" },
+                childFrames: nodes(sessionId, mainId),
+            },
+        };
     }
 
     detachChild(sessionId: string): void {
@@ -279,6 +317,16 @@ export class FakeBrowser {
                 if (rpc.sessionId !== undefined) this.autoAttached.add(rpc.sessionId);
 
                 reply({});
+
+                return;
+            case "Page.getFrameTree":
+                if (rpc.sessionId !== undefined) {
+                    reply(this.frameTree(rpc.sessionId));
+
+                    return;
+                }
+
+                reply({ echoed: rpc.method });
 
                 return;
             default:

@@ -1036,6 +1036,65 @@ describe("frame targets", () => {
         expect(String((error as Error).message)).toContain("auto attach refused");
     });
 
+    it("matches an unnamed child session by its own frame tree when a frame id is routed", async () => {
+        const { backend, open } = setup();
+        const a = await open("a");
+        const tab = await a.createTab("https://a.example/");
+
+        await a.send(tab, "Page.enable", undefined);
+        const session = backend.sessions.get(tab);
+
+        if (session) session.reply = mainTree();
+
+        await a.listFrames(tab);
+        const child = backend.childHandles[0]?.addChild("cross", false);
+
+        await a.send(tab, "Runtime.evaluate", { expression: "1" }, undefined, "cross");
+
+        expect(child?.sent.map((call) => call.method)).toEqual([
+            "Page.getFrameTree",
+            "Runtime.evaluate",
+        ]);
+        expect(backend.childHandles[0]?.confirmed).toEqual(["child-cross"]);
+    });
+
+    it("keeps a child session unmatched until the frame tree names its frame", async () => {
+        const { backend, open } = setup();
+        const a = await open("a");
+        const tab = await a.createTab("https://a.example/");
+
+        await a.send(tab, "Page.enable", undefined);
+        const session = backend.sessions.get(tab);
+
+        if (session) session.reply = mainTree();
+
+        await a.listFrames(tab);
+        backend.childHandles[0]?.addChild("late");
+        await a.listFrames(tab);
+        expect(backend.childHandles[0]?.confirmed).toEqual([]);
+        expect(await code(a.send(tab, "Page.enable", undefined, undefined, "late"))).toBe(
+            ErrorCode.notFound,
+        );
+
+        if (session) {
+            session.reply = (method) =>
+                method === "Page.getFrameTree"
+                    ? {
+                        frameTree: {
+                            frame      : { id: "main", url: "https://a.example/" },
+                            childFrames: [{ frame: { id: "late", parentId: "main", url: "" } }],
+                        },
+                    }
+                    : { echoed: method };
+        }
+
+        await a.listFrames(tab);
+        expect(backend.childHandles[0]?.confirmed).toEqual(["child-late"]);
+        expect(
+            (await a.listFrames(tab)).find((frame) => frame.frameId === "late"),
+        ).toMatchObject({ isolated: true });
+    });
+
     it("keeps child sessions of one session away from another", async () => {
         const { backend, open } = setup();
         const a = await open("a");
