@@ -42,6 +42,7 @@ export {
     LineDecoder,
     MAX_REQUEST_BYTES,
     MAX_RESPONSE_BYTES,
+    RESULT_TOO_LARGE_MESSAGE,
     type HelloParams,
     type Request,
     type Response,

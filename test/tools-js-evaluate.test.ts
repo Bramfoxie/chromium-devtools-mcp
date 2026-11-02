@@ -298,6 +298,73 @@ describe("js_evaluate", () => {
         });
     });
 
+    it("truncates a huge exception text to maxResultChars with the marker", async () => {
+        const fake = new FakeAccess();
+
+        fake.respond = () => ({
+            result          : { type: "object", subtype: "error", objectId: "err-1" },
+            exceptionDetails: {
+                text     : "Uncaught",
+                exception: {
+                    type       : "object",
+                    subtype    : "error",
+                    description: `Error: ${"x".repeat(3_000_000)}\n    at <anonymous>:1:7`,
+                    objectId   : "err-1",
+                },
+            },
+        });
+        const { runtime } = setup(fake);
+
+        await runTool(newTab, {}, extra(), runtime);
+
+        const result = await runTool(
+            jsEvaluate,
+            { expression: "throw 1", maxResultChars: 100 },
+            extra(),
+            runtime,
+        );
+        const exception = (result.structuredContent as { exception: { text: string } }).exception;
+
+        expect(exception.text.startsWith("Error: xxx")).toBe(true);
+        expect(exception.text).toContain("[truncated: 2999907 of 3000007 characters omitted]");
+        expect(exception.text.length).toBeLessThan(200);
+    });
+
+    it("reports a value too large to serialize as truncated with its description", async () => {
+        const fake = new FakeAccess();
+
+        fake.respond = (_targetId, method) => {
+            if (method === "Runtime.callFunctionOn") {
+                throw new RpcError(ErrorCode.resultTooLarge, "Too large.");
+            }
+
+            return {
+                result: {
+                    type       : "object",
+                    subtype    : "array",
+                    className  : "Array",
+                    description: "Array(3000000)",
+                    objectId   : "arr-1",
+                },
+            };
+        };
+
+        const { runtime } = setup(fake);
+
+        await runTool(newTab, {}, extra(), runtime);
+
+        const result = await runTool(jsEvaluate, { expression: "big" }, extra(), runtime);
+
+        expect(result.structuredContent).toMatchObject({
+            ok       : true,
+            type     : "array",
+            truncated: true,
+        });
+        expect((result.structuredContent as { value: string }).value).toContain("Array(3000000)");
+        expect((result.structuredContent as { value: string }).value).toContain("32 MiB");
+        expect(result.structuredContent).not.toHaveProperty("totalLength");
+    });
+
     it("shapes an object result from one evaluation and releases it", async () => {
         const fake = new FakeAccess();
 

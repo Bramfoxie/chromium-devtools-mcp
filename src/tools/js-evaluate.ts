@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ErrorCode, RpcError } from "../daemon/index.js";
+import { ErrorCode, RESULT_TOO_LARGE_MESSAGE, RpcError } from "../daemon/index.js";
 import type { DaemonAccess } from "../mcp/index.js";
 import { defineTool } from "./define-tool.js";
 import { createDeadline, type Deadline } from "./deadline.js";
@@ -119,7 +119,7 @@ export interface ShapedValue {
     type       : string;
     value      : unknown;
     truncated  : boolean;
-    totalLength: number;
+    totalLength: number | undefined;
 }
 
 export function exceptionText(exception: NonNullable<Evaluated["exceptionDetails"]>): string {
@@ -172,7 +172,7 @@ const evaluatedOutput = z.strictObject({
     type       : z.string().optional().describe("CDP type of the result, with the subtype when present."),
     value      : z.unknown().optional().describe("The value, or a truncated string with a marker when it exceeds maxResultChars. Absent when the result is undefined, which type reports."),
     truncated  : z.boolean().optional().describe("Whether the value was truncated."),
-    totalLength: z.number().int().optional().describe("Characters in the full value, present only when truncated."),
+    totalLength: z.number().int().optional().describe("Characters in the full value, present only when truncated and known."),
     exception  : z.strictObject({
         text        : z.string().describe("Exception text from the page."),
         lineNumber  : z.number().optional().describe("Line number of the exception, when known."),
@@ -282,7 +282,7 @@ export const jsEvaluate = defineTool({
             return {
                 ok       : false as const,
                 exception: {
-                    text: exceptionText(exception),
+                    text: truncateText(exceptionText(exception), maxChars).text,
                     ...line,
                     ...column,
                     ...(stack === "" ? {} : { stack }),
@@ -301,13 +301,17 @@ export const jsEvaluate = defineTool({
             );
             const shaped = extracted === undefined
                 ? shapeRemoteValue(remote, maxChars)
-                : shapeJsonValue(extracted.type, extracted.value, maxChars);
+                : extracted === TOO_LARGE
+                    ? shapeTooLarge(remote)
+                    : shapeJsonValue(extracted.type, extracted.value, maxChars);
 
             return {
                 ok       : true as const,
                 type     : shaped.type,
                 truncated: shaped.truncated,
-                ...(shaped.truncated ? { totalLength: shaped.totalLength } : {}),
+                ...(shaped.truncated && shaped.totalLength !== undefined
+                    ? { totalLength: shaped.totalLength }
+                    : {}),
                 ...(shaped.value === undefined ? {} : { value: shaped.value }),
             };
         } finally {
@@ -352,6 +356,20 @@ async function releaseObjects(
 
 const SERIALIZE_DECLARATION = "function(){return JSON.stringify(this)}";
 
+const TOO_LARGE = Symbol("too large");
+
+function shapeTooLarge(remote: RemoteObject): ShapedValue {
+    const described = remote.description ?? remote.className ?? remote.type;
+    const text = `${described}[truncated: ${RESULT_TOO_LARGE_MESSAGE}]`;
+
+    return {
+        type       : remote.subtype ?? remote.type,
+        value      : text,
+        truncated  : true,
+        totalLength: undefined,
+    };
+}
+
 export function shapeJsonValue(type: string, value: unknown, maxChars: number): ShapedValue {
     const text = JSON.stringify(value) ?? "undefined";
     const shaped = truncateText(text, maxChars);
@@ -368,7 +386,7 @@ async function extractStructuredValue(
     targetId : string,
     remote   : RemoteObject,
     timeoutMs: number,
-): Promise<{ type: string; value: unknown } | undefined> {
+): Promise<{ type: string; value: unknown } | typeof TOO_LARGE | undefined> {
     const objectId = remote.objectId;
     const serializable = remote.subtype === undefined || remote.subtype === "array";
 
@@ -399,7 +417,9 @@ async function extractStructuredValue(
         if (value === undefined) return undefined;
 
         return { type: remote.subtype ?? remote.type, value };
-    } catch {
+    } catch (error) {
+        if (error instanceof RpcError && error.code === ErrorCode.resultTooLarge) return TOO_LARGE;
+
         return undefined;
     }
 }

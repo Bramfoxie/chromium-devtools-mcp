@@ -58,7 +58,7 @@ Each session keeps its own tab selection. `new_tab` opens a background tab and s
 - `close_tab`: close a tab opened by this session.
 - `page_info`: read the URL, title, viewport, scroll position and emulation state of a tab.
 - `page_navigate`: open a URL, go back or forward, or reload, waiting for the page to load.
-- `js_evaluate`: run JavaScript in a tab. Page exceptions come back as data, not as tool errors.
+- `js_evaluate`: run JavaScript in a tab. Page exceptions come back as data, not as tool errors. The exception text and the value are cut at `maxResultChars` with a marker; a value that cannot be serialized within the 32 MiB protocol limit is reported as its description with `truncated: true`.
 - `dom_query`: find elements by a CSS selector and read their text, attributes and boxes.
 - `dom_snapshot`: read a compact text snapshot of the page with element ids.
 - `css_inspect`: read the computed style, matched CSS rules and box of an element. The result carries `totalRules`, `truncated` and `droppedWinners`, the properties whose winning declaration is in a rule that `maxRules` dropped.

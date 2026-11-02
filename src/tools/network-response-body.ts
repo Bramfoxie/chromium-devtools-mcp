@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { ErrorCode, RpcError } from "../daemon/index.js";
-import { MAX_RESPONSE_BYTES } from "../daemon/protocol.js";
+import { MAX_RESPONSE_BYTES, RESULT_TOO_LARGE_MESSAGE } from "../daemon/protocol.js";
 import { defineTool } from "./define-tool.js";
 import { ToolError } from "./errors.js";
 import { truncateText } from "./result.js";
@@ -86,9 +86,7 @@ export const networkResponseBody = defineTool({
             });
         } catch (error) {
             if (error instanceof RpcError && error.code === ErrorCode.resultTooLarge) {
-                throw new ToolError(
-                    "The body exceeds the 32 MiB transport limit. Narrow the request instead.",
-                );
+                throw new ToolError(RESULT_TOO_LARGE_MESSAGE);
             }
 
             if (error instanceof RpcError && error.code === ErrorCode.cdpError) {
@@ -112,9 +110,7 @@ export const networkResponseBody = defineTool({
         const size = bodyByteSize(parsed.data.body, parsed.data.base64Encoded);
 
         if (size > MAX_RESPONSE_BYTES) {
-            throw new ToolError(
-                `The body is ${size} bytes, which exceeds the 32 MiB transport limit. Narrow the request instead.`,
-            );
+            throw new ToolError(RESULT_TOO_LARGE_MESSAGE);
         }
 
         const mimeType = known.record.mimeType;

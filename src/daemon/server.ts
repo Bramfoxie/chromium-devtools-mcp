@@ -8,6 +8,7 @@ import {
     LineDecoder,
     MAX_REQUEST_BYTES,
     MAX_RESPONSE_BYTES,
+    RESULT_TOO_LARGE_MESSAGE,
     parseLine,
     requestSchema,
 } from "./protocol.js";
@@ -17,7 +18,6 @@ const DEFAULT_HELLO_TIMEOUT_MS = 5000;
 const MAX_IN_FLIGHT = 64;
 const MAX_WRITE_BACKLOG_BYTES = 2 * MAX_RESPONSE_BYTES;
 const INTERNAL_MESSAGE = "The daemon failed to handle the request.";
-const TOO_LARGE_MESSAGE = "The result exceeds the 32 MiB limit of the daemon protocol. Ask for less data.";
 
 export interface ClientConnection {
     readonly clientName: string;
@@ -91,7 +91,7 @@ export function acceptConnection(socket: net.Socket, options: AcceptOptions): vo
                 write({
                     id,
                     error: tooLarge
-                        ? { code: ErrorCode.resultTooLarge, message: TOO_LARGE_MESSAGE }
+                        ? { code: ErrorCode.resultTooLarge, message: RESULT_TOO_LARGE_MESSAGE }
                         : { code: ErrorCode.internal, message: INTERNAL_MESSAGE },
                 }),
             );

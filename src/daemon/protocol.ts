@@ -6,6 +6,9 @@ export const MAX_REQUEST_BYTES = 1024 * 1024;
 
 export const MAX_RESPONSE_BYTES = 32 * 1024 * 1024;
 
+export const RESULT_TOO_LARGE_MESSAGE =
+    "The result exceeds the 32 MiB limit of the daemon protocol. Ask for less data.";
+
 export const ErrorCode = {
     badRequest     : "bad_request",
     unknownMethod  : "unknown_method",
