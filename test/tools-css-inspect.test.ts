@@ -109,6 +109,48 @@ describe("shapeMatchedRules", () => {
         ]);
     });
 
+    it("decides importance separately for each property", () => {
+        const shaped = shapeMatchedRules(
+            [
+                rule(".a", [
+                    { name: "color", value: "red", important: true },
+                    { name: "margin", value: "0" },
+                ]),
+                rule("#b", [
+                    { name: "color", value: "blue" },
+                    { name: "margin", value: "5px" },
+                ]),
+            ],
+            30,
+        );
+
+        expect(shaped[0]?.declarations).toEqual([
+            { name: "color", value: "red", important: true, winning: true },
+            { name: "margin", value: "0", important: false, winning: false },
+        ]);
+        expect(shaped[1]?.declarations).toEqual([
+            { name: "color", value: "blue", important: false, winning: false },
+            { name: "margin", value: "5px", important: false, winning: true },
+        ]);
+    });
+
+    it("lets the last important declaration win its property", () => {
+        const shaped = shapeMatchedRules(
+            [
+                rule(".a", [{ name: "color", value: "red", important: true }]),
+                rule("#b", [{ name: "color", value: "blue", important: true }]),
+            ],
+            30,
+        );
+
+        expect(shaped[0]?.declarations).toEqual([
+            { name: "color", value: "red", important: true, winning: false },
+        ]);
+        expect(shaped[1]?.declarations).toEqual([
+            { name: "color", value: "blue", important: true, winning: true },
+        ]);
+    });
+
     it("keeps the most specific rules when truncating", () => {
         const shaped = shapeMatchedRules(
             [rule("a", [{ name: "color", value: "red" }]), rule("b", [{ name: "color", value: "blue" }])],
@@ -238,6 +280,8 @@ describe("css_inspect", () => {
                 border : { x: 0, y: 1, width: 12, height: 12 },
                 margin : { x: -5, y: -5, width: 22, height: 23 },
             },
+            totalRules: 1,
+            truncated : false,
         });
         expect(fake.sent.map((call) => call.method)).toEqual([
             "DOM.resolveNode",
@@ -274,10 +318,64 @@ describe("css_inspect", () => {
             matchedRules: [],
             inherited   : [],
             box         : null,
+            totalRules  : 0,
+            truncated   : false,
         });
         expect(fake.sent.map((call) => call.method)).not.toContain("CSS.getMatchedStylesForNode");
         expect(fake.sent.map((call) => call.method)).not.toContain("DOM.getBoxModel");
         expect(fake.sent.map((call) => call.method)).toContain("CSS.disable");
+    });
+
+    it("signals truncated rules with totals", async () => {
+        const fake = inspectFake();
+
+        fake.respond = (_targetId, method) => {
+            switch (method) {
+                case "DOM.resolveNode":
+                    return { object: { objectId: "obj-7" } };
+                case "DOM.describeNode":
+                    return { node: { nodeId: 41, backendNodeId: 7 } };
+                case "CSS.getComputedStyleForNode":
+                    return { computedStyle: [{ name: "color", value: "red" }] };
+                case "CSS.getMatchedStylesForNode":
+                    return {
+                        matchedCSSRules: [
+                            rule(".a", [{ name: "color", value: "red", important: true }]),
+                            rule("#b", [{ name: "color", value: "blue" }]),
+                        ],
+                        inherited: [],
+                    };
+                case "DOM.getBoxModel":
+                    return null;
+                default:
+                    return {};
+            }
+        };
+
+        const { runtime } = setup(fake);
+
+        await runTool(newTab, {}, extra(), runtime);
+
+        runtime.elements.nextGeneration("tab1");
+
+        const [uid] = runtime.elements.assign("tab1", [{ backendNodeId: 7 }]);
+        const result = await runTool(
+            cssInspect,
+            { target: { uid }, properties: ["color"], maxRules: 1, includeBox: false },
+            extra(),
+            runtime,
+        );
+
+        expect(result.structuredContent).toMatchObject({
+            matchedRules: [
+                {
+                    selector    : "#b",
+                    declarations: [{ name: "color", value: "blue", winning: false }],
+                },
+            ],
+            totalRules: 2,
+            truncated : true,
+        });
     });
 
     it("reports a stale uid without calling the browser", async () => {

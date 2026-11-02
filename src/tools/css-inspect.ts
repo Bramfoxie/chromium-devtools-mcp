@@ -160,23 +160,27 @@ export function shapeMatchedRules(
     entries : Array<z.infer<typeof matchedEntrySchema>>,
     maxRules: number,
 ): CssRule[] {
-    // CDP orders matched rules least specific first: the winner is the last
-    // important declaration when any is important, else the last declaration.
-    const scored = entries.map((entry, rule) => ({
-        entry,
-        rule,
-        important: entry.rule.style.cssProperties.some(
-            (property) => property.name !== "" && (property.important ?? false),
-        ),
-    }));
-    const anyImportant = scored.some((item) => item.important);
+    // CDP orders matched rules least specific first. Per property the
+    // winner is the last important declaration when any is important,
+    // else the last declaration.
+    const scored = entries.map((entry, rule) => ({ entry, rule }));
+    const importantByName = new Set<string>();
+
+    for (const item of scored) {
+        for (const property of item.entry.rule.style.cssProperties) {
+            if (property.name !== "" && (property.important ?? false)) {
+                importantByName.add(property.name);
+            }
+        }
+    }
+
     const last = new Map<string, { rule: number; declaration: number }>();
 
     scored.forEach((item) => {
         item.entry.rule.style.cssProperties.forEach((property, declaration) => {
             const important = property.important ?? false;
 
-            if (property.name === "" || (anyImportant && !important)) return;
+            if (property.name === "" || (importantByName.has(property.name) && !important)) return;
 
             last.set(property.name, { rule: item.rule, declaration });
         });
@@ -302,6 +306,8 @@ export const cssInspect = defineTool({
             border : rectSchema.describe("Border rectangle."),
             margin : rectSchema.describe("Margin rectangle."),
         }).nullable().describe("Box model rectangles, null when includeBox is false or the element has none."),
+        totalRules: z.number().describe("Matched rules before the maxRules limit."),
+        truncated : z.boolean().describe("Whether maxRules dropped rules."),
     }),
     handler: async (args, context) => {
         const targetId = args.tab ?? context.state.selected;
@@ -360,6 +366,8 @@ export const cssInspect = defineTool({
 
             let matchedRules: CssRule[] = [];
             let inherited: InheritedStyle[] = [];
+            let totalRules = 0;
+            let truncated = false;
 
             if (includeMatchedRules) {
                 const matched = matchedSchema.safeParse(
@@ -372,8 +380,12 @@ export const cssInspect = defineTool({
                     );
                 }
 
-                matchedRules = shapeMatchedRules(matched.data.matchedCSSRules ?? [], maxRules);
+                const rules = matched.data.matchedCSSRules ?? [];
+
+                matchedRules = shapeMatchedRules(rules, maxRules);
                 inherited = shapeInherited(matched.data.inherited ?? []);
+                totalRules = rules.length;
+                truncated = rules.length > maxRules;
             }
 
             const box = includeBox ? await readBox(context.access, targetId, nodeId) : null;
@@ -383,6 +395,8 @@ export const cssInspect = defineTool({
                 matchedRules,
                 inherited,
                 box,
+                totalRules,
+                truncated,
             };
         } finally {
             await context.access.send(targetId, "CSS.disable", {}).catch(() => undefined);
