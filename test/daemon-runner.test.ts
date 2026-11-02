@@ -488,6 +488,23 @@ describe("browser failure", () => {
         expect(client.failure).toBeUndefined();
     });
 
+    it("lets the next daemon start and serve a session after a failed start", async () => {
+        const layout = await makeLayout(harness);
+        const failing: BrowserConnector = async () => {
+            throw new Error("browser refused");
+        };
+        const first = await start(layout, failing);
+
+        await first.done;
+        const { connect: working } = await startFakeBrowser(harness);
+        const second = await start(layout, working);
+        const client = await connect(layout);
+
+        await ready(client);
+        await expect(client.request("session.open", { isolated: false })).resolves.toBeDefined();
+        await second.stop();
+    });
+
     it("reports the failure once, through the outcome", async () => {
         const layout = await makeLayout(harness);
         const connector: BrowserConnector = async () => {

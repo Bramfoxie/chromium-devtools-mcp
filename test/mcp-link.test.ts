@@ -124,6 +124,32 @@ describe("a daemon that fails to start the browser", () => {
         expect(message).toContain("/data/daemon.log");
     });
 
+    it("starts a fresh daemon on the next call after a failed start", async () => {
+        const failed = new FakeIpc(() => {
+            failed.failure = "browser refused";
+            failed.drop();
+
+            throw new IpcClosedError("gone");
+        });
+        const working = new FakeIpc();
+        const connects: number[] = [];
+        const { link: l, starts } = link({
+            connect: async () => {
+                connects.push(connects.length);
+
+                if (connects.length === 1) return asIpc(failed);
+                if (connects.length === 2) throw new DaemonNotRunningError();
+
+                return asIpc(working);
+            },
+        });
+
+        await expect(l.request("x")).rejects.toThrow("The browser could not be started");
+        await expect(l.request("echo")).resolves.toEqual({});
+        expect(starts).toHaveLength(1);
+        expect(working.calls.map((call) => call.method)).toEqual(["session.open", "echo"]);
+    });
+
     it("keeps the generic message when no reason arrived", async () => {
         const ipc = new FakeIpc(() => {
             ipc.drop();
