@@ -321,56 +321,74 @@ export const screenshot = defineTool({
             throw new ToolError("No tab is selected. Open one with new_tab first.");
         }
 
-        const format = args.format ?? "jpeg";
-        const quality = args.quality ?? (format === "png" ? undefined : SCREENSHOT_DEFAULT_QUALITY);
-        const maxBytes = args.maxBytes ?? SCREENSHOT_DEFAULT_MAX_BYTES;
-        const maxDimension = args.maxDimension ?? SCREENSHOT_DEFAULT_MAX_DIMENSION;
+        return holdRendering(context.access, targetId, async () => {
+            const format = args.format ?? "jpeg";
+            const quality = args.quality ?? (format === "png" ? undefined : SCREENSHOT_DEFAULT_QUALITY);
+            const maxBytes = args.maxBytes ?? SCREENSHOT_DEFAULT_MAX_BYTES;
+            const maxDimension = args.maxDimension ?? SCREENSHOT_DEFAULT_MAX_DIMENSION;
 
-        const targetBox = args.target === undefined
-            ? undefined
-            : await targetBoxOf(context, targetId, args.target);
-        const layout = await layoutOf(context.access, targetId);
-        const pageBox = targetBox === undefined || layout.viewport === undefined
-            ? targetBox
-            : {
-                ...targetBox,
-                x: targetBox.x + layout.viewport.x,
-                y: targetBox.y + layout.viewport.y,
+            const targetBox = args.target === undefined
+                ? undefined
+                : await targetBoxOf(context, targetId, args.target);
+            const layout = await layoutOf(context.access, targetId);
+            const pageBox = targetBox === undefined || layout.viewport === undefined
+                ? targetBox
+                : {
+                    ...targetBox,
+                    x: targetBox.x + layout.viewport.x,
+                    y: targetBox.y + layout.viewport.y,
+                };
+            const plan = planScreenshot({
+                fullPage : args.fullPage,
+                clip     : args.clip,
+                targetBox: pageBox,
+                scale    : args.scale,
+                viewport : layout.viewport,
+                content  : layout.content,
+                maxDimension,
+            });
+
+            const shot = await shoot(context, targetId, {
+                format,
+                quality,
+                captureBeyondViewport: args.fullPage ?? false,
+                clip                 : plan.clip,
+                scale                : plan.scale,
+                maxBytes,
+                explicitPng          : args.format === "png",
+            });
+            const bytes = Buffer.from(shot, "base64");
+            const size = imageSize(format, bytes);
+
+            return {
+                width     : size?.width ?? 0,
+                height    : size?.height ?? 0,
+                bytes     : bytes.byteLength,
+                format,
+                clipped   : plan.clipped,
+                scaledDown: plan.scaledDown,
+                data      : shot,
+                mimeType  : MIME_OF[format],
             };
-        const plan = planScreenshot({
-            fullPage : args.fullPage,
-            clip     : args.clip,
-            targetBox: pageBox,
-            scale    : args.scale,
-            viewport : layout.viewport,
-            content  : layout.content,
-            maxDimension,
         });
-
-        const shot = await shoot(context, targetId, {
-            format,
-            quality,
-            captureBeyondViewport: args.fullPage ?? false,
-            clip                 : plan.clip,
-            scale                : plan.scale,
-            maxBytes,
-            explicitPng          : args.format === "png",
-        });
-        const bytes = Buffer.from(shot, "base64");
-        const size = imageSize(format, bytes);
-
-        return {
-            width     : size?.width ?? 0,
-            height    : size?.height ?? 0,
-            bytes     : bytes.byteLength,
-            format,
-            clipped   : plan.clipped,
-            scaledDown: plan.scaledDown,
-            data      : shot,
-            mimeType  : MIME_OF[format],
-        };
     },
 });
+
+async function holdRendering<T>(
+    access: DaemonAccess,
+    tab   : string,
+    run   : () => Promise<T>,
+): Promise<T> {
+    const params = { format: "jpeg", quality: 1, everyNthFrame: 1000 };
+
+    await access.send(tab, "Page.startScreencast", params).catch(() => undefined);
+
+    try {
+        return await run();
+    } finally {
+        await access.send(tab, "Page.stopScreencast", {}).catch(() => undefined);
+    }
+}
 
 interface ShotRequest extends CaptureRequest {
     maxBytes   : number;

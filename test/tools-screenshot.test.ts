@@ -141,6 +141,38 @@ describe("screenshot", () => {
         return fake;
     }
 
+    it("keeps the tab rendering while it captures and releases it afterwards", async () => {
+        const { fake, runtime } = setup(shotFake(JPEG_5X7.toString("base64")));
+
+        await runTool(newTab, {}, extra(), runtime);
+        await runTool(screenshot, {}, extra(), runtime);
+        const methods = fake.sent.map((call) => call.method);
+        const start = methods.indexOf("Page.startScreencast");
+        const capture = methods.indexOf("Page.captureScreenshot");
+
+        expect(start).toBeGreaterThanOrEqual(0);
+        expect(start).toBeLessThan(capture);
+        expect(methods.lastIndexOf("Page.stopScreencast")).toBeGreaterThan(capture);
+    });
+
+    it("releases the tab when the capture fails", async () => {
+        const fake = new FakeAccess();
+
+        fake.respond = (_targetId, method) => {
+            if (method === "Page.captureScreenshot") throw new Error("capture failed");
+
+            return {};
+        };
+
+        const { runtime } = setup(fake);
+
+        await runTool(newTab, {}, extra(), runtime);
+        const result = await runTool(screenshot, {}, extra(), runtime);
+
+        expect(result.isError).toBe(true);
+        expect(fake.sent.some((call) => call.method === "Page.stopScreencast")).toBe(true);
+    });
+
     it("retries a capture that the browser leaves unanswered", async () => {
         let attempts = 0;
         const shot = shotFake(JPEG_5X7.toString("base64"), () => {
