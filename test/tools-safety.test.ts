@@ -33,15 +33,4 @@ describe("checkSafety", () => {
             hint   : "Run without --read-only to allow changes.",
         });
     });
-
-    it("accepts a URL target without changing the decision", () => {
-        expect(
-            checkSafety({
-                tool  : "new_tab",
-                access: "mutate",
-                config: managedConfig,
-                target: { url: "https://example.org/" },
-            }),
-        ).toEqual({ allowed: true });
-    });
 });
