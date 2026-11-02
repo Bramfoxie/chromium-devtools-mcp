@@ -203,9 +203,10 @@ export class PointerDelivery {
         const { point, boxes } = this.current;
         const landed = await this.landing(point, sendMove);
         const dpr = await this.pixelRatio();
+        const visibility = await this.visibility();
         const frames = boxes.map((box) => `(${box.x},${box.y},${box.width},${box.height})`).join(" ");
 
-        return `Diagnostics: attempts=${attempts} elapsedMs=${elapsed} point=(${point.x},${point.y}) depth=${boxes.length} frames=${frames} dpr=${dpr} landed=${landed}`;
+        return `Diagnostics: attempts=${attempts} elapsedMs=${elapsed} point=(${point.x},${point.y}) depth=${boxes.length} frames=${frames} dpr=${dpr} landed=${landed} visibility=${visibility}`;
     }
 
     private async landing(
@@ -278,6 +279,21 @@ export class PointerDelivery {
             );
 
             return parsed.success ? String(parsed.data.result.value) : "unknown";
+        } catch {
+            return "unknown";
+        }
+    }
+
+    private async visibility(): Promise<string> {
+        try {
+            const parsed = z.object({ result: z.object({ value: z.enum(["hidden", "visible", "prerender"]) }) }).safeParse(
+                await this.route.relays[0]?.send(this.tab, "Runtime.evaluate", {
+                    expression   : "document.visibilityState",
+                    returnByValue: true,
+                }),
+            );
+
+            return parsed.success ? parsed.data.result.value : "unknown";
         } catch {
             return "unknown";
         }

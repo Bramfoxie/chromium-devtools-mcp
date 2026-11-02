@@ -413,4 +413,12 @@ describe("rendering during cross-site pointer input", () => {
         expect(mouseEvents(fake)).toHaveLength(3);
         expect(pointerCounters.get(fake)).toMatchObject(NO_HOLD);
     });
+
+    it("reports the visibility of the top document in the diagnostics", async () => {
+        const { runtime } = setup({ dropMoves: 1000 });
+        const result = await withFakeTime(() =>
+            runTool(inputClick, { target: { uid: "1_1" } }, extra(), runtime));
+
+        expect(JSON.stringify(result.content)).toMatch(/landed=\S+ visibility=(hidden|visible)/);
+    });
 });
