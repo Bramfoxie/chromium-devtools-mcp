@@ -71,12 +71,10 @@ export {
     domSnapshot,
     frameDocBackends,
     iframeFrameMap,
-    mergeFrameNodes,
     SNAPSHOT_DEFAULT_CHARS,
     SNAPSHOT_DEFAULT_MAX_FRAMES,
     SNAPSHOT_DOM_ATTRS,
     SNAPSHOT_DOM_DEPTH,
-    SNAPSHOT_FRAME_AX_PARTIALS,
     SNAPSHOT_MAX_CHARS,
     SNAPSHOT_MAX_FRAMES_LIMIT,
 } from "./dom-snapshot.js";

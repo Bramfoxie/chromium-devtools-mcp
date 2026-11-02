@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { DaemonAccess } from "../mcp/index.js";
-import { toAxNodes, type AxDomInfo, type AxNode, formatAxTree } from "./ax-format.js";
+import { toAxNodes, type AxDomInfo, formatAxTree } from "./ax-format.js";
 import { defineTool, type ToolContext } from "./define-tool.js";
 import { ensureNoDialog } from "./dialogs.js";
 import { elementTargetSchema, resolveElement } from "./element-target.js";
@@ -18,8 +18,6 @@ export const SNAPSHOT_DOM_ATTRS = ["href", "src", "type", "placeholder", "id"];
 export const SNAPSHOT_DEFAULT_MAX_FRAMES = 20;
 
 export const SNAPSHOT_MAX_FRAMES_LIMIT = 50;
-
-export const SNAPSHOT_FRAME_AX_PARTIALS = 50;
 
 interface DomNodeShape {
     backendNodeId?  : unknown;
@@ -382,18 +380,4 @@ function frameSummaries(
         nodeCount: counts.get(frame.frameId) ?? 0,
         omitted  : leftOut.has(frame.frameId),
     }));
-}
-
-export function mergeFrameNodes(main: AxNode[], extra: AxNode[]): AxNode[] {
-    const seen = new Set(main.map((node) => node.nodeId));
-    const merged = [...main];
-
-    for (const node of extra) {
-        if (seen.has(node.nodeId)) continue;
-
-        seen.add(node.nodeId);
-        merged.push(node);
-    }
-
-    return merged;
 }
