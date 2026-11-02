@@ -472,6 +472,35 @@ describe("input_key", () => {
         expect(ups[ups.length - 1]?.params).toMatchObject({ key: "Control" });
     });
 
+    it("releases a held modifier when the call is cancelled between events", async () => {
+        const { fake, runtime } = runtimeWith(textFake());
+        const controller = new AbortController();
+        let calls = 0;
+
+        fake.failSend = (_targetId, method) => {
+            if (method === "Input.dispatchKeyEvent") {
+                calls += 1;
+
+                if (calls === 1) controller.abort();
+            }
+
+            return undefined;
+        };
+
+        const result = await runTool(
+            inputKey,
+            { key: "Control+a" },
+            { signal: controller.signal } as Extra,
+            runtime,
+        );
+
+        expect(result.isError).toBe(true);
+        const keys = fake.sent.filter((entry) => entry.method === "Input.dispatchKeyEvent");
+
+        expect(keys.map((entry) => entry.params?.type)).toEqual(["rawKeyDown", "keyUp"]);
+        expect(keys[1]?.params).toMatchObject({ key: "Control" });
+    });
+
     it("resolves ControlOrMeta from the browser platform, not the server", async () => {
         const { fake, runtime } = runtimeWith(textFake({ platform: "MacIntel" }));
 

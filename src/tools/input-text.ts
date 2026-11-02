@@ -96,10 +96,10 @@ async function dispatchKeyEvents(
     events: KeyEventPlan[],
     signal: AbortSignal,
 ): Promise<void> {
-    // Keys held down are released even when a mid-chord dispatch fails, so
-    // the page never keeps a button, Control or Shift logically down.
+    // Keys held down are released on any abnormal exit, so the page never
+    // keeps Control or Shift logically down.
     const downs: KeyEventPlan[] = [];
-    let failed = false;
+    let completed = false;
 
     try {
         for (const event of events) {
@@ -107,19 +107,15 @@ async function dispatchKeyEvents(
 
             const { type, ...rest } = event;
 
-            try {
-                await access.send(tab, "Input.dispatchKeyEvent", { type, ...rest });
-            } catch (error) {
-                failed = true;
-
-                throw error;
-            }
+            await access.send(tab, "Input.dispatchKeyEvent", { type, ...rest });
 
             if (event.type === "rawKeyDown") downs.push(event);
             if (event.type === "keyUp") downs.pop();
         }
+
+        completed = true;
     } finally {
-        if (failed) {
+        if (!completed) {
             for (const down of [...downs].reverse()) {
                 await access.send(tab, "Input.dispatchKeyEvent", {
                     type                 : "keyUp",
