@@ -54,6 +54,8 @@ export {
     type AcceptOptions,
     type ClientConnection,
     type IncomingRequest,
+    MAX_PENDING_CONNECTIONS,
+    PendingConnections,
     type RequestHandler,
 } from "./server.js";
 

@@ -11,8 +11,10 @@ import {
     IpcClosedError,
     IpcTimeoutError,
     LineDecoder,
+    MAX_PENDING_CONNECTIONS,
     MAX_REQUEST_BYTES,
     MAX_RESPONSE_BYTES,
+    PendingConnections,
     type RequestHandler,
     RpcError,
 } from "../src/daemon/index.js";
@@ -169,6 +171,49 @@ describe("handshake", () => {
 
         await new Promise((resolve) => setTimeout(resolve, 150));
         await expect(client.request("echo", "still here")).resolves.toBe("still here");
+    });
+
+    it("closes a connection beyond the limit of connections waiting for a hello", async () => {
+        const stderr = quietStderr();
+        const server = await startServer({ pending: new PendingConnections(2) });
+        const first = await rawClient(server.options.socketPath);
+        const second = await rawClient(server.options.socketPath);
+        const third = await rawClient(server.options.socketPath);
+
+        await third.closed;
+        expect(stderr).toHaveBeenCalledWith(expect.stringContaining("too many connections"));
+        expect(first.socket.destroyed).toBe(false);
+        expect(second.socket.destroyed).toBe(false);
+
+        first.send(hello(server.token));
+        await vi.waitFor(() => expect(first.lines).toHaveLength(1));
+
+        const fourth = await rawClient(server.options.socketPath);
+
+        fourth.send(hello(server.token));
+        await vi.waitFor(() => expect(fourth.lines).toHaveLength(1));
+        expect(server.ready).toHaveLength(2);
+    });
+
+    it("frees a waiting slot when a connection closes without a hello", async () => {
+        quietStderr();
+        const server = await startServer({ pending: new PendingConnections(1) });
+        const first = await rawClient(server.options.socketPath);
+
+        first.socket.destroy();
+        await first.closed;
+
+        await vi.waitFor(async () => {
+            const next = await rawClient(server.options.socketPath);
+
+            next.send(hello(server.token));
+            await vi.waitFor(() => expect(next.lines).toHaveLength(1), { timeout: 200 });
+        });
+    });
+
+    it("allows 16 connections waiting for a hello by default", () => {
+        expect(new PendingConnections().limit).toBe(MAX_PENDING_CONNECTIONS);
+        expect(MAX_PENDING_CONNECTIONS).toBe(16);
     });
 
     it("ignores everything that follows a rejected first message in the same chunk", async () => {

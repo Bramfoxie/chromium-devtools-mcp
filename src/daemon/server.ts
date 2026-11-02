@@ -16,6 +16,8 @@ import { tokensMatch } from "./token.js";
 
 const DEFAULT_HELLO_TIMEOUT_MS = 5000;
 const MAX_IN_FLIGHT = 64;
+
+export const MAX_PENDING_CONNECTIONS = 16;
 const MAX_WRITE_BACKLOG_BYTES = 2 * MAX_RESPONSE_BYTES;
 const INTERNAL_MESSAGE = "The daemon failed to handle the request.";
 
@@ -35,8 +37,27 @@ export type RequestHandler = (
     connection: ClientConnection,
 ) => Promise<unknown>;
 
+export class PendingConnections {
+    private count = 0;
+
+    constructor(readonly limit: number = MAX_PENDING_CONNECTIONS) {}
+
+    tryEnter(): boolean {
+        if (this.count >= this.limit) return false;
+
+        this.count += 1;
+
+        return true;
+    }
+
+    leave(): void {
+        this.count = Math.max(0, this.count - 1);
+    }
+}
+
 export interface AcceptOptions {
     token          : string;
+    pending?       : PendingConnections;
     handler        : RequestHandler;
     helloTimeoutMs?: number;
     helloResult?   : () => unknown;
@@ -58,6 +79,23 @@ export function acceptConnection(socket: net.Socket, options: AcceptOptions): vo
     let inFlight = 0;
 
     socket.on("error", () => undefined);
+
+    const pending = options.pending;
+
+    if (pending && !pending.tryEnter()) {
+        logDaemon("rejected a daemon connection: too many connections are waiting for a hello");
+        socket.destroy();
+
+        return;
+    }
+
+    let waiting = pending !== undefined;
+    const settle = () => {
+        if (!waiting) return;
+
+        waiting = false;
+        pending?.leave();
+    };
 
     const write = (message: unknown) => {
         if (socket.destroyed || !socket.writable) return;
@@ -110,6 +148,7 @@ export function acceptConnection(socket: net.Socket, options: AcceptOptions): vo
 
     socket.once("close", () => {
         clearTimeout(helloTimer);
+        settle();
         const closing = connection;
 
         if (closing) guarded("onClose", () => options.onClose?.(closing));
@@ -133,6 +172,7 @@ export function acceptConnection(socket: net.Socket, options: AcceptOptions): vo
         }
 
         clearTimeout(helloTimer);
+        settle();
         const ready: ClientConnection = {
             clientName: params.data.clientName,
             sendEvent : (event, eventParams) => {

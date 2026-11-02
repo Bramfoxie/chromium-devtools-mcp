@@ -3,7 +3,12 @@ import type { BrowserBackend } from "./browser-backend.js";
 import { createRequestHandler, type DaemonStatus } from "./handler.js";
 import type { DaemonIdentity } from "./identity.js";
 import { describeError, logDaemon } from "./log.js";
-import { acceptConnection, type ClientConnection, type RequestHandler } from "./server.js";
+import {
+    acceptConnection,
+    type ClientConnection,
+    PendingConnections,
+    type RequestHandler,
+} from "./server.js";
 import { SessionRegistry } from "./sessions.js";
 
 export interface DaemonOptions {
@@ -24,6 +29,7 @@ export class Daemon {
     private idleTimer       : NodeJS.Timeout | undefined;
     private stopped = false;
     private idleArmed = false;
+    private readonly pending = new PendingConnections();
 
     constructor(private readonly options: DaemonOptions) {
         this.handler = createRequestHandler({
@@ -65,6 +71,7 @@ export class Daemon {
     accept = (socket: net.Socket): void => {
         acceptConnection(socket, {
             token         : this.options.token,
+            pending       : this.pending,
             helloTimeoutMs: this.options.helloTimeoutMs,
             helloResult   : () => this.options.identity,
             handler       : this.handler,
