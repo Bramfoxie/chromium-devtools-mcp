@@ -123,6 +123,8 @@ describe("page_info", () => {
             readyState: "unknown",
             source    : "tab-list",
         });
+        expect(result.structuredContent).not.toHaveProperty("viewport");
+        expect(result.structuredContent).not.toHaveProperty("scroll");
     });
 
     it("falls back to the tab list when the evaluation has no value", async () => {
