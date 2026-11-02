@@ -39,6 +39,16 @@ const DEVICE_VALUE = {
     maxTouchPoints  : 5,
 };
 
+const BROWSER_VERSION = {
+    protocolVersion: "1.3",
+    product        : "Chrome/131.0.6778.86",
+    revision       : "@0123456789abcdef",
+    userAgent:
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " +
+        "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    jsVersion: "13.1.201.15",
+};
+
 const MEDIA_VALUE = {
     colorScheme  : "dark",
     reducedMotion: "no-preference",
@@ -57,6 +67,8 @@ function emulationFake(): FakeAccess {
     const fake = new FakeAccess();
 
     fake.respond = (_targetId, method, params) => {
+        if (method === "Browser.getVersion") return BROWSER_VERSION;
+
         if (method !== "Runtime.evaluate") return {};
 
         const expression = (params as { expression?: unknown })?.expression;
@@ -169,16 +181,72 @@ describe("emulate_device", () => {
             reported: DEVICE_VALUE,
         });
         expect(methods(fake)).toEqual([
+            "Browser.getVersion",
             "Emulation.setDeviceMetricsOverride",
             "Emulation.setTouchEmulationEnabled",
             "Emulation.setEmitTouchEventsForMouse",
             "Emulation.setUserAgentOverride",
             "Runtime.evaluate",
         ]);
-        expect(fake.sent[0]?.params).toMatchObject({ mobile: true });
-        expect(fake.sent[3]?.params).toMatchObject({
+        expect(fake.sent[1]?.params).toMatchObject({ mobile: true });
+        expect(fake.sent[4]?.params).toMatchObject({
             userAgent: expect.stringContaining("Pixel 7") as string,
         });
+    });
+
+    it("sends the Chrome major of the connected browser in a device user agent", async () => {
+        const { fake, runtime } = setup();
+
+        await openTab(runtime);
+        fake.sent.length = 0;
+
+        await runTool(emulateDevice, { device: "pixel 7" }, extra(), runtime);
+
+        const params = fake.sent.find((call) => call.method === "Emulation.setUserAgentOverride")?.params;
+
+        expect(params?.userAgent).toContain("Chrome/131.0.0.0 Mobile Safari/537.36");
+        expect(params?.userAgent).not.toContain("Chrome/124");
+    });
+
+    it("keeps the table user agent when the browser version is unavailable", async () => {
+        const { fake, runtime } = setup();
+
+        await openTab(runtime);
+        fake.failSend = (_targetId, method) =>
+            method === "Browser.getVersion" ? new Error("no browser domain") : undefined;
+        fake.sent.length = 0;
+
+        const result = await runTool(emulateDevice, { device: "pixel 7" }, extra(), runtime);
+        const params = fake.sent.find((call) => call.method === "Emulation.setUserAgentOverride")?.params;
+
+        expect(result.isError).not.toBe(true);
+        expect(params?.userAgent).toContain("Chrome/124.0.0.0 Mobile Safari/537.36");
+    });
+
+    it("leaves iOS Safari user agents and explicit user agents untouched", async () => {
+        const { fake, runtime } = setup();
+
+        await openTab(runtime);
+        fake.sent.length = 0;
+
+        await runTool(emulateDevice, { device: "iphone 14" }, extra(), runtime);
+        await runTool(emulateDevice, {
+            width            : 800,
+            height           : 600,
+            deviceScaleFactor: 1,
+            mobile           : false,
+            touch            : false,
+            userAgent        : "Custom Chrome/99.0.0.0",
+        }, extra(), runtime);
+
+        const agents = fake.sent
+            .filter((call) => call.method === "Emulation.setUserAgentOverride")
+            .map((call) => call.params?.userAgent);
+
+        expect(agents[0]).toContain("iPhone OS 18_6");
+        expect(agents[0]).toContain("Version/18.6");
+        expect(agents[1]).toBe("Custom Chrome/99.0.0.0");
+        expect(methods(fake).filter((method) => method === "Browser.getVersion")).toHaveLength(1);
     });
 
     it("applies explicit values with landscape and omits the announced metadata", async () => {

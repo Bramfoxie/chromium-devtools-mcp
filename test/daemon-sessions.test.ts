@@ -579,7 +579,6 @@ describe("sending commands", () => {
         "Target.createTarget",
         "Target.activateTarget",
         "Browser.close",
-        "Browser.getVersion",
         "Security.setIgnoreCertificateErrors",
         "SystemInfo.getInfo",
         "Storage.clearDataForOrigin",

@@ -19,6 +19,7 @@ const ALLOWED_DOMAINS = new Set([
     "Performance",
     "Runtime",
 ]);
+const ALLOWED_METHODS = new Set(["Browser.getVersion"]);
 const FOCUS_METHODS = new Set(["Page.bringToFront"]);
 const BLOCKED_METHODS = new Map([
     ["Page.setDownloadBehavior", "it would let a page write files to any directory"],
@@ -81,7 +82,7 @@ export function checkCall(
     params : Record<string, unknown> | undefined,
     options: PolicyOptions,
 ): Record<string, unknown> | undefined {
-    checkEvent(method);
+    if (!ALLOWED_METHODS.has(method)) checkEvent(method);
 
     const blocked = BLOCKED_METHODS.get(method);
 

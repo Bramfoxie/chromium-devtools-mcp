@@ -34,6 +34,16 @@ describe("checkCall", () => {
         expect(codeOf(() => checkCall("Page.reload", undefined, off))).toBeUndefined();
     });
 
+    it("allows Browser.getVersion and nothing else of the Browser domain", () => {
+        expect(codeOf(() => checkCall("Browser.getVersion", undefined, off))).toBeUndefined();
+        expect(codeOf(() => checkCall("Browser.getVersionX", undefined, off))).toBe(
+            ErrorCode.forbiddenMethod,
+        );
+        expect(codeOf(() => checkCall("Browser.setDownloadBehavior", undefined, off))).toBe(
+            ErrorCode.forbiddenMethod,
+        );
+    });
+
     it.each(["Target.getTargets", "Browser.close", "Storage.getCookies", "SystemInfo.getInfo"])(
         "refuses the domain of %s",
         (method) => {

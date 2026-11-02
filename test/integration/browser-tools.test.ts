@@ -195,6 +195,18 @@ describe.skipIf(!present)("real browser", () => {
         await env.ok("click", { target: { selector: "h1", frame: "#one" } });
     });
 
+    it("emulate_device sends the Chrome major of the connected browser", async () => {
+        await env.open("/other");
+        const real = String(await evaluate("navigator.userAgent"));
+        const major = /Chrome\/(\d+)\./.exec(real)?.[1];
+        const result = await env.ok("emulate_device", { device: "Pixel 7" });
+        const reported = (result.reported as { userAgent: string }).userAgent;
+
+        expect(major).toBeDefined();
+        expect(reported).toContain(`Chrome/${major}.0.0.0 Mobile Safari/537.36`);
+        await env.ok("emulate_device", { reset: true });
+    });
+
     it("input_click works on a button with a nested span", async () => {
         await env.open("/main");
         await env.ok("input_click", { target: { selector: "#inner" } });

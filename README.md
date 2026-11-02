@@ -82,7 +82,7 @@ Each session keeps its own tab selection. `new_tab` opens a background tab and s
 - `page_metrics`: read performance counters, layout metrics and navigation timing of a tab.
 - `screenshot`: capture a tab as an image. Defaults to jpeg quality 80; supports viewport, full page, element and clip shots.
 - `list_devices`: list the built in devices for `emulate_device`, with an optional name or kind filter.
-- `emulate_device`: emulate a device size, pixel ratio, mobile viewport, touch and user agent. Client hints metadata is not emulated.
+- `emulate_device`: emulate a device size, pixel ratio, mobile viewport, touch and user agent. The Chrome version in the user agent of a desktop or Android device follows the connected browser. Client hints metadata is not emulated.
 - `emulate_media`: emulate a media type and media features such as color scheme and reduced motion. Only the given fields change, and reset: true cannot be combined with other fields.
 - `emulate_network`: emulate network conditions with a preset (offline, slow-3g, fast-3g, 4g, wifi, none), custom latency and throughput (a throughput of 0 is rejected, use -1 to remove the limit), or blocked URL patterns. The none preset also clears blocked URLs, and reset: true cannot be combined with other fields. Shares `Network.enable` with the capture tools and never disables capture.
 - `emulate_locale`: emulate locale, timezone and Accept-Language. Takes effect on the next page load: `navigator.language` changes after navigation, and number and date formatting follow the locale. Geolocation is not emulated: it needs the Browser domain, which is not reachable through a tab.

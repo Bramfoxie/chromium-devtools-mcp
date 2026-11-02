@@ -23,6 +23,7 @@ import {
 import { readDevice, type DeviceRead } from "./reads.js";
 import { runSteps } from "./steps.js";
 import { emulationSummarySchema, summarizeEmulation } from "./summary.js";
+import { connectedChromeMajor, withChromeMajor } from "./user-agent.js";
 
 const reportedSchema = z.strictObject({
     innerWidth      : z.number().describe("Inner CSS width the page reports."),
@@ -85,7 +86,7 @@ export function explicitMetrics(input: DeviceInput): DeviceMetrics {
 export const emulateDevice = defineTool({
     name: "emulate_device",
     description:
-        "Emulate a device size, pixel ratio, mobile viewport, touch and user agent on a tab. Reads back what the page reports. Client hints metadata is not emulated.",
+        "Emulate a device size, pixel ratio, mobile viewport, touch and user agent on a tab. Reads back what the page reports. The Chrome version in a device user agent follows the connected browser. Client hints metadata is not emulated.",
     access: "mutate",
     input : z.strictObject({
         tab              : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
@@ -146,7 +147,16 @@ export const emulateDevice = defineTool({
             };
         }
 
-        const selection = selectMetrics(args);
+        const chosen = selectMetrics(args);
+        const selection = args.device === undefined || chosen.userAgent === undefined
+            ? chosen
+            : {
+                ...chosen,
+                userAgent: withChromeMajor(
+                    chosen.userAgent,
+                    await connectedChromeMajor(context.access, targetId),
+                ),
+            };
         const previous = context.emulation.snapshot(targetId).device;
         const agent = buildUserAgentCommand({ userAgent: selection.userAgent, acceptLanguage });
         const previousAgent = buildUserAgentCommand({

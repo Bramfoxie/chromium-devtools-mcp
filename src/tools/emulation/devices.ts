@@ -39,7 +39,7 @@ export const DEVICES: DeviceSpec[] = [
         mobile           : true,
         touch            : true,
         userAgent:
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Mobile/15E148 Safari/604.1",
     },
     {
         name             : "iPhone 14",
@@ -50,7 +50,7 @@ export const DEVICES: DeviceSpec[] = [
         mobile           : true,
         touch            : true,
         userAgent:
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Mobile/15E148 Safari/604.1",
     },
     {
         name             : "iPhone 15 Pro Max",
@@ -61,7 +61,7 @@ export const DEVICES: DeviceSpec[] = [
         mobile           : true,
         touch            : true,
         userAgent:
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Mobile/15E148 Safari/604.1",
     },
     {
         name             : "Pixel 7",
@@ -127,7 +127,7 @@ export const DEVICES: DeviceSpec[] = [
         mobile           : true,
         touch            : true,
         userAgent:
-            "Mozilla/5.0 (iPad; CPU OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
+            "Mozilla/5.0 (iPad; CPU OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Mobile/15E148 Safari/604.1",
     },
     {
         name             : "iPad Pro 11",
@@ -138,7 +138,7 @@ export const DEVICES: DeviceSpec[] = [
         mobile           : true,
         touch            : true,
         userAgent:
-            "Mozilla/5.0 (iPad; CPU OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
+            "Mozilla/5.0 (iPad; CPU OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Mobile/15E148 Safari/604.1",
     },
     {
         name             : "Galaxy Tab S9",
