@@ -18,6 +18,8 @@ export {
 } from "./daemon-link.js";
 
 export {
+    clientLabel,
+    connectedClientName,
     createDaemonLink,
     createMcpServer,
     daemonLogFile,

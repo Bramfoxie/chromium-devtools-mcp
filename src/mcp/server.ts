@@ -11,7 +11,9 @@ import {
     currentLayout,
     DaemonError,
     daemonIdentity,
+    type DaemonIdentity,
     type DaemonLayout,
+    type IpcClient,
 } from "../daemon/index.js";
 import { describeError, logDaemon } from "../daemon/log.js";
 import { DaemonLink, type LinkDeps } from "./daemon-link.js";
@@ -21,6 +23,7 @@ const SERVER_NAME = "chromium-devtools-mcp";
 const START_TIMEOUT_MS = 10_000;
 const POLL_INTERVAL_MS = 100;
 const CONNECT_TIMEOUT_MS = 1000;
+const MAX_CLIENT_LABEL = 64;
 
 export interface RunningMcp {
     done: Promise<void>;
@@ -58,6 +61,16 @@ export function daemonScriptPath(here: string = import.meta.url): string {
     return fileURLToPath(new URL("../cli.js", here));
 }
 
+export function clientLabel(name: string | undefined): string {
+    const clean = (name ?? "").replace(/[^\x20-\x7E]/g, "").trim().slice(0, MAX_CLIENT_LABEL);
+
+    return clean === "" ? SERVER_NAME : clean;
+}
+
+export function connectedClientName(server: McpServer): string | undefined {
+    return server.server.getClientVersion()?.name;
+}
+
 export interface LinkFactoryOptions {
     layout?     : DaemonLayout;
     execPath?   : string;
@@ -65,7 +78,8 @@ export interface LinkFactoryOptions {
     spawn?      : typeof spawnDaemonProcess;
     sleep?      : (ms: number) => Promise<void>;
     now?        : () => number;
-    connect?    : LinkDeps["connect"];
+    connect?    : (expect: DaemonIdentity, clientName: string) => Promise<IpcClient>;
+    clientName? : () => string | undefined;
     startDaemon?: LinkDeps["startDaemon"];
     logFile?    : string;
 }
@@ -78,15 +92,16 @@ export function createDaemonLink(
     const layout = options.layout ?? currentLayout();
     const logFile = options.logFile ?? daemonLogFile(layout);
     const spawn = options.spawn ?? spawnDaemonProcess;
+    const connect = options.connect ??
+        ((expect: DaemonIdentity, clientName: string) =>
+            connectToDaemon({
+                clientName,
+                expect,
+                layout,
+                connectTimeoutMs: CONNECT_TIMEOUT_MS,
+            }));
     const deps: LinkDeps = {
-        connect: options.connect ??
-      ((expect) =>
-          connectToDaemon({
-              clientName      : SERVER_NAME,
-              expect,
-              layout,
-              connectTimeoutMs: CONNECT_TIMEOUT_MS,
-          })),
+        connect    : (expect) => connect(expect, clientLabel(options.clientName?.())),
         startDaemon: options.startDaemon ??
       (() =>
           spawn({
@@ -173,10 +188,12 @@ export async function runMcpServer(
     flags  : string[],
     options: McpOptions = {},
 ): Promise<RunningMcp> {
-    const link = options.link ?? createDaemonLink(config, flags);
     const stdin = options.stdin ?? process.stdin;
     const stdout = options.stdout ?? process.stdout;
     const server = createMcpServer(options.version ?? packageVersion());
+    const link = options.link ?? createDaemonLink(config, flags, {
+        clientName: () => connectedClientName(server),
+    });
 
     registerServerTools(server, config, link);
     let finish: () => void = () => undefined;

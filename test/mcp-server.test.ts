@@ -12,6 +12,8 @@ import {
     type DaemonLayout,
 } from "../src/daemon/index.js";
 import {
+    clientLabel,
+    connectedClientName,
     type DaemonLink,
     createDaemonLink,
     createMcpServer,
@@ -123,6 +125,57 @@ describe("createDaemonLink", () => {
 
         void _own;
         expect(daemonIdentity(config)).toEqual(daemonIdentity(shared));
+    });
+});
+
+describe("client name for the daemon", () => {
+    const connectingWith = async (clientName: (() => string | undefined) | undefined) => {
+        const names: string[] = [];
+        const link = createDaemonLink(managedConfig, [], {
+            connect: async (_expect, name) => {
+                names.push(name);
+
+                return {
+                    closed : false,
+                    request: async () => ({}),
+                    on     : () => () => undefined,
+                    close  : async () => undefined,
+                } as never;
+            },
+            ...(clientName === undefined ? {} : { clientName }),
+        });
+
+        await link.request("tab.list");
+
+        return names;
+    };
+
+    it("sends the MCP client name from the initialize handshake", async () => {
+        const server = createMcpServer("1.0.0");
+        const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
+        const client = new Client({ name: "Cursor", version: "9.9.9" });
+
+        await Promise.all([server.connect(serverSide), client.connect(clientSide)]);
+        expect(await connectingWith(() => connectedClientName(server))).toEqual(["Cursor"]);
+        await client.close();
+        await server.close();
+    });
+
+    it("falls back to the server name before a client has introduced itself", async () => {
+        const server = createMcpServer("1.0.0");
+
+        expect(await connectingWith(() => connectedClientName(server))).toEqual([
+            "chromium-devtools-mcp",
+        ]);
+        expect(await connectingWith(undefined)).toEqual(["chromium-devtools-mcp"]);
+    });
+
+    it("keeps only printable ASCII, trims and bounds the label", () => {
+        expect(clientLabel("  My Client \u0000\n")).toBe("My Client");
+        expect(clientLabel("x".repeat(100))).toHaveLength(64);
+        expect(clientLabel("")).toBe("chromium-devtools-mcp");
+        expect(clientLabel("\u0001\u0002")).toBe("chromium-devtools-mcp");
+        expect(clientLabel(undefined)).toBe("chromium-devtools-mcp");
     });
 });
 

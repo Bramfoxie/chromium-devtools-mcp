@@ -52,7 +52,7 @@ Until the browser allows it, the daemon prints these instructions, returns them 
 Each session keeps its own tab selection. `new_tab` opens a background tab and selects it; the other tab tools act on the selected tab unless a `tab` id from `list_tabs` is passed. Claimed tabs cannot be closed, they are released when the session ends. When the daemon restarts, the session is gone and its tabs with it, so the tools say to open a new tab.
 
 - `list_tabs`: list owned tabs, or with `scope: "available"` the browser tabs this session could claim.
-- `list_sessions`: list open sessions of the daemon without their tab details.
+- `list_sessions`: list open sessions of the daemon without their tab details. Each session shows the client name the MCP client sent in its initialize request, or `chromium-devtools-mcp` when it sent none.
 - `select_tab`: select an owned tab, claiming an available one when needed. Never focuses it.
 - `new_tab`: open a background tab and select it. With a `url` it waits for the page to commit and load, for at most `timeoutMs` (default 30000), and returns the committed `url` and `title`, `waited` (`load`, `timeout` or `none`), the document `readyState` and the HTTP `status` when observed. A download, an empty 204 response or a network error does not fail the call: the tab stays open, on `about:blank` for a download or a 204 and on the browser error page for a network error, and `navigationError` says why. The tab is never brought to the front.
 - `close_tab`: close a tab opened by this session.
