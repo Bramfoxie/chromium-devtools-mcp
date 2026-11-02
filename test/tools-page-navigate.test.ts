@@ -243,7 +243,7 @@ describe("page_navigate", () => {
         fake.emit("cdp.event", {
             targetId: "tab1",
             event   : "Network.responseReceived",
-            params  : { loaderId: "loader-9", type: "Document", response: { status: 200 } },
+            params  : { frameId: "main", loaderId: "loader-9", type: "Document", response: { status: 200 } },
         });
         fake.emit("cdp.event", {
             targetId: "tab1",
@@ -356,6 +356,63 @@ describe("page_navigate", () => {
         expect(fake.unsubscribed.map((entry) => entry.event)).toEqual(
             fake.subscribed.map((entry) => entry.event),
         );
+    });
+
+    it("takes the status only from the main frame document", async () => {
+        const fake = new FakeAccess();
+        const { clock } = trackingSleep();
+
+        fake.respond = (_targetId, method) => {
+            switch (method) {
+                case "Page.getFrameTree":
+                    return { frameTree: { frame: { id: "main" } } };
+                case "Runtime.evaluate":
+                    return pageState("https://example.org/", "Example");
+                default:
+                    return {};
+            }
+        };
+
+        const runtime = new ToolRuntime({ access: fake.asAccess(), config: managedConfig, clock });
+
+        await runTool(newTab, {}, extra(), runtime);
+        const pending = runTool(pageNavigate, { action: "reload" }, extra(), runtime);
+
+        await vi.waitFor(() =>
+            expect(
+                fake.subscribed.filter((entry) => entry.event === "Network.responseReceived"),
+            ).toHaveLength(1),
+        );
+        await vi.waitFor(() => expect(fake.sent.map((call) => call.method)).toContain("Page.reload"));
+        fake.emit("cdp.event", {
+            targetId: "tab1",
+            event   : "Network.responseReceived",
+            params  : {
+                frameId : "sub",
+                loaderId: "loader-sub",
+                type    : "Document",
+                response: { status: 500 },
+            },
+        });
+        fake.emit("cdp.event", {
+            targetId: "tab1",
+            event   : "Network.responseReceived",
+            params  : {
+                frameId : "main",
+                loaderId: "loader-2",
+                type    : "Document",
+                response: { status: 200 },
+            },
+        });
+        fake.emit("cdp.event", {
+            targetId: "tab1",
+            event   : "Page.lifecycleEvent",
+            params  : { frameId: "main", loaderId: "loader-2", name: "load" },
+        });
+
+        const result = await pending;
+
+        expect(result.structuredContent).toMatchObject({ status: 200, waited: "load" });
     });
 
     it("ignores events of other tabs and other frames", async () => {

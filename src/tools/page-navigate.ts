@@ -115,6 +115,7 @@ const lifecycleSchema = z.object({
 });
 
 const responseSchema = z.object({
+    frameId : z.string().optional(),
     loaderId: z.string(),
     type    : z.string(),
     response: z.object({ status: z.number() }),
@@ -484,7 +485,10 @@ function toWaitEvent(
     if (event === "Network.responseReceived") {
         const parsed = responseSchema.safeParse(params);
 
-        if (parsed.success && parsed.data.type === "Document") {
+        if (
+            parsed.success && parsed.data.type === "Document" &&
+            (frameId === undefined || parsed.data.frameId === frameId)
+        ) {
             return { type: "response", loaderId: parsed.data.loaderId, status: parsed.data.response.status };
         }
 
