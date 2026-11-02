@@ -64,6 +64,18 @@ beforeAll(async () => {
         html(`<div style="height:900px"></div><iframe name="cross" style="width:500px;height:300px" src="${env.other.origin}/forms"></iframe><div style="height:900px"></div>`),
     );
     env.other.pages.set("/nest", html(nest(`${env.fixture.origin}/deep`)));
+    env.other.pages.set(
+        "/leaf",
+        html(`<button id="q" onclick="this.textContent='leafclicked'">leaf</button>`),
+    );
+    env.other.pages.set(
+        "/wrap",
+        html(`<button id="w">wrap</button><iframe name="same" src="${env.other.origin}/leaf"></iframe>`),
+    );
+    env.fixture.pages.set(
+        "/xwrap",
+        html(`<iframe name="cross" src="${env.other.origin}/wrap"></iframe>`),
+    );
     env.fixture.pages.set("/deep", html(DEEP));
     env.fixture.pages.set(
         "/xpointer",
@@ -298,5 +310,14 @@ describe.skipIf(!present)("cross-site iframe in a real browser", { timeout: 30_0
 
         expect(scrolled).toMatchObject({ ok: true, method: "intoView" });
         expect(Number(scrolled.y)).toBeGreaterThan(0);
+    });
+
+    it("input_click reaches an element of a frame nested in the cross-site frame", async () => {
+        const tab = await crossTab("/xwrap", 2);
+        const frame = await frameIdOf(tab, "/leaf");
+        const outcome = await env.ok("input_click", { tab, target: { selector: "#q", frame } });
+
+        expect(outcome.ok).toBe(true);
+        expect(await textOf(tab, "#q", frame)).toBe("leafclicked");
     });
 });

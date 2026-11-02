@@ -48,15 +48,22 @@ function crossFake(): FakeAccess {
         { frameId: "mid", parentFrameId: "main", url: "http://b/", name: "", isolated: true },
         { frameId: "deep", parentFrameId: "mid", url: "http://a/d", name: "", isolated: true },
         { frameId: "same", parentFrameId: "main", url: "http://a/s", name: "", isolated: false },
+        { frameId: "inner", parentFrameId: "mid", url: "http://b/i", name: "", isolated: true },
     ];
 
     fake.respond = (_tab, method, params) => {
         const session = fake.sent.at(-1)?.frameId;
         const nodeId = (params as { backendNodeId?: unknown } | undefined)?.backendNodeId;
 
+        const frameId = (params as { frameId?: unknown } | undefined)?.frameId;
+
         switch (method) {
             case "DOM.getFrameOwner":
-                return { backendNodeId: session === undefined ? 6 : 4, nodeId: 1 };
+                return { backendNodeId: frameId === "inner" ? 8 : session === undefined ? 6 : 4, nodeId: 1 };
+            case "DOM.describeNode":
+                return nodeId === 8
+                    ? { node: { nodeName: "IFRAME", contentDocument: { nodeId: 9 } } }
+                    : { node: { nodeName: "IFRAME" } };
             case "DOM.getBoxModel":
                 return model(nodeId === 6 ? PLAIN_OWNER : NESTED_OWNER);
             case "DOM.scrollIntoViewIfNeeded":
@@ -152,6 +159,17 @@ describe("frameChain", () => {
             ["deep", "mid"],
             ["mid", undefined],
         ]);
+    });
+
+    it("skips a frame that shares the process of its parent session and keeps the parent link", async () => {
+        const fake = crossFake();
+        const chain = await frameChain(fake.asAccess(), framesOf(fake), "tab1", "inner");
+
+        expect(chain.links).toHaveLength(1);
+        expect(chain.links[0]?.backendNodeId).toBe(6);
+        expect((await measureChain(chain, "tab1")).toTop).toEqual({
+            x: 62, y: 132, scaleX: 1, scaleY: 1,
+        });
     });
 
     it("explains a frame whose owner element is gone", async () => {

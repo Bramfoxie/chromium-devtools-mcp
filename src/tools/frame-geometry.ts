@@ -54,7 +54,6 @@ const ownerModelSchema = z.object({
         height : z.number(),
     }),
 });
-const frameOwnerSchema = z.object({ backendNodeId: z.number() });
 
 interface Bounds {
     left  : number;
@@ -130,6 +129,36 @@ async function sessionFrameOf(
     return undefined;
 }
 
+const frameOwnerSchema = z.object({ backendNodeId: z.number() });
+const ownerNodeSchema = z.object({
+    node: z.object({ contentDocument: z.unknown().optional() }),
+});
+
+async function ownerOf(
+    owner  : DaemonAccess,
+    tab    : string,
+    frameId: string,
+): Promise<{ backendNodeId: number; inProcess: boolean }> {
+    try {
+        const { backendNodeId } = frameOwnerSchema.parse(
+            await owner.send(tab, "DOM.getFrameOwner", { frameId }),
+        );
+        const described = ownerNodeSchema.parse(
+            await owner.send(tab, "DOM.describeNode", { backendNodeId, depth: 1, pierce: true }),
+        );
+
+        return { backendNodeId, inProcess: described.node.contentDocument !== undefined };
+    } catch (error) {
+        if (isCdpError(error) || error instanceof z.ZodError) {
+            throw new ToolError(
+                "The iframe element that holds the frame was not found. Take a new dom_snapshot and try again.",
+            );
+        }
+
+        throw error;
+    }
+}
+
 export async function frameChain(
     access : DaemonAccess,
     frames : FrameState,
@@ -148,24 +177,12 @@ export async function frameChain(
 
         const sessionFrame = await sessionFrameOf(frames, tab, info.parentFrameId);
         const owner = sessionFrame === undefined ? access : bindAccess(access, sessionFrame);
+        const found = await ownerOf(owner, tab, current);
 
-        let backendNodeId: number;
-
-        try {
-            backendNodeId = frameOwnerSchema.parse(
-                await owner.send(tab, "DOM.getFrameOwner", { frameId: current }),
-            ).backendNodeId;
-        } catch (error) {
-            if (isCdpError(error) || error instanceof z.ZodError) {
-                throw new ToolError(
-                    "The iframe element that holds the frame was not found. Take a new dom_snapshot and try again.",
-                );
-            }
-
-            throw error;
+        if (!found.inProcess) {
+            links.push({ access: owner, backendNodeId: found.backendNodeId });
         }
 
-        links.push({ access: owner, backendNodeId });
         current = sessionFrame;
     }
 

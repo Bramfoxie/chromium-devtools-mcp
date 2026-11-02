@@ -46,6 +46,8 @@ export function crossSiteFake(world: CrossSiteWorld = {}): FakeAccess {
         const text = typeof declaration === "string" ? declaration : "";
 
         switch (method) {
+            case "DOM.describeNode":
+                return { node: { nodeName: "IFRAME", backendNodeId: 6 } };
             case "DOM.getFrameOwner":
                 return { backendNodeId: 6, nodeId: 1 };
             case "DOM.getBoxModel":
