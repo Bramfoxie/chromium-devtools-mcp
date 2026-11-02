@@ -2,7 +2,7 @@ import http from "node:http";
 import net from "node:net";
 import { fileURLToPath } from "node:url";
 import type { AddressInfo } from "node:net";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
     AttachError,
     attachBrowser,
@@ -533,6 +533,21 @@ describe("default I/O", () => {
 
         expect(await fetchVersion(sized)).toBeUndefined();
         expect(await fetchVersion(chunked)).toBeUndefined();
+    });
+
+    it("stops reading a response that never ends once it passes the limit", async () => {
+        let aborted = false;
+        const port = await serve((_request, response) => {
+            const timer = setInterval(() => response.write("x".repeat(8 * 1024)), 1);
+
+            response.on("close", () => {
+                aborted = true;
+                clearInterval(timer);
+            });
+        });
+
+        expect(await fetchVersion(port, undefined, 30_000)).toBeUndefined();
+        await vi.waitFor(() => expect(aborted).toBe(true));
     });
 
     it("stops waiting for an answer when the signal aborts", async () => {

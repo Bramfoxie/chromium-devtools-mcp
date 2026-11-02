@@ -257,6 +257,32 @@ export function probePort(port: number, signal?: AbortSignal): Promise<boolean> 
     });
 }
 
+async function readCapped(response: Response, maxBytes: number): Promise<string | undefined> {
+    if (response.body === null) return "";
+
+    const reader = response.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+
+    for (;;) {
+        const { done, value } = await reader.read();
+
+        if (done) break;
+
+        total += value.byteLength;
+
+        if (total > maxBytes) {
+            await reader.cancel().catch(() => undefined);
+
+            return undefined;
+        }
+
+        chunks.push(value);
+    }
+
+    return Buffer.concat(chunks).toString("utf8");
+}
+
 export async function fetchVersion(
     port   : number,
     signal?: AbortSignal,
@@ -276,9 +302,9 @@ export async function fetchVersion(
 
         if (Number.isFinite(declared) && declared > MAX_VERSION_BYTES) return undefined;
 
-        const text = await response.text();
+        const text = await readCapped(response, MAX_VERSION_BYTES);
 
-        return text.length > MAX_VERSION_BYTES ? undefined : JSON.parse(text);
+        return text === undefined ? undefined : JSON.parse(text);
     } catch {
         return undefined;
     }
