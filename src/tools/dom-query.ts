@@ -5,6 +5,7 @@ import { defineTool, type ToolContext } from "./define-tool.js";
 import { ensureNoDialog } from "./dialogs.js";
 import { MAX_FRAME_LENGTH, splitPierceChain } from "./element-target.js";
 import { ToolError } from "./errors.js";
+import { elementCollector } from "./walk-script.js";
 
 export const QUERY_DEFAULT_LIMIT = 20;
 
@@ -74,7 +75,7 @@ const rowSchema = z.object({
 const rowsSchema = z.object({
     result: z.object({
         type : z.string().optional(),
-        value: z.array(rowSchema).optional(),
+        value: z.object({ rows: z.array(rowSchema), truncated: z.boolean() }).optional(),
     }),
 });
 
@@ -100,31 +101,18 @@ let queryGroupCounter = 0;
 export type QueryRow = z.infer<typeof rowSchema>;
 
 export function buildQueryScript(selector: string, count: number): string {
-    const matcher = JSON.stringify(selector);
-    const limit = JSON.stringify(count);
-
-    return `[...document.querySelectorAll(${matcher})].slice(0, ${limit})`;
+    return `(() => {
+  ${elementCollector(selector, false, count)}
+  found.walkTruncated = walkTruncated;
+  return found;
+})()`;
 }
 
 export function buildPiercedQueryScript(selector: string, count: number): string {
-    const matcher = JSON.stringify(selector);
-    const limit = JSON.stringify(count);
-
     return `(() => {
-  const found = [];
-  const walk = (root) => {
-    for (const el of root.querySelectorAll(${matcher})) {
-      found.push(el);
-      if (found.length >= ${limit}) return true;
-    }
-    for (const el of root.querySelectorAll("*")) {
-      if (found.length >= ${limit}) return true;
-      if (el.shadowRoot && walk(el.shadowRoot)) return true;
-    }
-    return found.length >= ${limit};
-  };
-  walk(document);
-  return found.slice(0, ${limit});
+  ${elementCollector(selector, true, count)}
+  found.walkTruncated = walkTruncated;
+  return found;
 })()`;
 }
 
@@ -132,7 +120,7 @@ export function buildRowsFunction(attributes: string[]): string {
     const names = JSON.stringify(attributes);
 
     return `function () {
-  return this.map((el, index) => {
+  const rows = this.map((el, index) => {
     const rect = el.getBoundingClientRect();
     const kept = {};
     for (const name of ${names}) {
@@ -150,6 +138,7 @@ export function buildRowsFunction(attributes: string[]): string {
       rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
     };
   });
+  return { rows, truncated: this.walkTruncated === true };
 }`;
 }
 
@@ -198,7 +187,7 @@ const matchSchema = z.strictObject({
 
 export const domQuery = defineTool({
     name       : "dom_query",
-    description: "Find elements by a CSS selector and read their text, attributes and boxes. The text filter scans at most the first 2000 matches and pierce returns at most 200; truncated reports when a cap applied.",
+    description: "Find elements by a CSS selector and read their text, attributes and boxes. The text filter scans at most the first 2000 matches and pierce returns at most 200 and visits at most 20000 elements; truncated reports when a cap applied.",
     access     : "read",
     input      : z.strictObject({
         tab       : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
@@ -215,7 +204,7 @@ export const domQuery = defineTool({
         matches  : z.array(matchSchema).describe("Matched elements, in document order."),
         total    : z.number().describe("Selector matches found, before the text filter and the limit. Without all, only the first match is looked up."),
         returned : z.number().describe("Matches in this result, after the text filter and the limit."),
-        truncated: z.boolean().describe("True when the text filter looked at only the first 2000 selector matches or a pierce search returned only the first 200 of total."),
+        truncated: z.boolean().describe("True when the text filter looked at only the first 2000 selector matches a pierce search returned only the first 200 of total, or a pierce walk stopped after 20000 elements."),
     }),
     handler: async (args, context) => {
         const targetId = args.tab ?? context.state.selected;
@@ -276,8 +265,9 @@ export const domQuery = defineTool({
             nodeIds.length > QUERY_MAX_TEXT_CANDIDATES;
         const truncated = nodeIds.length < total || textCapped;
         const finish = <T extends { matches: unknown[]; returned: number }>(
-            result: T,
-        ) => ({ ...result, total, truncated });
+            result    : T,
+            walkCapped: boolean = false,
+        ) => ({ ...result, total, truncated: truncated || walkCapped });
 
         if (nodeIds.length === 0) return { matches: [], total: 0, returned: 0, truncated: false };
 
@@ -294,7 +284,7 @@ export const domQuery = defineTool({
             ));
         }
 
-        const queried = await queryElements(
+        const { queried, walkCapped } = await queryElements(
             context.access,
             targetId,
             args.selector,
@@ -305,7 +295,7 @@ export const domQuery = defineTool({
             { pierce, contextId: scope.contextId },
         );
 
-        if (queried.length === 0) return finish({ matches: [], returned: 0 });
+        if (queried.length === 0) return finish({ matches: [], returned: 0 }, walkCapped);
 
         const frameGeneration = scope.frameId === undefined
             ? undefined
@@ -342,7 +332,7 @@ export const domQuery = defineTool({
             ];
         });
 
-        return finish({ matches, returned: matches.length });
+        return finish({ matches, returned: matches.length }, walkCapped);
     },
 });
 
@@ -733,7 +723,7 @@ async function queryElements(
     limit   : number,
     filter  : string | undefined,
     scope   : { pierce: boolean; contextId: number | undefined },
-): Promise<QueriedElement[]> {
+): Promise<{ queried: QueriedElement[]; walkCapped: boolean }> {
     const count = filter === undefined
         ? Math.min(total, limit)
         : Math.min(total, QUERY_MAX_TEXT_CANDIDATES);
@@ -786,14 +776,15 @@ async function queryElements(
             throw unexpected("the query script");
         }
 
-        const rows = rowsReply.data.result.value ?? [];
+        const rows = rowsReply.data.result.value?.rows ?? [];
+        const walkCapped = rowsReply.data.result.value?.truncated ?? false;
         const needle = filter?.toLowerCase();
         const chosen = (needle === undefined
             ? rows
             : rows.filter((row) => row.text.toLowerCase().includes(needle))
         ).slice(0, limit);
 
-        if (chosen.length === 0) return [];
+        if (chosen.length === 0) return { queried: [], walkCapped };
 
         const properties = propertiesSchema.safeParse(
             await access.send(targetId, "Runtime.getProperties", {
@@ -836,7 +827,7 @@ async function queryElements(
             });
         }
 
-        return queried;
+        return { queried, walkCapped };
     } finally {
         await access.send(targetId, "Runtime.releaseObjectGroup", { objectGroup }).catch(() => undefined);
     }

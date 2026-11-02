@@ -12,6 +12,7 @@ const PAGES: Record<string, string> = {
 <script>window.evals=0;
 const root=document.getElementById("host").attachShadow({mode:"open"});
 root.innerHTML='<button class="deep" onclick="window.deepClicks=(window.deepClicks||0)+1">deep</button>';</script>`,
+    "/deep"    : `${"<section aria-label=s>".repeat(80)}<button>bottom</button>${"</section>".repeat(80)}`,
     "/other"   : "<h1>other</h1>",
     "/tall"    : '<div style="height:100000px">tall</div><span id="end">end</span>',
     "/form"    : '<form action="/other" method="get"><input id="q" name="q"></form>',
@@ -164,6 +165,14 @@ describe.skipIf(!present)("real browser", () => {
 
         expect(found).toMatchObject({ total: 2, returned: 1 });
         expect(read).toMatchObject({ ok: true, value: "hello again" });
+    });
+
+    it("dom_snapshot marks a tree deeper than its accessibility depth cap", async () => {
+        await env.open("/deep");
+        const snap = await env.ok("dom_snapshot", {});
+
+        expect(snap.truncated).toBe(true);
+        expect(String(snap.snapshot)).toContain("accessibility tree has more than");
     });
 
     it("input_click works on a button with a nested span", async () => {

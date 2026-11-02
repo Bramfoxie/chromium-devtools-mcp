@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { DaemonAccess } from "../mcp/index.js";
-import { toAxNodes, type AxDomInfo, formatAxTree } from "./ax-format.js";
+import { toAxNodes, type AxDomInfo, type AxNode, formatAxTree } from "./ax-format.js";
 import { defineTool, type ToolContext } from "./define-tool.js";
 import { ensureNoDialog } from "./dialogs.js";
 import { elementTargetSchema, resolveElement } from "./element-target.js";
@@ -12,6 +12,10 @@ export const SNAPSHOT_DEFAULT_CHARS = 50_000;
 export const SNAPSHOT_MAX_CHARS = 200_000;
 
 export const SNAPSHOT_DOM_DEPTH = 10;
+
+export const SNAPSHOT_MAX_AX_DEPTH = 50;
+
+export const SNAPSHOT_MAX_AX_NODES = 20_000;
 
 export const SNAPSHOT_DOM_ATTRS = ["href", "src", "type", "placeholder", "id"];
 
@@ -113,6 +117,23 @@ export function iframeFrameMap(root: unknown): Map<number, string> {
     return map;
 }
 
+export function limitAxNodes(
+    nodes      : AxNode[],
+    detectDepth: boolean,
+): { nodes: AxNode[]; limited: boolean } {
+    const over = nodes.length > SNAPSHOT_MAX_AX_NODES;
+    const kept = over ? nodes.slice(0, SNAPSHOT_MAX_AX_NODES) : nodes;
+
+    if (over) return { nodes: kept, limited: true };
+
+    if (!detectDepth) return { nodes: kept, limited: false };
+
+    const ids = new Set(kept.map((node) => node.nodeId));
+    const cut = kept.some((node) => node.childIds.some((child) => !ids.has(child)));
+
+    return { nodes: kept, limited: cut };
+}
+
 export function domDepthLimited(root: unknown): boolean {
     const parsed = documentSchema.safeParse(root);
 
@@ -183,7 +204,7 @@ async function domInfo(
 export const domSnapshot = defineTool({
     name: "dom_snapshot",
     description:
-        "Read a compact text snapshot of the page with element ids for later calls. Take a new snapshot after the page changes.",
+        "Read a compact text snapshot of the page with element ids for later calls. Take a new snapshot after the page changes. It reads at most 20000 accessibility nodes, at most 50 levels deep, and the DOM to 10 levels; truncated reports when a cap applied.",
     access: "read",
     input : z.strictObject({
         tab            : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
@@ -198,7 +219,7 @@ export const domSnapshot = defineTool({
         generation: z.number().describe("Uid generation of the tab. Uids of older generations are stale."),
         nodeCount : z.number().describe("Nodes in the snapshot text."),
         omitted   : z.number().describe("Tree nodes left out of the text."),
-        truncated : z.boolean().describe("Whether the text was truncated at maxChars or the DOM was deeper than the depth limit."),
+        truncated : z.boolean().describe("Whether the text was truncated at maxChars, the DOM was deeper than 10 levels, or the accessibility tree exceeded 20000 nodes or 50 levels."),
         frames    : z.array(z.strictObject({
             frameId  : z.string().describe("Frame id for the frame argument of element targets."),
             parent   : z.string().optional().describe("Parent frame id, absent for the main frame."),
@@ -241,12 +262,15 @@ export const domSnapshot = defineTool({
         }
 
         const tree: unknown = backendNodeId === undefined
-            ? await context.access.send(targetId, "Accessibility.getFullAXTree", {})
+            ? await context.access.send(targetId, "Accessibility.getFullAXTree", {
+                depth: SNAPSHOT_MAX_AX_DEPTH,
+            })
             : await context.access.send(targetId, "Accessibility.getPartialAXTree", {
                 backendNodeId,
                 fetchRelatives: true,
             });
-        const nodes = toAxNodes(tree);
+        const limitedTree = limitAxNodes(toAxNodes(tree), backendNodeId === undefined);
+        const nodes = limitedTree.nodes;
         const dom = await domInfo(context.access, targetId);
         const generation = context.elements.nextGeneration(targetId);
         const ownerFrames = iframeFrameMap(dom.root);
@@ -265,15 +289,22 @@ export const domSnapshot = defineTool({
                 interactiveOnly,
                 includeHidden,
             })
-            : { sections: [], omitted: [] as string[] };
+            : { sections: [], omitted: [] as string[], limited: false };
         const sections = [formatted.text, ...collected.sections.map((frame) => frame.text)].filter(
             (text) => text !== "",
         );
         const shaped = truncateText(sections.join("\n"), maxChars);
         const depthLimited = backendNodeId === undefined && domDepthLimited(dom.root);
-        const snapshot = depthLimited
-            ? `${shaped.text}\n[truncated: the DOM is deeper than ${SNAPSHOT_DOM_DEPTH} levels, so content below that depth, including frames, is not listed]`
-            : shaped.text;
+        const axLimited = limitedTree.limited || collected.limited;
+        const notes = [
+            ...(depthLimited
+                ? [`[truncated: the DOM is deeper than ${SNAPSHOT_DOM_DEPTH} levels, so content below that depth, including frames, is not listed]`]
+                : []),
+            ...(axLimited
+                ? [`[truncated: the accessibility tree has more than ${SNAPSHOT_MAX_AX_NODES} nodes or is deeper than ${SNAPSHOT_MAX_AX_DEPTH} levels, so the rest is not listed]`]
+                : []),
+        ];
+        const snapshot = [shaped.text, ...notes].join("\n");
         const summaries = frameSummaries(context, targetId, collected.sections, collected.omitted);
 
         return {
@@ -282,7 +313,7 @@ export const domSnapshot = defineTool({
             nodeCount: formatted.nodeCount +
                 collected.sections.reduce((sum, frame) => sum + frame.count, 0),
             omitted  : formatted.omitted,
-            truncated: shaped.truncated || depthLimited,
+            truncated: shaped.truncated || depthLimited || axLimited,
             frames   : summaries,
         };
     },
@@ -300,7 +331,7 @@ async function frameSections(
     root     : unknown,
     maxFrames: number,
     options  : { interactiveOnly: boolean; includeHidden: boolean },
-): Promise<{ sections: FrameSection[]; omitted: string[] }> {
+): Promise<{ sections: FrameSection[]; omitted: string[]; limited: boolean }> {
     const docs = frameDocBackends(root);
 
     await context.frames.ensure(targetId).catch(() => undefined);
@@ -309,6 +340,7 @@ async function frameSections(
     const known = new Map(frames.map((frame) => [frame.frameId, frame]));
     const sections: FrameSection[] = [];
     const omitted: string[] = [];
+    let limited = false;
 
     for (const doc of docs) {
         const info = known.get(doc.frameId);
@@ -328,7 +360,11 @@ async function frameSections(
 
         if (partial === undefined) continue;
 
-        const nodes = toAxNodes(partial);
+        const capped = limitAxNodes(toAxNodes(partial), false);
+        const nodes = capped.nodes;
+
+        limited = limited || capped.limited;
+
         const generation = context.frames.generation(targetId, doc.frameId);
         const formatted = formatAxTree(nodes, {
             interactiveOnly: options.interactiveOnly,
@@ -352,7 +388,7 @@ async function frameSections(
         }
     }
 
-    return { sections, omitted };
+    return { sections, omitted, limited };
 }
 
 function frameSummaries(

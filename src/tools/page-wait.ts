@@ -8,6 +8,7 @@ import { MAX_FRAME_LENGTH } from "./element-target.js";
 import { ToolError } from "./errors.js";
 import { exceptionText } from "./js-evaluate.js";
 import { throwIfCancelled } from "./registry.js";
+import { elementCollector } from "./walk-script.js";
 
 export const WAIT_DEFAULT_TIMEOUT_MS = 10_000;
 
@@ -68,6 +69,7 @@ export function cancelWaitScript(token: string): string {
 export interface SelectorDetail {
     matched: number;
     visible: number;
+    capped : boolean;
 }
 
 export function selectorScript(
@@ -80,16 +82,7 @@ export function selectorScript(
 ): string {
     const matcher = JSON.stringify(selector);
     const want = JSON.stringify(state);
-    const collect = pierce === true
-        ? `const collect = (root, out) => {
-      for (const el of root.querySelectorAll(selector)) out.push(el);
-      for (const el of root.querySelectorAll("*")) {
-        if (el.shadowRoot) collect(el.shadowRoot, out);
-      }
-    };
-    const found = [];
-    collect(document, found);`
-        : `const found = [...document.querySelectorAll(selector)];`;
+    const collect = elementCollector(selector, pierce === true);
 
     return `(async () => {
   ${waitPrelude(token)}
@@ -103,7 +96,7 @@ export function selectorScript(
       return rect.width > 0 && rect.height > 0 &&
         getComputedStyle(el).visibility !== "hidden";
     });
-    return { matched: found.length, visible: visible.length };
+    return { matched: found.length, visible: visible.length, capped: walkTruncated };
   };
   const met = (detail) => want === "attached" ? detail.matched > 0
     : want === "visible" ? detail.visible > 0
@@ -482,7 +475,7 @@ export const pageWait = defineTool({
         met      : z.boolean().describe("Whether the condition was met before the timeout."),
         condition: z.string().describe("The condition that was waited for."),
         elapsedMs: z.number().describe("Milliseconds waited."),
-        detail   : z.unknown().describe("Debugging detail: match counts, the URL, or the ready state."),
+        detail   : z.unknown().describe("Debugging detail: match counts, the URL, or the ready state. A pierce selector wait visits at most 20000 elements and sets capped in the detail when it stopped early."),
     }),
     handler: async (args, context) => {
         const targetId = args.tab ?? context.state.selected;

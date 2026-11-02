@@ -7,6 +7,9 @@ import {
     newTab,
     runTool,
     SNAPSHOT_DOM_DEPTH,
+    SNAPSHOT_MAX_AX_DEPTH,
+    SNAPSHOT_MAX_AX_NODES,
+    SNAPSHOT_MAX_CHARS,
     ToolRuntime,
 } from "../src/tools/index.js";
 import { FakeAccess } from "./helpers/fake-access.js";
@@ -389,6 +392,67 @@ describe("frame snapshot helpers", () => {
 
         expect(JSON.stringify(result.structuredContent)).not.toContain("deeper than");
         expect(result.structuredContent).toMatchObject({ truncated: false });
+    });
+
+    it("asks the browser for a bounded accessibility depth", async () => {
+        const fake = snapshotFake();
+        const { runtime } = setup(fake);
+
+        await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+        await runTool(domSnapshot, {}, extra(), runtime);
+
+        expect(fake.sent.find((call) => call.method === "Accessibility.getFullAXTree")?.params).toEqual({
+            depth: SNAPSHOT_MAX_AX_DEPTH,
+        });
+    });
+
+    it("marks a tree whose nodes were cut at the depth limit", async () => {
+        const cut = {
+            nodes: [
+                {
+                    nodeId          : "1",
+                    role            : { value: "heading" },
+                    name            : { value: "Top" },
+                    childIds        : ["2"],
+                    backendDOMNodeId: 11,
+                },
+            ],
+        };
+        const { runtime } = setup(snapshotFake(cut));
+
+        await runTool(newTab, {}, extra(), runtime);
+
+        const result = await runTool(domSnapshot, {}, extra(), runtime);
+
+        expect(result.structuredContent).toMatchObject({
+            snapshot : expect.stringContaining("[truncated: the accessibility tree has more than"),
+            truncated: true,
+        });
+    });
+
+    it("keeps only the first nodes beyond the node cap and marks the result", async () => {
+        const nodes = Array.from({ length: SNAPSHOT_MAX_AX_NODES + 5 }, (_, index) => ({
+            nodeId          : String(index + 1),
+            role            : { value: "link" },
+            name            : { value: `n${index}` },
+            backendDOMNodeId: 1000 + index,
+        }));
+        const { runtime } = setup(snapshotFake({ nodes }));
+
+        await runTool(newTab, {}, extra(), runtime);
+
+        const result = await runTool(
+            domSnapshot,
+            { maxChars: SNAPSHOT_MAX_CHARS },
+            extra(),
+            runtime,
+        );
+
+        expect(result.structuredContent).toMatchObject({
+            nodeCount: SNAPSHOT_MAX_AX_NODES,
+            truncated: true,
+        });
     });
 
     it("applies interactiveOnly to frame sections", async () => {

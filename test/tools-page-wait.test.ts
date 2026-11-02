@@ -12,6 +12,7 @@ import {
     selectorScript,
     textScript,
     ToolRuntime,
+    WALK_NODE_BUDGET,
     waitOutcomeOf,
 } from "../src/tools/index.js";
 import { FakeAccess } from "./helpers/fake-access.js";
@@ -117,6 +118,22 @@ describe("wait scripts", () => {
         await expect(running).resolves.toMatchObject({ met: false });
         expect(live.size).toBe(0);
         expect(vm.runInContext("globalThis.__chromiumDevtoolsMcpWaits.size", context)).toBe(0);
+    });
+
+    it("stops a pierce selector wait at the node budget and reports it", async () => {
+        const { context } = pageWorld();
+        const everything = Array.from({ length: WALK_NODE_BUDGET + 1 }, () => ({}));
+
+        (context as unknown as { document: { querySelectorAll: unknown } }).document
+            .querySelectorAll = (selector: string) => (selector === "*" ? everything : []);
+
+        const outcome = await (vm.runInContext(
+            selectorScript(".x", "attached", 50, 200, true, "budget"),
+            context,
+        ) as Promise<{ met: boolean; detail: { capped: boolean } }>);
+
+        expect(outcome.met).toBe(false);
+        expect(outcome.detail.capped).toBe(true);
     });
 
     it("builds selector waits that embed the selector and the state", () => {

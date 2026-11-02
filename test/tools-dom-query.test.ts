@@ -16,6 +16,7 @@ import {
     newTab,
     roundRect,
     runTool,
+    WALK_NODE_BUDGET,
     ToolRuntime,
 } from "../src/tools/index.js";
 import { FakeAccess } from "./helpers/fake-access.js";
@@ -109,7 +110,10 @@ function queryFake(rows: Array<ReturnType<typeof row>>, backendIds: number[] = [
                     result: {
                         type   : "object",
                         subtype: "array",
-                        value  : rows.map((entry, index) => ({ index, ...entry })),
+                        value  : {
+                            rows     : rows.map((entry, index) => ({ index, ...entry })),
+                            truncated: false,
+                        },
                     },
                 };
             case "Runtime.getProperties":
@@ -243,6 +247,23 @@ console.log(JSON.stringify(seen));`;
     });
 });
 
+describe("pierce node budget", () => {
+    it("marks the list truncated once the walk passes the node budget", async () => {
+        const setup = `const everything = Array.from({ length: ${WALK_NODE_BUDGET + 1} }, () => ({}));
+const document = { querySelectorAll: (s) => s === "*" ? everything : [] };`;
+        const script = `console.log(eval(${JSON.stringify(buildPiercedQueryScript("b", 10))}).walkTruncated);`;
+
+        expect((await runScript(script, setup)).trim()).toBe("true");
+    });
+
+    it("does not mark a walk inside the budget", async () => {
+        const setup = `const document = { querySelectorAll: () => [] };`;
+        const script = `console.log(eval(${JSON.stringify(buildPiercedQueryScript("b", 10))}).walkTruncated);`;
+
+        expect((await runScript(script, setup)).trim()).toBe("false");
+    });
+});
+
 describe("buildRowsFunction", () => {
     it("reads rows from the elements it is called on in a real JavaScript engine", async () => {
         const setup = `const found = [
@@ -253,18 +274,21 @@ describe("buildRowsFunction", () => {
         const script = `const fn = eval("(" + ${JSON.stringify(buildRowsFunction(["href"]))} + ")");
 console.log(JSON.stringify(fn.call(found)));`;
 
-        expect(JSON.parse(await runScript(script, setup))).toEqual([
-            {
-                index     : 0,
-                tag       : "a",
-                id        : "l",
-                classes   : ["x"],
-                attributes: { href: "/p" },
-                text      : "Click",
-                visible   : true,
-                rect      : { x: 1, y: 2, width: 3, height: 4 },
-            },
-        ]);
+        expect(JSON.parse(await runScript(script, setup))).toEqual({
+            rows: [
+                {
+                    index     : 0,
+                    tag       : "a",
+                    id        : "l",
+                    classes   : ["x"],
+                    attributes: { href: "/p" },
+                    text      : "Click",
+                    visible   : true,
+                    rect      : { x: 1, y: 2, width: 3, height: 4 },
+                },
+            ],
+            truncated: false,
+        });
     });
 });
 
@@ -430,6 +454,29 @@ describe("dom_query", () => {
             returned : 0,
             truncated: false,
         });
+    });
+
+    it("marks the result truncated when the in-page walk hit its node budget", async () => {
+        const fake = queryFake([row()], [101]);
+        const inner = fake.respond;
+
+        fake.respond = (targetId, method, params) => {
+            const answer = inner?.(targetId, method, params);
+
+            if (method !== "Runtime.callFunctionOn") return answer;
+
+            const value = (answer as { result: { value: { rows: unknown } } }).result.value;
+
+            return { result: { type: "object", value: { rows: value.rows, truncated: true } } };
+        };
+
+        const { runtime } = setup(fake);
+
+        await runTool(newTab, {}, extra(), runtime);
+
+        const result = await runTool(domQuery, { selector: "a" }, extra(), runtime);
+
+        expect(result.structuredContent).toMatchObject({ total: 1, returned: 1, truncated: true });
     });
 
     it("redacts password values and reports them", async () => {

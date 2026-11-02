@@ -72,13 +72,18 @@ export {
     domSnapshot,
     frameDocBackends,
     iframeFrameMap,
+    limitAxNodes,
     SNAPSHOT_DEFAULT_CHARS,
     SNAPSHOT_DEFAULT_MAX_FRAMES,
     SNAPSHOT_DOM_ATTRS,
     SNAPSHOT_DOM_DEPTH,
+    SNAPSHOT_MAX_AX_DEPTH,
+    SNAPSHOT_MAX_AX_NODES,
     SNAPSHOT_MAX_CHARS,
     SNAPSHOT_MAX_FRAMES_LIMIT,
 } from "./dom-snapshot.js";
+
+export { elementCollector, WALK_NODE_BUDGET } from "./walk-script.js";
 
 export {
     clipCssValue,
