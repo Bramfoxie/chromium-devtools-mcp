@@ -405,8 +405,8 @@ describe("redaction", () => {
         expect(redactUrl("https://a.example/x?APIKEY=abc#frag")).toBe(
             "https://a.example/x?APIKEY=[redacted]#frag",
         );
-        expect(redactUrl("https://a.example/x?next=https%3A%2F%2Fb.example%2F%3Fkey%3D1")).toBe(
-            "https://a.example/x?next=https%3A%2F%2Fb.example%2F%3Fkey%3D1",
+        expect(redactUrl("https://a.example/x?next=https%3A%2F%2Fb.example%2F%3Fpage%3D1")).toBe(
+            "https://a.example/x?next=https%3A%2F%2Fb.example%2F%3Fpage%3D1",
         );
         expect(redactUrl("https://a.example/plain")).toBe("https://a.example/plain");
     });
@@ -443,6 +443,54 @@ describe("redaction", () => {
             Location      : "https://y.example/?code=[redacted]",
             "X-Auth-Key"  : "[redacted]",
             "X-Session-Id": "[redacted]",
+        });
+    });
+});
+
+describe("redaction coverage", () => {
+    it("strips userinfo from websocket URLs", () => {
+        expect(redactUrl("wss://u:p@h.example/chat")).toBe("wss://[redacted]@h.example/chat");
+        expect(redactUrl("ws://u@h.example/chat?x=1")).toBe("ws://[redacted]@h.example/chat?x=1");
+    });
+
+    it("redacts secrets nested in percent-encoded URL values", () => {
+        expect(redactUrl("https://a.example/x?redirect=https%3A%2F%2Fx.example%3Ftoken%3Dabc")).toBe(
+            "https://a.example/x?redirect=https%3A%2F%2Fx.example%3Ftoken%3D%5Bredacted%5D",
+        );
+        expect(redactUrl("https://a.example/x?next=https%3A%2F%2Fb.example%2F%3Fkey%3D1&p=2")).toBe(
+            "https://a.example/x?next=https%3A%2F%2Fb.example%2F%3Fkey%3D%5Bredacted%5D&p=2",
+        );
+        expect(redactUrl("https://a.example/x#r=https%3A%2F%2Fx.example%3Fsid%3Dabc")).toBe(
+            "https://a.example/x#r=https%3A%2F%2Fx.example%3Fsid%3D%5Bredacted%5D",
+        );
+    });
+
+    it("redacts credential parameter names and session ids in path parameters", () => {
+        for (const name of ["pw", "pwd", "pass", "passwd", "otp", "jwt", "credential", "bearer", "sid"]) {
+            expect(redactUrl(`https://a.example/x?${name}=v&n=1`)).toBe(
+                `https://a.example/x?${name}=[redacted]&n=1`,
+            );
+        }
+
+        expect(redactUrl("https://a.example/app;jsessionid=ABC123/page?n=1")).toBe(
+            "https://a.example/app;jsessionid=[redacted]/page?n=1",
+        );
+        expect(redactUrl("https://a.example/app;v=2/page")).toBe("https://a.example/app;v=2/page");
+    });
+
+    it("matches whole name tokens instead of substrings", () => {
+        for (const name of ["api_key", "apiKey", "APIKey", "access_token", "x-auth-token", "client-secret", "csrftoken", "token2"]) {
+            expect(redactUrl(`https://a.example/x?${name}=v`)).toBe(`https://a.example/x?${name}=[redacted]`);
+        }
+
+        for (const name of ["design", "monkey", "keyword", "tokenizer", "secretary", "passenger", "zipcode"]) {
+            expect(redactUrl(`https://a.example/x?${name}=v`)).toBe(`https://a.example/x?${name}=v`);
+        }
+
+        expect(redactHeaders({ "x-auth-token": "t", "x-design": "d", "x-monkey": "m" })).toEqual({
+            "x-auth-token": "[redacted]",
+            "x-design"    : "d",
+            "x-monkey"    : "m",
         });
     });
 });

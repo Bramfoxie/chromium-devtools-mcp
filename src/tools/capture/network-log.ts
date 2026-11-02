@@ -10,7 +10,47 @@ export const NETWORK_URL_MATCH_CHARS = 2048;
 
 export const NETWORK_REGEX_TIMEOUT_MS = 50;
 
-const SENSITIVE_QUERY_PARTS = ["token", "key", "secret", "password", "auth", "session", "sig", "code"];
+const SENSITIVE_WORDS = new Set([
+    "token",
+    "tokens",
+    "key",
+    "keys",
+    "secret",
+    "secrets",
+    "password",
+    "passwords",
+    "passwd",
+    "pwd",
+    "pw",
+    "pass",
+    "passcode",
+    "passphrase",
+    "auth",
+    "authorization",
+    "authentication",
+    "session",
+    "sessions",
+    "sid",
+    "sig",
+    "signature",
+    "code",
+    "otp",
+    "jwt",
+    "credential",
+    "credentials",
+    "bearer",
+    "cookie",
+    "apikey",
+    "accesskey",
+    "secretkey",
+    "privatekey",
+    "authkey",
+    "sessionkey",
+    "sessid",
+    "phpsessid",
+]);
+
+const SENSITIVE_SUFFIXES = ["token", "secret", "password", "passwd", "sessionid", "signature", "apikey"];
 
 const SENSITIVE_HEADERS = new Set([
     "authorization",
@@ -21,17 +61,6 @@ const SENSITIVE_HEADERS = new Set([
 ]);
 
 const URL_BEARING_HEADERS = new Set(["referer", "location", "origin", "content-location"]);
-
-const SENSITIVE_HEADER_PARTS = [
-    "token",
-    "secret",
-    "auth",
-    "key",
-    "session",
-    "password",
-    "code",
-    "sig",
-];
 
 export interface NetworkRecord {
     requestId       : string;
@@ -115,18 +144,44 @@ const webSocketCreated = z.object({
     initiator: z.object({ type: z.string() }).passthrough().optional(),
 });
 
-function sensitiveName(name: string, parts: string[]): boolean {
-    const lower = name.toLowerCase();
-
-    return parts.some((part) => lower.includes(part));
+function nameTokens(name: string): string[] {
+    return name
+        .replace(/([a-z])([0-9])/g, "$1 $2")
+        .replace(/([0-9])([a-z])/gi, "$1 $2")
+        .replace(/([a-z])([A-Z])/g, "$1 $2")
+        .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
+        .toLowerCase()
+        .split(/[^a-z0-9]+/)
+        .filter((token) => token !== "");
 }
 
-function decodeName(name: string): string {
+function sensitiveName(name: string): boolean {
+    const endsSensitive = (token: string): boolean =>
+        SENSITIVE_SUFFIXES.some((suffix) => token.length > suffix.length && token.endsWith(suffix));
+
+    return nameTokens(name).some((token) => SENSITIVE_WORDS.has(token) || endsSensitive(token));
+}
+
+function decodeText(text: string): string {
     try {
-        return decodeURIComponent(name);
+        return decodeURIComponent(text);
     } catch {
-        return name;
+        return text;
     }
+}
+
+function looksLikeUrl(value: string): boolean {
+    return /^[a-z][a-z0-9+.-]*:\/\//i.test(value) || /^\/[^?#]*[?#]/.test(value);
+}
+
+function redactValue(value: string): string {
+    const decoded = decodeText(value.replace(/\+/g, " "));
+
+    if (!looksLikeUrl(decoded)) return value;
+
+    const inner = redactUrl(decoded);
+
+    return inner === decoded ? value : encodeURIComponent(inner);
 }
 
 function redactParams(raw: string): string {
@@ -134,32 +189,30 @@ function redactParams(raw: string): string {
         const cut = pair.indexOf("=");
         const name = cut === -1 ? pair : pair.slice(0, cut);
 
-        if (!sensitiveName(decodeName(name), SENSITIVE_QUERY_PARTS)) return pair;
+        if (sensitiveName(decodeText(name))) return `${name}=${REDACTED}`;
 
-        return `${name}=${REDACTED}`;
+        return cut === -1 ? pair : `${name}=${redactValue(pair.slice(cut + 1))}`;
     }).join("&");
 }
 
+function redactPathParams(path: string): string {
+    return path.replace(/;([^=;/?#]+)=([^;/?#]*)/g, (match, name: string) =>
+        sensitiveName(decodeText(name)) ? `;${name}=${REDACTED}` : match);
+}
+
 export function redactUrl(url: string): string {
-    const withoutUserinfo = url.replace(/^(https?:\/\/)[^@/]*@/, `$1${REDACTED}@`);
-    const query = withoutUserinfo.indexOf("?");
+    const withoutUserinfo = url.replace(
+        /^((?:https?|wss?|ftp):\/\/)[^@/?#]*@/i,
+        `$1${REDACTED}@`,
+    );
+    const hash = withoutUserinfo.indexOf("#");
+    const beforeHash = hash === -1 ? withoutUserinfo : withoutUserinfo.slice(0, hash);
+    const query = beforeHash.indexOf("?");
+    const path = query === -1 ? beforeHash : beforeHash.slice(0, query);
+    const queryPart = query === -1 ? "" : `?${redactParams(beforeHash.slice(query + 1))}`;
+    const hashPart = hash === -1 ? "" : `#${redactParams(withoutUserinfo.slice(hash + 1))}`;
 
-    if (query === -1) {
-        const hashOnly = withoutUserinfo.indexOf("#");
-
-        if (hashOnly === -1) return withoutUserinfo;
-
-        return `${withoutUserinfo.slice(0, hashOnly + 1)}${redactParams(withoutUserinfo.slice(hashOnly + 1))}`;
-    }
-
-    const head = withoutUserinfo.slice(0, query + 1);
-    const hash = withoutUserinfo.indexOf("#", query);
-    const tail = hash === -1
-        ? ""
-        : `#${redactParams(withoutUserinfo.slice(hash + 1))}`;
-    const raw = withoutUserinfo.slice(query + 1, hash === -1 ? withoutUserinfo.length : hash);
-
-    return `${head}${redactParams(raw)}${tail}`;
+    return `${redactPathParams(path)}${queryPart}${hashPart}`;
 }
 
 export function redactHeaders(headers: Record<string, string>): Record<string, string> {
@@ -168,8 +221,7 @@ export function redactHeaders(headers: Record<string, string>): Record<string, s
     for (const [name, value] of Object.entries(headers)) {
         const lower = name.toLowerCase();
 
-        const sensitive = SENSITIVE_HEADERS.has(lower) ||
-            sensitiveName(lower, SENSITIVE_HEADER_PARTS);
+        const sensitive = SENSITIVE_HEADERS.has(lower) || sensitiveName(name);
 
         if (sensitive) {
             redacted[name] = REDACTED;
