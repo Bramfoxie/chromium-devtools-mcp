@@ -11,6 +11,7 @@ import {
     revealElement,
 } from "./element-target.js";
 import { ToolError } from "./errors.js";
+import { holdRendering } from "./hold-rendering.js";
 import { frameChain, mapRect, measureChain, revealChain, settleRendering } from "./frame-geometry.js";
 import { type ImageSize, imageSize } from "./image-size.js";
 import { binaryResult, imageBlock } from "./result.js";
@@ -373,22 +374,6 @@ export const screenshot = defineTool({
         });
     },
 });
-
-async function holdRendering<T>(
-    access: DaemonAccess,
-    tab   : string,
-    run   : () => Promise<T>,
-): Promise<T> {
-    const params = { format: "jpeg", quality: 1, everyNthFrame: 1000 };
-
-    await access.send(tab, "Page.startScreencast", params).catch(() => undefined);
-
-    try {
-        return await run();
-    } finally {
-        await access.send(tab, "Page.stopScreencast", {}).catch(() => undefined);
-    }
-}
 
 interface ShotRequest extends CaptureRequest {
     maxBytes   : number;
