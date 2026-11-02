@@ -128,7 +128,7 @@ export function buildPiercedQueryScript(
     return found.length >= ${limit};
   };
   walk(document);
-  return found.slice(0, ${limit}).map((el) => {
+  return found.slice(0, ${limit}).map((el, index) => {
     const rect = el.getBoundingClientRect();
     const kept = {};
     for (const name of ${names}) {
@@ -136,6 +136,7 @@ export function buildPiercedQueryScript(
       if (value !== null) kept[name] = value.slice(0, 500);
     }
     return {
+      index,
       tag: el.localName,
       id: el.id,
       classes: [...el.classList],
@@ -300,7 +301,7 @@ export const domQuery = defineTool({
             { pierce, contextId: scope.contextId },
         );
 
-        if (rows.length === 0) return { matches: [], total: 0, returned: 0 };
+        if (rows.length === 0) return { matches: [], total: nodeIds.length, returned: 0 };
 
         // Rows carry their match index: uids come from the filtered nodes,
         // not from the first N matches.
@@ -311,7 +312,7 @@ export const domQuery = defineTool({
             return nodeId === undefined ? [] : [nodeId];
         });
 
-        if (picked.length === 0) return { matches: [], total: 0, returned: 0 };
+        if (picked.length === 0) return { matches: [], total: nodeIds.length, returned: 0 };
 
         const described = await describeNodes(context.access, targetId, picked);
         const frameGeneration = scope.frameId === undefined

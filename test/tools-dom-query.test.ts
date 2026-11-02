@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { runInNewContext } from "node:vm";
 import type { RequestHandlerExtra } from "@modelcontextprotocol/sdk/shared/protocol.js";
 import type { ServerNotification, ServerRequest } from "@modelcontextprotocol/sdk/types.js";
 import { describe, expect, it } from "vitest";
@@ -81,6 +82,28 @@ function queryFake(rows: Array<ReturnType<typeof row>>, backendIds: number[] = [
     };
 
     return fake;
+}
+
+function evaluateRealQueryScript(expression: string): unknown[] {
+    const makeElement = (text: string) => ({
+        localName            : "button",
+        id                   : "",
+        classList            : [],
+        innerText            : text,
+        shadowRoot           : undefined,
+        getAttribute         : () => null,
+        getClientRects       : () => [1],
+        getBoundingClientRect: () => ({ x: 1, y: 2, width: 3, height: 4 }),
+    });
+    const elements = [makeElement("Pay"), makeElement("More")];
+    const sandbox = {
+        document: {
+            querySelectorAll: () => elements,
+        },
+    };
+    const value: unknown = runInNewContext(expression, sandbox);
+
+    return JSON.parse(JSON.stringify(value)) as unknown[];
 }
 
 describe("buildQueryScript", () => {
@@ -234,6 +257,27 @@ describe("dom_query", () => {
 
         expect(uid).not.toBe("");
         expect(runtime.elements.lookup("tab1", uid)).not.toBeUndefined();
+    });
+
+    it("keeps the selector total when the text filter matches nothing", async () => {
+        const fake = queryFake(
+            [row({ text: "Apple" }), row({ text: "Cherry" }), row({ text: "Plum" })],
+            [101, 102, 103],
+        );
+        const { runtime } = setup(fake);
+
+        await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+
+        const result = await runTool(
+            domQuery,
+            { selector: "li", all: true, text: "mango" },
+            extra(),
+            runtime,
+        );
+
+        expect(result.isError).not.toBe(true);
+        expect(result.structuredContent).toEqual({ matches: [], total: 3, returned: 0 });
     });
 
     it("redacts password values and reports them", async () => {
@@ -444,17 +488,23 @@ describe("dom_query piercing", () => {
                     return { executionContextId: 7 };
                 case "Runtime.callFunctionOn":
                     return { result: { type: "string", value: "Inner" } };
-                case "Runtime.evaluate":
+
+                case "Runtime.evaluate": {
+                    const expression = (params as { expression?: unknown })?.expression;
+
+                    if (typeof expression !== "string") {
+                        throw new Error("Runtime.evaluate needs a string expression");
+                    }
+
                     return {
                         result: {
                             type   : "object",
                             subtype: "array",
-                            value  : [
-                                { ...row({ tag: "button", text: "Pay" }), index: 0 },
-                                { ...row({ tag: "button", text: "More" }), index: 1 },
-                            ],
+                            value  : evaluateRealQueryScript(expression),
                         },
                     };
+                }
+
                 default:
                     throw new Error(`unexpected CDP call ${method}`);
             }
@@ -616,6 +666,7 @@ console.log(JSON.stringify(eval(${JSON.stringify(buildPiercedQueryScript("button
 
         expect(JSON.parse(output)).toEqual([
             {
+                index     : 0,
                 tag       : "button",
                 id        : "in",
                 classes   : [],
