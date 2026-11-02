@@ -47,6 +47,7 @@ describe("checkCall", () => {
         "Page.crash",
         "Page.setInterceptFileChooserDialog",
         "Network.getAllCookies",
+        "Network.setCookies",
         "Network.clearBrowserCookies",
         "Network.clearBrowserCache",
         "Network.loadNetworkResource",
