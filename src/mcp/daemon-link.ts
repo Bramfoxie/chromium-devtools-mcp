@@ -130,6 +130,14 @@ export class DaemonLink {
             }
 
             if (error instanceof IpcClosedError && !this.closed) {
+                if (client.failure) {
+                    throw new DaemonError(
+                        `The browser could not be started: ${client.failure.replace(/\.$/, "")}. ` +
+                            "Check the browser installation, close other windows that use the same profile, or raise the wait, then try the call again." +
+                            `  See ${this.deps.logFile} for the daemon messages.`,
+                    );
+                }
+
                 throw new DaemonError(
                     `The daemon stopped while opening a session. See ${this.deps.logFile} for its messages.`,
                 );

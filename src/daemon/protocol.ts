@@ -29,6 +29,18 @@ export const ErrorCode = {
     browserNotReady: "browser_not_ready",
 } as const;
 
+export const DaemonEvent = {
+    failed: "daemon.failed",
+} as const;
+
+const MAX_FAILURE_CHARS = 500;
+
+export function boundedFailureMessage(text: string): string {
+    const line = text.replace(/\s+/g, " ").trim();
+
+    return line.length > MAX_FAILURE_CHARS ? `${line.slice(0, MAX_FAILURE_CHARS - 3)}...` : line;
+}
+
 const id = z.number().int().nonnegative();
 
 export const requestSchema = z.strictObject({
@@ -48,6 +60,10 @@ export const responseSchema = z.union([
 export const eventSchema = z.strictObject({
     event : z.string().min(1).max(100),
     params: z.unknown().optional(),
+});
+
+export const failureParamsSchema = z.strictObject({
+    message: z.string().max(MAX_FAILURE_CHARS),
 });
 
 export const helloParamsSchema = z.strictObject({

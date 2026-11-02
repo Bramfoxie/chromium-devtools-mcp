@@ -37,6 +37,8 @@ export { ensureToken, generateToken, readToken, tokensMatch } from "./token.js";
 export { IpcClient, type IpcConnectOptions, type IpcEventHandler } from "./client.js";
 
 export {
+    boundedFailureMessage,
+    DaemonEvent,
     encodeMessage,
     ErrorCode,
     LineDecoder,

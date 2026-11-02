@@ -25,8 +25,9 @@ type Handler = (method: string, params: unknown) => unknown | Promise<unknown>;
 
 class FakeIpc {
     closed = false;
-    calls: Array<{ method: string; params: unknown; options?: { timeoutMs?: number } }> = [];
+    calls  : Array<{ method: string; params: unknown; options?: { timeoutMs?: number } }> = [];
     closes = 0;
+    failure: string | undefined;
 
     constructor(private readonly handler: Handler = () => ({})) {}
 
@@ -96,6 +97,45 @@ function link(overrides: Partial<LinkDeps> = {}, isolated?: boolean) {
         connects,
     };
 }
+
+describe("a daemon that fails to start the browser", () => {
+    it("reports the reason it sent before closing", async () => {
+        const ipc = new FakeIpc((method) => {
+            if (method === "daemon.status") {
+                ipc.failure = "Chrome did not expose remote debugging within 45000 ms.";
+                ipc.drop();
+
+                throw new IpcClosedError("the daemon closed the connection");
+            }
+
+            throw new RpcError(ErrorCode.browserNotReady, "not ready");
+        });
+        const { link: l } = link({ connect: async () => asIpc(ipc) });
+        const failure = await l.request("x").catch((error: unknown) => error);
+
+        expect(failure).toBeInstanceOf(DaemonError);
+        const message = (failure as Error).message;
+
+        expect(message).toContain(
+            "The browser could not be started: Chrome did not expose remote debugging within 45000 ms.",
+        );
+        expect(message).toContain("browser installation");
+        expect(message).toContain("profile");
+        expect(message).toContain("/data/daemon.log");
+    });
+
+    it("keeps the generic message when no reason arrived", async () => {
+        const ipc = new FakeIpc(() => {
+            ipc.drop();
+
+            throw new IpcClosedError("gone");
+        });
+        const { link: l } = link({ connect: async () => asIpc(ipc) });
+        const failure = await l.request("x").catch((error: unknown) => error);
+
+        expect((failure as Error).message).toContain("The daemon stopped while opening a session.");
+    });
+});
 
 describe("connecting to a running daemon", () => {
     it("connects, opens one session and forwards requests", async () => {

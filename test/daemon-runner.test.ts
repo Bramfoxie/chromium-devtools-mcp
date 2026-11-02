@@ -450,6 +450,44 @@ async function settledClose(client: IpcClient): Promise<boolean> {
 }
 
 describe("browser failure", () => {
+    it("tells a connected client why the daemon stops before closing the connection", async () => {
+        const layout = await makeLayout(harness);
+        const release: { go: () => void } = { go: () => undefined };
+        const gate = new Promise<void>((resolve) => {
+            release.go = resolve;
+        });
+        const connector: BrowserConnector = async () => {
+            await gate;
+
+            throw new Error("Chrome did not expose\nremote debugging " + "x".repeat(700));
+        };
+        const running = await start(layout, connector);
+        const client = await connect(layout);
+        const received: unknown[] = [];
+
+        client.on("daemon.failed", (params) => received.push(params));
+        release.go();
+        await running.done;
+        await settledClose(client);
+        expect(received).toHaveLength(1);
+        const { message } = received[0] as { message: string };
+
+        expect(message.startsWith("Chrome did not expose remote debugging xxx")).toBe(true);
+        expect(message).toHaveLength(500);
+        expect(client.failure).toBe(message);
+    });
+
+    it("sends no failure message when the daemon is stopped on request", async () => {
+        const layout = await makeLayout(harness);
+        const { connect: connector } = await startFakeBrowser(harness);
+        const running = await start(layout, connector);
+        const client = await connect(layout);
+
+        await running.stop();
+        await settledClose(client);
+        expect(client.failure).toBeUndefined();
+    });
+
     it("reports the failure once, through the outcome", async () => {
         const layout = await makeLayout(harness);
         const connector: BrowserConnector = async () => {

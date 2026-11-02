@@ -2,6 +2,7 @@ import type net from "node:net";
 import type { BrowserBackend } from "./browser-backend.js";
 import { createRequestHandler, type DaemonStatus } from "./handler.js";
 import type { DaemonIdentity } from "./identity.js";
+import { boundedFailureMessage, DaemonEvent } from "./protocol.js";
 import { describeError, logDaemon } from "./log.js";
 import {
     acceptConnection,
@@ -30,6 +31,7 @@ export class Daemon {
     private stopped = false;
     private idleArmed = false;
     private readonly pending = new PendingConnections();
+    private readonly connections = new Set<ClientConnection>();
 
     constructor(private readonly options: DaemonOptions) {
         this.handler = createRequestHandler({
@@ -75,11 +77,13 @@ export class Daemon {
             helloTimeoutMs: this.options.helloTimeoutMs,
             helloResult   : () => this.options.identity,
             handler       : this.handler,
-            onReady       : () => {
+            onReady       : (connection) => {
+                this.connections.add(connection);
                 this.clients += 1;
                 this.cancelIdle();
             },
             onClose: (connection) => {
+                this.connections.delete(connection);
                 this.clients -= 1;
                 this.scheduleIdle();
                 this.registry?.close(connection).catch((error: unknown) => {
@@ -88,6 +92,14 @@ export class Daemon {
             },
         });
     };
+
+    announceFailure(reason: string): void {
+        const message = boundedFailureMessage(reason);
+
+        for (const connection of this.connections) {
+            connection.sendEvent(DaemonEvent.failed, { message });
+        }
+    }
 
     async shutdown(): Promise<void> {
         this.stopped = true;

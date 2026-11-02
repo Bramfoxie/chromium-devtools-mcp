@@ -6,6 +6,8 @@ import {
     LineDecoder,
     MAX_REQUEST_BYTES,
     MAX_RESPONSE_BYTES,
+    DaemonEvent,
+    failureParamsSchema,
     parseLine,
     serverMessageSchema,
 } from "./protocol.js";
@@ -42,6 +44,7 @@ export class IpcClient {
     private readonly decoder = new LineDecoder(MAX_RESPONSE_BYTES);
     private readonly closedSignal: Promise<void>;
     private hello                : unknown;
+    private reportedFailure      : string | undefined;
 
     private constructor(
         private readonly socket          : net.Socket,
@@ -84,6 +87,10 @@ export class IpcClient {
 
     get helloResult(): unknown {
         return this.hello;
+    }
+
+    get failure(): string | undefined {
+        return this.reportedFailure;
     }
 
     get closed(): boolean {
@@ -223,6 +230,12 @@ export class IpcClient {
         const message = parsed.data;
 
         if ("event" in message) {
+            if (message.event === DaemonEvent.failed) {
+                const failure = failureParamsSchema.safeParse(message.params);
+
+                if (failure.success) this.reportedFailure = failure.data.message;
+            }
+
             for (const handler of [...(this.handlers.get(message.event) ?? [])]) {
                 try {
                     handler(message.params);

@@ -7,7 +7,10 @@ import {
     ProtocolViolationError,
 } from "../src/daemon/index.js";
 import {
+    boundedFailureMessage,
+    DaemonEvent,
     eventSchema,
+    failureParamsSchema,
     helloParamsSchema,
     requestSchema,
     serverMessageSchema,
@@ -189,5 +192,26 @@ describe("schemas", () => {
         expect(helloParamsSchema.safeParse({ token: "t", clientName: "c", extra: 1 }).success).toBe(
             false,
         );
+    });
+});
+
+describe("failure messages", () => {
+    it("names the failure event and accepts its params", () => {
+        expect(DaemonEvent.failed).toBe("daemon.failed");
+        expect(failureParamsSchema.safeParse({ message: "x" }).success).toBe(true);
+        expect(failureParamsSchema.safeParse({ message: "x", extra: 1 }).success).toBe(false);
+        expect(eventSchema.safeParse({ event: DaemonEvent.failed, params: { message: "x" } }).success).toBe(true);
+    });
+
+    it("collapses whitespace into a single line", () => {
+        expect(boundedFailureMessage("a\n  b\r\n\tc")).toBe("a b c");
+    });
+
+    it("cuts long messages to 500 characters", () => {
+        const cut = boundedFailureMessage("x".repeat(900));
+
+        expect(cut).toHaveLength(500);
+        expect(cut.endsWith("...")).toBe(true);
+        expect(boundedFailureMessage("y".repeat(500))).toBe("y".repeat(500));
     });
 });
