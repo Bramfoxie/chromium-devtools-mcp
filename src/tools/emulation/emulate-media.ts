@@ -14,6 +14,14 @@ import { readMedia, type MediaRead } from "./reads.js";
 import { runSteps } from "./steps.js";
 import { emulationSummarySchema, summarizeEmulation } from "./summary.js";
 
+export function checkMediaSelection(
+    selection: Partial<MediaSelection> & { reset: boolean },
+): void {
+    if (selection.reset && hasMediaSelection({ ...selection, reset: false })) {
+        throw new ToolError("reset: true takes no other media fields.");
+    }
+}
+
 export function hasMediaSelection(
     selection: Partial<MediaSelection> & { reset: boolean },
 ): boolean {
@@ -74,6 +82,7 @@ export const emulateMedia = defineTool({
             );
         }
 
+        checkMediaSelection(selection);
         throwIfCancelled(context.signal);
 
         await ensureNoDialog(context.dialogs, targetId);

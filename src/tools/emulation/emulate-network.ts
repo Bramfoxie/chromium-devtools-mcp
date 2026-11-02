@@ -40,6 +40,12 @@ export function checkNetworkInput(input: NetworkInput): void {
         throw new ToolError("reset: true takes no other network fields.");
     }
 
+    if (input.downloadKbps === 0 || input.uploadKbps === 0) {
+        throw new ToolError(
+            "A throughput of 0 stalls the link. Use a positive Kbps value, -1 to remove the limit, or offline: true.",
+        );
+    }
+
     if (hasPreset && hasCustom) {
         throw new ToolError("Provide either preset or the custom latency and throughput fields, not both.");
     }
@@ -81,10 +87,10 @@ export const emulateNetwork = defineTool({
     access: "mutate",
     input : z.strictObject({
         tab         : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
-        preset      : presetSchema.optional().describe("Named conditions. none restores a normal connection."),
+        preset      : presetSchema.optional().describe("Named conditions. none restores a normal connection and clears blocked URLs."),
         latencyMs   : z.number().int().min(0).max(NETWORK_LATENCY_MAX_MS).optional().describe("Added latency in ms, 0 to 60000."),
-        downloadKbps: z.number().int().min(-1).max(NETWORK_THROUGHPUT_MAX_KBPS).optional().describe("Download ceiling in Kbps, -1 disables throttling."),
-        uploadKbps  : z.number().int().min(-1).max(NETWORK_THROUGHPUT_MAX_KBPS).optional().describe("Upload ceiling in Kbps, -1 disables throttling."),
+        downloadKbps: z.number().int().min(-1).max(NETWORK_THROUGHPUT_MAX_KBPS).optional().describe("Download ceiling in Kbps, at least 1, -1 disables throttling. 0 is rejected because it stalls the link."),
+        uploadKbps  : z.number().int().min(-1).max(NETWORK_THROUGHPUT_MAX_KBPS).optional().describe("Upload ceiling in Kbps, at least 1, -1 disables throttling. 0 is rejected because it stalls the link."),
         offline     : z.boolean().optional().describe("Emulate disconnection. Defaults to false."),
         blockUrls   : z.array(z.string().min(1).max(BLOCK_URL_MAX_CHARS)).max(BLOCK_URLS_MAX).optional().describe("URL patterns to block with CDP wildcards, at most 50."),
         reset       : z.boolean().optional().describe("Restore a normal connection and clear blocked URLs. Defaults to false."),
@@ -149,7 +155,8 @@ export const emulateNetwork = defineTool({
 
         const previous = context.emulation.snapshot(targetId).network;
         const conditions = conditionsOf(input, previous);
-        const blockUrls = input.blockUrls ?? previous?.blockUrls ?? [];
+        const blockUrls = input.blockUrls ??
+            (input.preset === "none" ? [] : previous?.blockUrls ?? []);
         const preset = input.preset ??
             (input.blockUrls !== undefined ? previous?.preset : undefined);
         const restore = () => {

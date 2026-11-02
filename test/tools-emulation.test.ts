@@ -736,3 +736,42 @@ describe("emulation rollback", () => {
         expect(fake.sent.filter((entry) => entry.method === "Emulation.setLocaleOverride")).toHaveLength(2);
     });
 });
+
+describe("emulation input checks", () => {
+    it("clears blocked urls with the none preset", async () => {
+        const { runtime } = setup();
+
+        await openTab(runtime);
+        await runTool(emulateNetwork, { preset: "4g", blockUrls: ["*/ads"] }, extra(), runtime);
+
+        const result = await runTool(emulateNetwork, { preset: "none" }, extra(), runtime);
+
+        expect(result.isError).not.toBe(true);
+        expect(runtime.emulation.snapshot("tab1").network?.blockUrls).toEqual([]);
+    });
+
+    it("rejects a zero throughput", async () => {
+        const { runtime } = setup();
+
+        await openTab(runtime);
+
+        const result = await runTool(emulateNetwork, { downloadKbps: 0 }, extra(), runtime);
+
+        expect(result.isError).toBe(true);
+        expect(JSON.stringify(result.content)).toContain("stalls");
+    });
+
+    it("rejects a reset mixed with other media or locale fields", async () => {
+        const { fake, runtime } = setup();
+
+        await openTab(runtime);
+        fake.sent.length = 0;
+
+        const media = await runTool(emulateMedia, { reset: true, colorScheme: "dark" }, extra(), runtime);
+        const locale = await runTool(emulateLocale, { reset: true, locale: "de-DE" }, extra(), runtime);
+
+        expect(media.isError).toBe(true);
+        expect(locale.isError).toBe(true);
+        expect(fake.sent).toEqual([]);
+    });
+});

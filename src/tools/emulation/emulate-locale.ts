@@ -27,6 +27,14 @@ export function checkAcceptLanguage(value: string): void {
     }
 }
 
+export function checkLocaleSelection(
+    selection: Partial<LocaleSelection> & { reset: boolean },
+): void {
+    if (selection.reset && hasLocaleSelection({ ...selection, reset: false })) {
+        throw new ToolError("reset: true takes no other locale fields.");
+    }
+}
+
 export function hasLocaleSelection(
     selection: Partial<LocaleSelection> & { reset: boolean },
 ): boolean {
@@ -77,6 +85,8 @@ export const emulateLocale = defineTool({
                 "Provide locale, timezone, acceptLanguage, or reset: true. Nothing was changed.",
             );
         }
+
+        checkLocaleSelection(selection);
 
         if (selection.acceptLanguage !== undefined) checkAcceptLanguage(selection.acceptLanguage);
 
