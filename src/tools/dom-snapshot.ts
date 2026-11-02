@@ -355,6 +355,8 @@ async function frameSections(
     domLimited: boolean;
 }> {
     const docs = frameDocBackends(root);
+    const mainInfo = domInfoMap(root);
+    const mainOwners = iframeFrameMap(root);
 
     await context.frames.ensure(targetId).catch(() => undefined);
 
@@ -375,38 +377,18 @@ async function frameSections(
             continue;
         }
 
-        const partial = await context.access.send(targetId, "Accessibility.getPartialAXTree", {
-            backendNodeId : doc.backendNodeId,
-            fetchRelatives: true,
-        }).catch(() => undefined);
-
-        if (partial === undefined) continue;
-
-        const capped = limitAxNodes(toAxNodes(partial), false);
-        const nodes = capped.nodes;
-
-        limited = limited || capped.limited;
-
-        const generation = context.frames.generation(targetId, doc.frameId);
-        const formatted = formatAxTree(nodes, {
-            interactiveOnly: options.interactiveOnly,
-            includeHidden  : options.includeHidden,
-            uidFor         : (id) =>
-                context.elements.assign(targetId, [{
-                    backendNodeId  : id,
-                    frameId        : doc.frameId,
-                    frameGeneration: generation,
-                }])[0],
-            domFor          : () => undefined,
-            startBackendNode: undefined,
+        const section = await frameTreeSection(context, context.access, targetId, doc.frameId, {
+            ...options,
+            isolated: false,
+            dom     : { info: mainInfo, owners: mainOwners },
         });
 
-        if (formatted.text !== "") {
-            sections.push({
-                frameId: doc.frameId,
-                text   : formatted.text,
-                count  : formatted.nodeCount,
-            });
+        if (section === undefined) continue;
+
+        limited = limited || section.limited;
+
+        if (section.text !== "") {
+            sections.push({ frameId: doc.frameId, text: section.text, count: section.count });
         }
     }
 
@@ -445,17 +427,42 @@ async function isolatedSection(
     { text: string; count: number; limited: boolean; domLimited: boolean } | undefined
 > {
     const bound = bindAccess(context.access, frameId);
-    const tree: unknown = await bound.send(targetId, "Accessibility.getFullAXTree", {
+    const dom = await domInfo(bound, targetId).catch(() => undefined);
+
+    return frameTreeSection(context, bound, targetId, frameId, {
+        ...options,
+        isolated: true,
+        ...(dom === undefined
+            ? {}
+            : { dom: { info: dom.info, owners: iframeFrameMap(dom.root) } }),
+        domLimited: dom !== undefined && domDepthLimited(dom.root),
+    });
+}
+
+async function frameTreeSection(
+    context : ToolContext,
+    access  : DaemonAccess,
+    targetId: string,
+    frameId : string,
+    options : {
+        interactiveOnly: boolean;
+        includeHidden  : boolean;
+        isolated       : boolean;
+        dom?           : { info: Map<number, AxDomInfo>; owners: Map<number, string> };
+        domLimited?    : boolean;
+    },
+): Promise<
+    { text: string; count: number; limited: boolean; domLimited: boolean } | undefined
+> {
+    const tree: unknown = await access.send(targetId, "Accessibility.getFullAXTree", {
         depth: SNAPSHOT_MAX_AX_DEPTH,
         frameId,
     }).catch(() => undefined);
 
     if (tree === undefined) return undefined;
 
-    const dom = await domInfo(bound, targetId).catch(() => undefined);
     const capped = limitAxNodes(toAxNodes(tree), true);
     const generation = context.frames.generation(targetId, frameId);
-    const owners = dom === undefined ? new Map<number, string>() : iframeFrameMap(dom.root);
     const formatted = formatAxTree(capped.nodes, {
         interactiveOnly: options.interactiveOnly,
         includeHidden  : options.includeHidden,
@@ -463,19 +470,19 @@ async function isolatedSection(
             context.elements.assign(targetId, [{
                 backendNodeId  : id,
                 frameId,
-                isolated       : true,
+                ...(options.isolated ? { isolated: true } : {}),
                 frameGeneration: generation,
             }])[0],
-        domFor          : (id) => dom?.info.get(id),
+        domFor          : (id) => options.dom?.info.get(id),
         startBackendNode: undefined,
-        frameFor        : (id) => owners.get(id),
+        frameFor        : (id) => options.dom?.owners.get(id),
     });
 
     return {
         text      : formatted.text,
         count     : formatted.nodeCount,
         limited   : capped.limited,
-        domLimited: dom !== undefined && domDepthLimited(dom.root),
+        domLimited: options.domLimited ?? false,
     };
 }
 

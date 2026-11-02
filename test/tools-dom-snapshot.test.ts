@@ -281,23 +281,10 @@ describe("frame snapshot helpers", () => {
 
         fake.respond = (_targetId, method, params) => {
             switch (method) {
-                case "Accessibility.getFullAXTree":
-                    return {
-                        nodes: [
-                            {
-                                nodeId          : "1",
-                                role            : { value: "Iframe" },
-                                name            : { value: "same-origin" },
-                                childIds        : [],
-                                backendDOMNodeId: 20,
-                            },
-                        ],
-                    };
+                case "Accessibility.getFullAXTree": {
+                    const frame = (params as { frameId?: unknown })?.frameId;
 
-                case "Accessibility.getPartialAXTree": {
-                    const backend = (params as { backendNodeId?: unknown })?.backendNodeId;
-
-                    if (backend === 21) {
+                    if (frame === "frame1") {
                         return {
                             nodes: [
                                 {
@@ -311,7 +298,17 @@ describe("frame snapshot helpers", () => {
                         };
                     }
 
-                    throw new Error(`unexpected partial ${JSON.stringify(params)}`);
+                    return {
+                        nodes: [
+                            {
+                                nodeId          : "1",
+                                role            : { value: "Iframe" },
+                                name            : { value: "same-origin" },
+                                childIds        : [],
+                                backendDOMNodeId: 20,
+                            },
+                        ],
+                    };
                 }
 
                 case "DOM.getDocument":
@@ -353,6 +350,11 @@ describe("frame snapshot helpers", () => {
         expect(result.structuredContent).toMatchObject({
             snapshot: expect.stringContaining('button "Pay"'),
         });
+        expect(
+            fake.sent.find((call) => call.method === "Accessibility.getFullAXTree" &&
+                (call.params as { frameId?: string } | undefined)?.frameId === "frame1")?.params,
+        ).toEqual({ depth: SNAPSHOT_MAX_AX_DEPTH, frameId: "frame1" });
+        expect(fake.sent.some((call) => call.method === "Accessibility.getPartialAXTree")).toBe(false);
         expect(runtime.elements.lookup("tab1", "1_2")).toEqual({
             backendNodeId  : 22,
             frameId        : "frame1",
@@ -472,6 +474,27 @@ describe("frame snapshot helpers", () => {
         fake.respond = (_targetId, method, params) => {
             switch (method) {
                 case "Accessibility.getFullAXTree":
+                    if ((params as { frameId?: unknown })?.frameId === "frame1") {
+                        return {
+                            nodes: [
+                                {
+                                    nodeId          : "2",
+                                    role            : { value: "heading" },
+                                    name            : { value: "Title text" },
+                                    childIds        : ["3"],
+                                    backendDOMNodeId: 23,
+                                },
+                                {
+                                    nodeId          : "3",
+                                    role            : { value: "button" },
+                                    name            : { value: "Pay" },
+                                    childIds        : [],
+                                    backendDOMNodeId: 22,
+                                },
+                            ],
+                        };
+                    }
+
                     return {
                         nodes: [
                             {
@@ -480,27 +503,6 @@ describe("frame snapshot helpers", () => {
                                 name            : { value: "same-origin" },
                                 childIds        : [],
                                 backendDOMNodeId: 20,
-                            },
-                        ],
-                    };
-                case "Accessibility.getPartialAXTree":
-                    expect((params as { backendNodeId?: unknown }).backendNodeId).toBe(21);
-
-                    return {
-                        nodes: [
-                            {
-                                nodeId          : "2",
-                                role            : { value: "heading" },
-                                name            : { value: "Title text" },
-                                childIds        : ["3"],
-                                backendDOMNodeId: 23,
-                            },
-                            {
-                                nodeId          : "3",
-                                role            : { value: "button" },
-                                name            : { value: "Pay" },
-                                childIds        : [],
-                                backendDOMNodeId: 22,
                             },
                         ],
                     };
@@ -520,5 +522,58 @@ describe("frame snapshot helpers", () => {
 
         expect(text).toContain('button "Pay"');
         expect(text).not.toContain("Title text");
+    });
+
+    const OVER_CAP = SNAPSHOT_MAX_AX_NODES + 5;
+
+    it("caps the accessibility tree of a same-origin frame and marks the truncation", async () => {
+        const fake = new FakeAccess({
+            frames: [
+                { frameId: "main", url: "https://a.example/", name: "", isolated: false },
+                {
+                    frameId      : "frame1",
+                    parentFrameId: "main",
+                    url          : "https://a.example/inner",
+                    name         : "",
+                    isolated     : false,
+                },
+            ],
+        });
+
+        fake.respond = (_targetId, method, params) => {
+            switch (method) {
+                case "Accessibility.getFullAXTree":
+                    if ((params as { frameId?: unknown })?.frameId === "frame1") {
+                        return {
+                            nodes: Array.from({ length: OVER_CAP }, (_, index) => ({
+                                nodeId          : String(index + 1),
+                                role            : { value: "link" },
+                                name            : { value: `n${index}` },
+                                childIds        : [],
+                                backendDOMNodeId: 5000 + index,
+                            })),
+                        };
+                    }
+
+                    return { nodes: [] };
+                case "DOM.getDocument":
+                    return FRAMED;
+                default:
+                    throw new Error(`unexpected CDP call ${method}`);
+            }
+        };
+
+        const { runtime } = setup(fake);
+
+        await runTool(newTab, {}, extra(), runtime);
+
+        const args = { maxChars: SNAPSHOT_MAX_CHARS };
+        const result = await runTool(domSnapshot, args, extra(), runtime);
+
+        expect(result.structuredContent).toMatchObject({
+            nodeCount: SNAPSHOT_MAX_AX_NODES,
+            truncated: true,
+            snapshot : expect.stringContaining("[truncated: the accessibility tree has more than"),
+        });
     });
 });

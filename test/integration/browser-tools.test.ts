@@ -15,6 +15,8 @@ root.innerHTML='<button class="deep" onclick="window.deepClicks=(window.deepClic
     "/deep"    : `${"<section aria-label=s>".repeat(80)}<button>bottom</button>${"</section>".repeat(80)}`,
     "/frames"  : '<iframe id="one" name="first" src="/other"></iframe><iframe id="two" src="/cookie"></iframe>',
     "/other"   : "<h1>other</h1>",
+    "/nested"  : '<iframe id="nest" src="/inner"></iframe>',
+    "/inner"   : '<main><div><section><div><p><a href="/other">deep link</a></p></div></section></div></main>',
     "/tall"    : '<div style="height:100000px">tall</div><span id="end">end</span>',
     "/form"    : '<form action="/other" method="get"><input id="q" name="q"></form>',
     "/jump"    : '<a id="go" href="/other" onclick="location.href=\'/other\';return false">go</a>',
@@ -192,6 +194,13 @@ describe.skipIf(!present)("real browser", () => {
 
         expect(snap.truncated).toBe(true);
         expect(String(snap.snapshot)).toContain("accessibility tree has more than");
+    });
+
+    it("dom_snapshot lists a link nested deeply inside a same-origin iframe", async () => {
+        await env.open("/nested");
+        const snap = await env.ok("dom_snapshot", {});
+
+        expect(String(snap.snapshot)).toContain('link "deep link"');
     });
 
     it("a frame selector matching several iframes lists them and one iframe still works", async () => {
