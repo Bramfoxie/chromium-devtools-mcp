@@ -1,3 +1,4 @@
+import { parseEnvelope } from "./cdp-envelope.js";
 import { z } from "zod";
 import type { DaemonAccess } from "../mcp/index.js";
 import { describeError, logDaemon } from "../daemon/log.js";
@@ -68,23 +69,6 @@ const openingSchema = z.object({
 
 function clip(text: string, limit: number): string {
     return [...text].length > limit ? `${[...text].slice(0, limit).join("")}...` : text;
-}
-
-function parseEnvelope(value: unknown): {
-    targetId: string;
-    event   : string;
-    params  : unknown;
-} | undefined {
-    const envelope = value as {
-        targetId?: unknown;
-        event?   : unknown;
-        params?  : unknown;
-    } | null;
-
-    if (typeof envelope?.targetId !== "string") return undefined;
-    if (typeof envelope.event !== "string") return undefined;
-
-    return { targetId: envelope.targetId, event: envelope.event, params: envelope.params };
 }
 
 export async function ensureNoDialog(dialogs: DialogState, tab: string): Promise<void> {

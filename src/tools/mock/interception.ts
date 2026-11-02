@@ -1,3 +1,4 @@
+import { parseEnvelope } from "../cdp-envelope.js";
 import type { DaemonAccess } from "../../mcp/index.js";
 import { describeError, logDaemon } from "../../daemon/log.js";
 import type { ToolClock } from "../define-tool.js";
@@ -83,23 +84,6 @@ interface TabInterception {
 export interface InterceptionOptions {
     access: DaemonAccess;
     clock : ToolClock;
-}
-
-function parseEnvelope(value: unknown): {
-    targetId: string;
-    event   : string;
-    params  : unknown;
-} | undefined {
-    const envelope = value as {
-        targetId?: unknown;
-        event?   : unknown;
-        params?  : unknown;
-    } | null;
-
-    if (typeof envelope?.targetId !== "string") return undefined;
-    if (typeof envelope.event !== "string") return undefined;
-
-    return { targetId: envelope.targetId, event: envelope.event, params: envelope.params };
 }
 
 interface PausedRequest {
