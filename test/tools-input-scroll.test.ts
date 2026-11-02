@@ -110,11 +110,33 @@ function scrollFake(world: ScrollWorld = {}): FakeAccess {
     return fake;
 }
 
-function runtimeWith(fake: FakeAccess): { fake: FakeAccess; runtime: ToolRuntime } {
+function steppingClock(): TestClock {
+    let virtualNow = 0;
+
+    return {
+        now  : () => virtualNow,
+        sleep: (ms) => {
+            virtualNow += ms;
+
+            return Promise.resolve();
+        },
+    };
+}
+
+interface TestClock {
+    now(): number;
+    sleep(ms: number): Promise<void>;
+}
+
+function runtimeWith(
+    fake  : FakeAccess,
+    clock?: TestClock,
+): { fake: FakeAccess; runtime: ToolRuntime } {
     const runtime = new ToolRuntime({
         access  : fake.asAccess(),
         config  : managedConfig,
         elements: new ElementRegistry(),
+        clock   : clock ?? steppingClock(),
     });
 
     runtime.tabs.refresh(
@@ -278,6 +300,56 @@ describe("input_scroll", () => {
         expect(
             used.sent.filter((entry) => entry.method === "Input.dispatchMouseEvent").length,
         ).toBeGreaterThan(4);
+    });
+
+    it("waits for a wheel that lands after a quiet period before declaring a stall", async () => {
+        const LATENCY_MS = 1500;
+        const MAX_Y = 99616;
+        const fake = scrollFake();
+        const base = fake.respond ?? (() => ({}));
+        let virtualNow = 0;
+        let y = 0;
+        const landings: Array<{ at: number; to: number }> = [];
+
+        fake.respond = (targetId, method, params) => {
+            if (method === "Input.dispatchMouseEvent") {
+                const delta = (params as { deltaY: number }).deltaY;
+                const last = landings[landings.length - 1]?.to ?? y;
+
+                landings.push({ at: virtualNow + LATENCY_MS, to: Math.min(MAX_Y, last + delta) });
+
+                return {};
+            }
+
+            const expression = String((params as { expression?: unknown })?.expression ?? "");
+
+            if (method === "Runtime.evaluate" && expression.includes("scrollWidth")) {
+                for (const landing of landings) if (landing.at <= virtualNow) y = landing.to;
+
+                return {
+                    result: {
+                        type : "object",
+                        value: { x: 0, y, maxX: 0, maxY: MAX_Y, width: 800, height: 600 },
+                    },
+                };
+            }
+
+            return base(targetId, method, params);
+        };
+
+        const clock = {
+            now  : () => virtualNow,
+            sleep: (ms: number) => {
+                virtualNow += ms;
+
+                return Promise.resolve();
+            },
+        };
+        const { runtime } = runtimeWith(fake, clock);
+
+        const result = await runTool(inputScroll, { to: "bottom" }, extra(), runtime);
+
+        expect(result.structuredContent).toMatchObject({ ok: true, y: MAX_Y, maxY: MAX_Y });
     });
 
     it("reports the real position when the page stops short of the edge", async () => {

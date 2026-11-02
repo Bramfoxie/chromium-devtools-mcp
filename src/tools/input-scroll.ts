@@ -19,6 +19,8 @@ export const WHEEL_SETTLE_MS = 350;
 
 export const EDGE_WHEEL_LIMIT = 50;
 
+export const EDGE_STALL_MS = 5000;
+
 export const SCROLL_BLOCKS = ["start", "center", "end", "nearest"] as const;
 
 export type ScrollBlock = (typeof SCROLL_BLOCKS)[number];
@@ -133,6 +135,25 @@ async function settleScroll(context: ToolContext, targetId: string): Promise<Scr
     }
 
     return current;
+}
+
+async function awaitLateScroll(
+    context : ToolContext,
+    targetId: string,
+    from    : ScrollPosition,
+): Promise<ScrollPosition> {
+    const deadline = context.clock.now() + EDGE_STALL_MS;
+    let latest = from;
+
+    while (context.clock.now() < deadline) {
+        await context.clock.sleep(WHEEL_SETTLE_MS);
+        throwIfCancelled(context.signal);
+        latest = await scrollState(context.access, targetId);
+
+        if (scrollMoved(from, latest)) return settleScroll(context, targetId);
+    }
+
+    return latest;
 }
 
 export const inputScroll = defineTool({
@@ -311,9 +332,12 @@ async function scrollToEdge(
         const remaining = to === "top" ? -current.y : current.maxY - current.y;
         const delta = clampDelta(remaining);
         const scrolled = await wheelScroll(context, targetId, current, point, 0, delta);
-        const progressed = scrollMoved(current, scrolled.position);
+        const settled = scrollMoved(current, scrolled.position)
+            ? scrolled.position
+            : await awaitLateScroll(context, targetId, scrolled.position);
+        const progressed = scrollMoved(current, settled);
 
-        current = scrolled.position;
+        current = settled;
 
         if (!progressed) break;
     }
