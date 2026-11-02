@@ -431,7 +431,13 @@ async function queryScope(
             );
         }
 
-        const nodeId = await frameContentNode(context.access, targetId, known.frameId) ?? rootId;
+        const nodeId = await frameContentNode(context.access, targetId, known.frameId);
+
+        if (nodeId === undefined) {
+            throw new ToolError(
+                `The frame ${JSON.stringify(frame)} has no document yet. Wait for it to load and try again.`,
+            );
+        }
 
         return {
             nodeId,

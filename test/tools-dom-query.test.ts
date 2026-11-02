@@ -542,6 +542,29 @@ describe("dom_query piercing", () => {
         });
     });
 
+    it("fails naming the frame when a known frame has no document yet", async () => {
+        const fake = piercingFake();
+        const inner = fake.respond;
+
+        fake.respond = (targetId, method, params) => {
+            if (method === "DOM.getDocument") {
+                return { root: { nodeId: 1, backendNodeId: 1, nodeType: 9, nodeName: "#document", children: [] } };
+            }
+
+            return inner?.(targetId, method, params);
+        };
+
+        const { runtime } = setup(fake);
+
+        await runTool(newTab, {}, extra(), runtime);
+
+        const result = await runTool(domQuery, { selector: "#pay-btn", frame: "cross" }, extra(), runtime);
+
+        expect(result.isError).toBe(true);
+        expect(JSON.stringify(result.content)).toContain("has no document yet");
+        expect(JSON.stringify(result.content)).toContain("cross");
+    });
+
     it("queries inside a frame selected by an iframe selector", async () => {
         const fake = piercingFake();
         const { runtime } = setup(fake);
