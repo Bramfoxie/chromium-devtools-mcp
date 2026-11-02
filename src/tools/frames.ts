@@ -30,7 +30,9 @@ export interface FrameStateOptions {
     access: DaemonAccess;
 }
 
-function parseFrameEvent(params: unknown): { frameId: string; parent?: string } | undefined {
+function parseFrameEvent(
+    params: unknown,
+): { frameId: string; parent?: string; url?: string; name?: string } | undefined {
     const envelope = params as {
         targetId?: unknown;
         event?   : unknown;
@@ -43,7 +45,7 @@ function parseFrameEvent(params: unknown): { frameId: string; parent?: string } 
 
     const body = envelope.params as {
         frameId?: unknown;
-        frame?  : { id?: unknown; parentId?: unknown };
+        frame?  : { id?: unknown; parentId?: unknown; url?: unknown; name?: unknown };
     } | null;
     const frameId = typeof body?.frameId === "string"
         ? body.frameId
@@ -55,7 +57,12 @@ function parseFrameEvent(params: unknown): { frameId: string; parent?: string } 
 
     const parent = typeof body?.frame?.parentId === "string" ? body.frame.parentId : undefined;
 
-    return { frameId, parent };
+    return {
+        frameId,
+        parent,
+        ...(typeof body?.frame?.url === "string" ? { url: body.frame.url } : {}),
+        ...(typeof body?.frame?.name === "string" ? { name: body.frame.name } : {}),
+    };
 }
 
 export class FrameState {
@@ -179,6 +186,16 @@ export class FrameState {
 
         if (envelope.event === "Page.frameNavigated") {
             state.generations.set(parsed.frameId, (state.generations.get(parsed.frameId) ?? 0) + 1);
+
+            const known = state.frames.get(parsed.frameId);
+
+            if (known !== undefined) {
+                state.frames.set(parsed.frameId, {
+                    ...known,
+                    ...(parsed.url === undefined ? {} : { url: parsed.url }),
+                    ...(parsed.name === undefined ? {} : { name: parsed.name }),
+                });
+            }
 
             for (const listener of this.navigated) {
                 listener(envelope.targetId, parsed.frameId, parsed.parent === undefined);

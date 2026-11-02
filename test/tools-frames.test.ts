@@ -101,6 +101,27 @@ describe("FrameState", () => {
         expect(frames.generation("tab1", "fresh")).toBe(0);
     });
 
+    it("updates the url and name of a frame after it navigates", async () => {
+        const { fake, frames } = setup();
+
+        await frames.ensure("tab1");
+        emit(fake, "Page.frameNavigated", {
+            frame: { id: "cross", parentId: "main", url: "https://c.example/next", name: "renamed" },
+            type : "Navigation",
+        });
+        emit(fake, "Page.frameNavigated", {
+            frame: { id: "main", url: "https://a.example/next" },
+            type : "Navigation",
+        });
+
+        expect(frames.frameOf("tab1", "cross")).toMatchObject({
+            url     : "https://c.example/next",
+            name    : "renamed",
+            isolated: true,
+        });
+        expect(frames.frameOf("tab1", "main")?.url).toBe("https://a.example/next");
+    });
+
     it("records an attached frame with its parent", async () => {
         const { fake, frames } = setup();
 
