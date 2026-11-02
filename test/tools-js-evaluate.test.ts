@@ -584,6 +584,39 @@ describe("js_evaluate", () => {
         expect(fake.sent[4]?.params).toEqual({ objectId: "obj-7" });
     });
 
+    it("releases the result object and the element when a response does not parse", async () => {
+        const fake = new FakeAccess();
+        const { runtime } = setup(fake);
+
+        await runTool(newTab, {}, extra(), runtime);
+        runtime.elements.nextGeneration("tab1");
+
+        const [uid] = runtime.elements.assign("tab1", [{ backendNodeId: 7 }]);
+
+        fake.respond = (_targetId, method) => {
+            if (method === "DOM.resolveNode") return { object: { objectId: "obj-7" } };
+
+            return { result: { type: 5, objectId: "obj-bad" } };
+        };
+
+        fake.sent.length = 0;
+
+        const result = await runTool(
+            jsEvaluate,
+            { expression: "return this.textContent;", target: { uid } },
+            extra(),
+            runtime,
+        );
+
+        expect(result.isError).toBe(true);
+
+        const released = fake.sent
+            .filter((call) => call.method === "Runtime.releaseObject")
+            .map((call) => call.params?.objectId);
+
+        expect(released.sort()).toEqual(["obj-7", "obj-bad"]);
+    });
+
     it("releases the element when a targeted response does not parse", async () => {
         const fake = new FakeAccess();
 

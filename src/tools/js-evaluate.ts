@@ -245,7 +245,10 @@ export const jsEvaluate = defineTool({
         const parsed = evaluatedSchema.safeParse(result);
 
         if (!parsed.success) {
-            await releaseObjects(context.access, targetId, [elementObjectId]);
+            await releaseObjects(context.access, targetId, [
+                looseObjectId(result),
+                elementObjectId,
+            ]);
 
             throw new ToolError(
                 "The browser sent an unexpected response to Runtime.evaluate. Try the call again.",
@@ -284,27 +287,29 @@ export const jsEvaluate = defineTool({
             };
         }
 
-        const objectId = resultObjectId;
         const remote = parsed.data.result;
-        const extracted = await extractStructuredValue(
-            context.access,
-            targetId,
-            remote,
-            deadline.remainingMs(),
-        );
-        const shaped = extracted === undefined
-            ? shapeRemoteValue(remote, maxChars)
-            : shapeJsonValue(extracted.type, extracted.value, maxChars);
 
-        await releaseObjects(context.access, targetId, [objectId, elementObjectId]);
+        try {
+            const extracted = await extractStructuredValue(
+                context.access,
+                targetId,
+                remote,
+                deadline.remainingMs(),
+            );
+            const shaped = extracted === undefined
+                ? shapeRemoteValue(remote, maxChars)
+                : shapeJsonValue(extracted.type, extracted.value, maxChars);
 
-        return {
-            ok       : true as const,
-            type     : shaped.type,
-            truncated: shaped.truncated,
-            ...(shaped.truncated ? { totalLength: shaped.totalLength } : {}),
-            ...(shaped.value === undefined ? {} : { value: shaped.value }),
-        };
+            return {
+                ok       : true as const,
+                type     : shaped.type,
+                truncated: shaped.truncated,
+                ...(shaped.truncated ? { totalLength: shaped.totalLength } : {}),
+                ...(shaped.value === undefined ? {} : { value: shaped.value }),
+            };
+        } finally {
+            await releaseObjects(context.access, targetId, [resultObjectId, elementObjectId]);
+        }
     },
 });
 
@@ -319,6 +324,14 @@ interface EvaluateRequest {
 interface EvaluateOutcome {
     response       : unknown;
     elementObjectId: string | undefined;
+}
+
+const looseResultSchema = z.object({ result: z.object({ objectId: z.string() }).optional() });
+
+function looseObjectId(response: unknown): string | undefined {
+    const parsed = looseResultSchema.safeParse(response);
+
+    return parsed.success ? parsed.data.result?.objectId : undefined;
 }
 
 async function releaseObjects(
