@@ -191,6 +191,25 @@ describe("requests", () => {
         expect(stderr).toHaveBeenCalledTimes(3);
     });
 
+    it("stays silent for a response that arrives after its request timed out", async () => {
+        const stderr = silentStderr();
+        let late: (() => void) | undefined;
+        const { client } = await connect((rpc, socket) => {
+            if (rpc.method === "Slow") {
+                late = () => reply(socket, rpc.id, "late");
+
+                return;
+            }
+
+            reply(socket, rpc.id, "ok");
+        });
+
+        await expect(client.send("Slow", {}, { timeoutMs: 20 })).rejects.toBeInstanceOf(CdpTimeoutError);
+        late?.();
+        await expect(client.send("X")).resolves.toBe("ok");
+        expect(stderr).not.toHaveBeenCalled();
+    });
+
     it("logs messages without an id and without a method", async () => {
         const stderr = silentStderr();
         const { client } = await connect((rpc, socket) => {

@@ -338,6 +338,8 @@ export class CdpClient {
         const pending = this.pending.get(id);
 
         if (!pending) {
+            if (id < this.nextId) return;
+
             logError(`ignored a CDP response with unknown id ${id}`);
 
             return;
