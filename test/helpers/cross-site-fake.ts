@@ -27,12 +27,30 @@ export interface CrossSiteWorld {
     selectRead? : Record<string, unknown>;
     selectWrite?: Record<string, unknown>;
     valueText?  : string;
+    dropMoves?  : number;
+    dropDowns?  : number;
+    lateDowns?  : boolean;
+}
+
+export interface PointerCounters {
+    moves   : number;
+    downs   : number;
+    pending : number;
+    installs: number;
+    removes : number;
 }
 
 export const MID_FRAME = "mid";
 
+export const pointerCounters = new WeakMap<FakeAccess, PointerCounters>();
+
 export function crossSiteFake(world: CrossSiteWorld = {}): FakeAccess {
     const fake = new FakeAccess();
+    const counters: PointerCounters = { moves: 0, downs: 0, pending: 0, installs: 0, removes: 0 };
+    let dropMoves = world.dropMoves ?? 0;
+    let dropDowns = world.dropDowns ?? 0;
+
+    pointerCounters.set(fake, counters);
 
     fake.frames = [
         { frameId: "main", url: "http://a.example/", name: "", isolated: false },
@@ -58,11 +76,29 @@ export function crossSiteFake(world: CrossSiteWorld = {}): FakeAccess {
                 };
             case "DOM.resolveNode":
                 return { object: { objectId: session === undefined ? "obj-owner" : "obj-mid" } };
+
+            case "Input.dispatchMouseEvent": {
+                const type = (params as { type?: unknown } | undefined)?.type;
+
+                if (type === "mouseMoved") {
+                    if (dropMoves > 0) dropMoves -= 1;
+                    else counters.moves += 1;
+                }
+
+                if (type === "mousePressed") {
+                    if (dropDowns > 0) {
+                        dropDowns -= 1;
+                        if (world.lateDowns === true) counters.pending += 1;
+                    } else counters.downs += 1;
+                }
+
+                return {};
+            }
+
             case "DOM.scrollIntoViewIfNeeded":
             case "Emulation.setFocusEmulationEnabled":
             case "DOM.focus":
             case "DOM.setFileInputFiles":
-            case "Input.dispatchMouseEvent":
             case "Input.dispatchKeyEvent":
             case "Input.insertText":
                 return {};
@@ -75,6 +111,9 @@ export function crossSiteFake(world: CrossSiteWorld = {}): FakeAccess {
                 }
 
                 if (typeof expression === "string" && expression.includes("requestAnimationFrame")) {
+                    counters.downs += counters.pending;
+                    counters.pending = 0;
+
                     return { result: { type: "boolean", value: true } };
                 }
 
@@ -91,6 +130,33 @@ export function crossSiteFake(world: CrossSiteWorld = {}): FakeAccess {
             }
 
             case "Runtime.callFunctionOn":
+                if (text.includes("cdmProbeInstall")) {
+                    counters.installs += 1;
+
+                    return { result: { type: "boolean", value: true } };
+                }
+
+                if (text.includes("cdmProbeRemove")) {
+                    counters.removes += 1;
+
+                    return { result: { type: "boolean", value: true } };
+                }
+
+                if (text.includes("cdmProbeRead")) {
+                    return {
+                        result: { type: "object", value: { moves: counters.moves, downs: counters.downs } },
+                    };
+                }
+
+                if (text.includes("cdmProbeWait")) {
+                    const args = (params as { arguments?: Array<{ value?: unknown }> }).arguments;
+                    const kind = args?.[0]?.value;
+
+                    return {
+                        result: { type: "number", value: kind === "moves" ? counters.moves : counters.downs },
+                    };
+                }
+
                 if (text.includes("this.ownerDocument")) {
                     return { result: { type: "object", value: { kind: "hit", ...world.outerHit } } };
                 }

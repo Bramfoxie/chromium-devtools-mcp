@@ -317,6 +317,9 @@ describe("input_click", () => {
         expect(
             fake.sent.filter((entry) => entry.method === "Emulation.setFocusEmulationEnabled"),
         ).toHaveLength(1);
+        expect(
+            fake.sent.filter((entry) => String(entry.params?.functionDeclaration).includes("cdmProbe")),
+        ).toEqual([]);
     });
 
     it("honours button, click count, modifiers and position", async () => {

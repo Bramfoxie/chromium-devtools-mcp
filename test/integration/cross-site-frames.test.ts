@@ -227,6 +227,22 @@ describe.skipIf(!present)("cross-site iframe in a real browser", () => {
         expect(await textOf(tab, "#d", frame)).toBe("deepclicked");
     });
 
+    it("input_click and input_hover leave no pointer probe in the cross-site frame", async () => {
+        const tab = await crossTab("/xpointer");
+        const frame = "iframe[name=cross]";
+        const target = { selector: "#h", frame };
+
+        await env.ok("input_hover", { tab, target });
+        await env.ok("input_click", { tab, target });
+        const left = await env.ok("js_evaluate", {
+            tab,
+            target,
+            expression: "return Symbol.for('cdm.pointerProbe') in this.ownerDocument",
+        });
+
+        expect(left.value).toBe(false);
+    });
+
     it("input_hover hovers an element of the cross-site frame", async () => {
         const tab = await crossTab("/xpointer");
         const frame = "iframe[name=cross]";

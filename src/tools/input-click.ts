@@ -9,7 +9,8 @@ import {
 import { clickPointOf, type ClickPoint, TOP_LEVEL_ORIGIN } from "./coordinates.js";
 import { defineTool, type ToolContext } from "./define-tool.js";
 import { ensureNoDialog } from "./dialogs.js";
-import { frameChain, mapPoint, measureChain, outerHitTest, revealChain, settleRendering } from "./frame-geometry.js";
+import { withPointerDelivery, type PointerRoute } from "./pointer-delivery.js";
+import { frameChain, mapPoint, measureChain, outerHitTest, revealChain } from "./frame-geometry.js";
 import {
     elementTargetSchema,
     type Rect,
@@ -108,7 +109,7 @@ async function mousePoint(
     position: { x: number; y: number } | undefined,
     verb    : string,
     force   : boolean,
-): Promise<{ point: ClickPoint; state: ElementState; box: Rect }> {
+): Promise<{ point: ClickPoint; state: ElementState; box: Rect; route?: PointerRoute }> {
     const owner = elementAccess(context.access, element);
     const scrolled = await ensureActionable(owner, targetId, element, {
         checkDisabled: true,
@@ -116,14 +117,14 @@ async function mousePoint(
     const local = clickPointOf(scrolled.box, position, TOP_LEVEL_ORIGIN);
 
     if (element.isolated === true && element.frameId !== undefined) {
-        const point = await isolatedPoint(context, targetId, element.frameId, scrolled.box, local, {
+        const found = await isolatedPoint(context, targetId, element.frameId, scrolled.box, local, {
             owner,
             element,
             verb,
             force,
         });
 
-        return { point, state: scrolled.state, box: scrolled.box };
+        return { point: found.point, state: scrolled.state, box: scrolled.box, route: found.route };
     }
 
     if (force) return { point: local, state: scrolled.state, box: scrolled.box };
@@ -148,19 +149,23 @@ async function isolatedPoint(
     box     : Rect,
     local   : ClickPoint,
     request : { owner: DaemonAccess; element: ResolvedElement; verb: string; force: boolean },
-): Promise<ClickPoint> {
+): Promise<{ point: ClickPoint; route?: PointerRoute }> {
     const chain = await frameChain(context.access, context.frames, targetId, frameId);
 
     await revealChain(chain, targetId, box);
-    await settleRendering(
-        [context.access, ...chain.links.map((link) => link.access), request.owner],
-        targetId,
-    );
 
     const measured = await measureChain(chain, targetId);
     const point = mapPoint(measured.toTop, local);
+    const route: PointerRoute | undefined = chain.links.length === 0 ? undefined : {
+        owner    : request.owner,
+        objectId : request.element.objectId,
+        relays   : [context.access, ...chain.links.map((link) => link.access), request.owner],
+        stillOver: request.force
+            ? undefined
+            : async () => (await hitTest(request.owner, targetId, request.element, local, true)).kind === "hit",
+    };
 
-    if (request.force) return point;
+    if (request.force) return { point, route };
 
     const inner = await hitTest(request.owner, targetId, request.element, local, true);
 
@@ -182,7 +187,7 @@ async function isolatedPoint(
         );
     }
 
-    return point;
+    return { point, route };
 }
 
 export const click = defineTool({
@@ -287,7 +292,7 @@ export const inputClick = defineTool({
         await context.focus.ensure(context.access, targetId);
 
         return withElement(context, targetId, args.target, async (element) => {
-            const { point, state } = await mousePoint(
+            const { point, state, route } = await mousePoint(
                 context,
                 targetId,
                 element,
@@ -304,7 +309,7 @@ export const inputClick = defineTool({
 
             throwIfCancelled(context.signal);
 
-            const acted = await navigationOf(context.access, targetId, async () => {
+            const sendMove = async (): Promise<void> => {
                 await context.access.send(targetId, "Input.dispatchMouseEvent", {
                     type      : "mouseMoved",
                     x         : point.x,
@@ -314,33 +319,48 @@ export const inputClick = defineTool({
                     buttons   : 0,
                     clickCount: 0,
                 });
+            };
 
-                for (let count = 1; count <= clickCount; count += 1) {
-                    const at = { x: point.x, y: point.y, modifiers, button, buttons };
+            const acted = await withPointerDelivery(route, targetId, (delivery) =>
+                navigationOf(context.access, targetId, async () => {
+                    if (delivery === undefined) await sendMove();
+                    else await delivery.prepareMove(sendMove);
 
-                    await context.access.send(targetId, "Input.dispatchMouseEvent", {
-                        type      : "mousePressed",
-                        ...at,
-                        clickCount: count,
-                    });
+                    for (let count = 1; count <= clickCount; count += 1) {
+                        const at = { x: point.x, y: point.y, modifiers, button, buttons };
+                        const press = async (): Promise<void> => {
+                            await context.access.send(targetId, "Input.dispatchMouseEvent", {
+                                type      : "mousePressed",
+                                ...at,
+                                clickCount: count,
+                            });
+                        };
+                        const release = async (): Promise<void> => {
+                            try {
+                                await context.access.send(targetId, "Input.dispatchMouseEvent", {
+                                    type      : "mouseReleased",
+                                    ...at,
+                                    clickCount: count,
+                                });
+                            } catch (error) {
+                                await context.access.send(targetId, "Input.dispatchMouseEvent", {
+                                    type      : "mouseReleased",
+                                    ...at,
+                                    clickCount: count,
+                                }).catch(() => undefined);
 
-                    try {
-                        await context.access.send(targetId, "Input.dispatchMouseEvent", {
-                            type      : "mouseReleased",
-                            ...at,
-                            clickCount: count,
-                        });
-                    } catch (error) {
-                        await context.access.send(targetId, "Input.dispatchMouseEvent", {
-                            type      : "mouseReleased",
-                            ...at,
-                            clickCount: count,
-                        }).catch(() => undefined);
+                                throw error;
+                            }
+                        };
 
-                        throw error;
+                        if (delivery === undefined) {
+                            await press();
+                            await release();
+                        } else {
+                            await delivery.press(press, release);
+                        }
                     }
-                }
-            });
+                }));
 
             return {
                 ok    : true,
@@ -391,7 +411,7 @@ export const inputHover = defineTool({
         await context.focus.ensure(context.access, targetId);
 
         return withElement(context, targetId, args.target, async (element) => {
-            const { point, state } = await mousePoint(
+            const { point, state, route } = await mousePoint(
                 context,
                 targetId,
                 element,
@@ -404,17 +424,25 @@ export const inputHover = defineTool({
 
             const leadInX = point.x >= 1 ? point.x - 1 : point.x + 1;
 
-            for (let step = 0; step < HOVER_DEFAULT_STEPS; step += 1) {
+            const moveTo = async (x: number): Promise<void> => {
                 await context.access.send(targetId, "Input.dispatchMouseEvent", {
                     type      : "mouseMoved",
-                    x         : step === HOVER_DEFAULT_STEPS - 1 ? point.x : leadInX,
+                    x,
                     y         : point.y,
                     modifiers : 0,
                     button    : "none",
                     buttons   : 0,
                     clickCount: 0,
                 });
-            }
+            };
+
+            await withPointerDelivery(route, targetId, async (delivery) => {
+                await delivery?.prepareMove(() => moveTo(point.x));
+
+                for (let step = 0; step < HOVER_DEFAULT_STEPS; step += 1) {
+                    await moveTo(step === HOVER_DEFAULT_STEPS - 1 ? point.x : leadInX);
+                }
+            });
 
             const parsed = hoverSchema.safeParse(
                 await elementAccess(context.access, element).send(targetId, "Runtime.callFunctionOn", {

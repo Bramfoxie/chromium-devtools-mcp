@@ -8,7 +8,7 @@ import {
     runTool,
     ToolRuntime,
 } from "../src/tools/index.js";
-import { crossSiteFake, MID_FRAME, type CrossSiteWorld } from "./helpers/cross-site-fake.js";
+import { crossSiteFake, MID_FRAME, pointerCounters, type CrossSiteWorld } from "./helpers/cross-site-fake.js";
 import { managedConfig } from "./helpers/daemon-env.js";
 import type { FakeAccess } from "./helpers/fake-access.js";
 
@@ -80,27 +80,82 @@ describe("input_click in a cross-site frame", () => {
         ]);
     });
 
-    it("waits for a rendered frame in the tab and frame sessions before measuring", async () => {
+    it("installs the probe in the frame session before the press and removes it afterwards", async () => {
         const { fake, runtime } = setup();
 
         await runTool(inputClick, { target: { uid: "1_1" } }, extra(), runtime);
 
-        const settles = fake.sent.filter(
-            (call) => call.method === "Runtime.evaluate" &&
-                String(call.params?.expression).includes("requestAnimationFrame"),
+        const probes = fake.sent.filter(
+            (call) => call.method === "Runtime.callFunctionOn" &&
+                String(call.params?.functionDeclaration).includes("cdmProbe"),
         );
-        const measures = fake.sent.map(
-            (call) => call.method === "DOM.getBoxModel" && call.params?.backendNodeId === 6,
-        );
-        const lastMeasure = measures.lastIndexOf(true);
-        const firstSettle = fake.sent.findIndex((call) => call.method === "Runtime.evaluate" &&
-            String(call.params?.expression).includes("requestAnimationFrame"));
+        const names = probes.map((call) => /cdmProbe\w+/.exec(String(call.params?.functionDeclaration))?.[0]);
+        const press = fake.sent.findIndex((call) => call.params?.type === "mousePressed");
 
-        expect(settles.map((call) => call.frameId)).toContain(MID_FRAME);
-        expect(settles.map((call) => call.frameId)).toContain(undefined);
-        expect(settles.every((call) => call.params?.awaitPromise === true)).toBe(true);
-        expect(firstSettle).toBeGreaterThan(-1);
-        expect(lastMeasure).toBeGreaterThan(firstSettle);
+        expect(names[0]).toBe("cdmProbeInstall");
+        expect(names.at(-1)).toBe("cdmProbeRemove");
+        expect(probes.every((call) => call.frameId === MID_FRAME)).toBe(true);
+        expect(fake.sent.indexOf(probes[0] as never)).toBeLessThan(press);
+        expect(pointerCounters.get(fake)).toMatchObject({ installs: 1, removes: 1 });
+    });
+
+    it("retries the move until the frame receives it and then presses", async () => {
+        const { fake, runtime } = setup({ dropMoves: 3 });
+        const result = await runTool(inputClick, { target: { uid: "1_1" } }, extra(), runtime);
+
+        expect(result.isError).not.toBe(true);
+        expect(mouseEvents(fake).map((event) => event.type)).toEqual([
+            "mouseMoved", "mouseMoved", "mouseMoved", "mouseMoved", "mousePressed", "mouseReleased",
+        ]);
+        expect(pointerCounters.get(fake)).toMatchObject({ downs: 1, removes: 1 });
+    });
+
+    it("fails without pressing when the frame never receives the move", async () => {
+        const { fake, runtime } = setup({ dropMoves: 1000 });
+        const result = await runTool(inputClick, { target: { uid: "1_1" } }, extra(), runtime);
+
+        expect(result.isError).toBe(true);
+        expect(JSON.stringify(result.content)).toContain("did not receive pointer input");
+        expect(mouseEvents(fake).some((event) => event.type === "mousePressed")).toBe(false);
+        expect(pointerCounters.get(fake)).toMatchObject({ installs: 1, removes: 1 });
+    });
+
+    it("releases and presses again once when the first press is dropped", async () => {
+        const { fake, runtime } = setup({ dropDowns: 1 });
+        const result = await runTool(inputClick, { target: { uid: "1_1" } }, extra(), runtime);
+
+        expect(result.isError).not.toBe(true);
+        expect(mouseEvents(fake).map((event) => event.type)).toEqual([
+            "mouseMoved", "mousePressed", "mouseReleased", "mousePressed", "mouseReleased",
+        ]);
+        expect(pointerCounters.get(fake)).toMatchObject({ downs: 1, removes: 1 });
+    });
+
+    it("does not press a second time when the first press arrives late", async () => {
+        const { fake, runtime } = setup({ dropDowns: 1, lateDowns: true });
+        const result = await runTool(inputClick, { target: { uid: "1_1" } }, extra(), runtime);
+
+        expect(result.isError).not.toBe(true);
+        expect(mouseEvents(fake).filter((event) => event.type === "mousePressed")).toHaveLength(1);
+        expect(pointerCounters.get(fake)).toMatchObject({ downs: 1, removes: 1 });
+    });
+
+    it("fails when no press is delivered after the single retry", async () => {
+        const { fake, runtime } = setup({ dropDowns: 1000 });
+        const result = await runTool(inputClick, { target: { uid: "1_1" } }, extra(), runtime);
+
+        expect(result.isError).toBe(true);
+        expect(JSON.stringify(result.content)).toContain("did not receive the mouse press");
+        expect(mouseEvents(fake).filter((event) => event.type === "mousePressed")).toHaveLength(2);
+        expect(pointerCounters.get(fake)).toMatchObject({ removes: 1 });
+    });
+
+    it("verifies every press of a multi click", async () => {
+        const { fake, runtime } = setup();
+
+        await runTool(inputClick, { target: { uid: "1_1" }, clickCount: 2 }, extra(), runtime);
+
+        expect(pointerCounters.get(fake)).toMatchObject({ downs: 2 });
     });
 
     it("scrolls the iframe element into view in the parent session", async () => {
@@ -188,5 +243,22 @@ describe("input_hover in a cross-site frame", () => {
         const result = await runTool(inputHover, { target: { uid: "1_1" } }, extra(), runtime);
 
         expect(result.structuredContent).toMatchObject({ ok: false, hovered: false });
+    });
+
+    it("retries a dropped move before hovering and cleans the probe up", async () => {
+        const { fake, runtime } = setup({ dropMoves: 2 });
+        const result = await runTool(inputHover, { target: { uid: "1_1" } }, extra(), runtime);
+
+        expect(result.structuredContent).toMatchObject({ ok: true, hovered: true });
+        expect(mouseEvents(fake)).toHaveLength(5);
+        expect(pointerCounters.get(fake)).toMatchObject({ installs: 1, removes: 1 });
+    });
+
+    it("fails when the frame never receives the hover move", async () => {
+        const { runtime } = setup({ dropMoves: 1000 });
+        const result = await runTool(inputHover, { target: { uid: "1_1" } }, extra(), runtime);
+
+        expect(result.isError).toBe(true);
+        expect(JSON.stringify(result.content)).toContain("did not receive pointer input");
     });
 });
