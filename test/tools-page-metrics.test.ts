@@ -190,6 +190,44 @@ describe("page_metrics", () => {
         expect(fake.sent.map((call) => call.method)).toContain("Performance.disable");
     });
 
+    it("keeps measured phases when others are null", async () => {
+        const { runtime } = setup(
+            metricsFake({
+                dnsMs             : null,
+                connectMs         : null,
+                responseMs        : 4,
+                domContentLoadedMs: 20,
+                loadMs            : null,
+            }),
+        );
+
+        await runTool(newTab, {}, extra(), runtime);
+        const result = await runTool(pageMetrics, {}, extra(), runtime);
+
+        expect(result.structuredContent).toHaveProperty("navigation", {
+            responseMs        : 4,
+            domContentLoadedMs: 20,
+        });
+    });
+
+    it("omits navigation when every phase is null", async () => {
+        const { runtime } = setup(
+            metricsFake({
+                dnsMs             : null,
+                connectMs         : null,
+                responseMs        : null,
+                domContentLoadedMs: null,
+                loadMs            : null,
+            }),
+        );
+
+        await runTool(newTab, {}, extra(), runtime);
+        const result = await runTool(pageMetrics, {}, extra(), runtime);
+
+        expect(result.isError).not.toBe(true);
+        expect(result.structuredContent).not.toHaveProperty("navigation");
+    });
+
     it("disables the domain even when reading fails", async () => {
         const fake = metricsFake();
 

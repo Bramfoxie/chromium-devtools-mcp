@@ -52,11 +52,11 @@ const navigationSchema = z.object({
         type : z.string().optional(),
         value: z
             .object({
-                dnsMs             : z.number().optional(),
-                connectMs         : z.number().optional(),
-                responseMs        : z.number().optional(),
-                domContentLoadedMs: z.number().optional(),
-                loadMs            : z.number().optional(),
+                dnsMs             : z.number().nullable().optional(),
+                connectMs         : z.number().nullable().optional(),
+                responseMs        : z.number().nullable().optional(),
+                domContentLoadedMs: z.number().nullable().optional(),
+                loadMs            : z.number().nullable().optional(),
             })
             .nullable()
             .optional(),
@@ -224,7 +224,11 @@ async function readNavigation(
 
         if (value === undefined || value === null) return undefined;
 
-        return value;
+        const phases = Object.fromEntries(
+            Object.entries(value).filter(([, phase]) => typeof phase === "number"),
+        );
+
+        return Object.keys(phases).length === 0 ? undefined : phases;
     } catch {
         return undefined;
     }
