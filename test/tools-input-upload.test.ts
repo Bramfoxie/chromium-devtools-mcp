@@ -1,5 +1,6 @@
 import type { RequestHandlerExtra } from "@modelcontextprotocol/sdk/shared/protocol.js";
 import type { ServerNotification, ServerRequest } from "@modelcontextprotocol/sdk/types.js";
+import { posix, win32 } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
     allTools,
@@ -9,6 +10,7 @@ import {
     ToolRuntime,
     UPLOAD_MAX_BYTES,
     validateUploadFiles,
+    type UploadEnvironment,
     type UploadFileSystem,
 } from "../src/tools/index.js";
 import { FakeAccess } from "./helpers/fake-access.js";
@@ -33,7 +35,10 @@ interface MemoryEntry {
     readable: boolean;
 }
 
-function memoryFs(entries: Record<string, MemoryEntry>): UploadFileSystem {
+function memoryFs(
+    entries: Record<string, MemoryEntry>,
+    links  : Record<string, string> = {},
+): UploadFileSystem {
     return {
         stat: async (path) => {
             const entry = entries[path];
@@ -45,7 +50,7 @@ function memoryFs(entries: Record<string, MemoryEntry>): UploadFileSystem {
         access: async (path) => {
             if (entries[path]?.readable !== true) throw new Error("EACCES");
         },
-        realpath: async (path) => path,
+        realpath: async (path) => links[path] ?? path,
     };
 }
 
@@ -115,6 +120,7 @@ function uploadFake(world: UploadWorld = {}): FakeAccess {
                             editable  : "none",
                             selectable: false,
                             fileInput : true,
+                            multiple  : true,
                             ...world.state,
                         },
                     },
@@ -151,13 +157,14 @@ function contentOf(result: { content: unknown }): string {
 }
 
 describe("validateUploadFiles", () => {
-    const fs = memoryFs({
+    const posixEnv = (fs: UploadFileSystem): UploadEnvironment => ({ fs, path: posix });
+    const fs = posixEnv(memoryFs({
         "/tmp/a.txt"   : { file: true, size: 12, readable: true },
         "/tmp/b.txt"   : { file: true, size: 34, readable: true },
         "/tmp/dir"     : { file: false, size: 0, readable: true },
         "/tmp/locked"  : { file: true, size: 8, readable: false },
         "/tmp/huge.bin": { file: true, size: UPLOAD_MAX_BYTES + 1, readable: true },
-    });
+    }));
 
     it("accepts absolute readable files and reports names and sizes", async () => {
         await expect(validateUploadFiles(fs, ["/tmp/a.txt", "/tmp/b.txt"])).resolves.toEqual([
@@ -171,6 +178,51 @@ describe("validateUploadFiles", () => {
         await expect(validateUploadFiles(fs, ["/tmp/missing.txt"])).rejects.toThrow("does not exist");
         await expect(validateUploadFiles(fs, ["/tmp/dir"])).rejects.toThrow("not a regular file");
         await expect(validateUploadFiles(fs, ["/tmp/locked"])).rejects.toThrow("not readable");
+    });
+
+    it("attaches the resolved real path and keeps the name the caller used", async () => {
+        const linked = posixEnv(memoryFs(
+            {
+                "/tmp/link.txt" : { file: true, size: 3, readable: true },
+                "/data/real.txt": { file: true, size: 3, readable: true },
+            },
+            { "/tmp/link.txt": "/data/real.txt" },
+        ));
+
+        await expect(validateUploadFiles(linked, ["/tmp/link.txt"])).resolves.toEqual([
+            { path: "/data/real.txt", name: "link.txt", size: 3 },
+        ]);
+    });
+
+    it("refuses the same file listed twice, also through a link", async () => {
+        const linked = posixEnv(memoryFs(
+            {
+                "/tmp/link.txt" : { file: true, size: 3, readable: true },
+                "/data/real.txt": { file: true, size: 3, readable: true },
+            },
+            { "/tmp/link.txt": "/data/real.txt" },
+        ));
+
+        await expect(validateUploadFiles(fs, ["/tmp/a.txt", "/tmp/a.txt"])).rejects.toThrow(
+            "more than once",
+        );
+        await expect(
+            validateUploadFiles(linked, ["/data/real.txt", "/tmp/link.txt"]),
+        ).rejects.toThrow("more than once");
+    });
+
+    it("validates win32 paths with the injected win32 module", async () => {
+        const windows: UploadEnvironment = {
+            fs  : memoryFs({ "C:\\data\\a.txt": { file: true, size: 5, readable: true } }),
+            path: win32,
+        };
+
+        await expect(validateUploadFiles(windows, ["C:\\data\\a.txt"])).resolves.toEqual([
+            { path: "C:\\data\\a.txt", name: "a.txt", size: 5 },
+        ]);
+        await expect(validateUploadFiles(windows, ["data\\a.txt"])).rejects.toThrow("not absolute");
+        await expect(validateUploadFiles(posixEnv(windows.fs), ["C:\\data\\a.txt"])).rejects
+            .toThrow("not absolute");
     });
 
     it("refuses files over the 100 MiB limit", async () => {
@@ -188,6 +240,35 @@ describe("input_upload", () => {
 
         expect(dangerous).toContain("input_upload");
         expect(inputUpload.access).toBe("mutate");
+    });
+
+    it("refuses several files for an input without multiple before attaching", async () => {
+        const { fake, runtime } = runtimeWith(uploadFake({ state: { multiple: false } }));
+        const real = await import("node:os");
+        const path = await import("node:path");
+        const fs = await import("node:fs/promises");
+        const dir = await fs.mkdtemp(path.join(real.tmpdir(), "cdm-upload-"));
+
+        try {
+            const first = path.join(dir, "first.txt");
+            const second = path.join(dir, "second.txt");
+
+            await fs.writeFile(first, "alpha");
+            await fs.writeFile(second, "beta");
+
+            const result = await runTool(
+                inputUpload,
+                { target: { uid: "1_1" }, files: [first, second] },
+                extra(),
+                runtime,
+            );
+
+            expect(result.isError).toBe(true);
+            expect(contentOf(result)).toContain("multiple");
+            expect(fake.sent.map((entry) => entry.method)).not.toContain("DOM.setFileInputFiles");
+        } finally {
+            await fs.rm(dir, { recursive: true, force: true });
+        }
     });
 
     it("attaches validated files through DOM.setFileInputFiles without contents", async () => {
@@ -221,7 +302,10 @@ describe("input_upload", () => {
             expect(contentOf(result)).not.toContain("alpha");
             expect(contentOf(result)).not.toContain("beta");
             expect(fake.sent.find((entry) => entry.method === "DOM.setFileInputFiles")?.params)
-                .toEqual({ backendNodeId: 101, files: [first, second] });
+                .toEqual({
+                    backendNodeId: 101,
+                    files        : [await fs.realpath(first), await fs.realpath(second)],
+                });
         } finally {
             await fs.rm(dir, { recursive: true, force: true });
         }
@@ -424,7 +508,7 @@ describe("input_upload in frames", () => {
             expect(result.isError).not.toBe(true);
             expect(result.structuredContent).toMatchObject({ ok: true });
             expect(fake.sent.find((entry) => entry.method === "DOM.setFileInputFiles")?.params)
-                .toEqual({ backendNodeId: 101, files: [file] });
+                .toEqual({ backendNodeId: 101, files: [await fs.realpath(file)] });
         } finally {
             await fs.rm(dir, { recursive: true, force: true });
         }

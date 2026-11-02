@@ -5,6 +5,7 @@ import type { ToolClock, ToolContext } from "./define-tool.js";
 import { DialogState } from "./dialogs.js";
 import { ElementRegistry } from "./element-target.js";
 import { EmulationState } from "./emulation/state.js";
+import { nodeUploadEnvironment, type UploadEnvironment } from "./upload-environment.js";
 import { FocusEmulation } from "./focus-emulation.js";
 import { FrameState } from "./frames.js";
 import { InterceptionManager } from "./mock/interception.js";
@@ -63,6 +64,7 @@ export interface ToolRuntimeOptions {
     dialogs?  : DialogState;
     mock?     : InterceptionManager;
     emulation?: EmulationState;
+    upload?   : UploadEnvironment;
 }
 
 export class ToolRuntime {
@@ -77,6 +79,7 @@ export class ToolRuntime {
     readonly dialogs  : DialogState;
     readonly mock     : InterceptionManager;
     readonly emulation: EmulationState;
+    readonly upload   : UploadEnvironment;
 
     constructor(options: ToolRuntimeOptions) {
         this.access = options.access;
@@ -100,6 +103,7 @@ export class ToolRuntime {
         this.mock = options.mock ??
             new InterceptionManager({ access: options.access, clock: this.clock });
         this.emulation = options.emulation ?? new EmulationState();
+        this.upload = options.upload ?? nodeUploadEnvironment();
     }
 
     context(signal: AbortSignal): ToolContext {
@@ -115,6 +119,7 @@ export class ToolRuntime {
             dialogs  : this.dialogs,
             mock     : this.mock,
             emulation: this.emulation,
+            upload   : this.upload,
             config   : this.config,
             clock    : this.clock,
             signal,

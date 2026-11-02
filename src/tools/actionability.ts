@@ -18,6 +18,7 @@ export interface ElementState {
     editable  : EditableKind;
     selectable: boolean;
     fileInput : boolean;
+    multiple  : boolean;
 }
 
 export type EditableKind = "text" | "password" | "none";
@@ -51,6 +52,7 @@ const stateSchema = z.object({
                 editable  : z.enum(["text", "password", "none"]),
                 selectable: z.boolean(),
                 fileInput : z.boolean(),
+                multiple  : z.boolean().optional(),
             })
             .optional(),
     }),
@@ -88,6 +90,7 @@ export const STATE_EXPRESSION = `function (element) {
     editable: editable ? (lowered === "password" ? "password" : "text") : "none",
     selectable: element instanceof HTMLSelectElement,
     fileInput: lowered === "file",
+    multiple: input !== null && input.multiple,
   };
 }`;
 
@@ -237,6 +240,7 @@ export async function elementState(
         editable  : value.editable,
         selectable: value.selectable,
         fileInput : value.fileInput,
+        multiple  : value.multiple ?? false,
     };
 }
 

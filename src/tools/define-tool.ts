@@ -9,6 +9,7 @@ import type { InterceptionManager } from "./mock/interception.js";
 import type { EmulationState } from "./emulation/state.js";
 import type { FocusEmulation } from "./focus-emulation.js";
 import type { FrameState } from "./frames.js";
+import type { UploadEnvironment } from "./upload-environment.js";
 import type { SafetyAccess, SafetyDecision, SafetyTarget } from "./safety.js";
 
 export type ToolAccess = SafetyAccess | ((args: unknown) => SafetyAccess);
@@ -49,6 +50,7 @@ export interface ToolContext {
     dialogs  : DialogState;
     mock     : InterceptionManager;
     emulation: EmulationState;
+    upload   : UploadEnvironment;
     config   : Config;
     clock    : ToolClock;
     signal   : AbortSignal;

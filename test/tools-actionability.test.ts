@@ -37,6 +37,7 @@ function stateValue(overrides: Record<string, unknown> = {}) {
                 editable  : "none",
                 selectable: false,
                 fileInput : false,
+                multiple  : true,
                 ...overrides,
             },
         },
@@ -113,6 +114,7 @@ describe("elementState", () => {
             editable  : "none",
             selectable: false,
             fileInput : false,
+            multiple  : true,
         });
     });
 
@@ -190,6 +192,7 @@ describe("ensureActionable", () => {
                 editable  : "none",
                 selectable: false,
                 fileInput : false,
+                multiple  : true,
             },
             box: { x: 10, y: 20, width: 100, height: 50 },
         });

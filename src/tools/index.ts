@@ -485,14 +485,20 @@ export {
 
 export {
     inputUpload,
-    nodeUploadFs,
     UPLOAD_COUNT_EXPRESSION,
     UPLOAD_MAX_BYTES,
     UPLOAD_MAX_FILES,
-    type UploadFileSystem,
     validateUploadFiles,
     type ValidatedUpload,
 } from "./input-upload.js";
+
+export {
+    nodeUploadEnvironment,
+    nodeUploadFs,
+    type UploadEnvironment,
+    type UploadFileSystem,
+    type UploadPath,
+} from "./upload-environment.js";
 
 export {
     type DeviceEmulation,

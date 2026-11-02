@@ -1,5 +1,3 @@
-import { stat } from "node:fs/promises";
-import { basename, isAbsolute, resolve } from "node:path";
 import { z } from "zod";
 import type { DaemonAccess } from "../mcp/index.js";
 import { ensureActionable } from "./actionability.js";
@@ -9,6 +7,7 @@ import { elementTargetSchema, resolveElement, type ResolvedElement } from "./ele
 import { ToolError } from "./errors.js";
 import { changedUrl, navigationOf, summarizeTarget, targetSummarySchema } from "./input-click.js";
 import { throwIfCancelled } from "./registry.js";
+import type { UploadEnvironment } from "./upload-environment.js";
 
 export const UPLOAD_MAX_FILES = 20;
 
@@ -26,49 +25,28 @@ const uploadChangeSchema = z.object({
     }),
 });
 
-export interface UploadFileSystem {
-    stat(path: string): Promise<{ isFile(): boolean; size: number }>;
-    access(path: string): Promise<void>;
-    realpath(path: string): Promise<string>;
-}
-
 export interface ValidatedUpload {
     path: string;
     name: string;
     size: number;
 }
 
-export function nodeUploadFs(): UploadFileSystem {
-    return {
-        stat  : async (path) => stat(path),
-        access: async (path) => {
-            const { access } = await import("node:fs/promises");
-            const { constants } = await import("node:fs");
-
-            await access(path, constants.R_OK);
-        },
-        realpath: async (path) => {
-            const { realpath } = await import("node:fs/promises");
-
-            return realpath(path);
-        },
-    };
-}
-
 export async function validateUploadFiles(
-    fs   : UploadFileSystem,
-    files: string[],
+    environment: UploadEnvironment,
+    files      : string[],
 ): Promise<ValidatedUpload[]> {
+    const { fs, path } = environment;
     const validated: ValidatedUpload[] = [];
+    const seen = new Set<string>();
 
     for (const file of files) {
-        if (!isAbsolute(file)) {
+        if (!path.isAbsolute(file)) {
             throw new ToolError(
                 `The path ${JSON.stringify(file)} is not absolute. Pass absolute file paths only.`,
             );
         }
 
-        const resolved = resolve(file);
+        const resolved = path.resolve(file);
         let info: { isFile(): boolean; size: number };
 
         try {
@@ -99,9 +77,16 @@ export async function validateUploadFiles(
             );
         }
 
-        await fs.realpath(resolved);
+        const real = await fs.realpath(resolved);
 
-        validated.push({ path: resolved, name: basename(resolved), size: info.size });
+        if (seen.has(real)) {
+            throw new ToolError(
+                `The file ${JSON.stringify(file)} is listed more than once. Pass each file once.`,
+            );
+        }
+
+        seen.add(real);
+        validated.push({ path: real, name: path.basename(resolved), size: info.size });
     }
 
     return validated;
@@ -163,7 +148,7 @@ export const inputUpload = defineTool({
 
         await ensureNoDialog(context.dialogs, targetId);
 
-        const validated = await validateUploadFiles(nodeUploadFs(), args.files);
+        const validated = await validateUploadFiles(context.upload, args.files);
 
         await context.focus.ensure(context.access, targetId);
 
@@ -184,6 +169,12 @@ export const inputUpload = defineTool({
         if (!checked.state.fileInput) {
             throw new ToolError(
                 `The element <${checked.state.tag}> is not a file input. Target an input of type file.`,
+            );
+        }
+
+        if (validated.length > 1 && !checked.state.multiple) {
+            throw new ToolError(
+                "The file input does not accept multiple files. Pass one file or target an input with the multiple attribute.",
             );
         }
 
