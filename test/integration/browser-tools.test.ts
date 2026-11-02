@@ -6,6 +6,9 @@ let env: Env;
 
 type Row = Record<string, unknown>;
 
+const MANY = `${"<i class=item>x</i>".repeat(30)}<div id=h></div>
+<script>document.getElementById("h").attachShadow({mode:"open"}).innerHTML='<i class=item>s</i><i class=item>t</i>';</script>`;
+
 const PAGES: Record<string, string> = {
     "/main": `<button id="btn" onclick="window.clicks=(window.clicks||0)+1"><span id="inner">go</span></button>
 <input id="field"><p class="line">hello world</p><p class="line">hello again</p><div id="host"></div>
@@ -15,6 +18,7 @@ root.innerHTML='<button class="deep" onclick="window.deepClicks=(window.deepClic
     "/deep"    : `${"<section aria-label=s>".repeat(80)}<button>bottom</button>${"</section>".repeat(80)}`,
     "/frames"  : '<iframe id="one" name="first" src="/other"></iframe><iframe id="two" src="/cookie"></iframe>',
     "/other"   : "<h1>other</h1>",
+    "/many"    : MANY,
     "/nested"  : '<iframe id="nest" src="/inner"></iframe>',
     "/inner"   : '<main><div><section><div><p><a href="/other">deep link</a></p></div></section></div></main>',
     "/tall"    : '<div style="height:100000px">tall</div><span id="end">end</span>',
@@ -186,6 +190,21 @@ describe.skipIf(!present)("real browser", () => {
 
         expect(found).toMatchObject({ total: 2, returned: 1 });
         expect(read).toMatchObject({ ok: true, value: "hello again" });
+    });
+
+    it("dom_query reports the real total and truncated for many matches", async () => {
+        await env.open("/many");
+        const first = await env.ok("dom_query", { selector: ".item" });
+        const limited = await env.ok("dom_query", { selector: ".item", limit: 5 });
+        const every = await env.ok("dom_query", { selector: ".item", all: true });
+        const pierced = await env.ok("dom_query", { selector: ".item", all: true, pierce: true, limit: 3 });
+        const full = await env.ok("dom_query", { selector: ".item", all: true, limit: 200 });
+
+        expect(first).toMatchObject({ total: 30, returned: 1, truncated: true });
+        expect(limited).toMatchObject({ total: 30, returned: 5, truncated: true });
+        expect(every).toMatchObject({ total: 30, returned: 20, truncated: true });
+        expect(pierced).toMatchObject({ total: 32, returned: 3, truncated: true });
+        expect(full).toMatchObject({ total: 30, returned: 30, truncated: false });
     });
 
     it("dom_snapshot marks a tree deeper than its accessibility depth cap", async () => {

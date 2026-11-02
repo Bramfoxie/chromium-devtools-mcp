@@ -76,7 +76,11 @@ const rowSchema = z.object({
 const rowsSchema = z.object({
     result: z.object({
         type : z.string().optional(),
-        value: z.object({ rows: z.array(rowSchema), truncated: z.boolean() }).optional(),
+        value: z.object({
+            rows     : z.array(rowSchema),
+            truncated: z.boolean(),
+            total    : z.number(),
+        }).optional(),
     }),
 });
 
@@ -105,6 +109,7 @@ export function buildQueryScript(selector: string, count: number): string {
     return `(() => {
   ${elementCollector(selector, false, count)}
   found.walkTruncated = walkTruncated;
+  found.total = total;
   return found;
 })()`;
 }
@@ -113,6 +118,7 @@ export function buildPiercedQueryScript(selector: string, count: number): string
     return `(() => {
   ${elementCollector(selector, true, count)}
   found.walkTruncated = walkTruncated;
+  found.total = total;
   return found;
 })()`;
 }
@@ -139,7 +145,7 @@ export function buildRowsFunction(attributes: string[]): string {
       rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
     };
   });
-  return { rows, truncated: this.walkTruncated === true };
+  return { rows, truncated: this.walkTruncated === true, total: this.total };
 }`;
 }
 
@@ -188,13 +194,13 @@ const matchSchema = z.strictObject({
 
 export const domQuery = defineTool({
     name       : "dom_query",
-    description: "Find elements by a CSS selector and read their text, attributes and boxes. The text filter scans at most the first 2000 matches and pierce returns at most 200 and visits at most 20000 elements; truncated reports when a cap applied.",
+    description: "Find elements by a CSS selector and read their text, attributes and boxes. Total counts every match in the page; the text filter scans at most the first 2000 matches and pierce visits at most 20000 elements; truncated reports when more matches exist than returned or a cap applied.",
     access     : "read",
     input      : z.strictObject({
         tab       : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
         selector  : z.string().min(1).max(1024).describe("CSS selector to match. Use >>> to chain through shadow roots, for example my-app >>> #inner."),
-        all       : z.boolean().optional().describe("Return every match instead of the first. Defaults to false."),
-        limit     : z.number().int().min(1).max(QUERY_MAX_LIMIT).optional().describe("Maximum matches to return. Defaults to 20."),
+        all       : z.boolean().optional().describe("Return up to limit matches instead of one. Defaults to false."),
+        limit     : z.number().int().min(1).max(QUERY_MAX_LIMIT).optional().describe("Maximum matches to return. Defaults to 20 with all and to 1 without it."),
         text      : z.string().min(1).max(200).optional().describe("Keep only elements whose text contains this, case insensitively."),
         attributes: z.array(z.string().min(1).max(64)).max(50).optional().describe("Attribute names to include."),
         includeBox: z.boolean().optional().describe("Include bounding boxes. Defaults to true."),
@@ -203,9 +209,9 @@ export const domQuery = defineTool({
     }),
     output: z.strictObject({
         matches  : z.array(matchSchema).describe("Matched elements, in document order."),
-        total    : z.number().describe("Selector matches found, before the text filter and the limit. Without all, only the first match is looked up."),
+        total    : z.number().describe("Number of elements the selector matches in the page, before the text filter and the limit. A pierce walk counts at most 20000 elements."),
         returned : z.number().describe("Matches in this result, after the text filter and the limit."),
-        truncated: z.boolean().describe("True when the text filter looked at only the first 2000 selector matches a pierce search returned only the first 200 of total, or a pierce walk stopped after 20000 elements."),
+        truncated: z.boolean().describe("True when total is larger than the matches returned, the text filter looked at only the first 2000 selector matches, or a pierce walk stopped after 20000 elements."),
     }),
     handler: async (args, context) => {
         const targetId = args.tab ?? context.state.selected;
@@ -217,7 +223,7 @@ export const domQuery = defineTool({
         await ensureNoDialog(context.dialogs, targetId);
 
         const all = args.all ?? false;
-        const limit = all ? (args.limit ?? QUERY_DEFAULT_LIMIT) : 1;
+        const limit = args.limit ?? (all ? QUERY_DEFAULT_LIMIT : 1);
         const names = args.attributes ?? DEFAULT_QUERY_ATTRIBUTES;
         const includeBox = args.includeBox ?? true;
         const pierce = args.pierce ?? false;
@@ -253,7 +259,7 @@ export const domQuery = defineTool({
                 scoped.access,
                 targetId,
                 args.selector,
-                all,
+                false,
                 scope.frameId === undefined ? undefined : scope.nodeId,
             )
             : await (chained ? chainedNodes : matchingNodes)(
@@ -261,45 +267,53 @@ export const domQuery = defineTool({
                 targetId,
                 scope.nodeId,
                 args.selector,
-                all,
+                chained ? limit > 1 : false,
             ).then((ids) => ({ nodeIds: ids, total: ids.length }));
-        const { nodeIds, total } = found;
+        const { nodeIds } = found;
         const viaRows = !chained;
-        const textCapped = viaRows && args.text !== undefined &&
-            nodeIds.length > QUERY_MAX_TEXT_CANDIDATES;
-        const truncated = nodeIds.length < total || textCapped;
         const finish = <T extends { matches: unknown[]; returned: number }>(
             result    : T,
+            total     : number,
             walkCapped: boolean = false,
-        ) => ({ ...result, total, truncated: truncated || walkCapped });
+        ) => {
+            const textCapped = viaRows && args.text !== undefined &&
+                total > QUERY_MAX_TEXT_CANDIDATES;
+            const more = args.text === undefined
+                ? total > result.returned
+                : result.returned >= limit && total > result.returned;
+
+            return { ...result, total, truncated: textCapped || more || walkCapped };
+        };
 
         if (nodeIds.length === 0) return { matches: [], total: 0, returned: 0, truncated: false };
 
         if (!viaRows) {
-            return finish(await chainedMatches(
-                scoped,
-                targetId,
-                nodeIds,
-                limit,
-                args.text,
-                includeBox,
-                scope.frameId,
-                names,
-            ));
+            return finish(
+                await chainedMatches(
+                    scoped,
+                    targetId,
+                    nodeIds,
+                    limit,
+                    args.text,
+                    includeBox,
+                    scope.frameId,
+                    names,
+                ),
+                nodeIds.length,
+            );
         }
 
-        const { queried, walkCapped } = await queryElements(
+        const { queried, walkCapped, total } = await queryElements(
             scoped.access,
             targetId,
             args.selector,
             names,
-            nodeIds.length,
             limit,
             args.text,
             { pierce, contextId: scope.contextId },
         );
 
-        if (queried.length === 0) return finish({ matches: [], returned: 0 }, walkCapped);
+        if (queried.length === 0) return finish({ matches: [], returned: 0 }, total, walkCapped);
 
         const frameGeneration = scope.frameId === undefined
             ? undefined
@@ -337,7 +351,7 @@ export const domQuery = defineTool({
             ];
         });
 
-        return finish({ matches, returned: matches.length }, walkCapped);
+        return finish({ matches, returned: matches.length }, total, walkCapped);
     },
 });
 
@@ -773,14 +787,11 @@ async function queryElements(
     targetId: string,
     selector: string,
     names   : string[],
-    total   : number,
     limit   : number,
     filter  : string | undefined,
     scope   : { pierce: boolean; contextId: number | undefined },
-): Promise<{ queried: QueriedElement[]; walkCapped: boolean }> {
-    const count = filter === undefined
-        ? Math.min(total, limit)
-        : Math.min(total, QUERY_MAX_TEXT_CANDIDATES);
+): Promise<{ queried: QueriedElement[]; walkCapped: boolean; total: number }> {
+    const count = filter === undefined ? limit : QUERY_MAX_TEXT_CANDIDATES;
     const expression = scope.pierce
         ? buildPiercedQueryScript(selector, count)
         : buildQueryScript(selector, count);
@@ -832,13 +843,14 @@ async function queryElements(
 
         const rows = rowsReply.data.result.value?.rows ?? [];
         const walkCapped = rowsReply.data.result.value?.truncated ?? false;
+        const total = rowsReply.data.result.value?.total ?? 0;
         const needle = filter?.toLowerCase();
         const chosen = (needle === undefined
             ? rows
             : rows.filter((row) => row.text.toLowerCase().includes(needle))
         ).slice(0, limit);
 
-        if (chosen.length === 0) return { queried: [], walkCapped };
+        if (chosen.length === 0) return { queried: [], walkCapped, total };
 
         const properties = propertiesSchema.safeParse(
             await access.send(targetId, "Runtime.getProperties", {
@@ -881,7 +893,7 @@ async function queryElements(
             });
         }
 
-        return { queried, walkCapped };
+        return { queried, walkCapped, total };
     } finally {
         await access.send(targetId, "Runtime.releaseObjectGroup", { objectGroup }).catch(() => undefined);
     }

@@ -113,6 +113,7 @@ function queryFake(rows: Array<ReturnType<typeof row>>, backendIds: number[] = [
                         value  : {
                             rows     : rows.map((entry, index) => ({ index, ...entry })),
                             truncated: false,
+                            total    : backendIds.length,
                         },
                     },
                 };
@@ -247,6 +248,29 @@ console.log(JSON.stringify(seen));`;
     });
 });
 
+describe("query script totals", () => {
+    it("counts every match while listing only the requested count", async () => {
+        const setup = `const found = [{ n: 1 }, { n: 2 }, { n: 3 }];
+const document = { querySelectorAll: () => found };`;
+        const script = `const r = eval(${JSON.stringify(buildQueryScript("a", 2))});
+console.log(JSON.stringify({ length: r.length, total: r.total }));`;
+
+        expect(JSON.parse(await runScript(script, setup))).toEqual({ length: 2, total: 3 });
+    });
+
+    it("counts pierced matches beyond the requested count", async () => {
+        const setup = `const shadow = { querySelectorAll: (s) => s === "*" ? [] : [{ n: 3 }] };
+const host = { shadowRoot: shadow };
+const document = { querySelectorAll: (s) => s === "*" ? [host] : [{ n: 1 }, { n: 2 }] };`;
+        const script = `const r = eval(${JSON.stringify(buildPiercedQueryScript("b", 1))});
+console.log(JSON.stringify({ length: r.length, total: r.total, cut: r.walkTruncated }));`;
+
+        const seen: unknown = JSON.parse(await runScript(script, setup));
+
+        expect(seen).toEqual({ length: 1, total: 3, cut: false });
+    });
+});
+
 describe("pierce node budget", () => {
     it("marks the list truncated once the walk passes the node budget", async () => {
         const setup = `const everything = Array.from({ length: ${WALK_NODE_BUDGET + 1} }, () => ({}));
@@ -324,7 +348,7 @@ describe("dom_query", () => {
     it("queries a single element with the default attributes", async () => {
         const fake = queryFake([
             row({ tag: "a", id: "l", classes: ["x"], attributes: { href: "/p" }, text: "Click" }),
-        ]);
+        ], [101]);
         const { runtime } = setup(fake);
 
         await runTool(newTab, {}, extra(), runtime);
@@ -384,6 +408,47 @@ describe("dom_query", () => {
 
         expect(result.structuredContent).toMatchObject({ total: 3, returned: 1 });
         expect((result.structuredContent as { matches: unknown[] }).matches).toHaveLength(1);
+    });
+
+    it("reports the real total and truncated when more elements match than the default", async () => {
+        const rows = Array.from({ length: 3 }, (_, index) => row({ text: `r${index}` }));
+        const ids = Array.from({ length: 50 }, (_, index) => 100 + index);
+        const fake = queryFake(rows, ids);
+        const { runtime } = setup(fake);
+
+        await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+
+        const result = await runTool(domQuery, { selector: "li" }, extra(), runtime);
+
+        expect(result.structuredContent).toMatchObject({ total: 50, returned: 1, truncated: true });
+        expect(fake.sent.map((call) => call.method)).not.toContain("DOM.querySelectorAll");
+        const evaluate = fake.sent.find((call) => call.method === "Runtime.evaluate");
+
+        expect((evaluate?.params as { expression: string }).expression).toContain("matched.length");
+    });
+
+    it("honors limit without all", async () => {
+        const rows = Array.from({ length: 5 }, (_, index) => row({ text: `r${index}` }));
+        const fake = queryFake(rows, [1, 2, 3, 4, 5, 6, 7]);
+        const { runtime } = setup(fake);
+
+        await runTool(newTab, {}, extra(), runtime);
+
+        const result = await runTool(domQuery, { selector: "li", limit: 3 }, extra(), runtime);
+
+        expect(result.structuredContent).toMatchObject({ total: 7, returned: 3, truncated: true });
+    });
+
+    it("is not truncated when every match is returned", async () => {
+        const fake = queryFake([row(), row()], [1, 2]);
+        const { runtime } = setup(fake);
+
+        await runTool(newTab, {}, extra(), runtime);
+
+        const result = await runTool(domQuery, { selector: "li", all: true }, extra(), runtime);
+
+        expect(result.structuredContent).toMatchObject({ total: 2, returned: 2, truncated: false });
     });
 
     it("marks the result truncated when the text filter covers only the first candidates", async () => {
@@ -467,7 +532,7 @@ describe("dom_query", () => {
 
             const value = (answer as { result: { value: { rows: unknown } } }).result.value;
 
-            return { result: { type: "object", value: { rows: value.rows, truncated: true } } };
+            return { result: { type: "object", value: { rows: value.rows, truncated: true, total: 1 } } };
         };
 
         const { runtime } = setup(fake);
@@ -509,13 +574,10 @@ describe("dom_query", () => {
                 case "DOM.getDocument":
                     return { root: { nodeId: 1 } };
 
-                case "DOM.querySelectorAll": {
-                    const ids = page.elements.map((_, index) => 11 + index);
-
+                case "DOM.querySelector":
                     page.elements.unshift({ backendNodeId: 500, text: "inserted" });
 
-                    return { nodeIds: ids };
-                }
+                    return { nodeId: 11 };
 
                 case "Runtime.evaluate":
                     return page.evaluate((params as { expression: string }).expression);
@@ -544,10 +606,11 @@ describe("dom_query", () => {
             matches: Array<{ uid: string; text: string }>;
         };
 
-        expect(matches.map((match) => match.text)).toEqual(["inserted", "first"]);
+        expect(matches.map((match) => match.text)).toEqual(["inserted", "first", "second"]);
         expect(matches.map((match) => runtime.elements.lookup("tab1", match.uid))).toEqual([
             { backendNodeId: 500 },
             { backendNodeId: 501 },
+            { backendNodeId: 502 },
         ]);
     });
 
@@ -943,70 +1006,22 @@ describe("dom_query piercing", () => {
         expect(result.structuredContent).toMatchObject({ total: 2, returned: 2 });
     });
 
-    it("reports the true pierce total and marks a capped result truncated", async () => {
-        const fake = piercingFake();
-        const inner = fake.respond;
-
-        fake.respond = (targetId, method, params) => {
-            if (method === "DOM.performSearch") return { searchId: "s1", resultCount: 350 };
-
-            if (method === "DOM.getSearchResults") {
-                return { nodeIds: Array.from({ length: 200 }, (_, at) => 41 + at) };
-            }
-
-            return inner?.(targetId, method, params);
-        };
-
-        const { runtime } = setup(fake);
+    it("reports the pierce total beyond the returned rows and marks it truncated", async () => {
+        const { runtime } = setup(piercingFake());
 
         await runTool(newTab, {}, extra(), runtime);
 
         const result = await runTool(
             domQuery,
-            { selector: "button", all: true, pierce: true },
+            { selector: "button", all: true, limit: 1, pierce: true },
             extra(),
             runtime,
         );
 
         expect(result.structuredContent).toMatchObject({
-            total    : 350,
-            truncated: true,
-        });
-    });
-
-    it("excludes unusable search hits from the pierce total", async () => {
-        const fake = piercingFake();
-        const inner = fake.respond;
-
-        fake.respond = (targetId, method, params) => {
-            if (method === "DOM.performSearch") return { searchId: "s1", resultCount: 2 };
-            if (method === "DOM.getSearchResults") return { nodeIds: [41, 42] };
-
-            if (
-                method === "DOM.describeNode" &&
-                (params as { nodeId?: unknown })?.nodeId === 42
-            ) {
-                return { node: { nodeType: 3, nodeName: "#text", backendNodeId: 9 } };
-            }
-
-            return inner?.(targetId, method, params);
-        };
-
-        const { runtime } = setup(fake);
-
-        await runTool(newTab, {}, extra(), runtime);
-
-        const result = await runTool(
-            domQuery,
-            { selector: "button", all: true, pierce: true },
-            extra(),
-            runtime,
-        );
-
-        expect(result.structuredContent).toMatchObject({
-            total    : 1,
+            total    : 2,
             returned : 1,
-            truncated: false,
+            truncated: true,
         });
     });
 
