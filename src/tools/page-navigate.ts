@@ -451,7 +451,11 @@ async function navigateAndWait(
             await context.access.unsubscribe(targetId, event).catch(() => undefined);
         }
 
-        if (!keepPage) {
+        if (keepPage) {
+            await context.access
+                .send(targetId, "Page.setLifecycleEventsEnabled", { enabled: false })
+                .catch(() => undefined);
+        } else {
             await context.access.send(targetId, "Page.disable", {}).catch(() => undefined);
         }
 
