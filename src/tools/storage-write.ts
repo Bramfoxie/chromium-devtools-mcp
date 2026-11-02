@@ -336,7 +336,6 @@ async function writeCookies(
             throw new ToolError("The set action needs cookies to set.");
         }
 
-        // Validate every cookie before the first send: no partial writes.
         for (const cookie of cookies) checkCookieDomain(cookie.domain, host);
 
         let applied = 0;

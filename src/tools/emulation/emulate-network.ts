@@ -74,7 +74,6 @@ export async function ensureNetworkForEmulation(
     ensure  : (tab: string) => Promise<void>,
     targetId: string,
 ): Promise<void> {
-    // Shares the capture manager flag, so emulation never disables network capture.
     await ensure(targetId);
 }
 

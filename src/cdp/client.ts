@@ -47,7 +47,6 @@ function logError(message: string): void {
     try {
         process.stderr.write(`chromium-devtools-mcp: ${message}\n`);
     } catch {
-    // stderr is gone; nothing left to report to.
     }
 }
 

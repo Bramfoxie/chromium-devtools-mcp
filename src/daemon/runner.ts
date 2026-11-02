@@ -36,7 +36,6 @@ export interface RunningDaemon {
 export interface BrowserHandle {
     client: CdpClient;
     stop(): Promise<void>;
-    // Present when the browser should stay open after an idle stop.
     release?(): Promise<void>;
 }
 
@@ -94,7 +93,6 @@ async function isHeadless(client: CdpClient): Promise<boolean | undefined> {
     return typeof agent === "string" ? HEADLESS_AGENT.test(agent) : undefined;
 }
 
-// Closes the pages a dead daemon left in a headless browser; nobody can be using them.
 async function closeLeftoverPages(client: CdpClient): Promise<void> {
     const result = await client.send("Target.getTargets").catch(() => undefined);
     const infos = (result as { targetInfos?: unknown } | undefined)?.targetInfos;

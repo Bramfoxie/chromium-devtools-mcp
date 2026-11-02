@@ -99,7 +99,6 @@ async function attachedCount(
 ): Promise<number> {
     const parsed = uploadChangeSchema.safeParse(
         await access.send(tab, "Runtime.callFunctionOn", {
-            // DOM.setFileInputFiles already fires change; read the count only.
             functionDeclaration: UPLOAD_COUNT_EXPRESSION,
             objectId           : element.objectId,
             arguments          : [{ objectId: element.objectId }],
@@ -159,7 +158,6 @@ export const inputUpload = defineTool({
             args.target,
             { frames: context.frames },
         );
-        // Hidden file inputs are normal: no box, scroll or hit test is needed.
         const checked = await ensureActionable(context.access, targetId, element, {
             checkDisabled: true,
             checkVisible : false,

@@ -183,7 +183,6 @@ describe("ChildTargets.attach", () => {
         );
 
         attach("child1", "child-session-1", peer);
-        // Real Chrome wraps the child detach in the parent (tab) session.
         emit(peer, "Target.detachedFromTarget", { sessionId: "child-session-1" }, "peer-session");
         emit(peer, "Target.detachedFromTarget", { sessionId: "unknown" }, "peer-session");
 
@@ -222,7 +221,6 @@ describe("ChildTargets.attach", () => {
         expect(handle.takeUnmatched().map((child) => child.child.sessionId)).toEqual([
             "child-session-1",
         ]);
-        // Not confirmed, so it comes back for the next frame list.
         expect(handle.takeUnmatched().map((child) => child.child.sessionId)).toEqual([
             "child-session-1",
         ]);

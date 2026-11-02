@@ -95,7 +95,6 @@ export class FrameState {
             try {
                 this.replace(tab, await this.access.listFrames(tab));
             } catch {
-                // The tab may be gone; subscriptions report that below.
             }
 
             state.ensured = true;

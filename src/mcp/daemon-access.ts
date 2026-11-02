@@ -83,7 +83,6 @@ export class DaemonAccess {
         return this.generation;
     }
 
-    // Registration is local until a request brings the link up; see attachAll.
     on(event: string, handler: DaemonEventHandler): () => void {
         const registration: EventRegistration = { event, handler, off: () => undefined };
 
@@ -197,7 +196,6 @@ export class DaemonAccess {
         const result = await this.link.request(method, params, options);
 
         this.syncGeneration();
-        // A request proves the link is up, so attach local registrations now.
         void this.attachMissing();
 
         return result;
@@ -220,7 +218,6 @@ export class DaemonAccess {
             this.attachedClient = client;
             this.attachAll();
         } catch {
-            // No daemon yet: the next request retries.
         }
     }
 
@@ -245,7 +242,6 @@ export class DaemonAccess {
                 }
             });
         } catch {
-            // No daemon yet: attachAll retries on the next session generation.
         }
     }
 }

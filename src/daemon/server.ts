@@ -15,7 +15,6 @@ import { tokensMatch } from "./token.js";
 
 const DEFAULT_HELLO_TIMEOUT_MS = 5000;
 const MAX_IN_FLIGHT = 64;
-// Replies up to MAX_RESPONSE_BYTES are always flushed; only queued backlog kills.
 const MAX_WRITE_BACKLOG_BYTES = 2 * MAX_RESPONSE_BYTES;
 const INTERNAL_MESSAGE = "The daemon failed to handle the request.";
 const TOO_LARGE_MESSAGE = "The result exceeds the 32 MiB limit of the daemon protocol. Ask for less data.";

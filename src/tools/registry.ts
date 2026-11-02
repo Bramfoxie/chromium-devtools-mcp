@@ -136,7 +136,6 @@ export async function runTool(
         ? (tool.dangerous as (args: unknown) => boolean)(parsed.data)
         : (tool.dangerous ?? false);
 
-    // The tab URL is resolved only when a domain allowlist can use it.
     const tabUrl = access === "mutate" && runtime.config.safety.allowedDomains.length > 0
         ? await resolveTabUrl(tool, parsed.data, runtime).catch(() => undefined)
         : undefined;

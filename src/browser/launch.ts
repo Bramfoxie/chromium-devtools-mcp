@@ -27,7 +27,6 @@ export interface ManagedBrowser {
     readonly port        : number;
     readonly webSocketUrl: string;
     stop(): Promise<void>;
-    // Lets the browser outlive this process; it can no longer be stopped afterwards.
     release(): void;
 }
 

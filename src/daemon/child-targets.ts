@@ -65,7 +65,6 @@ function wrap(session: CdpSession, child: ChildTargetInfo): FrameChildSession {
 
 export class ChildTargets implements ChildSessionHandle {
     private readonly known = new Map<string, KnownChild>();
-    // Child sessions arrive before the frame tree names them; matched by listFrames.
     private readonly unmatched = new Set<string>();
     private readonly listeners = new Map<string, Array<() => void>>();
     private closed = false;
@@ -140,7 +139,6 @@ export class ChildTargets implements ChildSessionHandle {
         await Promise.all(sessions.map((known) => known.session.detach().catch(() => undefined)));
     }
 
-    // Nested OOPIF reports arrive on the child session, so every session listens.
     private listen(session: CdpSession, depth: number): void {
         const stop = [
             this.deps.on(session, "Target.attachedToTarget", (params, envelope) =>
@@ -174,7 +172,6 @@ export class ChildTargets implements ChildSessionHandle {
 
         if (!parsed.success || parsed.data.targetInfo.type !== "iframe") return;
 
-        // The attach event arrives on the session that owns the iframe.
         if (envelope !== undefined && envelope !== session.sessionId) return;
 
         this.adopt(
@@ -218,7 +215,6 @@ export class ChildTargets implements ChildSessionHandle {
         this.known.set(sessionId, { child, session: adopted, depth });
         this.unmatched.add(sessionId);
         this.listen(adopted, depth);
-        // Nested OOPIF reports arrive on the child session, so it opts in too.
         void this.deps
             .send(adopted, "Target.setAutoAttach", {
                 autoAttach            : true,

@@ -16,7 +16,6 @@ export function describeError(error: unknown): string {
     return quoted(error instanceof Error ? error.message : String(error));
 }
 
-// A closed stderr must not crash the process through an unhandled stream error.
 export function ignoreStreamErrors(stream: Pick<Writable, "on"> = process.stderr): void {
     stream.on("error", () => undefined);
 }

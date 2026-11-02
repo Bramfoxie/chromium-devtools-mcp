@@ -123,7 +123,6 @@ export class IpcClient {
                 reject(new IpcCancelledError(method));
             };
 
-            // The daemon keeps running an aborted command; the caller gets its slot back.
             options.signal?.addEventListener("abort", onAbort, { once: true });
             const pending = { method, resolve, reject, timer };
             const originalResolve = pending.resolve;
@@ -144,7 +143,6 @@ export class IpcClient {
         });
     }
 
-    // The IPC wait is the CDP wait plus a margin.
     private timeoutFor(method: string, params: unknown): number {
         const declared = (params as { timeoutMs?: unknown } | null | undefined)?.timeoutMs;
 
@@ -161,7 +159,6 @@ export class IpcClient {
                 : this.requestTimeoutMs;
     }
 
-    // Subscribing after close silently returns a no-op; the handler never fires.
     on(event: string, handler: IpcEventHandler): () => void {
         if (this.isClosed) return () => undefined;
 

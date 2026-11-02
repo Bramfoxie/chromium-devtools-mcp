@@ -90,7 +90,6 @@ async function endpointInDir(
 
     const parsed = content === undefined ? undefined : parseActivePortFile(content);
 
-    // The inspect server has no HTTP endpoints; the port file is the only URL source.
     if (parsed && (await deps.isPortOpen(parsed.port, signal).catch(() => false))) {
         return { ...parsed, source: "port-file" };
     }
@@ -135,7 +134,6 @@ export async function runningInProfile(
     return webSocketUrl ? { port: debugPort, webSocketUrl, source: "debug-port" } : undefined;
 }
 
-// A lock file proves a running browser holds the profile.
 async function profileLocked(deps: AttachDeps, dir: string): Promise<boolean> {
     const name = deps.context.platform === "win32" ? "lockfile" : "SingletonSocket";
 

@@ -112,7 +112,6 @@ function pausedOf(params: unknown): PausedRequest | undefined {
 }
 
 export function matchWildcard(pattern: string, value: string): boolean {
-    // Linear glob matcher: no regex, no backtracking on hostile patterns.
     let pi = 0;
     let vi = 0;
     let star = -1;
@@ -400,7 +399,6 @@ export class InterceptionManager {
     }
 
     private async enable(tab: string, state: TabInterception): Promise<void> {
-        // Subscribe first: the daemon drops events nobody listens to.
         if (!state.subscribed) {
             await this.access.subscribe(tab, FETCH_EVENT);
             state.subscribed = true;

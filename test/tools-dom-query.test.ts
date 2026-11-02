@@ -274,7 +274,6 @@ describe("dom_query", () => {
         expect(result.structuredContent).toMatchObject({ total: 3, returned: 1 });
         expect(result.structuredContent).toMatchObject({ matches: [{ text: "Cherry tart", box: null }] });
 
-        // The uid must resolve to the Cherry row (index 1), not to the first match.
         const uid = (result.structuredContent as { matches: Array<{ uid: string }> }).matches[0]?.uid ?? "";
 
         expect(uid).not.toBe("");

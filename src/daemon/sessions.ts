@@ -267,7 +267,6 @@ export class ClientSession {
 
         checkEvent(event);
         const key = frameId === undefined ? event : `${frameId}|${event}`;
-        // Two owners (a tool and the frame tracker) share one browser listener.
         const known = tab.subscriptions.get(key);
 
         if (known !== undefined) {
@@ -516,7 +515,6 @@ export class ClientSession {
         const entry = tab.frames.get(frameId);
 
         if (entry?.session === undefined) {
-            // An isolated frame may attach before a frame list names it; try once.
             await this.matchChildren(tab, children);
         }
 
@@ -559,7 +557,6 @@ export class ClientSession {
 
             const entry = tab.frames.get(child.child.frameId);
 
-            // The frame tree may not name the frame yet; retry on the next list.
             if (entry === undefined) continue;
 
             entry.session = child;
@@ -567,7 +564,6 @@ export class ClientSession {
         }
     }
 
-    // Frame listeners belong to a child session; drop them when it ends.
     private unsubscribeAll(tab: OwnedTab, frameId: string): void {
         for (const [key, entry] of [...tab.subscriptions]) {
             if (key === frameId || key.startsWith(`${frameId}|`)) {

@@ -123,7 +123,6 @@ export class ElementRegistry {
         const state = this.state(tab);
 
         return nodes.map((node) => {
-            // The same element keeps its uid.
             const key = `${node.backendNodeId}|${node.frameId ?? ""}`;
             const known = state.byNode.get(key);
 
@@ -378,7 +377,6 @@ async function scopeNode(
 
             return { nodeId: scope, frameId: resolved.frameId };
         } catch (error) {
-            // Unknown frame ids fall through to the iframe selector path.
             if (error instanceof ToolError && !error.message.startsWith("No frame ")) throw error;
         }
     }
@@ -676,7 +674,6 @@ export async function boxOf(
     try {
         result = await access.send(tab, "DOM.getBoxModel", { ...ref });
     } catch (error) {
-        // A hidden element has no box model, so its CDP error means invisible.
         if (isCdpError(error)) return { box: null, visible: false };
 
         throw error;

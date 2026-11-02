@@ -294,7 +294,6 @@ interface EvaluateOutcome {
     elementObjectId: string | undefined;
 }
 
-// Best effort: a failed release must not hide the tool result.
 async function releaseObjects(
     access   : DaemonAccess,
     targetId : string,
@@ -329,7 +328,6 @@ async function extractStructuredValue(
     const objectId = remote.objectId;
     const serializable = remote.subtype === undefined || remote.subtype === "array";
 
-    // Nodes, errors, maps and values already present keep the description.
     if (
         objectId === undefined || remote.type !== "object" || !serializable ||
         ("value" in remote && remote.value !== undefined)
@@ -368,7 +366,6 @@ async function evaluate(
     targetId: string,
     request : EvaluateRequest,
 ): Promise<EvaluateOutcome> {
-    // One evaluation only: retrying would run page side effects twice.
     if (request.target === undefined) {
         const response = await access.send(
             targetId,

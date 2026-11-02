@@ -112,7 +112,6 @@ export class CaptureManager {
 
         if (capture.consoleEnabled) return;
 
-        // Subscribe first: the daemon drops events nobody listens to.
         for (const event of CONSOLE_EVENTS) await this.access.subscribe(tab, event);
 
         try {
@@ -227,7 +226,6 @@ export class CaptureManager {
                 (query.levels === undefined || query.levels.includes(value.level)) &&
                 (query.textContains === undefined || value.text.includes(query.textContains)),
             );
-        // Newest takes the tail, oldest the head.
         const kept = query.order === "newest"
             ? filtered.slice(-query.limit)
             : filtered.slice(0, query.limit);
@@ -302,7 +300,6 @@ export class CaptureManager {
 
             if (value.requestId.includes(".") || since === undefined) return 0;
 
-            // Records replayed by Network.enable predate the wait and never finish.
             if (value.startTime === undefined && value.finishedAt === undefined) continue;
 
             seen = true;

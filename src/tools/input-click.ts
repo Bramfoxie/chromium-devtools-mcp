@@ -131,7 +131,6 @@ async function mousePoint(
     verb    : string,
     force   : boolean,
 ): Promise<{ point: ClickPoint; state: ElementState; box: Rect }> {
-    // One scroll and one box: the hit test and the dispatch share the point.
     const scrolled = await ensureActionable(context.access, targetId, element, {
         checkDisabled: true,
     });
@@ -271,7 +270,6 @@ export const inputClick = defineTool({
 
         throwIfCancelled(context.signal);
 
-        // The release must reach the page even when the press path fails.
         const acted = await navigationOf(context.access, targetId, async () => {
             await context.access.send(targetId, "Input.dispatchMouseEvent", {
                 type      : "mouseMoved",

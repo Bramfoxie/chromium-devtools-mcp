@@ -200,7 +200,6 @@ export class DialogState {
                 ...(promptText === undefined ? {} : { promptText }),
             });
         } catch (error) {
-            // Clear only when the same dialog is still open.
             if (error instanceof RpcError && error.code === ErrorCode.cdpError) {
                 if (state.open === open) {
                     this.record(state, open, "closed");

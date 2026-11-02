@@ -303,7 +303,6 @@ export const domQuery = defineTool({
 
         if (rows.length === 0) return finish({ matches: [], returned: 0 });
 
-        // Rows carry their match index; uids come from the filtered nodes.
         const picked = rows.flatMap((row) => {
             const at = row.index ?? -1;
             const nodeId = nodeIds[at];

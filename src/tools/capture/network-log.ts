@@ -137,7 +137,6 @@ function redactParams(raw: string): string {
 }
 
 export function redactUrl(url: string): string {
-    // Userinfo never reaches the model: credentials in the URL are replaced.
     const withoutUserinfo = url.replace(/^(https?:\/\/)[^@/]*@/, `$1${REDACTED}@`);
     const query = withoutUserinfo.indexOf("?");
 
@@ -225,7 +224,6 @@ export function reduceNetworkEvent(
         const data = parsed.data;
         const known = find(data.requestId);
 
-        // The browser repeats the event without a redirect when a request restarts.
         if (data.redirectResponse === undefined && known !== undefined) {
             known.method = data.request.method;
             known.url = redactUrl(data.request.url);

@@ -57,7 +57,6 @@ export class Daemon {
         this.armIdle();
     }
 
-    // Idle counting starts in every state.
     armIdle(): void {
         this.idleArmed = true;
         this.scheduleIdle();
@@ -83,7 +82,6 @@ export class Daemon {
         });
     };
 
-    // Closes sessions, not sockets; release the instance to drop clients.
     async shutdown(): Promise<void> {
         this.stopped = true;
         this.cancelIdle();

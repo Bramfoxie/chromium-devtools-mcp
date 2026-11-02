@@ -29,7 +29,6 @@ export interface DeviceSpec {
     userAgent        : string;
 }
 
-// Generic realistic strings written for this project, not copied from a device list.
 export const DEVICES: DeviceSpec[] = [
     {
         name             : "iPhone SE",

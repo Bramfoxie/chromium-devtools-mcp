@@ -520,7 +520,6 @@ export const pageWait = defineTool({
         if (kind === "ms") {
             throwIfCancelled(context.signal);
 
-            // A plain sleep always runs its full length.
             const sleepMs = args.ms ?? 0;
 
             await cancellableSleep(context, sleepMs);

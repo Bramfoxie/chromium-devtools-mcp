@@ -113,10 +113,8 @@ async function wheelScroll(
 ): Promise<WheelScrollResult> {
     await context.access.send(targetId, "Input.dispatchMouseEvent", wheelParams(point, deltaX, deltaY));
 
-    // Poll until the scroll position is stable.
     const after = await settleScroll(context, targetId);
 
-    // Only the window position is reported: a container under the wheel point may scroll instead.
     return { position: after, method: "wheel" };
 }
 

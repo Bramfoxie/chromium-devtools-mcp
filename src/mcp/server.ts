@@ -188,7 +188,6 @@ export async function runMcpServer(
     const stop = (): Promise<void> => {
         if (begun) return stopping ?? Promise.resolve();
 
-        // Set first: server.close() fires onclose synchronously.
         begun = true;
         stopping = (async () => {
             stdin.off("end", onInputEnd);

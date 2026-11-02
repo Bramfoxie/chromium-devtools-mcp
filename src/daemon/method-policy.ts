@@ -103,7 +103,6 @@ export function checkCall(
         return { ...params, url: normalizeUrl(url) };
     }
 
-    // Only getCookies with urls is blocked here; the other cookie methods are scoped by the tools.
     if (method === "Network.getCookies" && params?.urls !== undefined) {
         throw forbidden(
             "Network.getCookies with urls is not allowed because it reads the cookies of other sites.",

@@ -93,7 +93,6 @@ function buildTable(): Map<string, KeySpec> {
         put(text, { key: text, code, windowsCode });
     }
 
-    // Shifted printable keys: CDP takes the produced character as key plus the Shift modifier.
     const shifted: Array<[string, string, number]> = [
         ["!", "Digit1", 49],
         ["@", "Digit2", 50],
@@ -253,7 +252,6 @@ export function producedText(
         return undefined;
     }
 
-    // Enter inserts a carriage return; no text with modifiers.
     if (spec.key === "Enter") return "\r";
 
     if (spec.key.length > 1) {

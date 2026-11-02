@@ -161,7 +161,6 @@ type MatchedEntry = z.infer<typeof matchedEntrySchema>;
 type Winner = { rule: number; declaration: number };
 
 function cascadeWinners(entries: MatchedEntry[]): Map<string, Winner> {
-    // Per property the last important declaration wins, else the last declaration.
     const importantByName = new Set<string>();
 
     for (const entry of entries) {
@@ -202,7 +201,6 @@ export function shapeMatchedRules(
     const scored = entries.map((entry, rule) => ({ entry, rule }));
     const last = cascadeWinners(entries);
 
-    // Keep the most specific rules: truncation drops the least specific.
     const kept = scored.slice(-maxRules);
 
     return kept.map((item) => {
@@ -231,7 +229,6 @@ export function shapeMatchedRules(
 export function shapeInherited(
     inherited: NonNullable<z.infer<typeof matchedSchema>["inherited"]>,
 ): InheritedStyle[] {
-    // The last matching declaration per property wins.
     const shaped: InheritedStyle[] = [];
     const seen = new Set<string>();
 

@@ -69,7 +69,6 @@ export function navigationWaitReduce(
             return state;
 
         case "stopped": {
-            // Only a stop after the new navigation with its loader is a result.
             if (!state.navigated) return { ...state, stopped: true };
 
             if (
@@ -171,7 +170,6 @@ async function currentPage(
             return parsed.data.result.value ?? fallback;
         }
     } catch {
-        // The page may be gone; the caller reports what it knows.
     }
 
     return fallback;
@@ -256,7 +254,6 @@ export const pageNavigate = defineTool({
 
         const deadline = createDeadline(context.signal, timeoutMs, () => context.clock.now());
 
-        // The document changes even when the navigation fails; old uids go stale.
         try {
             if (waitUntil === "none") {
                 await navigate(context, deadline, targetId, action, args.url, args.ignoreCache);
@@ -410,7 +407,6 @@ async function navigateAndWait(
 
         throwIfCancelled(context.signal);
 
-        // Drop events of the previous page: nothing of the new navigation exists yet.
         state = navigationWaitStart();
 
         const started = await navigate(context, deadline, targetId, action, url, ignoreCache);
@@ -442,7 +438,6 @@ async function navigateAndWait(
             await context.access.unsubscribe(targetId, event).catch(() => undefined);
         }
 
-        // Dialog capture owns Page.enable from tab creation; never disable it here.
         if (!keepPage) {
             await context.access.send(targetId, "Page.disable", {}).catch(() => undefined);
         }

@@ -20,7 +20,6 @@ export interface ChildTargetInfo {
 }
 
 export interface ChildSessionOptions {
-    // Raised when a child session ends: Target.detachedFromTarget, navigation, tab close.
     onDetached(child: ChildTargetInfo): void;
 }
 
@@ -54,7 +53,6 @@ export interface BrowserBackend {
         options: ChildSessionOptions,
     ): Promise<ChildSessionHandle>;
     onTargetDestroyed(handler: (targetId: string) => void): () => void;
-    // fires when the connection ends, including after close()
     onDisconnected(handler: () => void): () => void;
     // closes the connection to the browser, not the browser itself
     close(): Promise<void>;
