@@ -304,6 +304,7 @@ export {
     revealElement,
     splitPierceChain,
     STALE_UID_MESSAGE,
+    withElement,
 } from "./element-target.js";
 
 export {

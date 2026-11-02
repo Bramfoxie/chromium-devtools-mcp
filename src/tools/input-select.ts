@@ -6,7 +6,7 @@ import { ensureNoDialog } from "./dialogs.js";
 import {
     elementAccess,
     elementTargetSchema,
-    resolveElement,
+    withElement,
     type ResolvedElement,
 } from "./element-target.js";
 import { ToolError } from "./errors.js";
@@ -218,60 +218,58 @@ export const inputSelect = defineTool({
         await ensureNoDialog(context.dialogs, targetId);
         await context.focus.ensure(context.access, targetId);
 
-        const element = await resolveElement(
-            context.access,
-            context.elements,
-            targetId,
-            args.target,
-            { frames: context.frames },
-        );
-        const owner = elementAccess(context.access, element);
-        const checked = await ensureActionable(owner, targetId, element, {
-            checkDisabled: true,
+        return withElement(context, targetId, args.target, async (element) => {
+            const owner = elementAccess(context.access, element);
+            const checked = await ensureActionable(owner, targetId, element, {
+                checkDisabled: true,
+            });
+
+            if (!checked.state.selectable) {
+                throw new ToolError(
+                    `The element <${checked.state.tag}> is not a select. Target a select element.`,
+                );
+            }
+
+            const { multiple, options } = await readSelect(owner, targetId, element);
+            const by: SelectBy = args.values !== undefined
+                ? { values: args.values }
+                : args.labels !== undefined
+                    ? { labels: args.labels }
+                    : { indexes: args.indexes ?? [] };
+            const matched = matchSelectOptions(options, by, multiple);
+
+            if ("error" in matched) throw new ToolError(matched.error);
+
+            const acted = await navigationOf(context.access, targetId, () =>
+                owner.send(targetId, "Runtime.callFunctionOn", {
+                    functionDeclaration: SELECT_WRITE_EXPRESSION,
+                    objectId           : element.objectId,
+                    arguments          : [
+                        { objectId: element.objectId },
+                        { value: matched.indexes },
+                    ],
+                    returnByValue: true,
+                }));
+
+            const parsed = selectWriteSchema.safeParse(acted.value);
+
+            if (!parsed.success || parsed.data.result.value === undefined) {
+                throw new ToolError(
+                    "The browser sent an unexpected response to Runtime.callFunctionOn. Try the call again.",
+                );
+            }
+
+            const selected = parsed.data.result.value.selected ?? [];
+
+            return {
+                ok    : true,
+                target: summarizeTarget(args.target.uid, checked.state),
+                effect: selected.length === 1
+                    ? `The option ${JSON.stringify(selected[0]?.label ?? "")} was selected.`
+                    : `${selected.length} options were selected.`,
+                selected,
+                ...changedUrl(acted.urlBefore, acted.urlAfter),
+            };
         });
-
-        if (!checked.state.selectable) {
-            throw new ToolError(
-                `The element <${checked.state.tag}> is not a select. Target a select element.`,
-            );
-        }
-
-        const { multiple, options } = await readSelect(owner, targetId, element);
-        const by: SelectBy = args.values !== undefined
-            ? { values: args.values }
-            : args.labels !== undefined
-                ? { labels: args.labels }
-                : { indexes: args.indexes ?? [] };
-        const matched = matchSelectOptions(options, by, multiple);
-
-        if ("error" in matched) throw new ToolError(matched.error);
-
-        const acted = await navigationOf(context.access, targetId, () =>
-            owner.send(targetId, "Runtime.callFunctionOn", {
-                functionDeclaration: SELECT_WRITE_EXPRESSION,
-                objectId           : element.objectId,
-                arguments          : [{ objectId: element.objectId }, { value: matched.indexes }],
-                returnByValue      : true,
-            }));
-
-        const parsed = selectWriteSchema.safeParse(acted.value);
-
-        if (!parsed.success || parsed.data.result.value === undefined) {
-            throw new ToolError(
-                "The browser sent an unexpected response to Runtime.callFunctionOn. Try the call again.",
-            );
-        }
-
-        const selected = parsed.data.result.value.selected ?? [];
-
-        return {
-            ok    : true,
-            target: summarizeTarget(args.target.uid, checked.state),
-            effect: selected.length === 1
-                ? `The option ${JSON.stringify(selected[0]?.label ?? "")} was selected.`
-                : `${selected.length} options were selected.`,
-            selected,
-            ...changedUrl(acted.urlBefore, acted.urlAfter),
-        };
     },
 });

@@ -6,7 +6,7 @@ import { ensureNoDialog } from "./dialogs.js";
 import {
     elementAccess,
     elementTargetSchema,
-    resolveElement,
+    withElement,
     type ResolvedElement,
 } from "./element-target.js";
 import { ToolError } from "./errors.js";
@@ -216,110 +216,108 @@ export const inputType = defineTool({
         await ensureNoDialog(context.dialogs, targetId);
         await context.focus.ensure(context.access, targetId);
 
-        let element: ResolvedElement | undefined;
-        let password = false;
-        let summary: ReturnType<typeof summarizeTarget> | undefined;
+        const target = args.target;
+        const run = async (element: ResolvedElement | undefined) => {
+            let password = false;
+            let summary: ReturnType<typeof summarizeTarget> | undefined;
 
-        if (args.target !== undefined) {
-            const resolved = await resolveElement(
-                context.access,
-                context.elements,
-                targetId,
-                args.target,
-                { frames: context.frames },
-            );
-            const checked = await ensureActionable(
-                elementAccess(context.access, resolved),
-                targetId,
-                resolved,
-                { checkDisabled: true },
-            );
+            if (element !== undefined && target !== undefined) {
+                const checked = await ensureActionable(
+                    elementAccess(context.access, element),
+                    targetId,
+                    element,
+                    { checkDisabled: true },
+                );
 
-            if (checked.state.fileInput) {
+                if (checked.state.fileInput) {
+                    throw new ToolError(
+                        "The element is a file input and cannot be typed into. Use input_upload instead.",
+                    );
+                }
+
+                if (checked.state.editable === "none") {
+                    throw new ToolError(
+                        `The element <${checked.state.tag}> cannot be typed into. Target an input that accepts text, a textarea or an editable element.`,
+                    );
+                }
+
+                password = checked.state.editable === "password";
+                summary = summarizeTarget(target.uid, checked.state);
+            }
+
+            const delayMs = args.delayMs ?? 0;
+
+            if (delayMs * [...args.text].length > TYPE_BUDGET_MS) {
                 throw new ToolError(
-                    "The element is a file input and cannot be typed into. Use input_upload instead.",
+                    `Typing ${[...args.text].length} characters with delayMs ${delayMs} would take longer than ${TYPE_BUDGET_MS} ms. Lower delayMs or type less text per call.`,
                 );
             }
 
-            if (checked.state.editable === "none") {
-                throw new ToolError(
-                    `The element <${checked.state.tag}> cannot be typed into. Target an input that accepts text, a textarea or an editable element.`,
-                );
+            const acted = await navigationOf(context.access, targetId, async () => {
+                if (element !== undefined) {
+                    await focusElement(elementAccess(context.access, element), targetId, element);
+                }
+
+                if (args.clear === true) await clearField(context, targetId);
+
+                if (delayMs === 0) {
+                    throwIfCancelled(context.signal);
+                    await context.access.send(targetId, "Input.insertText", { text: args.text });
+                } else {
+                    await typeSlowly(context, targetId, args.text, delayMs);
+                }
+
+                if (args.submit === true) await pressEnter(context, targetId);
+            });
+
+            const echo = echoOf(args.text, password);
+
+            if (element === undefined) {
+                return {
+                    ok         : true,
+                    effect     : "The text was typed into the focused element.",
+                    valueLength: 0,
+                    ...(echo === undefined ? {} : { typed: echo }),
+                    contains   : true,
+                    ...changedUrl(acted.urlBefore, acted.urlAfter),
+                };
             }
 
-            password = checked.state.editable === "password";
-            element = resolved;
-            summary = summarizeTarget(args.target.uid, checked.state);
-        }
+            const urlChanged = changedUrl(acted.urlBefore, acted.urlAfter).urlAfter !== undefined;
+            const outcome = urlChanged
+                ? undefined
+                : await readValue(elementAccess(context.access, element), targetId, element);
 
-        const delayMs = args.delayMs ?? 0;
-
-        if (delayMs * [...args.text].length > TYPE_BUDGET_MS) {
-            throw new ToolError(
-                `Typing ${[...args.text].length} characters with delayMs ${delayMs} would take longer than ${TYPE_BUDGET_MS} ms. Lower delayMs or type less text per call.`,
-            );
-        }
-
-        const acted = await navigationOf(context.access, targetId, async () => {
-            if (element !== undefined) {
-                await focusElement(elementAccess(context.access, element), targetId, element);
+            if (outcome === undefined) {
+                return {
+                    ok         : true,
+                    target     : summary,
+                    effect     : "The text was typed and the page navigated.",
+                    valueLength: 0,
+                    ...(echo === undefined ? {} : { typed: echo }),
+                    contains   : true,
+                    ...changedUrl(acted.urlBefore, acted.urlAfter),
+                };
             }
 
-            if (args.clear === true) await clearField(context, targetId);
+            const contains = outcome.text.includes(args.text);
 
-            if (delayMs === 0) {
-                throwIfCancelled(context.signal);
-                await context.access.send(targetId, "Input.insertText", { text: args.text });
-            } else {
-                await typeSlowly(context, targetId, args.text, delayMs);
-            }
-
-            if (args.submit === true) await pressEnter(context, targetId);
-        });
-
-        const echo = echoOf(args.text, password);
-
-        if (element === undefined) {
             return {
-                ok         : true,
-                effect     : "The text was typed into the focused element.",
-                valueLength: 0,
+                ok    : contains,
+                target: summary,
+                effect: contains
+                    ? "The text was typed into the element."
+                    : "The text was typed but the field does not contain it. The page may have filtered the input.",
+                valueLength: outcome.length,
                 ...(echo === undefined ? {} : { typed: echo }),
-                contains   : true,
+                contains,
                 ...changedUrl(acted.urlBefore, acted.urlAfter),
             };
-        }
-
-        const urlChanged = changedUrl(acted.urlBefore, acted.urlAfter).urlAfter !== undefined;
-        const outcome = urlChanged
-            ? undefined
-            : await readValue(elementAccess(context.access, element), targetId, element);
-
-        if (outcome === undefined) {
-            return {
-                ok         : true,
-                target     : summary,
-                effect     : "The text was typed and the page navigated.",
-                valueLength: 0,
-                ...(echo === undefined ? {} : { typed: echo }),
-                contains   : true,
-                ...changedUrl(acted.urlBefore, acted.urlAfter),
-            };
-        }
-
-        const contains = outcome.text.includes(args.text);
-
-        return {
-            ok    : contains,
-            target: summary,
-            effect: contains
-                ? "The text was typed into the element."
-                : "The text was typed but the field does not contain it. The page may have filtered the input.",
-            valueLength: outcome.length,
-            ...(echo === undefined ? {} : { typed: echo }),
-            contains,
-            ...changedUrl(acted.urlBefore, acted.urlAfter),
         };
+
+        return target === undefined
+            ? run(undefined)
+            : withElement(context, targetId, target, run);
     },
 });
 
@@ -406,37 +404,37 @@ export const inputKey = defineTool({
             ? await browserPlatform(context.access, context.elements, targetId)
             : "";
 
-        let summary: ReturnType<typeof summarizeTarget> | undefined;
+        const target = args.target;
+        const run = async (resolved: ResolvedElement | undefined) => {
+            let summary: ReturnType<typeof summarizeTarget> | undefined;
 
-        if (args.target !== undefined) {
-            const resolved = await resolveElement(
-                context.access,
-                context.elements,
-                targetId,
-                args.target,
-                { frames: context.frames },
-            );
-            const owner = elementAccess(context.access, resolved);
-            const checked = await ensureActionable(owner, targetId, resolved, {
-                checkDisabled: true,
-            });
+            if (resolved !== undefined && target !== undefined) {
+                const owner = elementAccess(context.access, resolved);
+                const checked = await ensureActionable(owner, targetId, resolved, {
+                    checkDisabled: true,
+                });
 
-            summary = summarizeTarget(args.target.uid, checked.state);
-            await focusElement(owner, targetId, resolved);
-        }
+                summary = summarizeTarget(target.uid, checked.state);
+                await focusElement(owner, targetId, resolved);
+            }
 
-        const events = planKeyPress(parsed, platform, repeat);
+            const events = planKeyPress(parsed, platform, repeat);
 
-        throwIfCancelled(context.signal);
-        const acted = await navigationOf(context.access, targetId, () =>
-            dispatchKeyEvents(context.access, targetId, events, context.signal));
+            throwIfCancelled(context.signal);
+            const acted = await navigationOf(context.access, targetId, () =>
+                dispatchKeyEvents(context.access, targetId, events, context.signal));
 
-        return {
-            ok     : true,
-            ...(summary === undefined ? {} : { target: summary }),
-            effect : `The key ${args.key} was pressed${repeat > 1 ? ` ${repeat} times` : ""}.`,
-            pressed: args.key,
-            ...changedUrl(acted.urlBefore, acted.urlAfter),
+            return {
+                ok     : true,
+                ...(summary === undefined ? {} : { target: summary }),
+                effect : `The key ${args.key} was pressed${repeat > 1 ? ` ${repeat} times` : ""}.`,
+                pressed: args.key,
+                ...changedUrl(acted.urlBefore, acted.urlAfter),
+            };
         };
+
+        return target === undefined
+            ? run(undefined)
+            : withElement(context, targetId, target, run);
     },
 });

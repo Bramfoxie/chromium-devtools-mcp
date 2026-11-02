@@ -8,8 +8,7 @@ import {
     elementAccess,
     elementTargetSchema,
     type ElementTarget,
-    resolveElement,
-    type ResolvedElement,
+    withElement,
 } from "./element-target.js";
 import { ToolError } from "./errors.js";
 import { frameChain, revealChain } from "./frame-geometry.js";
@@ -279,49 +278,44 @@ async function scrollToElement(
     maxX  : number;
     maxY  : number;
 }> {
-    const element: ResolvedElement = await resolveElement(
-        context.access,
-        context.elements,
-        targetId,
-        target,
-        { frames: context.frames },
-    );
-    const owner = elementAccess(context.access, element);
-    const checked = await ensureActionable(owner, targetId, element, {
-        checkDisabled: false,
-    });
+    return withElement(context, targetId, target, async (element) => {
+        const owner = elementAccess(context.access, element);
+        const checked = await ensureActionable(owner, targetId, element, {
+            checkDisabled: false,
+        });
 
-    await owner.send(targetId, "Runtime.callFunctionOn", {
-        functionDeclaration: SCROLL_INTO_VIEW_EXPRESSION,
-        objectId           : element.objectId,
-        arguments          : [{ objectId: element.objectId }, { value: block }],
-        returnByValue      : true,
-    });
+        await owner.send(targetId, "Runtime.callFunctionOn", {
+            functionDeclaration: SCROLL_INTO_VIEW_EXPRESSION,
+            objectId           : element.objectId,
+            arguments          : [{ objectId: element.objectId }, { value: block }],
+            returnByValue      : true,
+        });
 
-    if (element.isolated === true && element.frameId !== undefined) {
-        const placed = await boxOf(owner, targetId, { objectId: element.objectId });
+        if (element.isolated === true && element.frameId !== undefined) {
+            const placed = await boxOf(owner, targetId, { objectId: element.objectId });
 
-        if (placed.box !== null) {
-            await revealChain(
-                await frameChain(context.access, context.frames, targetId, element.frameId),
-                targetId,
-                placed.box,
-            );
+            if (placed.box !== null) {
+                await revealChain(
+                    await frameChain(context.access, context.frames, targetId, element.frameId),
+                    targetId,
+                    placed.box,
+                );
+            }
         }
-    }
 
-    const after = await scrollState(owner, targetId);
+        const after = await scrollState(owner, targetId);
 
-    return {
-        ok    : true,
-        target: summarizeTarget(target.uid, checked.state),
-        effect: "The element was scrolled into view.",
-        method: "intoView",
-        x     : after.x,
-        y     : after.y,
-        maxX  : after.maxX,
-        maxY  : after.maxY,
-    };
+        return {
+            ok    : true,
+            target: summarizeTarget(target.uid, checked.state),
+            effect: "The element was scrolled into view.",
+            method: "intoView",
+            x     : after.x,
+            y     : after.y,
+            maxX  : after.maxX,
+            maxY  : after.maxY,
+        };
+    });
 }
 
 async function scrollToEdge(

@@ -7,7 +7,7 @@ import {
     boxOf,
     elementAccess,
     elementTargetSchema,
-    resolveElement,
+    withElement,
     revealElement,
 } from "./element-target.js";
 import { ToolError } from "./errors.js";
@@ -181,27 +181,31 @@ async function targetBoxOf(
     tab    : string,
     target : ElementTarget,
 ): Promise<ScreenshotClip> {
-    const element = await resolveElement(context.access, context.elements, tab, target, {
-        frames: context.frames,
+    return withElement(context, tab, target, async (element) => {
+        const owner = elementAccess(context.access, element);
+        const revealed = await revealElement(owner, tab, { objectId: element.objectId });
+        const measured = revealed.box === null
+            ? await boxOf(owner, tab, { objectId: element.objectId })
+            : revealed;
+
+        if (measured.box === null || !measured.visible) {
+            throw new ToolError(
+                "The element has no visible box to capture. Check that it is rendered.",
+            );
+        }
+
+        if (element.isolated !== true || element.frameId === undefined) return measured.box;
+
+        const chain = await frameChain(context.access, context.frames, tab, element.frameId);
+
+        await revealChain(chain, tab, measured.box);
+        await settleRendering(
+            [context.access, ...chain.links.map((link) => link.access), owner],
+            tab,
+        );
+
+        return mapRect((await measureChain(chain, tab)).toTop, measured.box);
     });
-    const owner = elementAccess(context.access, element);
-    const revealed = await revealElement(owner, tab, { objectId: element.objectId });
-    const measured = revealed.box === null
-        ? await boxOf(owner, tab, { objectId: element.objectId })
-        : revealed;
-
-    if (measured.box === null || !measured.visible) {
-        throw new ToolError("The element has no visible box to capture. Check that it is rendered.");
-    }
-
-    if (element.isolated !== true || element.frameId === undefined) return measured.box;
-
-    const chain = await frameChain(context.access, context.frames, tab, element.frameId);
-
-    await revealChain(chain, tab, measured.box);
-    await settleRendering([context.access, ...chain.links.map((link) => link.access), owner], tab);
-
-    return mapRect((await measureChain(chain, tab)).toTop, measured.box);
 }
 
 interface CaptureRequest {

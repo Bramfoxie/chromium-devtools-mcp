@@ -1,7 +1,6 @@
 import { z } from "zod";
 import type { DaemonAccess } from "../mcp/index.js";
 import {
-    type ActionableElement,
     coveredMessage,
     type ElementState,
     ensureActionable,
@@ -13,10 +12,9 @@ import { ensureNoDialog } from "./dialogs.js";
 import { frameChain, mapPoint, measureChain, outerHitTest, revealChain, settleRendering } from "./frame-geometry.js";
 import {
     elementTargetSchema,
-    type ElementTarget,
     type Rect,
     elementAccess,
-    resolveElement,
+    withElement,
     type ResolvedElement,
 } from "./element-target.js";
 import { ToolError } from "./errors.js";
@@ -101,22 +99,6 @@ export async function navigationOf<T>(
 
 export function changedUrl(urlBefore: string, urlAfter: string): { urlAfter?: string } {
     return urlBefore === "" || urlBefore === urlAfter ? {} : { urlAfter };
-}
-
-async function resolveActionable(
-    context : ToolContext,
-    targetId: string,
-    target  : ElementTarget,
-): Promise<{ element: ResolvedElement; checked: ActionableElement; uid: string | undefined }> {
-    const element = await resolveElement(context.access, context.elements, targetId, target, {
-        frames: context.frames,
-    });
-    const owner = elementAccess(context.access, element);
-    const checked = await ensureActionable(owner, targetId, element, {
-        checkDisabled: true,
-    });
-
-    return { element, checked, uid: target.uid };
 }
 
 async function mousePoint(
@@ -230,40 +212,45 @@ export const click = defineTool({
 
         await ensureNoDialog(context.dialogs, targetId);
 
-        const { element, checked, uid } = await resolveActionable(context, targetId, args.target);
+        return withElement(context, targetId, args.target, async (element) => {
+            const owner = elementAccess(context.access, element);
+            const checked = await ensureActionable(owner, targetId, element, {
+                checkDisabled: true,
+            });
+            const uid = args.target.uid;
 
-        if (checked.state.fileInput) {
-            throw new ToolError(
-                "The element is a file input: a scripted click would open a file picker and block. Use input_upload instead.",
-            );
-        }
+            if (checked.state.fileInput) {
+                throw new ToolError(
+                    "The element is a file input: a scripted click would open a file picker and block. Use input_upload instead.",
+                );
+            }
 
-        const scroll = args.scrollIntoView ?? true;
-        const owner = elementAccess(context.access, element);
-        const acted = await navigationOf(context.access, targetId, () =>
-            owner.send(targetId, "Runtime.callFunctionOn", {
-                functionDeclaration: CLICK_EXPRESSION,
-                objectId           : element.objectId,
-                arguments          : [{ objectId: element.objectId }, { value: scroll }],
-                returnByValue      : true,
-            }));
+            const scroll = args.scrollIntoView ?? true;
+            const acted = await navigationOf(context.access, targetId, () =>
+                owner.send(targetId, "Runtime.callFunctionOn", {
+                    functionDeclaration: CLICK_EXPRESSION,
+                    objectId           : element.objectId,
+                    arguments          : [{ objectId: element.objectId }, { value: scroll }],
+                    returnByValue      : true,
+                }));
 
-        const parsed = clickResultSchema.safeParse(acted.value);
+            const parsed = clickResultSchema.safeParse(acted.value);
 
-        if (!parsed.success) {
-            throw new ToolError(
-                "The browser sent an unexpected response to Runtime.callFunctionOn. Try the call again.",
-            );
-        }
+            if (!parsed.success) {
+                throw new ToolError(
+                    "The browser sent an unexpected response to Runtime.callFunctionOn. Try the call again.",
+                );
+            }
 
-        const ok = parsed.data.exceptionDetails === undefined;
+            const ok = parsed.data.exceptionDetails === undefined;
 
-        return {
-            ok,
-            target: summarizeTarget(uid, checked.state),
-            effect: ok ? "The element was clicked." : "The click handler threw an exception.",
-            ...changedUrl(acted.urlBefore, acted.urlAfter),
-        };
+            return {
+                ok,
+                target: summarizeTarget(uid, checked.state),
+                effect: ok ? "The element was clicked." : "The click handler threw an exception.",
+                ...changedUrl(acted.urlBefore, acted.urlAfter),
+            };
+        });
     },
 });
 
@@ -299,74 +286,69 @@ export const inputClick = defineTool({
         await ensureNoDialog(context.dialogs, targetId);
         await context.focus.ensure(context.access, targetId);
 
-        const element = await resolveElement(
-            context.access,
-            context.elements,
-            targetId,
-            args.target,
-            { frames: context.frames },
-        );
-        const { point, state } = await mousePoint(
-            context,
-            targetId,
-            element,
-            args.position,
-            "click",
-            args.force ?? false,
-        );
+        return withElement(context, targetId, args.target, async (element) => {
+            const { point, state } = await mousePoint(
+                context,
+                targetId,
+                element,
+                args.position,
+                "click",
+                args.force ?? false,
+            );
 
-        const button = args.button ?? "left";
-        const clickCount = args.clickCount ?? 1;
-        const held = [...new Set(args.modifiers ?? [])];
-        const modifiers = modifiersMask(held);
-        const buttons = MOUSE_BUTTON_BIT[button];
+            const button = args.button ?? "left";
+            const clickCount = args.clickCount ?? 1;
+            const held = [...new Set(args.modifiers ?? [])];
+            const modifiers = modifiersMask(held);
+            const buttons = MOUSE_BUTTON_BIT[button];
 
-        throwIfCancelled(context.signal);
+            throwIfCancelled(context.signal);
 
-        const acted = await navigationOf(context.access, targetId, async () => {
-            await context.access.send(targetId, "Input.dispatchMouseEvent", {
-                type      : "mouseMoved",
-                x         : point.x,
-                y         : point.y,
-                modifiers,
-                button,
-                buttons   : 0,
-                clickCount: 0,
-            });
-
-            for (let count = 1; count <= clickCount; count += 1) {
-                const at = { x: point.x, y: point.y, modifiers, button, buttons };
-
+            const acted = await navigationOf(context.access, targetId, async () => {
                 await context.access.send(targetId, "Input.dispatchMouseEvent", {
-                    type      : "mousePressed",
-                    ...at,
-                    clickCount: count,
+                    type      : "mouseMoved",
+                    x         : point.x,
+                    y         : point.y,
+                    modifiers,
+                    button,
+                    buttons   : 0,
+                    clickCount: 0,
                 });
 
-                try {
+                for (let count = 1; count <= clickCount; count += 1) {
+                    const at = { x: point.x, y: point.y, modifiers, button, buttons };
+
                     await context.access.send(targetId, "Input.dispatchMouseEvent", {
-                        type      : "mouseReleased",
+                        type      : "mousePressed",
                         ...at,
                         clickCount: count,
                     });
-                } catch (error) {
-                    await context.access.send(targetId, "Input.dispatchMouseEvent", {
-                        type      : "mouseReleased",
-                        ...at,
-                        clickCount: count,
-                    }).catch(() => undefined);
 
-                    throw error;
+                    try {
+                        await context.access.send(targetId, "Input.dispatchMouseEvent", {
+                            type      : "mouseReleased",
+                            ...at,
+                            clickCount: count,
+                        });
+                    } catch (error) {
+                        await context.access.send(targetId, "Input.dispatchMouseEvent", {
+                            type      : "mouseReleased",
+                            ...at,
+                            clickCount: count,
+                        }).catch(() => undefined);
+
+                        throw error;
+                    }
                 }
-            }
-        });
+            });
 
-        return {
-            ok    : true,
-            target: summarizeTarget(args.target.uid, state),
-            effect: `The element was ${button} clicked${clickCount > 1 ? ` ${clickCount} times` : ""}.`,
-            ...changedUrl(acted.urlBefore, acted.urlAfter),
-        };
+            return {
+                ok    : true,
+                target: summarizeTarget(args.target.uid, state),
+                effect: `The element was ${button} clicked${clickCount > 1 ? ` ${clickCount} times` : ""}.`,
+                ...changedUrl(acted.urlBefore, acted.urlAfter),
+            };
+        });
     },
 });
 
@@ -408,62 +390,57 @@ export const inputHover = defineTool({
         await ensureNoDialog(context.dialogs, targetId);
         await context.focus.ensure(context.access, targetId);
 
-        const element = await resolveElement(
-            context.access,
-            context.elements,
-            targetId,
-            args.target,
-            { frames: context.frames },
-        );
-        const { point, state } = await mousePoint(
-            context,
-            targetId,
-            element,
-            args.position,
-            "hover",
-            args.force ?? false,
-        );
-
-        throwIfCancelled(context.signal);
-
-        const leadInX = point.x >= 1 ? point.x - 1 : point.x + 1;
-
-        for (let step = 0; step < HOVER_DEFAULT_STEPS; step += 1) {
-            await context.access.send(targetId, "Input.dispatchMouseEvent", {
-                type      : "mouseMoved",
-                x         : step === HOVER_DEFAULT_STEPS - 1 ? point.x : leadInX,
-                y         : point.y,
-                modifiers : 0,
-                button    : "none",
-                buttons   : 0,
-                clickCount: 0,
-            });
-        }
-
-        const parsed = hoverSchema.safeParse(
-            await elementAccess(context.access, element).send(targetId, "Runtime.callFunctionOn", {
-                functionDeclaration: HOVER_EXPRESSION,
-                objectId           : element.objectId,
-                arguments          : [{ objectId: element.objectId }],
-                returnByValue      : true,
-            }),
-        );
-
-        if (!parsed.success) {
-            throw new ToolError(
-                "The browser sent an unexpected response to Runtime.callFunctionOn. Try the call again.",
+        return withElement(context, targetId, args.target, async (element) => {
+            const { point, state } = await mousePoint(
+                context,
+                targetId,
+                element,
+                args.position,
+                "hover",
+                args.force ?? false,
             );
-        }
 
-        const hovered = parsed.data.result.value ?? false;
+            throwIfCancelled(context.signal);
 
-        return {
-            ok    : hovered,
-            target: summarizeTarget(args.target.uid, state),
-            effect: hovered
-                ? "The element is hovered."
-                : "The mouse moved to the element but :hover is not set. Another element may cover it.",
-            hovered,
-        };
+            const leadInX = point.x >= 1 ? point.x - 1 : point.x + 1;
+
+            for (let step = 0; step < HOVER_DEFAULT_STEPS; step += 1) {
+                await context.access.send(targetId, "Input.dispatchMouseEvent", {
+                    type      : "mouseMoved",
+                    x         : step === HOVER_DEFAULT_STEPS - 1 ? point.x : leadInX,
+                    y         : point.y,
+                    modifiers : 0,
+                    button    : "none",
+                    buttons   : 0,
+                    clickCount: 0,
+                });
+            }
+
+            const parsed = hoverSchema.safeParse(
+                await elementAccess(context.access, element).send(targetId, "Runtime.callFunctionOn", {
+                    functionDeclaration: HOVER_EXPRESSION,
+                    objectId           : element.objectId,
+                    arguments          : [{ objectId: element.objectId }],
+                    returnByValue      : true,
+                }),
+            );
+
+            if (!parsed.success) {
+                throw new ToolError(
+                    "The browser sent an unexpected response to Runtime.callFunctionOn. Try the call again.",
+                );
+            }
+
+            const hovered = parsed.data.result.value ?? false;
+
+            return {
+                ok    : hovered,
+                target: summarizeTarget(args.target.uid, state),
+                effect: hovered
+                    ? "The element is hovered."
+                    : "The mouse moved to the element but :hover is not set. Another element may cover it.",
+                hovered,
+            };
+        });
     },
 });

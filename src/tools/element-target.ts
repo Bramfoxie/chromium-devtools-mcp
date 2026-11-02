@@ -801,6 +801,31 @@ export async function resolveElement(
     };
 }
 
+export interface ElementScope {
+    access  : DaemonAccess;
+    elements: ElementRegistry;
+    frames  : FrameState;
+}
+
+export async function withElement<T>(
+    scope : ElementScope,
+    tab   : string,
+    target: ElementTarget,
+    use   : (element: ResolvedElement) => Promise<T>,
+): Promise<T> {
+    const element = await resolveElement(scope.access, scope.elements, tab, target, {
+        frames: scope.frames,
+    });
+
+    try {
+        return await use(element);
+    } finally {
+        await elementAccess(scope.access, element).send(tab, "Runtime.releaseObject", {
+            objectId: element.objectId,
+        }).catch(() => undefined);
+    }
+}
+
 export async function boxOf(
     access: DaemonAccess,
     tab   : string,

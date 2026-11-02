@@ -6,7 +6,7 @@ import { ensureNoDialog } from "./dialogs.js";
 import {
     elementAccess,
     elementTargetSchema,
-    resolveElement,
+    withElement,
     type ResolvedElement,
 } from "./element-target.js";
 import { ToolError } from "./errors.js";
@@ -156,58 +156,54 @@ export const inputUpload = defineTool({
 
         await context.focus.ensure(context.access, targetId);
 
-        const element = await resolveElement(
-            context.access,
-            context.elements,
-            targetId,
-            args.target,
-            { frames: context.frames },
-        );
-        const owner = elementAccess(context.access, element);
-        const checked = await ensureActionable(owner, targetId, element, {
-            checkDisabled: true,
-            checkVisible : false,
-        });
-
-        if (!checked.state.fileInput) {
-            throw new ToolError(
-                `The element <${checked.state.tag}> is not a file input. Target an input of type file.`,
-            );
-        }
-
-        if (validated.length > 1 && !checked.state.multiple) {
-            throw new ToolError(
-                "The file input does not accept multiple files. Pass one file or target an input with the multiple attribute.",
-            );
-        }
-
-        throwIfCancelled(context.signal);
-
-        const acted = await navigationOf(context.access, targetId, async () => {
-            await owner.send(targetId, "DOM.setFileInputFiles", {
-                backendNodeId: element.backendNodeId,
-                files        : validated.map((file) => file.path),
+        return withElement(context, targetId, args.target, async (element) => {
+            const owner = elementAccess(context.access, element);
+            const checked = await ensureActionable(owner, targetId, element, {
+                checkDisabled: true,
+                checkVisible : false,
             });
+
+            if (!checked.state.fileInput) {
+                throw new ToolError(
+                    `The element <${checked.state.tag}> is not a file input. Target an input of type file.`,
+                );
+            }
+
+            if (validated.length > 1 && !checked.state.multiple) {
+                throw new ToolError(
+                    "The file input does not accept multiple files. Pass one file or target an input with the multiple attribute.",
+                );
+            }
+
+            throwIfCancelled(context.signal);
+
+            const acted = await navigationOf(context.access, targetId, async () => {
+                await owner.send(targetId, "DOM.setFileInputFiles", {
+                    backendNodeId: element.backendNodeId,
+                    files        : validated.map((file) => file.path),
+                });
+            });
+            const changed = changedUrl(acted.urlBefore, acted.urlAfter);
+            const navigatedAway = changed.urlAfter !== undefined;
+            const count = navigatedAway
+                ? validated.length
+                : await attachedCount(owner, targetId, element);
+
+            if (count !== validated.length) {
+                throw new ToolError(
+                    `The page accepted ${count} of ${validated.length} files. The input may limit the file count or types.`,
+                );
+            }
+
+            return {
+                ok    : true,
+                target: summarizeTarget(args.target.uid, checked.state),
+                effect: validated.length === 1
+                    ? `The file ${JSON.stringify(validated[0]?.name ?? "")} was attached.`
+                    : `${validated.length} files were attached.`,
+                files: validated.map((file) => ({ name: file.name, size: file.size })),
+                ...changedUrl(acted.urlBefore, acted.urlAfter),
+            };
         });
-        const navigatedAway = changedUrl(acted.urlBefore, acted.urlAfter).urlAfter !== undefined;
-        const count = navigatedAway
-            ? validated.length
-            : await attachedCount(owner, targetId, element);
-
-        if (count !== validated.length) {
-            throw new ToolError(
-                `The page accepted ${count} of ${validated.length} files. The input may limit the file count or types.`,
-            );
-        }
-
-        return {
-            ok    : true,
-            target: summarizeTarget(args.target.uid, checked.state),
-            effect: validated.length === 1
-                ? `The file ${JSON.stringify(validated[0]?.name ?? "")} was attached.`
-                : `${validated.length} files were attached.`,
-            files: validated.map((file) => ({ name: file.name, size: file.size })),
-            ...changedUrl(acted.urlBefore, acted.urlAfter),
-        };
     },
 });
