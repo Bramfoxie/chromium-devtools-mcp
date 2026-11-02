@@ -124,6 +124,35 @@ describe("network_mock", () => {
         });
     });
 
+    it("counts a request that fell back to the network as an error, not an application", async () => {
+        const { fake, runtime } = setup();
+
+        await runTool(
+            networkMock,
+            { action: "add", rule: { urlPattern: "*", response: { status: 200 } } },
+            extra(),
+            runtime,
+        );
+        fake.failSend = (_tab, method) =>
+            method === "Fetch.fulfillRequest" ? new Error("boom") : undefined as never;
+
+        await runtime.mock.handleCdpEvent({
+            targetId: "tab1",
+            event   : "Fetch.requestPaused",
+            params  : {
+                requestId   : "r1",
+                request     : { url: "https://a.example/x", method: "GET" },
+                resourceType: "XHR",
+            },
+        });
+
+        const listed = await runTool(networkMock, { action: "list" }, extra(), runtime);
+
+        expect(listed.structuredContent).toMatchObject({
+            rules: [{ id: "mock1", applications: 0, errors: 1 }],
+        });
+    });
+
     it("removes a rule and clears all with disable on the last one", async () => {
         const { fake, runtime } = setup();
 

@@ -81,7 +81,8 @@ const ruleSchema = z.strictObject({
     status      : z.number().optional().describe("Mocked status, for response rules."),
     delayMs     : z.number().describe("Delay before resolving."),
     times       : z.number().optional().describe("Application limit, when set."),
-    applications: z.number().describe("How many requests the rule resolved."),
+    applications: z.number().describe("How many requests the rule resolved successfully."),
+    errors      : z.number().describe("How many requests the rule claimed but could not resolve, so they went to the network."),
     createdAt   : z.string().describe("ISO time when the rule was added."),
 });
 
@@ -283,7 +284,8 @@ function summariesOf(rules: ReturnType<InterceptionManager["rulesOf"]>): Array<z
         ...(rule.response === undefined ? {} : { status: rule.response.status }),
         delayMs     : rule.delayMs,
         ...(rule.times === undefined ? {} : { times: rule.times }),
-        applications: rule.applications,
+        applications: rule.applications - rule.errors,
+        errors      : rule.errors,
         createdAt   : rule.createdAt,
     }));
 }

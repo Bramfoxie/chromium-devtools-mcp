@@ -52,6 +52,7 @@ describe("ruleMatches", () => {
         delayMs     : 0,
         times       : undefined,
         applications: 0,
+        errors      : 0,
         createdAt   : "t",
         ...overrides,
     });
@@ -439,6 +440,11 @@ describe("InterceptionManager", () => {
             "Fetch.fulfillRequest",
             "Fetch.continueRequest",
         ]);
+
+        const [rule] = manager.rulesOf("tab1");
+
+        expect(rule?.errors).toBe(1);
+        expect((rule?.applications ?? 0) - (rule?.errors ?? 0)).toBe(0);
     });
 
     it("never applies rules to another tab", async () => {

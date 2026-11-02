@@ -54,6 +54,7 @@ export interface MockRule extends MockAction {
     method      : string | undefined;
     resourceType: string | undefined;
     applications: number;
+    errors      : number;
     createdAt   : string;
 }
 
@@ -229,6 +230,7 @@ export class InterceptionManager {
             ...input,
             id          : `mock${state.counter}`,
             applications: 0,
+            errors      : 0,
             createdAt   : new Date(this.clock.now()).toISOString(),
         };
 
@@ -285,7 +287,7 @@ export class InterceptionManager {
     async handlePaused(
         tab    : string,
         paused : PausedRequest,
-        resolve: (command: () => Promise<unknown>) => Promise<void>,
+        resolve: (command: () => Promise<unknown>) => Promise<boolean>,
     ): Promise<void> {
         const state = this.tabs.get(tab);
         const rule = state?.rules.find((candidate) =>
@@ -320,26 +322,34 @@ export class InterceptionManager {
             state.deferred.set(paused.requestId, entry);
             await Promise.race([this.clock.sleep(rule.delayMs), woken]);
 
-            if (entry.released) return;
+            if (entry.released) {
+                rule.errors += 1;
+
+                return;
+            }
 
             state.deferred.delete(paused.requestId);
         }
 
+        let resolved: boolean;
+
         if (rule.response !== undefined) {
             const body = rule.response.bodyBase64;
 
-            await resolve(() => this.access.send(tab, "Fetch.fulfillRequest", {
+            resolved = await resolve(() => this.access.send(tab, "Fetch.fulfillRequest", {
                 requestId      : paused.requestId,
                 responseCode   : rule.response?.status ?? 200,
                 responseHeaders: headersForCdp(rule.response as MockResponse),
                 ...(body === undefined ? {} : { body }),
             }));
         } else {
-            await resolve(() => this.access.send(tab, "Fetch.failRequest", {
+            resolved = await resolve(() => this.access.send(tab, "Fetch.failRequest", {
                 requestId  : paused.requestId,
                 errorReason: rule.fail ?? "Failed",
             }));
         }
+
+        if (!resolved) rule.errors += 1;
 
         if (expired) {
             state.rules = state.rules.filter((candidate) => candidate !== rule);
@@ -381,6 +391,8 @@ export class InterceptionManager {
         return this.handlePaused(envelope.targetId, paused, async (command) => {
             try {
                 await command();
+
+                return true;
             } catch (error) {
                 logDaemon(`could not resolve a paused request: ${describeError(error)}`);
 
@@ -389,6 +401,8 @@ export class InterceptionManager {
                 }).catch((nested: unknown) => {
                     logDaemon(`could not continue a paused request: ${describeError(nested)}`);
                 });
+
+                return false;
             }
         }).catch((error: unknown) => {
             logDaemon(`mock handler failed: ${describeError(error)}`);
