@@ -93,7 +93,7 @@ export function spawnProcess(command: string, args: string[]): ChildHandle {
 const defaultDeps: LaunchDeps = {
     findExecutable: (browser) => findBrowserExecutable(browser),
     spawn         : spawnProcess,
-    startTimeoutMs: 15_000,
+    startTimeoutMs: 45_000,
     stopGraceMs   : 5_000,
 };
 

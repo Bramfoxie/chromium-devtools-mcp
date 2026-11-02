@@ -189,6 +189,20 @@ describe("launchManaged", () => {
         expect((failure as Error).message).not.toMatch(/port/);
     });
 
+    it("waits 45 seconds by default for a slow browser to expose remote debugging", async () => {
+        vi.useFakeTimers();
+        const child = new FakeChild();
+        const pending = launchManaged(config, {
+            findExecutable: () => "/bin/browser",
+            spawn         : () => child,
+        });
+
+        await vi.advanceTimersByTimeAsync(44_000);
+        child.write(listening);
+
+        await expect(pending).resolves.toMatchObject({ port: 9222 });
+    });
+
     it("times out, stops the browser and names the profile and port", async () => {
         const { deps, child } = harness(new FakeChild(), { startTimeoutMs: 30 });
         const failure = await launchManaged(config, deps).catch((error: unknown) => error);

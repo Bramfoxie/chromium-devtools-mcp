@@ -20,7 +20,7 @@ import { DaemonLink, type LinkDeps } from "./daemon-link.js";
 import { spawnDaemonProcess } from "./spawn-daemon.js";
 
 const SERVER_NAME = "chromium-devtools-mcp";
-const START_TIMEOUT_MS = 10_000;
+const START_TIMEOUT_MS = 50_000;
 const POLL_INTERVAL_MS = 100;
 const CONNECT_TIMEOUT_MS = 1000;
 const MAX_CLIENT_LABEL = 64;
