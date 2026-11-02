@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ErrorCode, RpcError } from "../daemon/index.js";
 import type { DaemonAccess } from "../mcp/index.js";
 import { defineTool, type ToolContext } from "./define-tool.js";
 import {
@@ -16,6 +17,8 @@ import { binaryResult, imageBlock } from "./result.js";
 export const SCREENSHOT_DEFAULT_QUALITY = 80;
 
 export const SCREENSHOT_RETRY_QUALITY = 30;
+
+export const SCREENSHOT_FIRST_ATTEMPT_MS = 5000;
 
 export const SCREENSHOT_DEFAULT_MAX_BYTES = 4 * 1024 * 1024;
 
@@ -205,17 +208,16 @@ async function capture(
     tab    : string,
     request: CaptureRequest,
 ): Promise<string> {
-    const result = capturedSchema.safeParse(
-        await access.send(tab, "Page.captureScreenshot", {
-            format: request.format,
-            ...(request.quality === undefined ? {} : { quality: request.quality }),
-            ...(request.clip === undefined ? {} : {
-                clip: { ...request.clip, scale: request.scale ?? 1 },
-            }),
-            captureBeyondViewport: request.captureBeyondViewport,
-            fromSurface          : true,
+    const params = {
+        format: request.format,
+        ...(request.quality === undefined ? {} : { quality: request.quality }),
+        ...(request.clip === undefined ? {} : {
+            clip: { ...request.clip, scale: request.scale ?? 1 },
         }),
-    );
+        captureBeyondViewport: request.captureBeyondViewport,
+        fromSurface          : true,
+    };
+    const result = capturedSchema.safeParse(await sendCapture(access, tab, params));
 
     if (!result.success) {
         throw new ToolError(
@@ -224,6 +226,20 @@ async function capture(
     }
 
     return result.data.data;
+}
+
+async function sendCapture(
+    access: DaemonAccess,
+    tab   : string,
+    params: Record<string, unknown>,
+): Promise<unknown> {
+    try {
+        return await access.send(tab, "Page.captureScreenshot", params, SCREENSHOT_FIRST_ATTEMPT_MS);
+    } catch (error) {
+        if (!(error instanceof RpcError) || error.code !== ErrorCode.cdpTimeout) throw error;
+
+        return access.send(tab, "Page.captureScreenshot", params);
+    }
 }
 
 export function formatByteLimit(maxBytes: number): string {

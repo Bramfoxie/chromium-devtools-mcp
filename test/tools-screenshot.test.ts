@@ -141,6 +141,25 @@ describe("screenshot", () => {
         return fake;
     }
 
+    it("retries a capture that the browser leaves unanswered", async () => {
+        let attempts = 0;
+        const shot = shotFake(JPEG_5X7.toString("base64"), () => {
+            attempts += 1;
+
+            if (attempts === 1) throw new RpcError(ErrorCode.cdpTimeout, "CDP request Page.captureScreenshot timed out after 5000 ms.");
+        });
+        const { fake, runtime } = setup(shot);
+
+        await runTool(newTab, {}, extra(), runtime);
+        const result = await runTool(screenshot, {}, extra(), runtime);
+        const calls = fake.sent.filter((call) => call.method === "Page.captureScreenshot");
+
+        expect(result.isError).not.toBe(true);
+        expect(calls).toHaveLength(2);
+        expect(calls[0]?.timeoutMs).toBeLessThan(30_000);
+        expect(calls[1]?.timeoutMs).toBeUndefined();
+    });
+
     it("captures the viewport as jpeg by default with an image block", async () => {
         const seen: unknown[] = [];
         const shot = shotFake(JPEG_5X7.toString("base64"), (params) => void seen.push(params));
