@@ -119,7 +119,7 @@ export async function runningInProfile(
 
     if (fromFile) return fromFile;
 
-    if (!(await profileLocked(deps, dir))) return undefined;
+    if (debugPort === 0 || !(await profileLocked(deps, dir))) return undefined;
 
     let version: unknown;
 

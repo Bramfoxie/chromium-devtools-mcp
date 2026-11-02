@@ -9,7 +9,7 @@ export const configSchema = z.strictObject({
     mode      : z.enum(modes),
     headless  : z.boolean(),
     profileDir: z.string().min(1),
-    debugPort : z.number().int().min(1).max(65535),
+    debugPort : z.number().int().min(0).max(65535),
     allowFocus: z.boolean(),
     isolated  : z.boolean(),
     safety    : z.strictObject({

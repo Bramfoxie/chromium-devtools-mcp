@@ -191,7 +191,6 @@ export function loadConfig(options: LoadOptions = {}): Config {
         mode      : "attach",
         headless  : false,
         profileDir: defaultProfileDir(ctx),
-        debugPort : 9222,
         allowFocus: false,
         isolated  : false,
         safety    : { readOnly: false, allowedDomains: [], confirmDangerous: false },
@@ -202,7 +201,8 @@ export function loadConfig(options: LoadOptions = {}): Config {
         envLayer(ctx.env),
         argvLayer(options.argv ?? process.argv.slice(2)),
     ];
-    const merged = layers.reduce(merge, defaults);
+    const layered = layers.reduce(merge, defaults);
+    const merged = { ...layered, debugPort: layered.debugPort ?? (layered.mode === "managed" ? 0 : 9222) };
 
     const result = configSchema.safeParse(merged);
 

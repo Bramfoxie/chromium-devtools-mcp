@@ -95,6 +95,10 @@ describe("buildLaunchArgs", () => {
         expect(args).not.toContain("--headless=new");
     });
 
+    it("lets the browser pick a free port when the port is 0", () => {
+        expect(buildLaunchArgs({ ...config, debugPort: 0 })).toContain("--remote-debugging-port=0");
+    });
+
     it("adds the headless flag when configured", () => {
         expect(buildLaunchArgs({ ...config, headless: true })).toContain("--headless=new");
     });
@@ -168,6 +172,21 @@ describe("launchManaged", () => {
         expect((failure as Error).message).toContain("exited with code 0");
         expect((failure as Error).message).toContain("/data/profile");
         expect((failure as Error).message).toContain("9222");
+    });
+
+    it("does not name a port in failures when the port is 0", async () => {
+        const early = harness();
+        const pending = launchManaged({ ...config, debugPort: 0 }, early.deps);
+
+        early.child.exit("exited with code 0");
+        expect(((await pending.catch((error: unknown) => error)) as Error).message).not.toMatch(/port/);
+
+        const slow = harness(new FakeChild(), { startTimeoutMs: 30 });
+        const failure = await launchManaged({ ...config, debugPort: 0 }, slow.deps).catch(
+            (error: unknown) => error,
+        );
+
+        expect((failure as Error).message).not.toMatch(/port/);
     });
 
     it("times out, stops the browser and names the profile and port", async () => {

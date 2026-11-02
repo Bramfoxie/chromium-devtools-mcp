@@ -653,6 +653,7 @@ describe("connecting to the daemon", () => {
         [daemonIdentity({ ...config, browser: "firefox" as never }), "browser chrome", "browser firefox"],
         [daemonIdentity({ ...config, mode: "attach" }), "mode managed", "mode attach"],
         [daemonIdentity({ ...config, debugPort: 9333 }), "debugPort 9222", "debugPort 9333"],
+        [daemonIdentity({ ...config, debugPort: 0 }), "debugPort 9222", "debugPort 0"],
         [daemonIdentity({ ...config, allowFocus: true }), "allowFocus false", "allowFocus true"],
         [daemonIdentity({ ...config, headless: false }), "headless true", "headless false"],
         [daemonIdentity({ ...config, profileDir: "/other" }), "profileDir /unused", "profileDir /other"],

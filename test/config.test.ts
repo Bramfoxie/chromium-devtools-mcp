@@ -23,6 +23,27 @@ describe("defaults", () => {
     });
 });
 
+describe("debugPort default", () => {
+    it("is 0 in managed mode", () => {
+        expect(loadConfig({ ...withFile(undefined), argv: ["--mode=managed"] }).debugPort).toBe(0);
+    });
+
+    it("keeps an explicit port in managed mode", () => {
+        expect(
+            loadConfig({ ...withFile(undefined), argv: ["--mode=managed", "--debug-port=9333"] }).debugPort,
+        ).toBe(9333);
+    });
+
+    it("takes the mode from the file", () => {
+        expect(loadConfig(withFile(JSON.stringify({ mode: "managed" }))).debugPort).toBe(0);
+    });
+
+    it("accepts 0 explicitly and rejects negatives", () => {
+        expect(loadConfig({ ...withFile(undefined), argv: ["--debug-port=0"] }).debugPort).toBe(0);
+        expect(() => loadConfig({ ...withFile(undefined), argv: ["--debug-port=-1"] })).toThrow(/debugPort/);
+    });
+});
+
 describe("sources and precedence", () => {
     it("reads values from the config file", () => {
         const file = JSON.stringify({ headless: true, safety: { readOnly: true } });

@@ -129,6 +129,7 @@ describe("runningInProfile", () => {
             webSocketUrl: "ws://127.0.0.1:9222/devtools/browser/from-http",
             source      : "debug-port",
         });
+        expect(await runningInProfile(c.dir, 0, io)).toBeUndefined();
         expect(
             await runningInProfile(c.dir, 9222, {
                 ...io,

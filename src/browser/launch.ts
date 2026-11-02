@@ -138,7 +138,7 @@ export async function launchManaged(
                 reject(
                     new BrowserLaunchError(
                         `${config.browser} did not expose remote debugging within ${deps.startTimeoutMs} ms. ` +
-              `Check that the profile directory ${config.profileDir} is writable and that port ${config.debugPort} is free.`,
+              `Check that the profile directory ${config.profileDir} is writable${config.debugPort === 0 ? "" : ` and that port ${config.debugPort} is free`}.`,
                     ),
                 ),
             );
@@ -185,7 +185,7 @@ export async function launchManaged(
             reject(
                 new BrowserLaunchError(
                     `${config.browser} ${reason} before remote debugging was ready. ` +
-            `Another browser instance may already use the profile ${config.profileDir} or the port ${config.debugPort}: close it or set another profileDir or debugPort.`,
+            `Another browser instance may already use the profile ${config.profileDir}${config.debugPort === 0 ? "" : ` or the port ${config.debugPort}`}: close it or set another profileDir${config.debugPort === 0 ? "" : " or debugPort"}.`,
                 ),
             );
         });
