@@ -3,6 +3,7 @@ import {
     CaptureManager,
     clipConsoleText,
     compileUrlPattern,
+    testUrlPattern,
     formatConsoleArgument,
     formatConsoleStack,
     matchNetworkRecord,
@@ -650,5 +651,47 @@ describe("CaptureManager", () => {
 
         expect(second.entries).toEqual([]);
         expect(second.droppedCount).toBe(0);
+    });
+
+    it("rejects patterns that can backtrack catastrophically", () => {
+        const catastrophic = [
+            "(a{2,})+",
+            "((a+))+",
+            "a*a*a*b",
+            "(a|a)+$",
+            "(a+)+$",
+            "(.*)*x",
+            "(a|b)*c",
+            "(a)\\1",
+            "(?=a)b",
+            "(a{1,50}){1,50}$",
+        ];
+
+        for (const pattern of catastrophic) {
+            expect(() => compileUrlPattern(pattern), pattern).toThrow(/slow on long URLs/);
+        }
+    });
+
+    it("accepts ordinary url patterns", () => {
+        const fine = [
+            "items/\\d+",
+            "^https?://api\\.example\\.com/v[12]/.*",
+            "(?:ab)+c",
+            "\\.(png|jpg)$",
+            "[a-z]+\\?id=\\d{1,5}",
+            "a+?b",
+            "aaa*b",
+        ];
+
+        for (const pattern of fine) {
+            expect(() => compileUrlPattern(pattern), pattern).not.toThrow();
+        }
+    });
+
+    it("matches only the first characters of a long url", () => {
+        const pattern = compileUrlPattern("end$");
+
+        expect(testUrlPattern(pattern, `${"x".repeat(5000)}end`)).toBe(false);
+        expect(testUrlPattern(pattern, `${"x".repeat(2040)}end`)).toBe(true);
     });
 });

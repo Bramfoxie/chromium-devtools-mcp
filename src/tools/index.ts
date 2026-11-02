@@ -360,6 +360,7 @@ export {
     type NetworkReduction,
     REDACTED,
     compileUrlPattern,
+    testUrlPattern,
     matchNetworkRecord,
     redactHeaders,
     redactUrl,

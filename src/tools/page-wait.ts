@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { DaemonAccess } from "../mcp/index.js";
-import { compileUrlPattern } from "./capture/network-log.js";
+import { compileUrlPattern, testUrlPattern } from "./capture/network-log.js";
 import { defineTool, type ToolContext } from "./define-tool.js";
 import { ensureNoDialog } from "./dialogs.js";
 import { MAX_FRAME_LENGTH } from "./element-target.js";
@@ -604,9 +604,7 @@ export const pageWait = defineTool({
                     targetId,
                     (url) => {
                         if (pattern !== undefined) {
-                            pattern.lastIndex = 0;
-
-                            return pattern.test(url);
+                            return testUrlPattern(pattern, url);
                         }
 
                         return needle !== undefined && url.includes(needle);
