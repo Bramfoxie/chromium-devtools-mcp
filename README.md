@@ -57,7 +57,7 @@ Each session keeps its own tab selection. `new_tab` opens a background tab and s
 - `new_tab`: open a background tab and select it. With a `url` it waits for the page to commit and load, for at most `timeoutMs` (default 30000), and returns the committed `url` and `title`, `waited` (`load`, `timeout` or `none`), the document `readyState` and the HTTP `status` when observed. A download, an empty 204 response or a network error does not fail the call: the tab stays open, on `about:blank` for a download or a 204 and on the browser error page for a network error, and `navigationError` says why. The tab is never brought to the front.
 - `close_tab`: close a tab opened by this session.
 - `page_info`: read the URL, title, viewport, scroll position and emulation state of a tab.
-- `page_navigate`: open a URL, go back or forward, or reload, waiting for the page to load.
+- `page_navigate`: open a URL, go back or forward, or reload, waiting for the page to load. Back and forward refuse a history entry that is not an http, https or about:blank page.
 - `js_evaluate`: run JavaScript in a tab. Page exceptions come back as data, not as tool errors. The exception text and the value are cut at `maxResultChars` with a marker; a value that cannot be serialized within the 32 MiB protocol limit is reported as its description with `truncated: true`.
 - `dom_query`: find elements by a CSS selector and read their text, attributes and boxes.
 - `dom_snapshot`: read a compact text snapshot of the page with element ids.

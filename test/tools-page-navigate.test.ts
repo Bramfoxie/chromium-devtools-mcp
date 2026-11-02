@@ -558,6 +558,75 @@ describe("page_navigate", () => {
         expect(fake.sent.map((call) => call.method)).toEqual(["Page.getNavigationHistory"]);
     });
 
+    it("refuses to go back or forward to an entry that is not http, https or about:blank", async () => {
+        for (const url of [
+            "file:///etc/hosts",
+            "chrome://settings/",
+            "data:text/html,hello",
+            "view-source:https://a.example/",
+            "chrome-error://chromewebdata/",
+            "",
+        ]) {
+            for (const action of ["back", "forward"] as const) {
+                const fake = new FakeAccess();
+
+                fake.respond = (_targetId, method) => {
+                    if (method === "Page.getNavigationHistory") {
+                        return {
+                            currentIndex: 1,
+                            entries     : [
+                                { id: 11, url: action === "back" ? url : "https://a.example/", title: "x" },
+                                { id: 12, url: "https://b.example/", title: "b" },
+                                { id: 13, url: action === "forward" ? url : "https://c.example/", title: "x" },
+                            ],
+                        };
+                    }
+
+                    return {};
+                };
+
+                const { runtime } = setup(fake);
+
+                await runTool(newTab, {}, extra(), runtime);
+                fake.sent.length = 0;
+
+                const result = await runTool(pageNavigate, { action, waitUntil: "none" }, extra(), runtime);
+
+                expect(result.isError).toBe(true);
+                expect(JSON.stringify(result.content)).toContain("Only http, https and about:blank");
+                expect(fake.sent.map((call) => call.method)).toEqual(["Page.getNavigationHistory"]);
+            }
+        }
+    });
+
+    it("goes back to an about:blank entry", async () => {
+        const fake = new FakeAccess();
+
+        fake.respond = (_targetId, method) => {
+            if (method === "Page.getNavigationHistory") {
+                return {
+                    currentIndex: 1,
+                    entries     : [
+                        { id: 11, url: "about:blank", title: "" },
+                        { id: 12, url: "https://b.example/", title: "b" },
+                    ],
+                };
+            }
+
+            return {};
+        };
+
+        const { runtime } = setup(fake);
+
+        await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+
+        const result = await runTool(pageNavigate, { action: "back", waitUntil: "none" }, extra(), runtime);
+
+        expect(result.isError).not.toBe(true);
+        expect(fake.sent.map((call) => call.method)).toContain("Page.navigateToHistoryEntry");
+    });
+
     it("returns a tool error naming the navigation error text", async () => {
         const fake = new FakeAccess();
 

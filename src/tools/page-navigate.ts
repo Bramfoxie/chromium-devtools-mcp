@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { normalizeUrl } from "../daemon/index.js";
 import { defineTool, type ToolContext } from "./define-tool.js";
 import { createDeadline, type Deadline, sendWithin } from "./deadline.js";
 import { ensureNoDialog } from "./dialogs.js";
@@ -176,6 +177,16 @@ export async function currentPage(
     return fallback;
 }
 
+function isOpenableUrl(url: string): boolean {
+    try {
+        normalizeUrl(url);
+
+        return true;
+    } catch {
+        return false;
+    }
+}
+
 async function historyEntryId(
     context  : ToolContext,
     targetId : string,
@@ -199,6 +210,12 @@ async function historyEntryId(
             direction === "back"
                 ? "There is no page to go back to in this tab."
                 : "There is no page to go forward to in this tab.",
+        );
+    }
+
+    if (!isOpenableUrl(entry.url)) {
+        throw new ToolError(
+            `The ${direction === "back" ? "previous" : "next"} history entry is not an http, https or about:blank page. Only http, https and about:blank URLs can be opened.`,
         );
     }
 
