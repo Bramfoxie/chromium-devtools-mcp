@@ -14,6 +14,7 @@ const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 const DEFAULT_CONNECT_TIMEOUT_MS = 5000;
 const DECLARED_TIMEOUT_MARGIN_MS = 5000;
 const MULTI_STEP_TIMEOUT_MARGIN_MS = 30_000;
+const CDP_BOUND_METHODS = new Set(["cdp.send", "tab.create"]);
 const MULTI_STEP_METHODS = new Set(["frame.list", "tab.list"]);
 
 export interface IpcConnectOptions {
@@ -156,7 +157,9 @@ export class IpcClient {
 
         return typeof declared === "number" && Number.isFinite(declared)
             ? Math.max(this.requestTimeoutMs, declared + DECLARED_TIMEOUT_MARGIN_MS)
-            : this.requestTimeoutMs;
+            : CDP_BOUND_METHODS.has(method)
+                ? this.requestTimeoutMs + DECLARED_TIMEOUT_MARGIN_MS
+                : this.requestTimeoutMs;
     }
 
     // Subscribing after close silently returns a no-op; the handler never fires.

@@ -40,7 +40,7 @@ async function startServer(overrides: Partial<AcceptOptions> = {}) {
             handler: async ({ method, params }) => {
                 if (method === "echo") return params;
 
-                if (method === "slow") {
+                if (method === "slow" || method === "cdp.send") {
                     const { ms, value } = params as { ms: number; value: string };
 
                     await new Promise((resolve) => setTimeout(resolve, ms));
@@ -347,6 +347,16 @@ describe("requests", () => {
         await expect(
             client.request("slow", { ms: 120, value: "x", timeoutMs: 500 }, { timeoutMs: 20 }),
         ).rejects.toMatchObject({ timeoutMs: 20 });
+    });
+
+    it("gives cdp.send and tab.create without a declared timeout a margin over the default", async () => {
+        const server = await startServer();
+        const client = await connectClient(server, 40);
+
+        await expect(client.request("cdp.send", { ms: 120, value: "late" })).resolves.toBe("late");
+        await expect(client.request("slow", { ms: 120, value: "late" })).rejects.toBeInstanceOf(
+            IpcTimeoutError,
+        );
     });
 
     it("times out a request and honors a per-request timeout", async () => {

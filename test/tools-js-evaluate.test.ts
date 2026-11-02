@@ -702,6 +702,37 @@ describe("js_evaluate", () => {
         ]);
     });
 
+    it("returns a timeout error within timeoutMs when the page blocks all commands", async () => {
+        const fake = new FakeAccess();
+
+        fake.respond = (_tab, method) => {
+            if (method === "Runtime.evaluate" || method === "Runtime.terminateExecution") {
+                return new Promise(() => undefined);
+            }
+
+            return {};
+        };
+
+        const { runtime } = setup(fake);
+
+        await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+
+        const started = Date.now();
+        const result = await runTool(
+            jsEvaluate,
+            { expression: "alert(1)", timeoutMs: 100 },
+            extra(),
+            runtime,
+        );
+
+        expect(result.isError).toBe(true);
+        expect(JSON.stringify(result.content)).toContain("did not finish within 100 ms");
+        expect(Date.now() - started).toBeLessThan(2000);
+        expect(fake.sent[0]?.timeoutMs).toBeLessThanOrEqual(100);
+        expect(fake.sent.at(-1)?.timeoutMs).toBeLessThanOrEqual(2000);
+    });
+
     it("runs a function body against an element uid as this and first argument", async () => {
         const fake = new FakeAccess();
 

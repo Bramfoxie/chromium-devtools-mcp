@@ -2,6 +2,7 @@ import { z } from "zod";
 import { ErrorCode, RpcError } from "../daemon/index.js";
 import type { DaemonAccess } from "../mcp/index.js";
 import { defineTool } from "./define-tool.js";
+import { createDeadline, type Deadline } from "./deadline.js";
 import { ensureNoDialog } from "./dialogs.js";
 import {
     type ElementRegistry,
@@ -13,6 +14,8 @@ import { ToolError } from "./errors.js";
 import { truncateText } from "./result.js";
 
 export const EVALUATE_DEFAULT_TIMEOUT_MS = 10_000;
+
+const TERMINATE_TIMEOUT_MS = 2000;
 
 export const EVALUATE_MAX_TIMEOUT_MS = 60_000;
 
@@ -193,12 +196,13 @@ export const jsEvaluate = defineTool({
 
         let result: unknown;
         let elementObjectId: string | undefined;
+        const deadline = createDeadline(context.signal, timeoutMs, () => context.clock.now());
 
         try {
             const outcome = await evaluate(context.access, context.elements, targetId, {
                 expression: args.expression,
                 awaitPromise,
-                timeoutMs,
+                deadline,
                 target    : args.target,
                 frames    : context.frames,
             });
@@ -206,8 +210,12 @@ export const jsEvaluate = defineTool({
             result = outcome.response;
             elementObjectId = outcome.elementObjectId;
         } catch (error) {
-            if (error instanceof RpcError && error.code === ErrorCode.cdpTimeout) {
-                await context.access.send(targetId, "Runtime.terminateExecution", {}).catch(() => undefined);
+            const timedOut = deadline.expired() && !context.signal.aborted;
+
+            if (timedOut || (error instanceof RpcError && error.code === ErrorCode.cdpTimeout)) {
+                void context.access
+                    .send(targetId, "Runtime.terminateExecution", {}, TERMINATE_TIMEOUT_MS)
+                    .catch(() => undefined);
 
                 throw new ToolError(
                     `The script did not finish within ${timeoutMs} ms and was stopped. Simplify the script or raise timeoutMs.`,
@@ -215,6 +223,8 @@ export const jsEvaluate = defineTool({
             }
 
             throw error;
+        } finally {
+            deadline.dispose();
         }
 
         const parsed = evaluatedSchema.safeParse(result);
@@ -261,7 +271,12 @@ export const jsEvaluate = defineTool({
 
         const objectId = resultObjectId;
         const remote = parsed.data.result;
-        const extracted = await extractStructuredValue(context.access, targetId, remote, timeoutMs);
+        const extracted = await extractStructuredValue(
+            context.access,
+            targetId,
+            remote,
+            deadline.remainingMs(),
+        );
         const shaped = extracted === undefined
             ? shapeRemoteValue(remote, maxChars)
             : shapeJsonValue(extracted.type, extracted.value, maxChars);
@@ -280,7 +295,7 @@ export const jsEvaluate = defineTool({
 interface EvaluateRequest {
     expression  : string;
     awaitPromise: boolean;
-    timeoutMs   : number;
+    deadline    : Deadline;
     target      : ElementTarget | undefined;
     frames?     : import("./frames.js").FrameState;
 }
@@ -377,7 +392,9 @@ async function evaluate(
                 replMode       : false,
                 generatePreview: true,
             },
-            request.timeoutMs,
+            request.deadline.remainingMs(),
+            undefined,
+            { signal: request.deadline.signal },
         );
 
         return { response, elementObjectId: undefined };
@@ -402,7 +419,9 @@ async function evaluate(
                 userGesture        : false,
                 generatePreview    : true,
             },
-            request.timeoutMs,
+            request.deadline.remainingMs(),
+            undefined,
+            { signal: request.deadline.signal },
         );
     } catch (error) {
         await releaseObjects(access, targetId, [element.objectId]);

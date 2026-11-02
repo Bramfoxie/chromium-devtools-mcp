@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { defineTool, type ToolContext } from "./define-tool.js";
+import { createDeadline, type Deadline, sendWithin } from "./deadline.js";
 import { ensureNoDialog } from "./dialogs.js";
 import { ToolError } from "./errors.js";
 import { throwIfCancelled } from "./registry.js";
@@ -255,11 +256,13 @@ export const pageNavigate = defineTool({
 
         await ensureNoDialog(context.dialogs, targetId);
 
+        const deadline = createDeadline(context.signal, timeoutMs, () => context.clock.now());
+
         // The document changes even when the navigation errors or the wait
         // times out: uids of the old document go stale in a finally below.
         try {
             if (waitUntil === "none") {
-                await navigate(context, targetId, action, args.url, args.ignoreCache);
+                await navigate(context, deadline, targetId, action, args.url, args.ignoreCache);
                 const page = await currentPage(context, targetId);
 
                 return {
@@ -273,12 +276,12 @@ export const pageNavigate = defineTool({
 
             const state = await navigateAndWait(
                 context,
+                deadline,
                 targetId,
                 action,
                 args.url,
                 args.ignoreCache,
                 waitUntil,
-                timeoutMs,
             );
             const page = await currentPage(context, targetId);
 
@@ -293,7 +296,16 @@ export const pageNavigate = defineTool({
                 navigationType: action,
                 ...(waited === "timeout" ? { readyState: page.readyState } : {}),
             };
+        } catch (error) {
+            if (deadline.expired() && !context.signal.aborted) {
+                throw new ToolError(
+                    `The navigation did not start within ${timeoutMs} ms. The page may still be loading; check it with page_info or raise timeoutMs.`,
+                );
+            }
+
+            throw error;
         } finally {
+            deadline.dispose();
             context.elements.nextGeneration(targetId);
         }
     },
@@ -301,6 +313,7 @@ export const pageNavigate = defineTool({
 
 async function navigate(
     context    : ToolContext,
+    deadline   : Deadline,
     targetId   : string,
     action     : "url" | "back" | "forward" | "reload",
     url        : string | undefined,
@@ -312,13 +325,15 @@ async function navigate(
         case "forward": {
             const entryId = await historyEntryId(context, targetId, action);
 
-            await context.access.send(targetId, "Page.navigateToHistoryEntry", { entryId });
+            await sendWithin(context.access, deadline, targetId, "Page.navigateToHistoryEntry", {
+                entryId,
+            });
 
             return undefined;
         }
 
         case "reload":
-            await context.access.send(targetId, "Page.reload", {
+            await sendWithin(context.access, deadline, targetId, "Page.reload", {
                 ...(ignoreCache === true ? { ignoreCache: true } : {}),
             });
 
@@ -326,7 +341,7 @@ async function navigate(
 
         case "url": {
             const result = navigateSchema.safeParse(
-                await context.access.send(targetId, "Page.navigate", { url }),
+                await sendWithin(context.access, deadline, targetId, "Page.navigate", { url }),
             );
 
             if (!result.success) {
@@ -348,12 +363,12 @@ async function navigate(
 
 async function navigateAndWait(
     context    : ToolContext,
+    deadline   : Deadline,
     targetId   : string,
     action     : "url" | "back" | "forward" | "reload",
     url        : string | undefined,
     ignoreCache: boolean | undefined,
     wait       : Exclude<WaitUntil, "none">,
-    timeoutMs  : number,
 ): Promise<NavigationWaitState> {
     const frameId = await mainFrameId(context, targetId);
     let state = navigationWaitStart();
@@ -383,10 +398,12 @@ async function navigateAndWait(
     const keepPage = context.dialogs.pageEnabled(targetId);
 
     try {
-        await context.access.send(targetId, "Page.enable", {});
-        await context.access.send(targetId, "Page.setLifecycleEventsEnabled", { enabled: true });
+        await sendWithin(context.access, deadline, targetId, "Page.enable", {});
+        await sendWithin(context.access, deadline, targetId, "Page.setLifecycleEventsEnabled", {
+            enabled: true,
+        });
 
-        if (!keepNetwork) await context.access.send(targetId, "Network.enable", {});
+        if (!keepNetwork) await sendWithin(context.access, deadline, targetId, "Network.enable", {});
 
         for (const event of MAIN_FRAME_EVENTS) await context.access.subscribe(targetId, event);
 
@@ -395,7 +412,7 @@ async function navigateAndWait(
         // Drop events of the previous page: nothing of the new navigation exists yet.
         state = navigationWaitStart();
 
-        const started = await navigate(context, targetId, action, url, ignoreCache);
+        const started = await navigate(context, deadline, targetId, action, url, ignoreCache);
 
         if (started !== undefined && state.loaderId === undefined) {
             state = { ...state, loaderId: started };
@@ -403,7 +420,7 @@ async function navigateAndWait(
 
         await Promise.race([
             finished,
-            context.clock.sleep(timeoutMs),
+            context.clock.sleep(deadline.remainingMs()),
             new Promise<void>((resolve) => {
                 if (context.signal.aborted) {
                     resolve();

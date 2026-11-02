@@ -533,6 +533,36 @@ describe("page_navigate", () => {
         expect(fake.unsubscribed.length).toBeGreaterThanOrEqual(1);
     });
 
+    it("fails within timeoutMs when Page.navigate never answers", async () => {
+        const fake = new FakeAccess();
+
+        fake.respond = (_targetId, method) => {
+            if (method === "Page.getFrameTree") return { frameTree: { frame: { id: "main" } } };
+
+            if (method === "Page.navigate") return new Promise(() => undefined);
+
+            return {};
+        };
+
+        const runtime = new ToolRuntime({ access: fake.asAccess(), config: managedConfig });
+
+        await runTool(newTab, {}, extra(), runtime);
+        const started = Date.now();
+        const result = await runTool(
+            pageNavigate,
+            { url: "https://slow.example/", timeoutMs: 100 },
+            extra(),
+            runtime,
+        );
+
+        expect(result.isError).toBe(true);
+        expect(JSON.stringify(result.content)).toContain("did not start within 100 ms");
+        expect(Date.now() - started).toBeLessThan(2000);
+        const navigateCall = fake.sent.find((call) => call.method === "Page.navigate");
+
+        expect(navigateCall?.timeoutMs).toBeLessThanOrEqual(100);
+    });
+
     it("stops waiting when the request is cancelled", async () => {
         const fake = new FakeAccess();
         const { clock } = trackingSleep();

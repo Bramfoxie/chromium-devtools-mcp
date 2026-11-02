@@ -1,4 +1,4 @@
-import { ErrorCode, RpcError } from "../../src/daemon/index.js";
+import { ErrorCode, IpcCancelledError, RpcError } from "../../src/daemon/index.js";
 import type { DaemonAccess, DaemonFrame, DaemonTab, SessionSummary } from "../../src/mcp/index.js";
 
 export interface FakeAccessOptions {
@@ -143,6 +143,7 @@ export class FakeAccess {
         params?   : Record<string, unknown>,
         timeoutMs?: number,
         frameId?  : string,
+        options?  : { signal?: AbortSignal },
     ): Promise<unknown> {
         this.sent.push({ targetId, method, params, timeoutMs, frameId });
         const failure = this.failSend?.(targetId, method);
@@ -151,9 +152,13 @@ export class FakeAccess {
 
         if (method === "Page.enable") return {};
 
-        return this.respond?.(targetId, method, params) ?? this.evaluate ?? {
+        const answer = this.respond?.(targetId, method, params) ?? this.evaluate ?? {
             result: { type: "undefined" },
         };
+
+        if (options?.signal === undefined) return answer;
+
+        return abortable(Promise.resolve(answer), options.signal);
     }
 
     async subscribe(targetId: string, event: string, frameId?: string): Promise<void> {
@@ -173,4 +178,15 @@ export class FakeAccess {
     asAccess(): DaemonAccess {
         return this as unknown as DaemonAccess;
     }
+}
+
+function abortable<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+    if (signal.aborted) return Promise.reject(new IpcCancelledError("cdp.send"));
+
+    return new Promise<T>((resolve, reject) => {
+        signal.addEventListener("abort", () => reject(new IpcCancelledError("cdp.send")), {
+            once: true,
+        });
+        work.then(resolve, reject);
+    });
 }
