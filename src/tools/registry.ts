@@ -136,8 +136,8 @@ export async function runTool(
         ? (tool.dangerous as (args: unknown) => boolean)(parsed.data)
         : (tool.dangerous ?? false);
 
-    // The gate sees the tab URL resolved for this call; step 19 adds policy on top.
-    const tabUrl = access === "mutate"
+    // The tab URL is resolved only when a domain allowlist can use it.
+    const tabUrl = access === "mutate" && runtime.config.safety.allowedDomains.length > 0
         ? await resolveTabUrl(tool, parsed.data, runtime).catch(() => undefined)
         : undefined;
     const tab = access === "mutate" ? selectedTab(parsed.data, runtime) : undefined;
@@ -182,8 +182,6 @@ export async function runTool(
         if (runtime.access.sessionGeneration !== generation) {
             return errorResult(new SessionResetError().message);
         }
-
-        if (extra.signal.aborted) return errorResult(CANCELLED_MESSAGE);
 
         return errorResult(toToolMessage(error));
     }

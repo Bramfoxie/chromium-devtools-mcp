@@ -296,6 +296,34 @@ describe("tool declarations", () => {
     });
 });
 
+describe("tab url resolution", () => {
+    it("lists tabs for a mutating call only when a domain allowlist is set", async () => {
+        const scopes = async (config: Config) => {
+            const access = new FakeAccess();
+            const seen: string[] = [];
+            const original = access.listTabs.bind(access);
+
+            access.listTabs = async (scope) => {
+                seen.push(scope);
+
+                return original(scope);
+            };
+
+            await runTool(allTools.find((tool) => tool.name === "input_key") as never, { key: "Enter", tab: "tab1" }, extra(), runtime(config, access));
+
+            return seen;
+        };
+
+        expect(await scopes(managedConfig)).toEqual([]);
+        expect(
+            (await scopes({
+                ...managedConfig,
+                safety: { ...managedConfig.safety, allowedDomains: ["example.com"] },
+            })).length,
+        ).toBeGreaterThan(0);
+    });
+});
+
 describe("runTool", () => {
     const echo = defineTool({
         name       : "echo",
