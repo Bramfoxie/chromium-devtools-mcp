@@ -173,7 +173,9 @@ export class DaemonLink {
 
                 const status = await this.status(client);
 
-                if (status?.state !== "starting" || this.deps.now() >= deadline) {
+                const pending = status?.state === "starting" || status?.state === "ready";
+
+                if (!pending || this.deps.now() >= deadline) {
                     throw new DaemonNotReadyError(error.message);
                 }
 

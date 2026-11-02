@@ -440,6 +440,27 @@ describe("waiting for the browser", () => {
         expect(sleeps).toHaveLength(3);
     });
 
+    it("retries when the browser became ready between the refusal and the status check", async () => {
+        const ipc = new FakeIpc((method) => (method === "daemon.status" ? { state: "ready" } : {}));
+        const base = ipc.request.bind(ipc);
+        let refused = 0;
+
+        ipc.request = async (method, params) => {
+            if (method === "session.open" && refused === 0) {
+                refused += 1;
+
+                throw new RpcError(ErrorCode.browserNotReady, "starting");
+            }
+
+            return base(method, params);
+        };
+
+        const { link: l } = link({ connect: async () => asIpc(ipc), sleep: async () => undefined });
+
+        await expect(l.request("x")).resolves.toEqual({});
+        expect(refused).toBe(1);
+    });
+
     it("reports the instructions at once when the user has to act", async () => {
         const { ipc } = notReady(["waiting"], "stay");
         const connect = vi.fn(async () => asIpc(ipc));
