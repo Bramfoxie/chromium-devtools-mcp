@@ -44,6 +44,24 @@ afterAll(async () => {
 }, 60_000);
 
 describe.skipIf(!present)("real browser", () => {
+    it("new_tab with a url returns after the page committed and loaded", async () => {
+        const opened = await env.ok("new_tab", { url: `${env.fixture.origin}/main` });
+        const tab = (opened.tab as { tab: string; url: string }).tab;
+
+        expect(opened).toMatchObject({ waited: "load", readyState: "complete", status: 200 });
+        expect((opened.tab as { url: string }).url).toBe(`${env.fixture.origin}/main`);
+        expect((await env.ok("page_info", { tab })).url).toBe(`${env.fixture.origin}/main`);
+        expect(await evaluate("document.querySelectorAll('button').length", tab)).toBeGreaterThan(0);
+    });
+
+    it("new_tab reports a download or an empty response without hanging", async () => {
+        env.fixture.pages.set("/empty", { body: "", status: 204, type: "text/plain" });
+        const opened = await env.ok("new_tab", { url: `${env.fixture.origin}/empty`, timeoutMs: 20_000 });
+
+        expect(opened).toMatchObject({ waited: "none" });
+        expect(typeof opened.navigationError).toBe("string");
+    });
+
     it("js_evaluate returns structured values and evaluates once", async () => {
         await env.open("/main");
         const result = await env.ok("js_evaluate", { expression: "({ a: 1, list: [1, 2] })" });

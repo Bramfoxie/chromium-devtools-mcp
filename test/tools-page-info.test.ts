@@ -61,7 +61,8 @@ describe("page_info", () => {
         const fake = new FakeAccess({ evaluate: { result: { type: "object", value: liveValue } } });
         const { runtime } = setup(fake);
 
-        await runTool(newTab, { url: "https://example.org/" }, extra(), runtime);
+        await runTool(newTab, {}, extra(), runtime);
+        for (const tab of fake.tabs) tab.url = "https://example.org/";
         fake.sent.length = 0;
 
         const result = await runTool(pageInfo, {}, extra(), runtime);
@@ -111,7 +112,8 @@ describe("page_info", () => {
             : new RpcError(ErrorCode.cdpTimeout, "CDP request timed out.");
         const { runtime } = setup(fake);
 
-        await runTool(newTab, { url: "https://example.org/" }, extra(), runtime);
+        await runTool(newTab, {}, extra(), runtime);
+        for (const tab of fake.tabs) tab.url = "https://example.org/";
         fake.sent.length = 0;
 
         const result = await runTool(pageInfo, {}, extra(), runtime);
@@ -131,7 +133,8 @@ describe("page_info", () => {
         const fake = new FakeAccess({ evaluate: { result: { type: "undefined" } } });
         const { runtime } = setup(fake);
 
-        await runTool(newTab, { url: "https://example.org/" }, extra(), runtime);
+        await runTool(newTab, {}, extra(), runtime);
+        for (const tab of fake.tabs) tab.url = "https://example.org/";
         fake.sent.length = 0;
 
         const result = await runTool(pageInfo, {}, extra(), runtime);

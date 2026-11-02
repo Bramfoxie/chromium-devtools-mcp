@@ -118,7 +118,7 @@ describe("safety gate inputs", () => {
     it("forwards the URL target of new_tab", async () => {
         gateCalls.length = 0;
 
-        await runTool(toolNamed("new_tab"), { url: "https://example.org/" }, extra(), runtimeOf(managedConfig));
+        await runTool(toolNamed("new_tab"), { url: "https://example.org/", timeoutMs: 1 }, extra(), runtimeOf(managedConfig));
 
         expect(gateCalls.at(-1)).toMatchObject({
             tool  : "new_tab",

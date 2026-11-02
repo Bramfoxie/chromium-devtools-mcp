@@ -58,24 +58,108 @@ describe("list_tabs clipping", () => {
 });
 
 describe("new_tab", () => {
+    function loading(
+        fake    : FakeAccess,
+        navigate: Record<string, unknown>,
+        events  : Array<Record<string, unknown>> = [],
+    ) {
+        fake.respond = (targetId, method) => {
+            switch (method) {
+                case "Page.getFrameTree":
+                    return { frameTree: { frame: { id: "main" } } };
+                case "Page.navigate":
+                    setTimeout(() => {
+                        for (const event of events) fake.emit("cdp.event", { targetId, ...event });
+                    }, 0);
+
+                    return navigate;
+                case "Runtime.evaluate":
+                    return {
+                        result: {
+                            type : "object",
+                            value: { url: "https://example.org/final", title: "Final", readyState: "complete" },
+                        },
+                    };
+                default:
+                    return {};
+            }
+        };
+    }
+
+    const loaded = [
+        {
+            event : "Network.responseReceived",
+            params: { frameId: "main", loaderId: "L1", type: "Document", response: { status: 200 } },
+        },
+        { event: "Page.lifecycleEvent", params: { frameId: "main", loaderId: "L1", name: "load" } },
+    ];
+
     it("opens a tab and selects it by default", async () => {
         const { fake, runtime } = setup();
+
+        loading(fake, { loaderId: "L1" }, loaded);
         const result = await runTool(newTab, { url: "https://example.org/" }, extra(), runtime);
 
         expect(result.isError).not.toBe(true);
-        expect(result.structuredContent).toMatchObject({
-            tab: { tab: "tab1", url: "https://example.org/", owned: true, created: true },
+        expect(result.structuredContent).toEqual({
+            tab       : { tab: "tab1", url: "https://example.org/final", title: "Final", owned: true, created: true },
+            waited    : "load",
+            readyState: "complete",
+            status    : 200,
         });
         expect(fake.created).toEqual(["tab1"]);
+        expect(fake.tabs[0]?.url).toBe("about:blank");
+        expect(fake.sent.find((call) => call.method === "Page.navigate")?.params).toEqual({
+            url: "https://example.org/",
+        });
         expect(runtime.tabs.selected()).toBe("tab1");
+    });
+
+    it("keeps the tab and reports why a download or an empty response was not loaded", async () => {
+        for (const navigate of [{ isDownload: true }, { errorText: "net::ERR_ABORTED" }]) {
+            const { fake, runtime } = setup();
+
+            loading(fake, navigate);
+            const result = await runTool(newTab, { url: "https://example.org/f" }, extra(), runtime);
+
+            expect(result.isError).not.toBe(true);
+            expect(result.structuredContent).toMatchObject({
+                tab   : { tab: "tab1", owned: true, created: true },
+                waited: "none",
+            });
+            expect(result.structuredContent).toHaveProperty("navigationError");
+            expect(runtime.tabs.selected()).toBe("tab1");
+        }
+    });
+
+    it("reports a timeout when the page does not finish loading", async () => {
+        const fake = new FakeAccess();
+        const clock = { now: () => Date.now(), sleep: async () => undefined };
+        const runtime = new ToolRuntime({ access: fake.asAccess(), config: managedConfig, clock });
+
+        loading(fake, { loaderId: "L1" });
+        const result = await runTool(newTab, { url: "https://example.org/", timeoutMs: 50 }, extra(), runtime);
+
+        expect(result.isError).not.toBe(true);
+        expect(result.structuredContent).toMatchObject({ waited: "timeout", readyState: "complete" });
+    });
+
+    it("refuses a URL scheme before creating a tab", async () => {
+        const { fake, runtime } = setup();
+        const result = await runTool(newTab, { url: "file:///etc/passwd" }, extra(), runtime);
+
+        expect(result.isError).toBe(true);
+        expect(textOf(result)).toContain("Only http, https and about:blank");
+        expect(fake.created).toEqual([]);
     });
 
     it("opens about:blank when no URL is given and skips the safety target", async () => {
         const { fake, runtime } = setup();
         const result = await runTool(newTab, {}, extra(), runtime);
 
-        expect(result.structuredContent).toMatchObject({ tab: { url: "about:blank" } });
+        expect(result.structuredContent).toMatchObject({ tab: { url: "about:blank" }, waited: "load" });
         expect(fake.created).toEqual(["tab1"]);
+        expect(fake.sent.some((call) => call.method === "Page.navigate")).toBe(false);
     });
 
     it("leaves the selection alone when select is false", async () => {

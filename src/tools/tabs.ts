@@ -1,7 +1,8 @@
 import { z } from "zod";
-import { RpcError, ErrorCode } from "../daemon/index.js";
+import { RpcError, ErrorCode, normalizeUrl } from "../daemon/index.js";
 import { defineTool } from "./define-tool.js";
 import { ToolError } from "./errors.js";
+import { NAVIGATE_DEFAULT_TIMEOUT_MS, NAVIGATE_MAX_TIMEOUT_MS, loadInTab, type TabLoad } from "./page-navigate.js";
 import { truncateText } from "./result.js";
 
 const TAB_URL_MAX_CHARS = 2000;
@@ -29,35 +30,60 @@ function noTabError(): ToolError {
 
 export const newTab = defineTool({
     name       : "new_tab",
-    description: "Open a new background tab and select it.",
+    description: "Open a new background tab and select it. With a url it waits until the page has loaded or timeoutMs passes, and returns the committed url, the load state reached and the document readyState.",
     access     : "mutate",
     input      : z.strictObject({
-        url   : z.string().min(1).max(2048).optional().describe("URL to open: http, https or about:blank. Defaults to about:blank."),
-        select: z.boolean().optional().describe("Select the new tab. Defaults to true."),
+        url      : z.string().min(1).max(2048).optional().describe("URL to open: http, https or about:blank. Defaults to about:blank."),
+        select   : z.boolean().optional().describe("Select the new tab. Defaults to true."),
+        timeoutMs: z.number().int().min(1).max(NAVIGATE_MAX_TIMEOUT_MS).optional().describe("How long to wait for the page to load. Defaults to 30000 ms."),
     }),
-    output : z.strictObject({ tab: tabObject }),
+    output: z.strictObject({
+        tab            : tabObject,
+        waited         : z.enum(["load", "timeout", "none"]).describe("load: the load event fired. timeout: the page was still loading. none: nothing was loaded or the navigation did not start."),
+        readyState     : z.string().optional().describe("Document ready state of the tab."),
+        status         : z.number().optional().describe("HTTP status of the main document, when observed."),
+        navigationError: z.string().optional().describe("Why the url was not loaded, for example a download, an empty 204 response or a network error. The tab stays open."),
+    }),
     target : (args) => (args.url === undefined ? undefined : { url: args.url }),
     handler: async (args, context) => {
-        const targetId = await context.access.createTab(args.url);
+        const url = args.url === undefined ? undefined : normalizeUrl(args.url);
+        const targetId = await context.access.createTab();
 
         await context.capture.ensureConsole(targetId).catch(() => undefined);
         await context.dialogs.ensure(targetId).catch(() => undefined);
         await context.frames.ensure(targetId).catch(() => undefined);
 
+        const timeoutMs = args.timeoutMs ?? NAVIGATE_DEFAULT_TIMEOUT_MS;
+        const load: TabLoad | undefined = url === undefined || url === "about:blank"
+            ? undefined
+            : await loadInTab(context, targetId, url, timeoutMs);
         const tabs = await context.access.listTabs("owned");
         const select = args.select === false ? selectionOf(tabs, context.state.selected) : targetId;
 
         context.tabs.refresh(tabs, select);
         const tab = tabs.find((known) => known.targetId === targetId) ?? {
             targetId,
-            url    : args.url ?? "about:blank",
+            url    : "about:blank",
             title  : "",
             owned  : true,
             created: true,
         };
+        const page = load?.page.url ? load.page : undefined;
 
         return {
-            tab: { tab: tab.targetId, url: tab.url, title: tab.title, owned: true, created: true },
+            tab: {
+                tab    : tab.targetId,
+                url    : page?.url ?? tab.url,
+                title  : page?.title ?? tab.title,
+                owned  : true,
+                created: true,
+            },
+            waited: load?.waited ?? "load" as const,
+            ...(load === undefined ? {} : { readyState: load.page.readyState }),
+            ...(load?.status === undefined ? {} : { status: load.status }),
+            ...(load?.navigationError === undefined
+                ? {}
+                : { navigationError: load.navigationError }),
         };
     },
 });

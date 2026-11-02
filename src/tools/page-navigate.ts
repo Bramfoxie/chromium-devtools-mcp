@@ -152,7 +152,7 @@ function mainFrameId(context: ToolContext, targetId: string): Promise<string | u
         .catch(() => undefined);
 }
 
-async function currentPage(
+export async function currentPage(
     context : ToolContext,
     targetId: string,
 ): Promise<{ url: string; title: string; readyState: string }> {
@@ -305,6 +305,59 @@ export const pageNavigate = defineTool({
         }
     },
 });
+
+export interface TabLoad {
+    waited          : "load" | "timeout" | "none";
+    page            : { url: string; title: string; readyState: string };
+    status?         : number;
+    navigationError?: string;
+}
+
+export async function loadInTab(
+    context  : ToolContext,
+    targetId : string,
+    url      : string,
+    timeoutMs: number,
+): Promise<TabLoad> {
+    const deadline = createDeadline(context.signal, timeoutMs, () => context.clock.now());
+
+    try {
+        const state = await navigateAndWait(
+            context,
+            deadline,
+            targetId,
+            "url",
+            url,
+            undefined,
+            "load",
+        );
+
+        return {
+            waited: state.done ? "load" : "timeout",
+            page  : await currentPage(context, targetId),
+            ...(state.status === undefined ? {} : { status: state.status }),
+        };
+    } catch (error) {
+        if (context.signal.aborted) throw error;
+
+        if (deadline.expired()) {
+            return { waited: "timeout", page: await currentPage(context, targetId) };
+        }
+
+        if (error instanceof ToolError) {
+            return {
+                waited         : "none",
+                page           : await currentPage(context, targetId),
+                navigationError: error.message,
+            };
+        }
+
+        throw error;
+    } finally {
+        deadline.dispose();
+        context.elements.nextGeneration(targetId);
+    }
+}
 
 async function navigate(
     context    : ToolContext,
