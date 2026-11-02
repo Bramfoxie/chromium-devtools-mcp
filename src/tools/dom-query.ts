@@ -56,7 +56,7 @@ const describedSchema = z.object({
 });
 
 const rowSchema = z.object({
-    index     : z.number().optional(),
+    index     : z.number(),
     tag       : z.string(),
     id        : z.string(),
     classes   : z.array(z.string()),
@@ -78,43 +78,36 @@ const rowsSchema = z.object({
     }),
 });
 
+const listSchema = z.object({
+    result: z.object({
+        type    : z.string().optional(),
+        subtype : z.string().optional(),
+        objectId: z.string().optional(),
+    }),
+    exceptionDetails: z.unknown().optional(),
+});
+
+const propertiesSchema = z.object({
+    result: z.array(z.object({
+        name : z.string(),
+        value: z.object({ objectId: z.string().optional() }).optional(),
+    })),
+});
+
+const QUERY_OBJECT_GROUP = "chromium-devtools-mcp-query";
+let queryGroupCounter = 0;
+
 export type QueryRow = z.infer<typeof rowSchema>;
 
-export function buildQueryScript(selector: string, attributes: string[], count: number): string {
+export function buildQueryScript(selector: string, count: number): string {
     const matcher = JSON.stringify(selector);
-    const names = JSON.stringify(attributes);
     const limit = JSON.stringify(count);
 
-    return `(() => {
-  const found = [...document.querySelectorAll(${matcher})].map((el, index) => ({ el, index })).slice(0, ${limit});
-  return found.map(({ el, index }) => {
-    const rect = el.getBoundingClientRect();
-    const kept = {};
-    for (const name of ${names}) {
-      const value = el.getAttribute(name);
-      if (value !== null) kept[name] = value.slice(0, 500);
-    }
-    return {
-      index,
-      tag: el.localName,
-      id: el.id,
-      classes: [...el.classList],
-      attributes: kept,
-      text: (el.innerText ?? "").slice(0, 500),
-      visible: el.getClientRects().length > 0,
-      rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
-    };
-  });
-})()`;
+    return `[...document.querySelectorAll(${matcher})].slice(0, ${limit})`;
 }
 
-export function buildPiercedQueryScript(
-    selector  : string,
-    attributes: string[],
-    count     : number,
-): string {
+export function buildPiercedQueryScript(selector: string, count: number): string {
     const matcher = JSON.stringify(selector);
-    const names = JSON.stringify(attributes);
     const limit = JSON.stringify(count);
 
     return `(() => {
@@ -131,7 +124,15 @@ export function buildPiercedQueryScript(
     return found.length >= ${limit};
   };
   walk(document);
-  return found.slice(0, ${limit}).map((el, index) => {
+  return found.slice(0, ${limit});
+})()`;
+}
+
+export function buildRowsFunction(attributes: string[]): string {
+    const names = JSON.stringify(attributes);
+
+    return `function () {
+  return this.map((el, index) => {
     const rect = el.getBoundingClientRect();
     const kept = {};
     for (const name of ${names}) {
@@ -149,7 +150,7 @@ export function buildPiercedQueryScript(
       rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
     };
   });
-})()`;
+}`;
 }
 
 export function clipValue(value: string, limit: number = QUERY_CLIP_CHARS): string {
@@ -293,7 +294,7 @@ export const domQuery = defineTool({
             ));
         }
 
-        const rows = await queryRows(
+        const queried = await queryElements(
             context.access,
             targetId,
             args.selector,
@@ -304,35 +305,24 @@ export const domQuery = defineTool({
             { pierce, contextId: scope.contextId },
         );
 
-        if (rows.length === 0) return finish({ matches: [], returned: 0 });
+        if (queried.length === 0) return finish({ matches: [], returned: 0 });
 
-        const picked = rows.flatMap((row) => {
-            const at = row.index ?? -1;
-            const nodeId = nodeIds[at];
-
-            return nodeId === undefined ? [] : [nodeId];
-        });
-
-        if (picked.length === 0) return finish({ matches: [], returned: 0 });
-
-        const described = await describeNodes(context.access, targetId, picked);
         const frameGeneration = scope.frameId === undefined
             ? undefined
             : context.frames.generation(targetId, scope.frameId);
         const uids = context.elements.assign(
             targetId,
-            described.map((node) => ({
+            queried.map(({ node }) => ({
                 backendNodeId: node.backendNodeId,
                 ...(scope.frameId === undefined ? {} : { frameId: scope.frameId }),
                 ...(frameGeneration === undefined ? {} : { frameGeneration }),
             })),
         );
 
-        const matches = rows.flatMap((row, index) => {
+        const matches = queried.flatMap(({ row, node }, index) => {
             const uid = uids[index];
-            const node = described[index];
 
-            if (uid === undefined || node === undefined) return [];
+            if (uid === undefined) return [];
 
             const password = node.password;
             const attributes = password ? { ...row.attributes, value: "" } : row.attributes;
@@ -725,7 +715,16 @@ async function elementNodeIds(
     return elements;
 }
 
-async function queryRows(
+interface QueriedElement {
+    row : QueryRow;
+    node: DescribedNode;
+}
+
+function unexpected(what: string): ToolError {
+    return new ToolError(`The browser sent an unexpected response to ${what}. Try the call again.`);
+}
+
+async function queryElements(
     access  : DaemonAccess,
     targetId: string,
     selector: string,
@@ -734,78 +733,113 @@ async function queryRows(
     limit   : number,
     filter  : string | undefined,
     scope   : { pierce: boolean; contextId: number | undefined },
-): Promise<QueryRow[]> {
+): Promise<QueriedElement[]> {
     const count = filter === undefined
         ? Math.min(total, limit)
         : Math.min(total, QUERY_MAX_TEXT_CANDIDATES);
     const expression = scope.pierce
-        ? buildPiercedQueryScript(selector, names, count)
-        : buildQueryScript(selector, names, count);
-    let result: unknown;
+        ? buildPiercedQueryScript(selector, count)
+        : buildQueryScript(selector, count);
+    const objectGroup = `${QUERY_OBJECT_GROUP}-${(queryGroupCounter += 1)}`;
 
     try {
-        result = await access.send(
-            targetId,
-            "Runtime.evaluate",
-            {
-                expression,
-                returnByValue: true,
-                ...(scope.contextId === undefined ? {} : { contextId: scope.contextId }),
-            },
-            10_000,
-        );
-    } catch (error) {
-        if (error instanceof RpcError && error.code === ErrorCode.cdpError) {
-            throw new ToolError(
-                "The page refused to run the query script. The page may restrict script execution.",
+        let listed: unknown;
+
+        try {
+            listed = await access.send(
+                targetId,
+                "Runtime.evaluate",
+                {
+                    expression,
+                    objectGroup,
+                    returnByValue: false,
+                    ...(scope.contextId === undefined ? {} : { contextId: scope.contextId }),
+                },
+                10_000,
             );
+        } catch (error) {
+            if (error instanceof RpcError && error.code === ErrorCode.cdpError) {
+                throw new ToolError(
+                    "The page refused to run the query script. The page may restrict script execution.",
+                );
+            }
+
+            throw error;
         }
 
-        throw error;
-    }
+        const list = listSchema.safeParse(listed);
+        const listId = list.success ? list.data.result.objectId : undefined;
 
-    const parsed = rowsSchema.safeParse(result);
-
-    if (!parsed.success || parsed.data.result.type === "undefined") {
-        throw new ToolError(
-            "The browser sent an unexpected response to the query script. Try the call again.",
-        );
-    }
-
-    const rows = parsed.data.result.value ?? [];
-
-    if (filter === undefined) return rows.slice(0, limit);
-
-    const needle = filter.toLowerCase();
-
-    return rows.filter((row) => row.text.toLowerCase().includes(needle)).slice(0, limit);
-}
-
-async function describeNodes(
-    access  : DaemonAccess,
-    targetId: string,
-    nodeIds : number[],
-): Promise<DescribedNode[]> {
-    const described: DescribedNode[] = [];
-
-    for (const nodeId of nodeIds) {
-        const parsed = describedSchema.safeParse(
-            await access.send(targetId, "DOM.describeNode", { nodeId, depth: 0 }),
-        );
-
-        if (!parsed.success) {
-            throw new ToolError(
-                "The browser sent an unexpected response to DOM.describeNode. Try the call again.",
-            );
+        if (!list.success || listId === undefined || list.data.exceptionDetails !== undefined) {
+            throw unexpected("the query script");
         }
 
-        described.push({
-            backendNodeId: parsed.data.node.backendNodeId,
-            password     : isPasswordInput(parsed.data.node.attributes ?? []),
-        });
-    }
+        const rowsReply = rowsSchema.safeParse(
+            await access.send(targetId, "Runtime.callFunctionOn", {
+                objectId           : listId,
+                functionDeclaration: buildRowsFunction(names),
+                returnByValue      : true,
+            }),
+        );
 
-    return described;
+        if (!rowsReply.success || rowsReply.data.result.type === "undefined") {
+            throw unexpected("the query script");
+        }
+
+        const rows = rowsReply.data.result.value ?? [];
+        const needle = filter?.toLowerCase();
+        const chosen = (needle === undefined
+            ? rows
+            : rows.filter((row) => row.text.toLowerCase().includes(needle))
+        ).slice(0, limit);
+
+        if (chosen.length === 0) return [];
+
+        const properties = propertiesSchema.safeParse(
+            await access.send(targetId, "Runtime.getProperties", {
+                objectId     : listId,
+                ownProperties: true,
+            }),
+        );
+
+        if (!properties.success) throw unexpected("Runtime.getProperties");
+
+        const elementIds = new Map<number, string>();
+
+        for (const property of properties.data.result) {
+            const objectId = property.value?.objectId;
+
+            if (objectId !== undefined && /^(0|[1-9][0-9]*)$/.test(property.name)) {
+                elementIds.set(Number(property.name), objectId);
+            }
+        }
+
+        const queried: QueriedElement[] = [];
+
+        for (const row of chosen) {
+            const objectId = elementIds.get(row.index);
+
+            if (objectId === undefined) continue;
+
+            const parsed = describedSchema.safeParse(
+                await access.send(targetId, "DOM.describeNode", { objectId, depth: 0 }),
+            );
+
+            if (!parsed.success) throw unexpected("DOM.describeNode");
+
+            queried.push({
+                row,
+                node: {
+                    backendNodeId: parsed.data.node.backendNodeId,
+                    password     : isPasswordInput(parsed.data.node.attributes ?? []),
+                },
+            });
+        }
+
+        return queried;
+    } finally {
+        await access.send(targetId, "Runtime.releaseObjectGroup", { objectGroup }).catch(() => undefined);
+    }
 }
 
 const chainedTextSchema = z.object({

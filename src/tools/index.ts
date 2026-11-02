@@ -43,6 +43,7 @@ export { safetyFrameOf } from "./safety-frame.js";
 export {
     buildPiercedQueryScript,
     buildQueryScript,
+    buildRowsFunction,
     clipValue,
     DEFAULT_QUERY_ATTRIBUTES,
     domQuery,

@@ -5,7 +5,9 @@ import type { ServerNotification, ServerRequest } from "@modelcontextprotocol/sd
 import { describe, expect, it } from "vitest";
 import { ErrorCode, RpcError } from "../src/daemon/index.js";
 import {
+    buildPiercedQueryScript,
     buildQueryScript,
+    buildRowsFunction,
     clipValue,
     DEFAULT_QUERY_ATTRIBUTES,
     domQuery,
@@ -43,8 +45,54 @@ function row(overrides: Record<string, unknown> = {}) {
     };
 }
 
+function flatAttributes(attributes: Record<string, string>): string[] {
+    return Object.entries(attributes).flat();
+}
+
+function listObject(objectId: string, length: number) {
+    return {
+        type       : "object",
+        subtype    : "array",
+        className  : "Array",
+        description: `Array(${length})`,
+        objectId,
+    };
+}
+
+function listProperties(prefix: string, length: number) {
+    return {
+        result: [
+            ...Array.from({ length }, (_, index) => ({
+                name        : String(index),
+                value       : { type: "object", subtype: "node", className: "HTMLElement", objectId: `${prefix}-${index}` },
+                writable    : true,
+                configurable: true,
+                enumerable  : true,
+                isOwn       : true,
+            })),
+            {
+                name        : "length",
+                value       : { type: "number", value: length, description: String(length) },
+                writable    : true,
+                configurable: false,
+                enumerable  : false,
+                isOwn       : true,
+            },
+            {
+                name        : "__proto__",
+                value       : { type: "object", subtype: "array", className: "Array", objectId: `${prefix}-proto` },
+                writable    : true,
+                configurable: true,
+                enumerable  : false,
+                isOwn       : false,
+            },
+        ],
+    };
+}
+
 function queryFake(rows: Array<ReturnType<typeof row>>, backendIds: number[] = [101, 102]) {
     const fake = new FakeAccess();
+    const prefix = "el";
 
     fake.respond = (_targetId, method, params) => {
         switch (method) {
@@ -55,6 +103,8 @@ function queryFake(rows: Array<ReturnType<typeof row>>, backendIds: number[] = [
             case "DOM.querySelectorAll":
                 return { nodeIds: backendIds.map((_, index) => 11 + index) };
             case "Runtime.evaluate":
+                return { result: listObject("list-1", rows.length) };
+            case "Runtime.callFunctionOn":
                 return {
                     result: {
                         type   : "object",
@@ -62,17 +112,22 @@ function queryFake(rows: Array<ReturnType<typeof row>>, backendIds: number[] = [
                         value  : rows.map((entry, index) => ({ index, ...entry })),
                     },
                 };
+            case "Runtime.getProperties":
+                return listProperties(prefix, rows.length);
+            case "Runtime.releaseObjectGroup":
+                return {};
 
             case "DOM.describeNode": {
-                const nodeId = (params as { nodeId?: unknown })?.nodeId as number;
-                const backendNodeId = backendIds[nodeId - 11] ?? 100 + nodeId;
+                const objectId = (params as { objectId?: unknown })?.objectId as string;
+                const at = Number(objectId.slice(prefix.length + 1));
+                const entry = rows[at];
 
                 return {
                     node: {
-                        nodeName  : "A",
-                        localName : "a",
-                        backendNodeId,
-                        attributes: [],
+                        nodeName     : (entry?.tag ?? "a").toUpperCase(),
+                        localName    : entry?.tag ?? "a",
+                        backendNodeId: backendIds[at] ?? 100 + at,
+                        attributes   : flatAttributes(entry?.attributes ?? {}),
                     },
                 };
             }
@@ -85,44 +140,120 @@ function queryFake(rows: Array<ReturnType<typeof row>>, backendIds: number[] = [
     return fake;
 }
 
-function evaluateRealQueryScript(expression: string): unknown[] {
-    const makeElement = (text: string) => ({
+interface FakeElement {
+    backendNodeId: number;
+    text         : string;
+}
+
+function makeScriptElement(entry: FakeElement) {
+    return {
         localName            : "button",
         id                   : "",
         classList            : [],
-        innerText            : text,
+        innerText            : entry.text,
         shadowRoot           : undefined,
+        backendNodeId        : entry.backendNodeId,
         getAttribute         : () => null,
         getClientRects       : () => [1],
         getBoundingClientRect: () => ({ x: 1, y: 2, width: 3, height: 4 }),
-    });
-    const elements = [makeElement("Pay"), makeElement("More")];
-    const sandbox = {
-        document: {
-            querySelectorAll: () => elements,
-        },
     };
-    const value: unknown = runInNewContext(expression, sandbox);
+}
 
-    return JSON.parse(JSON.stringify(value)) as unknown[];
+class ScriptPage {
+    private readonly held = new Map<string, unknown>();
+    private counter = 0;
+
+    constructor(readonly elements: FakeElement[]) {}
+
+    evaluate(expression: string) {
+        const live = this.elements.map(makeScriptElement);
+        const sandbox = {
+            document: {
+                querySelectorAll: (selector: string) => (selector === "*" ? [] : live),
+            },
+        };
+        const value: unknown = runInNewContext(expression, sandbox);
+        const objectId = `list-${(this.counter += 1)}`;
+
+        this.held.set(objectId, value);
+
+        return { result: listObject(objectId, (value as unknown[]).length) };
+    }
+
+    owns(objectId: unknown): boolean {
+        return typeof objectId === "string" && this.held.has(objectId);
+    }
+
+    callFunctionOn(objectId: string, declaration: string) {
+        const target = this.held.get(objectId);
+        const fn = runInNewContext(`(${declaration})`) as (this: unknown) => unknown;
+        const value = JSON.parse(JSON.stringify(fn.call(target))) as unknown;
+
+        return { result: { type: "object", subtype: "array", value } };
+    }
+
+    properties(objectId: string) {
+        const target = this.held.get(objectId) as unknown[];
+
+        return listProperties(objectId, target.length);
+    }
+
+    describe(objectId: string) {
+        const [list, at] = objectId.split(/-(?=\d+$)/);
+        const target = this.held.get(list ?? "") as Array<{ backendNodeId: number }> | undefined;
+        const element = target?.[Number(at)];
+
+        if (element === undefined) throw new Error(`unknown object ${objectId}`);
+
+        return {
+            node: {
+                nodeName     : "BUTTON",
+                localName    : "button",
+                backendNodeId: element.backendNodeId,
+                attributes   : [],
+            },
+        };
+    }
+}
+
+async function runScript(script: string, setup: string): Promise<string> {
+    return new Promise<string>((resolve, reject) => {
+        execFile(process.execPath, ["--input-type=module", "-e", `${setup}\n${script}`], (error, stdout) =>
+            error ? reject(error) : resolve(stdout),
+        );
+    });
 }
 
 describe("buildQueryScript", () => {
-    it("reads rows in a real JavaScript engine", async () => {
-        const script = `const found = [
+    it("lists matching elements sliced to the count", async () => {
+        const setup = `const found = [{ n: 1 }, { n: 2 }, { n: 3 }];
+const document = { querySelectorAll: () => found };`;
+        const script = `console.log(JSON.stringify(eval(${JSON.stringify(buildQueryScript("a", 2))})));`;
+
+        expect(JSON.parse(await runScript(script, setup))).toEqual([{ n: 1 }, { n: 2 }]);
+    });
+
+    it("embeds the selector safely", async () => {
+        const setup = `const seen = [];
+const document = { querySelectorAll: (s) => { seen.push(s); return []; } };`;
+        const script = `eval(${JSON.stringify(buildQueryScript('a[href="x"], b', 3))});
+console.log(JSON.stringify(seen));`;
+
+        expect(JSON.parse(await runScript(script, setup))).toEqual(['a[href="x"], b']);
+    });
+});
+
+describe("buildRowsFunction", () => {
+    it("reads rows from the elements it is called on in a real JavaScript engine", async () => {
+        const setup = `const found = [
   { localName: "a", id: "l", classList: ["x"], getAttribute: (n) => n === "href" ? "/p" : null,
     innerText: "Click", getClientRects: () => [1],
     getBoundingClientRect: () => ({ x: 1, y: 2, width: 3, height: 4 }) },
-];
-const document = { querySelectorAll: () => found };
-console.log(JSON.stringify(eval(${JSON.stringify(buildQueryScript("a", ["href"], 10))})));`;
-        const output = await new Promise<string>((resolve, reject) => {
-            execFile(process.execPath, ["--input-type=module", "-e", script], (error, stdout) =>
-                error ? reject(error) : resolve(stdout),
-            );
-        });
+];`;
+        const script = `const fn = eval("(" + ${JSON.stringify(buildRowsFunction(["href"]))} + ")");
+console.log(JSON.stringify(fn.call(found)));`;
 
-        expect(JSON.parse(output)).toEqual([
+        expect(JSON.parse(await runScript(script, setup))).toEqual([
             {
                 index     : 0,
                 tag       : "a",
@@ -134,20 +265,6 @@ console.log(JSON.stringify(eval(${JSON.stringify(buildQueryScript("a", ["href"],
                 rect      : { x: 1, y: 2, width: 3, height: 4 },
             },
         ]);
-    });
-
-    it("embeds the selector safely and slices to the count", async () => {
-        const script = `const seen = [];
-const document = { querySelectorAll: (s) => { seen.push(s); return []; } };
-eval(${JSON.stringify(buildQueryScript('a[href="x"], b', ["id"], 3))});
-console.log(JSON.stringify(seen));`;
-        const output = await new Promise<string>((resolve, reject) => {
-            execFile(process.execPath, ["--input-type=module", "-e", script], (error, stdout) =>
-                error ? reject(error) : resolve(stdout),
-            );
-        });
-
-        expect(JSON.parse(output)).toEqual(['a[href="x"], b']);
     });
 });
 
@@ -212,13 +329,22 @@ describe("dom_query", () => {
             "DOM.getDocument",
             "DOM.querySelector",
             "Runtime.evaluate",
+            "Runtime.callFunctionOn",
+            "Runtime.getProperties",
             "DOM.describeNode",
+            "Runtime.releaseObjectGroup",
         ]);
-        const expression = (fake.sent[2]?.params as { expression?: string })?.expression ?? "";
+        const declaration =
+            (fake.sent[3]?.params as { functionDeclaration?: string })?.functionDeclaration ?? "";
 
         for (const name of DEFAULT_QUERY_ATTRIBUTES) {
-            expect(expression).toContain(name);
+            expect(declaration).toContain(name);
         }
+
+        expect(fake.sent[5]?.params).toEqual({ objectId: "el-0", depth: 0 });
+        expect(fake.sent[6]?.params).toEqual({
+            objectGroup: (fake.sent[2]?.params as { objectGroup?: string }).objectGroup,
+        });
 
         expect(runtime.elements.lookup("tab1", "0_1")).toEqual({ backendNodeId: 101 });
     });
@@ -307,45 +433,10 @@ describe("dom_query", () => {
     });
 
     it("redacts password values and reports them", async () => {
-        const fake = new FakeAccess();
-
-        fake.respond = (_targetId, method, params) => {
-            switch (method) {
-                case "DOM.getDocument":
-                    return { root: { nodeId: 1 } };
-                case "DOM.querySelector":
-                    return { nodeId: 11 };
-                case "Runtime.evaluate":
-                    return {
-                        result: {
-                            type : "object",
-                            value: [
-                                {
-                                    ...row({
-                                        tag       : "input",
-                                        attributes: { type: "password", value: "secret" },
-                                    }),
-                                    index: 0,
-                                },
-                            ],
-                        },
-                    };
-                case "DOM.describeNode":
-                    expect(params).toMatchObject({ nodeId: 11 });
-
-                    return {
-                        node: {
-                            nodeName     : "INPUT",
-                            localName    : "input",
-                            backendNodeId: 55,
-                            attributes   : ["type", "password", "value", "secret"],
-                        },
-                    };
-                default:
-                    throw new Error(`unexpected CDP call ${method}`);
-            }
-        };
-
+        const fake = queryFake(
+            [row({ tag: "input", attributes: { type: "password", value: "secret" } })],
+            [55],
+        );
         const { runtime } = setup(fake);
 
         await runTool(newTab, {}, extra(), runtime);
@@ -357,6 +448,81 @@ describe("dom_query", () => {
             matches: [{ attributes: { type: "password", value: "" }, redacted: true }],
         });
         expect(JSON.stringify(result.structuredContent)).not.toContain("secret");
+    });
+
+    it("takes uids from the elements the script returned when the DOM changes between steps", async () => {
+        const page = new ScriptPage([
+            { backendNodeId: 501, text: "first" },
+            { backendNodeId: 502, text: "second" },
+        ]);
+        const fake = new FakeAccess();
+
+        fake.respond = (_targetId, method, params) => {
+            switch (method) {
+                case "DOM.getDocument":
+                    return { root: { nodeId: 1 } };
+
+                case "DOM.querySelectorAll": {
+                    const ids = page.elements.map((_, index) => 11 + index);
+
+                    page.elements.unshift({ backendNodeId: 500, text: "inserted" });
+
+                    return { nodeIds: ids };
+                }
+
+                case "Runtime.evaluate":
+                    return page.evaluate((params as { expression: string }).expression);
+                case "Runtime.callFunctionOn":
+                    return page.callFunctionOn(
+                        (params as { objectId: string }).objectId,
+                        (params as { functionDeclaration: string }).functionDeclaration,
+                    );
+                case "Runtime.getProperties":
+                    return page.properties((params as { objectId: string }).objectId);
+                case "DOM.describeNode":
+                    return page.describe((params as { objectId: string }).objectId);
+                case "Runtime.releaseObjectGroup":
+                    return {};
+                default:
+                    throw new Error(`unexpected CDP call ${method}`);
+            }
+        };
+
+        const { runtime } = setup(fake);
+
+        await runTool(newTab, {}, extra(), runtime);
+
+        const result = await runTool(domQuery, { selector: "button", all: true }, extra(), runtime);
+        const { matches } = result.structuredContent as {
+            matches: Array<{ uid: string; text: string }>;
+        };
+
+        expect(matches.map((match) => match.text)).toEqual(["inserted", "first"]);
+        expect(matches.map((match) => runtime.elements.lookup("tab1", match.uid))).toEqual([
+            { backendNodeId: 500 },
+            { backendNodeId: 501 },
+        ]);
+    });
+
+    it("releases the held objects when reading the rows fails", async () => {
+        const fake = queryFake([row()]);
+        const inner = fake.respond;
+
+        fake.respond = (targetId, method, params) => {
+            if (method === "Runtime.callFunctionOn") throw new Error("boom");
+
+            return inner?.(targetId, method, params);
+        };
+
+        const { runtime } = setup(fake);
+
+        await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+
+        const result = await runTool(domQuery, { selector: "a" }, extra(), runtime);
+
+        expect(result.isError).toBe(true);
+        expect(fake.sent.map((call) => call.method)).toContain("Runtime.releaseObjectGroup");
     });
 
     it("quotes the DOM message of an invalid selector", async () => {
@@ -409,6 +575,10 @@ describe("dom_query", () => {
 describe("dom_query piercing", () => {
     function piercingFake() {
         const fake = new FakeAccess();
+        const page = new ScriptPage([
+            { backendNodeId: 141, text: "Pay" },
+            { backendNodeId: 142, text: "More" },
+        ]);
 
         fake.frames = [
             { frameId: "main", url: "https://a.example/", name: "", isolated: false },
@@ -461,6 +631,9 @@ describe("dom_query piercing", () => {
 
                 case "DOM.describeNode": {
                     const nodeId = (params as { nodeId?: unknown })?.nodeId;
+                    const objectId = (params as { objectId?: unknown })?.objectId;
+
+                    if (typeof objectId === "string") return page.describe(objectId);
 
                     if (nodeId === 10) {
                         return {
@@ -520,8 +693,21 @@ describe("dom_query piercing", () => {
                     return {};
                 case "Page.createIsolatedWorld":
                     return { executionContextId: 7 };
-                case "Runtime.callFunctionOn":
+
+                case "Runtime.callFunctionOn": {
+                    const call = params as { objectId?: string; functionDeclaration?: string };
+
+                    if (page.owns(call.objectId)) {
+                        return page.callFunctionOn(call.objectId as string, call.functionDeclaration ?? "");
+                    }
+
                     return { result: { type: "string", value: "Inner" } };
+                }
+
+                case "Runtime.getProperties":
+                    return page.properties((params as { objectId: string }).objectId);
+                case "Runtime.releaseObjectGroup":
+                    return {};
 
                 case "Runtime.evaluate": {
                     const expression = (params as { expression?: unknown })?.expression;
@@ -530,13 +716,7 @@ describe("dom_query piercing", () => {
                         throw new Error("Runtime.evaluate needs a string expression");
                     }
 
-                    return {
-                        result: {
-                            type   : "object",
-                            subtype: "array",
-                            value  : evaluateRealQueryScript(expression),
-                        },
-                    };
+                    return page.evaluate(expression);
                 }
 
                 default:
@@ -563,7 +743,10 @@ describe("dom_query piercing", () => {
             "DOM.getDocument",
             "DOM.querySelector",
             "Runtime.evaluate",
+            "Runtime.callFunctionOn",
+            "Runtime.getProperties",
             "DOM.describeNode",
+            "Runtime.releaseObjectGroup",
         ]);
         expect(fake.sent[1]?.params).toMatchObject({ frameId: "cross" });
         expect(fake.sent[3]?.params).toEqual({ nodeId: 11, selector: "#pay-btn" });
@@ -620,7 +803,10 @@ describe("dom_query piercing", () => {
             "Page.createIsolatedWorld",
             "DOM.querySelector",
             "Runtime.evaluate",
+            "Runtime.callFunctionOn",
+            "Runtime.getProperties",
             "DOM.describeNode",
+            "Runtime.releaseObjectGroup",
         ]);
         expect(fake.sent[3]?.params).toMatchObject({ frameId: "cross" });
         expect(fake.sent[4]?.params).toEqual({ nodeId: 11, selector: "#same-btn" });
@@ -652,8 +838,11 @@ describe("dom_query piercing", () => {
             "DOM.describeNode",
             "DOM.discardSearchResults",
             "Runtime.evaluate",
+            "Runtime.callFunctionOn",
+            "Runtime.getProperties",
             "DOM.describeNode",
             "DOM.describeNode",
+            "Runtime.releaseObjectGroup",
         ]);
         const expression = (fake.sent[8]?.params as { expression?: string })?.expression ?? "";
 
@@ -861,32 +1050,12 @@ describe("dom_query piercing", () => {
 
 describe("buildPiercedQueryScript", () => {
     it("walks shadow roots in a real JavaScript engine", async () => {
-        const { buildPiercedQueryScript } = await import("../src/tools/index.js");
-        const script = `const inner = {
-  localName: "button", id: "in", classList: [], getAttribute: () => null,
-  innerText: "In", getClientRects: () => [1],
-  getBoundingClientRect: () => ({ x: 1, y: 2, width: 3, height: 4 }) };
+        const setup = `const inner = { localName: "button" };
 const shadow = { querySelectorAll: (s) => s === "*" ? [] : (s === "button" ? [inner] : []) };
 const host = { shadowRoot: shadow, localName: "div" };
-const document = { querySelectorAll: (s) => s === "*" ? [host] : [] };
-console.log(JSON.stringify(eval(${JSON.stringify(buildPiercedQueryScript("button", ["id"], 10))})));`;
-        const output = await new Promise<string>((resolve, reject) => {
-            execFile(process.execPath, ["--input-type=module", "-e", script], (error, stdout) =>
-                error ? reject(error) : resolve(stdout),
-            );
-        });
+const document = { querySelectorAll: (s) => s === "*" ? [host] : [] };`;
+        const script = `console.log(JSON.stringify(eval(${JSON.stringify(buildPiercedQueryScript("button", 10))})));`;
 
-        expect(JSON.parse(output)).toEqual([
-            {
-                index     : 0,
-                tag       : "button",
-                id        : "in",
-                classes   : [],
-                attributes: {},
-                text      : "In",
-                visible   : true,
-                rect      : { x: 1, y: 2, width: 3, height: 4 },
-            },
-        ]);
+        expect(JSON.parse(await runScript(script, setup))).toEqual([{ localName: "button" }]);
     });
 });

@@ -153,6 +153,19 @@ describe.skipIf(!present)("real browser", () => {
         expect((shadow.matches as Row[]).length).toBe(1);
     });
 
+    it("dom_query uids of a text filtered match point at the matched element", async () => {
+        await env.open("/main");
+        const found = await env.ok("dom_query", { selector: "p", text: "again", all: true });
+        const uid = (found.matches as Row[])[0]?.uid;
+        const read = await env.ok("js_evaluate", {
+            expression: "(el) => el.textContent",
+            target    : { uid },
+        });
+
+        expect(found).toMatchObject({ total: 2, returned: 1 });
+        expect(read).toMatchObject({ ok: true, value: "hello again" });
+    });
+
     it("input_click works on a button with a nested span", async () => {
         await env.open("/main");
         await env.ok("input_click", { target: { selector: "#inner" } });
