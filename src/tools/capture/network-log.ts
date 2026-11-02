@@ -1,10 +1,14 @@
+import vm from "node:vm";
 import { z } from "zod";
+import { ToolError } from "../errors.js";
 
 export const REDACTED = "[redacted]";
 
 export const NETWORK_REGEX_MAX_CHARS = 200;
 
 export const NETWORK_URL_MATCH_CHARS = 2048;
+
+export const NETWORK_REGEX_TIMEOUT_MS = 50;
 
 const SENSITIVE_QUERY_PARTS = ["token", "key", "secret", "password", "auth", "session", "sig", "code"];
 
@@ -353,7 +357,7 @@ export function reduceNetworkEvent(
 
 export interface NetworkFilter {
     urlContains?  : string;
-    urlPattern?   : RegExp;
+    urlPattern?   : UrlPattern;
     methods?      : string[];
     resourceTypes?: string[];
     statusMin?    : number;
@@ -458,15 +462,42 @@ function unsafePattern(pattern: string): boolean {
     return stack.length > 0 || unbounded > NETWORK_REGEX_MAX_UNBOUNDED;
 }
 
-export function compileUrlPattern(pattern: string): RegExp {
+export interface UrlPattern {
+    test(url: string): boolean;
+}
+
+function sandboxedPattern(pattern: string, timeoutMs: number): UrlPattern {
+    const context = vm.createContext(Object.create(null) as object);
+    const source = JSON.stringify(pattern);
+
+    vm.runInContext(`globalThis.matcher = new RegExp(${source});`, context);
+    const run = new vm.Script("matcher.test(subject)");
+
+    return {
+        test: (url) => {
+            context.subject = url;
+
+            try {
+                return run.runInContext(context, { timeout: timeoutMs }) === true;
+            } catch {
+                throw new ToolError(
+                    `The urlRegex took longer than ${timeoutMs} ms on a URL and was stopped. Use a simpler pattern with fewer repeats.`,
+                );
+            }
+        },
+    };
+}
+
+export function compileUrlPattern(
+    pattern  : string,
+    timeoutMs: number = NETWORK_REGEX_TIMEOUT_MS,
+): UrlPattern {
     if (pattern.length > NETWORK_REGEX_MAX_CHARS) {
         throw new Error(`The pattern is longer than ${NETWORK_REGEX_MAX_CHARS} characters.`);
     }
 
-    let compiled: RegExp;
-
     try {
-        compiled = new RegExp(pattern);
+        new RegExp(pattern);
     } catch {
         throw new Error("The pattern is not a valid regular expression.");
     }
@@ -477,12 +508,10 @@ export function compileUrlPattern(pattern: string): RegExp {
         );
     }
 
-    return compiled;
+    return sandboxedPattern(pattern, timeoutMs);
 }
 
-export function testUrlPattern(pattern: RegExp, url: string): boolean {
-    pattern.lastIndex = 0;
-
+export function testUrlPattern(pattern: UrlPattern, url: string): boolean {
     return pattern.test(url.slice(0, NETWORK_URL_MATCH_CHARS));
 }
 

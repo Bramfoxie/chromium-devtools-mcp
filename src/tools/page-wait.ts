@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { DaemonAccess } from "../mcp/index.js";
-import { compileUrlPattern, testUrlPattern } from "./capture/network-log.js";
+import { type UrlPattern, compileUrlPattern, testUrlPattern } from "./capture/network-log.js";
 import { defineTool, type ToolContext } from "./define-tool.js";
 import { ensureNoDialog } from "./dialogs.js";
 import { MAX_FRAME_LENGTH } from "./element-target.js";
@@ -35,7 +35,7 @@ const conditionSchema = z.strictObject({
     state     : z.enum(["attached", "visible", "hidden", "detached"]).optional().describe("Selector state. Defaults to visible."),
     text      : z.string().min(1).max(WAIT_MAX_TEXT_CHARS).optional().describe("Substring of the visible page text to wait for."),
     url       : z.string().min(1).max(WAIT_MAX_URL_CHARS).optional().describe("URL substring to wait for."),
-    urlRegex  : z.string().min(1).max(200).optional().describe("URL regular expression to wait for, up to 200 characters."),
+    urlRegex  : z.string().min(1).max(200).optional().describe("URL regular expression to wait for, up to 200 characters. A match that takes longer than 50 ms is stopped and fails the call."),
     loadState : z.enum(["load", "domcontentloaded", "networkidle"]).optional().describe("Page load state to wait for."),
     expression: z.string().min(1).max(WAIT_MAX_EXPRESSION_CHARS).optional().describe("JavaScript expression that must become truthy."),
     ms        : z.number().int().min(1).max(WAIT_MAX_SLEEP_MS).optional().describe("Plain sleep in ms, up to 60000."),
@@ -588,7 +588,7 @@ export const pageWait = defineTool({
         }
 
         if (kind === "url" || kind === "urlRegex") {
-            let pattern: RegExp | undefined;
+            let pattern: UrlPattern | undefined;
 
             if (args.urlRegex !== undefined) {
                 try {

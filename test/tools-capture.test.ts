@@ -14,6 +14,7 @@ import {
     RingBuffer,
     type NetworkRecord,
 } from "../src/tools/index.js";
+import { ToolError } from "../src/tools/errors.js";
 import { FakeAccess } from "./helpers/fake-access.js";
 
 const clock = { now: () => 1_700_000_000_000, sleep: async () => undefined };
@@ -709,6 +710,31 @@ describe("CaptureManager", () => {
         for (const pattern of fine) {
             expect(() => compileUrlPattern(pattern), pattern).not.toThrow();
         }
+    });
+
+    it("stops a slow pattern that passes the safe subset", () => {
+        const slow = [
+            `${"[a-z]{1,60}".repeat(5)}!`,
+            `${"[a-z]{1,40}".repeat(6)}!`,
+            `${"a{1,60}".repeat(5)}!`,
+            `${"(?:a|aa)".repeat(1)}${"[a-z]{1,60}".repeat(5)}!`,
+            `${"[ab]{1,50}".repeat(5)}!`,
+        ];
+        const url = "a".repeat(200);
+
+        for (const pattern of slow) {
+            const compiled = compileUrlPattern(pattern, 5);
+
+            expect(() => testUrlPattern(compiled, url), pattern).toThrow(ToolError);
+            expect(() => testUrlPattern(compiled, url), pattern).toThrow(/took longer than 5 ms/);
+        }
+    });
+
+    it("keeps matching after a pattern was stopped", () => {
+        const compiled = compileUrlPattern("x{1,60}".repeat(5) + "!", 5);
+
+        expect(() => testUrlPattern(compiled, "x".repeat(200))).toThrow(ToolError);
+        expect(testUrlPattern(compiled, "xxxxx!")).toBe(true);
     });
 
     it("matches only the first characters of a long url", () => {
