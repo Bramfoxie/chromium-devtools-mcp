@@ -319,11 +319,43 @@ describe("page_navigate", () => {
         expect(result.structuredContent).toMatchObject({ waited: "load" });
         expect(fake.sent.map((call) => call.method)).not.toContain("Network.enable");
         expect(fake.sent.map((call) => call.method)).not.toContain("Network.disable");
-        expect(fake.unsubscribed).not.toContainEqual({
-            targetId: "tab1",
-            event   : "Network.responseReceived",
-        });
+        expect(fake.unsubscribed.map((entry) => entry.event).sort()).toEqual(
+            fake.subscribed.map((entry) => entry.event).sort(),
+        );
         expect(runtime.capture.networkEnabled("tab1")).toBe(true);
+    });
+
+    it("unsubscribes only the events it subscribed when a subscription fails", async () => {
+        const fake = new FakeAccess();
+        const { clock } = trackingSleep();
+
+        fake.respond = (_targetId, method) =>
+            method === "Page.getFrameTree" ? { frameTree: { frame: { id: "main" } } } : {};
+
+        const runtime = new ToolRuntime({ access: fake.asAccess(), config: managedConfig, clock });
+
+        await runTool(newTab, {}, extra(), runtime);
+        fake.subscribed.length = 0;
+
+        const original = fake.subscribe.bind(fake);
+
+        fake.subscribe = async (targetId, event, frameId) => {
+            if (event === "Page.lifecycleEvent") throw new Error("subscribe failed");
+
+            await original(targetId, event, frameId);
+        };
+
+        const result = await runTool(
+            pageNavigate,
+            { url: "https://example.org/" },
+            extra(),
+            runtime,
+        );
+
+        expect(result.isError).toBe(true);
+        expect(fake.unsubscribed.map((entry) => entry.event)).toEqual(
+            fake.subscribed.map((entry) => entry.event),
+        );
     });
 
     it("ignores events of other tabs and other frames", async () => {

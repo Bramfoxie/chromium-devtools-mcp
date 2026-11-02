@@ -396,6 +396,7 @@ async function navigateAndWait(
     const off = context.access.on("cdp.event", onEvent);
     const keepNetwork = context.capture.networkEnabled(targetId);
     const keepPage = context.dialogs.pageEnabled(targetId);
+    const subscribed: string[] = [];
 
     try {
         await sendWithin(context.access, deadline, targetId, "Page.enable", {});
@@ -405,7 +406,10 @@ async function navigateAndWait(
 
         if (!keepNetwork) await sendWithin(context.access, deadline, targetId, "Network.enable", {});
 
-        for (const event of MAIN_FRAME_EVENTS) await context.access.subscribe(targetId, event);
+        for (const event of MAIN_FRAME_EVENTS) {
+            await context.access.subscribe(targetId, event);
+            subscribed.push(event);
+        }
 
         throwIfCancelled(context.signal);
 
@@ -437,9 +441,7 @@ async function navigateAndWait(
     } finally {
         off();
 
-        for (const event of MAIN_FRAME_EVENTS) {
-            if (keepNetwork && event === "Network.responseReceived") continue;
-
+        for (const event of subscribed) {
             await context.access.unsubscribe(targetId, event).catch(() => undefined);
         }
 
