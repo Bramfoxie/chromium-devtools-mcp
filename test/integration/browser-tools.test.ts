@@ -243,7 +243,7 @@ describe.skipIf(!present)("real browser", () => {
         });
 
         expect(info.maxY).toBeGreaterThan(90_000);
-    });
+    }, 60_000);
 
     it("input_type with submit that navigates returns ok", async () => {
         await env.open("/form");
@@ -385,7 +385,7 @@ describe.skipIf(!present)("real browser", () => {
 
         expect(size.height).toBeGreaterThan(800);
         expect(size.height).toBeLessThan(1000);
-    });
+    }, 60_000);
 });
 
 function pngSize(data: string | undefined): { width: number; height: number } {
