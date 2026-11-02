@@ -66,7 +66,7 @@ Each session keeps its own tab selection. `new_tab` opens a background tab and s
 - `input_click`: click with trusted CDP mouse events, like a real user. Refuses a covered element unless `force` is passed.
 - `input_hover`: hover an element with trusted CDP mouse events, so hover styles and menus react.
 - `input_type`: type text into a field, with `clear` and `submit` options. Passwords are typed but never echoed back.
-- `input_key`: press a key or chord like `Enter` or `ControlOrMeta+C`. `ControlOrMeta` resolves from the browser platform.
+- `input_key`: press a key or chord like `Enter` or `ControlOrMeta+C`. `ControlOrMeta` resolves from the browser platform. On macOS, Control combined with a letter does not trigger editing commands such as select all; use `Meta+A` or `ControlOrMeta+A` there.
 - `input_scroll`: scroll by wheel deltas, to the top or bottom, or an element into view. Reports honestly when the wheel left the window position unchanged.
 - `input_select`: choose options of a `select` by value, label or index.
 - `input_upload`: attach local files to a file input. This is the most sensitive tool: it sends local files to a web page. Paths are validated on the server machine (absolute, existing regular readable files under 100 MiB, at most 20), symlinks are followed, and results carry file names and sizes only, never contents.

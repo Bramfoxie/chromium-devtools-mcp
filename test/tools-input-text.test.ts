@@ -518,6 +518,24 @@ describe("input_key", () => {
         expect(keys[1]?.params).toMatchObject({ key: "Control" });
     });
 
+    it.each([
+        ["MacIntel", undefined],
+        ["Linux x86_64", ["selectAll"]],
+        ["Win32", ["selectAll"]],
+    ])("sends Control+A with the editing command only off macOS (%s)", async (platform, commands) => {
+        const { fake, runtime } = runtimeWith(textFake({ platform }));
+
+        clearPlatformCache();
+        const result = await runTool(inputKey, { key: "Control+a" }, extra(), runtime);
+
+        expect(result.isError).not.toBe(true);
+        const keys = fake.sent.filter((entry) => entry.method === "Input.dispatchKeyEvent");
+        const press = keys.find((entry) => entry.params?.key === "a" && entry.params?.type === "rawKeyDown");
+
+        expect(press?.params?.commands).toEqual(commands);
+        expect(keys[0]?.params).toMatchObject({ key: "Control" });
+    });
+
     it("resolves ControlOrMeta from the browser platform, not the server", async () => {
         const { fake, runtime } = runtimeWith(textFake({ platform: "MacIntel" }));
 

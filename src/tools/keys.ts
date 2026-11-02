@@ -296,7 +296,8 @@ export function planKeyPress(parsed: ParsedKey, platform: string, repeat: number
     const mask = modifiersMask(held);
     const downOrder: KeyModifier[] = shiftImplied ? ["Shift", ...bare] : [...bare];
     const upOrder = [...downOrder].reverse();
-    const command = editingCommand(parsed.spec.key, held.includes("Control") || held.includes("Meta"));
+    const commandModifier = held.includes("Meta") || (held.includes("Control") && !/mac/i.test(platform));
+    const command = editingCommand(parsed.spec.key, commandModifier);
     const events: KeyEventPlan[] = [];
 
     for (const modifier of downOrder) {

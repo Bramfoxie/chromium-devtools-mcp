@@ -229,6 +229,25 @@ describe("planKeyPress", () => {
         expect(events[5]).toMatchObject({ type: "keyUp", key: "Control" });
     });
 
+    it.each([
+        ["MacIntel", undefined],
+        ["Linux x86_64", ["selectAll"]],
+        ["Win32", ["selectAll"]],
+    ])("applies the Control+A editing command per platform %s", (platform, commands) => {
+        const events = planKeyPress(parseKeyChord("Control+A"), platform, 1);
+        const press = events.find((event) => event.code === "KeyA" && event.type === "rawKeyDown");
+
+        expect(press?.commands).toEqual(commands);
+    });
+
+    it.each(["Meta+A", "ControlOrMeta+A"])("keeps selectAll for %s on macOS", (chord) => {
+        const events = planKeyPress(parseKeyChord(chord), "MacIntel", 1);
+        const press = events.find((event) => event.code === "KeyA" && event.type === "rawKeyDown");
+
+        expect(press?.commands).toEqual(["selectAll"]);
+        expect(events[0]).toMatchObject({ key: "Meta" });
+    });
+
     it("resolves ControlOrMeta per browser platform", () => {
         const mac = planKeyPress(parseKeyChord("ControlOrMeta+C"), "MacIntel", 1);
         const win = planKeyPress(parseKeyChord("ControlOrMeta+C"), "Win32", 1);

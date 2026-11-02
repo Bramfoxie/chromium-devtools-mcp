@@ -390,7 +390,7 @@ export const inputKey = defineTool({
 
         await ensureNoDialog(context.dialogs, targetId);
         await context.focus.ensure(context.access, targetId);
-        const platform = parsed.controlOrMeta
+        const platform = parsed.controlOrMeta || parsed.modifiers.includes("Control")
             ? await browserPlatform(context.access, context.elements, targetId)
             : "";
 

@@ -207,6 +207,24 @@ describe.skipIf(!present)("real browser", () => {
         await env.ok("emulate_device", { reset: true });
     });
 
+    it("input_key Control+A selects all text only off macOS", async () => {
+        await env.open("/main");
+        await env.ok("input_type", { target: { selector: "#field" }, text: "abc" });
+        await env.ok("input_key", { key: "Control+a", target: { selector: "#field" } });
+        const platform = String(await evaluate("navigator.platform"));
+        const selected = Number(
+            await evaluate("document.getElementById('field').selectionEnd - document.getElementById('field').selectionStart"),
+        );
+
+        if (/mac/i.test(platform)) expect(selected).not.toBe(3);
+        else expect(selected).toBe(3);
+
+        await env.ok("input_key", { key: "ControlOrMeta+a", target: { selector: "#field" } });
+        expect(
+            Number(await evaluate("document.getElementById('field').selectionEnd - document.getElementById('field').selectionStart")),
+        ).toBe(3);
+    });
+
     it("input_click works on a button with a nested span", async () => {
         await env.open("/main");
         await env.ok("input_click", { target: { selector: "#inner" } });
