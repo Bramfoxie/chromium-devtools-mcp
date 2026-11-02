@@ -10,6 +10,7 @@ import {
     DEFAULT_QUERY_ATTRIBUTES,
     domQuery,
     isPasswordInput,
+    QUERY_MAX_TEXT_CANDIDATES,
     newTab,
     roundRect,
     runTool,
@@ -203,8 +204,9 @@ describe("dom_query", () => {
                     box       : { x: 1, y: 3, width: 10, height: 21 },
                 },
             ],
-            total   : 1,
-            returned: 1,
+            total    : 1,
+            returned : 1,
+            truncated: false,
         });
         expect(fake.sent.map((call) => call.method)).toEqual([
             "DOM.getDocument",
@@ -232,6 +234,27 @@ describe("dom_query", () => {
 
         expect(result.structuredContent).toMatchObject({ total: 3, returned: 1 });
         expect((result.structuredContent as { matches: unknown[] }).matches).toHaveLength(1);
+    });
+
+    it("marks the result truncated when the text filter covers only the first candidates", async () => {
+        const ids = Array.from({ length: QUERY_MAX_TEXT_CANDIDATES + 500 }, (_, i) => 1000 + i);
+        const fake = queryFake([row({ text: "Apple" })], ids);
+        const { runtime } = setup(fake);
+
+        await runTool(newTab, {}, extra(), runtime);
+
+        const result = await runTool(
+            domQuery,
+            { selector: "li", all: true, text: "apple" },
+            extra(),
+            runtime,
+        );
+
+        expect(result.structuredContent).toMatchObject({
+            total    : ids.length,
+            returned : 1,
+            truncated: true,
+        });
     });
 
     it("filters by text case insensitively and omits boxes on request", async () => {
@@ -276,7 +299,12 @@ describe("dom_query", () => {
         );
 
         expect(result.isError).not.toBe(true);
-        expect(result.structuredContent).toEqual({ matches: [], total: 3, returned: 0 });
+        expect(result.structuredContent).toEqual({
+            matches  : [],
+            total    : 3,
+            returned : 0,
+            truncated: false,
+        });
     });
 
     it("redacts password values and reports them", async () => {
@@ -362,7 +390,12 @@ describe("dom_query", () => {
         const result = await runTool(domQuery, { selector: ".missing" }, extra(), runtime);
 
         expect(result.isError).not.toBe(true);
-        expect(result.structuredContent).toEqual({ matches: [], total: 0, returned: 0 });
+        expect(result.structuredContent).toEqual({
+            matches  : [],
+            total    : 0,
+            returned : 0,
+            truncated: false,
+        });
     });
 
     it("names new_tab when no tab is selected", async () => {
@@ -622,6 +655,35 @@ describe("dom_query piercing", () => {
 
         expect(expression).toContain("shadowRoot");
         expect(result.structuredContent).toMatchObject({ total: 2, returned: 2 });
+    });
+
+    it("reports the true pierce total and marks a capped result truncated", async () => {
+        const fake = piercingFake();
+        const inner = fake.respond;
+
+        fake.respond = (targetId, method, params) => {
+            if (method === "DOM.performSearch") return { searchId: "s1", resultCount: 350 };
+            if (method === "DOM.getSearchResults") return { nodeIds: [41, 42] };
+
+            return inner?.(targetId, method, params);
+        };
+
+        const { runtime } = setup(fake);
+
+        await runTool(newTab, {}, extra(), runtime);
+
+        const result = await runTool(
+            domQuery,
+            { selector: "button", all: true, pierce: true },
+            extra(),
+            runtime,
+        );
+
+        expect(result.structuredContent).toMatchObject({
+            total    : 350,
+            returned : 2,
+            truncated: true,
+        });
     });
 
     it("resolves >>> chains element by element without page script order", async () => {

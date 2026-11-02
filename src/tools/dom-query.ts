@@ -10,7 +10,7 @@ export const QUERY_DEFAULT_LIMIT = 20;
 
 export const QUERY_MAX_LIMIT = 200;
 
-export const QUERY_MAX_TEXT_CHARS = 2000;
+export const QUERY_MAX_TEXT_CANDIDATES = 2000;
 
 export const QUERY_CLIP_CHARS = 200;
 
@@ -194,7 +194,7 @@ const matchSchema = z.strictObject({
 
 export const domQuery = defineTool({
     name       : "dom_query",
-    description: "Find elements by a CSS selector and read their text, attributes and boxes.",
+    description: "Find elements by a CSS selector and read their text, attributes and boxes. The text filter scans at most the first 2000 matches and pierce returns at most 200; truncated reports when a cap applied.",
     access     : "read",
     input      : z.strictObject({
         tab       : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
@@ -208,9 +208,10 @@ export const domQuery = defineTool({
         frame     : z.string().min(1).max(MAX_FRAME_LENGTH).optional().describe("Frame id from dom_snapshot or an iframe CSS selector. Defaults to the main frame."),
     }),
     output: z.strictObject({
-        matches : z.array(matchSchema).describe("Matched elements, in document order."),
-        total   : z.number().describe("Selector matches, before the text filter and the limit."),
-        returned: z.number().describe("Matches in this result, after the text filter and the limit."),
+        matches  : z.array(matchSchema).describe("Matched elements, in document order."),
+        total    : z.number().describe("Selector matches found, before the text filter and the limit. Without all, only the first match is looked up."),
+        returned : z.number().describe("Matches in this result, after the text filter and the limit."),
+        truncated: z.boolean().describe("True when the text filter looked at only the first 2000 selector matches or a pierce search returned only the first 200 of total."),
     }),
     handler: async (args, context) => {
         const targetId = args.tab ?? context.state.selected;
@@ -250,22 +251,28 @@ export const domQuery = defineTool({
             );
         }
 
-        const nodeIds = chained
-            ? await chainedNodes(context.access, targetId, scope.nodeId, args.selector, all)
-            : pierce
-                ? await piercedNodes(context.access, targetId, args.selector, all)
-                : await matchingNodes(
-                    context.access,
-                    targetId,
-                    scope.nodeId,
-                    args.selector,
-                    all,
-                );
+        const found = pierce && !chained
+            ? await piercedNodes(context.access, targetId, args.selector, all)
+            : await (chained ? chainedNodes : matchingNodes)(
+                context.access,
+                targetId,
+                scope.nodeId,
+                args.selector,
+                all,
+            ).then((ids) => ({ nodeIds: ids, total: ids.length }));
+        const { nodeIds, total } = found;
+        const viaRows = !chained && !(pierce && scope.frameId !== undefined);
+        const textCapped = viaRows && args.text !== undefined &&
+            nodeIds.length > QUERY_MAX_TEXT_CANDIDATES;
+        const truncated = nodeIds.length < total || textCapped;
+        const finish = <T extends { matches: unknown[]; returned: number }>(
+            result: T,
+        ) => ({ ...result, total, truncated });
 
-        if (nodeIds.length === 0) return { matches: [], total: 0, returned: 0 };
+        if (nodeIds.length === 0) return { matches: [], total: 0, returned: 0, truncated: false };
 
-        if (chained) {
-            return chainedMatches(
+        if (!viaRows) {
+            return finish(await chainedMatches(
                 context,
                 targetId,
                 nodeIds,
@@ -274,20 +281,7 @@ export const domQuery = defineTool({
                 args.text,
                 includeBox,
                 scope.frameId,
-            );
-        }
-
-        if (pierce && scope.frameId !== undefined) {
-            return chainedMatches(
-                context,
-                targetId,
-                nodeIds,
-                all,
-                limit,
-                args.text,
-                includeBox,
-                scope.frameId,
-            );
+            ));
         }
 
         const rows = await queryRows(
@@ -301,7 +295,7 @@ export const domQuery = defineTool({
             { pierce, contextId: scope.contextId },
         );
 
-        if (rows.length === 0) return { matches: [], total: nodeIds.length, returned: 0 };
+        if (rows.length === 0) return finish({ matches: [], returned: 0 });
 
         // Rows carry their match index: uids come from the filtered nodes,
         // not from the first N matches.
@@ -312,7 +306,7 @@ export const domQuery = defineTool({
             return nodeId === undefined ? [] : [nodeId];
         });
 
-        if (picked.length === 0) return { matches: [], total: nodeIds.length, returned: 0 };
+        if (picked.length === 0) return finish({ matches: [], returned: 0 });
 
         const described = await describeNodes(context.access, targetId, picked);
         const frameGeneration = scope.frameId === undefined
@@ -351,7 +345,7 @@ export const domQuery = defineTool({
             ];
         });
 
-        return { matches, total: nodeIds.length, returned: matches.length };
+        return finish({ matches, returned: matches.length });
     },
 });
 
@@ -619,7 +613,7 @@ async function piercedNodes(
     targetId: string,
     selector: string,
     all     : boolean,
-): Promise<number[]> {
+): Promise<{ nodeIds: number[]; total: number }> {
     await access.send(targetId, "DOM.enable", {});
     await access.send(targetId, "DOM.getDocument", { depth: -1, pierce: true });
 
@@ -637,7 +631,7 @@ async function piercedNodes(
     }
 
     try {
-        if (search.data.resultCount === 0) return [];
+        if (search.data.resultCount === 0) return { nodeIds: [], total: 0 };
 
         const toIndex = all ? Math.min(search.data.resultCount, QUERY_MAX_LIMIT) : 1;
         const results = searchResultsSchema.safeParse(
@@ -654,7 +648,10 @@ async function piercedNodes(
             );
         }
 
-        return results.data.nodeIds.filter((nodeId) => nodeId !== 0);
+        return {
+            nodeIds: results.data.nodeIds.filter((nodeId) => nodeId !== 0),
+            total  : search.data.resultCount,
+        };
     } finally {
         await access.send(targetId, "DOM.discardSearchResults", {
             searchId: search.data.searchId,
@@ -674,7 +671,7 @@ async function queryRows(
 ): Promise<QueryRow[]> {
     const count = filter === undefined
         ? Math.min(total, limit)
-        : Math.min(total, QUERY_MAX_TEXT_CHARS);
+        : Math.min(total, QUERY_MAX_TEXT_CANDIDATES);
     const expression = scope.pierce
         ? buildPiercedQueryScript(selector, names, count)
         : buildQueryScript(selector, names, count);
@@ -767,7 +764,7 @@ async function chainedMatches(
     filter    : string | undefined,
     includeBox: boolean,
     frameId   : string | undefined,
-): Promise<{ matches: z.infer<typeof matchSchema>[]; total: number; returned: number }> {
+): Promise<{ matches: z.infer<typeof matchSchema>[]; returned: number }> {
     void all;
 
     const names = DEFAULT_QUERY_ATTRIBUTES;
@@ -878,7 +875,7 @@ async function chainedMatches(
         });
     }
 
-    return { matches, total: nodeIds.length, returned: matches.length };
+    return { matches, returned: matches.length };
 }
 
 const resolvedSchema = z.object({ object: z.object({ objectId: z.string().optional() }) });

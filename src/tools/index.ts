@@ -47,7 +47,7 @@ export {
     QUERY_CLIP_CHARS,
     QUERY_DEFAULT_LIMIT,
     QUERY_MAX_LIMIT,
-    QUERY_MAX_TEXT_CHARS,
+    QUERY_MAX_TEXT_CANDIDATES,
     type QueryRow,
     roundRect,
 } from "./dom-query.js";
