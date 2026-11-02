@@ -172,7 +172,7 @@ export const networkMock = defineTool({
         rules : z.array(ruleSchema).describe("Active rules in insertion order."),
     }),
     target: (args) =>
-        args.action === "add" && args.rule !== undefined ? { url: args.rule.urlPattern } : undefined,
+        args.action === "add" && args.rule !== undefined ? { pattern: args.rule.urlPattern } : undefined,
     handler: async (args, context) => {
         const targetId = args.tab ?? context.state.selected;
 

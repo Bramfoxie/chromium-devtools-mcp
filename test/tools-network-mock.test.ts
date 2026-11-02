@@ -64,7 +64,7 @@ describe("network_mock", () => {
 
         expect(found?.access).toBe("mutate");
         expect(found?.target?.({ action: "add", rule: { urlPattern: "https://a.example/*" } })).toEqual({
-            url: "https://a.example/*",
+            pattern: "https://a.example/*",
         });
         expect(found?.target?.({ action: "list" })).toBeUndefined();
     });
