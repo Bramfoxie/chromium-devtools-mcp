@@ -58,7 +58,6 @@ export {
 export {
     type AxDomInfo,
     AX_NAME_CLIP,
-    AX_VALUE_CLIP,
     type AxFormatOptions,
     type AxFormatResult,
     type AxNode,

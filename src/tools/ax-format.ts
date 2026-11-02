@@ -3,8 +3,6 @@ import { ToolError } from "./errors.js";
 
 export const AX_NAME_CLIP = 100;
 
-export const AX_VALUE_CLIP = 100;
-
 const INTERACTIVE_ROLES = new Set([
     "button",
     "link",
