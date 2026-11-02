@@ -7,7 +7,11 @@ let env: Env;
 type Row = Record<string, unknown>;
 
 const INNER = `<h1 id="inner">cross</h1><button id="go" onclick="this.textContent='clicked'">go</button>
-`;
+<script>addEventListener("message",()=>{fetch("/xdata");console.log("oopif-message")})</script>`;
+
+async function trigger(tab: string): Promise<void> {
+    await env.ok("js_evaluate", { tab, expression: "frames[0].postMessage('go', '*'); 1" });
+}
 
 async function crossTab(): Promise<string> {
     const tab = await env.open("/xframe");
@@ -82,5 +86,58 @@ describe.skipIf(!present)("cross-site iframe in a real browser", { timeout: 30_0
 
         expect(input.isError).toBe(true);
         expect(input.text).toContain("cross-site frame");
+    });
+
+    it("network_requests records a request made by the cross-site frame", async () => {
+        const tab = await crossTab();
+
+        await env.ok("network_requests", { tab });
+        await trigger(tab);
+        const read = await eventually(async () => {
+            const result = await env.ok("network_requests", { tab, urlContains: "/xdata" });
+
+            const rows = result.requests as Row[];
+
+            return rows.some((row) => row.status === 200) ? result : undefined;
+        });
+
+        expect((read.requests as Row[])[0]).toMatchObject({ status: 200 });
+    });
+
+    it("console_logs records a message logged by the cross-site frame", async () => {
+        const tab = await crossTab();
+
+        await env.ok("console_logs", { tab });
+        await trigger(tab);
+        const read = await eventually(async () => {
+            const result = await env.ok("console_logs", { tab, textContains: "oopif-message" });
+
+            return (result.entries as Row[]).length > 0 ? result : undefined;
+        });
+
+        expect(read.entries as Row[]).toHaveLength(1);
+    });
+
+    it("network_mock fulfills a request made by the cross-site frame", async () => {
+        const tab = await crossTab();
+
+        await env.ok("network_mock", {
+            tab,
+            action: "add",
+            rule  : { urlPattern: "*/xdata", response: { status: 200, body: "mocked", contentType: "text/plain" } },
+        });
+        const before = env.other.hits.get("/xdata") ?? 0;
+
+        await env.ok("network_requests", { tab, clear: true });
+        await trigger(tab);
+        const listed = await eventually(async () => {
+            const result = await env.ok("network_mock", { tab, action: "list" });
+
+            return (result.rules as Row[])[0]?.applications === 1 ? result : undefined;
+        });
+
+        expect((listed.rules as Row[])[0]).toMatchObject({ applications: 1 });
+        expect(env.other.hits.get("/xdata") ?? 0).toBe(before);
+        await env.ok("network_mock", { tab, action: "clear" });
     });
 });

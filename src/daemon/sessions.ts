@@ -4,6 +4,7 @@ import {
     CdpSessionDetachedError,
     CdpTimeoutError,
 } from "../cdp/errors.js";
+import { ChildSync, isMirroredEvent, isReplicated } from "./child-sync.js";
 import { frameSummaries, type FrameSummary } from "./frames.js";
 import type {
     BackendSession,
@@ -19,6 +20,7 @@ import { ErrorCode } from "./protocol.js";
 
 const DETACH_GRACE_MS = 2000;
 const MAX_REMEMBERED_DESTROYED = 512;
+const CHILD_COMMAND_TIMEOUT_MS = 5000;
 
 export interface SessionOptions {
     allowFocus: boolean;
@@ -57,13 +59,21 @@ interface FrameEntry {
     remote? : boolean;
 }
 
+interface Subscription {
+    count  : number;
+    off    : () => void;
+    mirror?: (child: FrameChildSession) => void;
+    mirrors: Map<string, () => void>;
+}
+
 interface OwnedTab {
     created      : boolean;
     closing      : boolean;
     attached?    : Promise<BackendSession>;
     children?    : Promise<ChildSessionHandle>;
     frames       : Map<string, FrameEntry>;
-    subscriptions: Map<string, { count: number; off: () => void }>;
+    subscriptions: Map<string, Subscription>;
+    sync         : ChildSync;
 }
 
 function unknownFrame(): RpcError {
@@ -168,6 +178,7 @@ export class ClientSession {
             closing      : false,
             frames       : new Map(),
             subscriptions: new Map(),
+            sync         : new ChildSync(),
         });
 
         return targetId;
@@ -195,6 +206,7 @@ export class ClientSession {
             closing      : false,
             frames       : new Map(),
             subscriptions: new Map(),
+            sync         : new ChildSync(),
         });
     }
 
@@ -264,7 +276,19 @@ export class ClientSession {
 
             this.assertCurrent(targetId, tab);
 
-            return await session.send(method, checked, timeoutMs);
+            const routed = frameId === undefined
+                ? await this.routedChild(tab, method, checked)
+                : undefined;
+
+            if (routed !== undefined) return await routed.send(method, checked, timeoutMs);
+
+            const result = await session.send(method, checked, timeoutMs);
+
+            if (frameId === undefined && isReplicated(method)) {
+                await this.replicate(targetId, tab, method, checked);
+            }
+
+            return result;
         } catch (error) {
             throw translate(error);
         }
@@ -296,16 +320,36 @@ export class ClientSession {
                 return;
             }
 
-            tab.subscriptions.set(key, {
+            const stop = session.on(event, (params) =>
+                this.emit("cdp.event", {
+                    targetId,
+                    event,
+                    params,
+                    ...(frameId === undefined ? {} : { frameId }),
+                }));
+            const mirrors = new Map<string, () => void>();
+            const subscription: Subscription = {
                 count: 1,
-                off  : session.on(event, (params) =>
-                    this.emit("cdp.event", {
-                        targetId,
-                        event,
-                        params,
-                        ...(frameId === undefined ? {} : { frameId }),
-                    })),
-            });
+                off  : () => {
+                    stop();
+                    for (const off of mirrors.values()) off();
+                    mirrors.clear();
+                },
+                mirrors,
+            };
+
+            if (frameId === undefined && isMirroredEvent(event)) {
+                subscription.mirror = (child) =>
+                    this.mirror(targetId, tab, subscription, event, child);
+            }
+
+            tab.subscriptions.set(key, subscription);
+
+            if (subscription.mirror !== undefined) {
+                const children = await this.childrenOf(targetId, tab).catch(() => undefined);
+
+                for (const child of children?.children() ?? []) subscription.mirror(child);
+            }
         } catch (error) {
             throw translate(error);
         }
@@ -499,6 +543,13 @@ export class ClientSession {
 
                 return this.backend.attachChildren(session, {
                     onDetached: (child) => {
+                        tab.sync.release(child.sessionId);
+
+                        for (const subscription of tab.subscriptions.values()) {
+                            subscription.mirrors.get(child.sessionId)?.();
+                            subscription.mirrors.delete(child.sessionId);
+                        }
+
                         for (const [frameId, entry] of tab.frames) {
                             if (entry.session?.child.sessionId !== child.sessionId) continue;
 
@@ -508,6 +559,7 @@ export class ClientSession {
                             this.unsubscribeAll(tab, frameId);
                         }
                     },
+                    onAttached: (child) => this.initChild(targetId, tab, child),
                 });
             })();
 
@@ -583,6 +635,68 @@ export class ClientSession {
 
             children.confirmMatched(child.child.sessionId);
         }
+    }
+
+    private async routedChild(
+        tab   : OwnedTab,
+        method: string,
+        params: Record<string, unknown> | undefined,
+    ): Promise<FrameChildSession | undefined> {
+        const sessionId = tab.sync.routeOf(method, params);
+
+        if (sessionId === undefined || tab.children === undefined) return undefined;
+
+        const children = await tab.children.catch(() => undefined);
+
+        return children?.children().find((child) => child.child.sessionId === sessionId);
+    }
+
+    private async replicate(
+        targetId: string,
+        tab     : OwnedTab,
+        method  : string,
+        params  : Record<string, unknown> | undefined,
+    ): Promise<void> {
+        tab.sync.record(method, params);
+        const children = await this.childrenOf(targetId, tab).catch(() => undefined);
+
+        await Promise.all((children?.children() ?? []).map((child) =>
+            child.send(method, params, CHILD_COMMAND_TIMEOUT_MS).catch((error: unknown) =>
+                logDaemon(`could not apply ${method} to an iframe session: ${describeError(error)}`))));
+    }
+
+    private async initChild(
+        targetId: string,
+        tab     : OwnedTab,
+        child   : FrameChildSession,
+    ): Promise<void> {
+        for (const subscription of tab.subscriptions.values()) subscription.mirror?.(child);
+
+        for (const command of tab.sync.replay()) {
+            await child.send(command.method, command.params, CHILD_COMMAND_TIMEOUT_MS).catch(
+                (error: unknown) =>
+                    logDaemon(`could not apply ${command.method} to an iframe session: ${describeError(error)}`),
+            );
+        }
+
+        this.assertCurrent(targetId, tab);
+    }
+
+    private mirror(
+        targetId    : string,
+        tab         : OwnedTab,
+        subscription: Subscription,
+        event       : string,
+        child       : FrameChildSession,
+    ): void {
+        const sessionId = child.child.sessionId;
+
+        if (subscription.mirrors.has(sessionId)) return;
+
+        subscription.mirrors.set(sessionId, child.on(event, (params) => {
+            tab.sync.note(sessionId, event, params);
+            this.emit("cdp.event", { targetId, event, params });
+        }));
     }
 
     private unsubscribeAll(tab: OwnedTab, frameId: string): void {

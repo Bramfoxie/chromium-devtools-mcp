@@ -1052,6 +1052,7 @@ describe("frame targets", () => {
         await a.send(tab, "Runtime.evaluate", { expression: "1" }, undefined, "cross");
 
         expect(child?.sent.map((call) => call.method)).toEqual([
+            "Page.enable",
             "Page.getFrameTree",
             "Runtime.evaluate",
         ]);
@@ -1272,5 +1273,174 @@ describe("frame targets", () => {
         await registry.close("a");
         expect(backend.childHandles).toHaveLength(1);
         expect(backend.childHandles[0]?.detachedAll).toBe(true);
+    });
+});
+
+describe("state shared with cross site frame sessions", () => {
+    const CROSS = { url: "https://b.example/", name: "pay" };
+
+    async function tabWithChild() {
+        const made = setup();
+        const a = await made.open("a");
+        const tab = await a.createTab("https://a.example/");
+
+        await a.send(tab, "Page.enable", undefined);
+
+        return { ...made, a, tab, handle: made.backend.childHandles[0] };
+    }
+
+    const sentMethods = (session: { sent: Array<{ method: string }> } | undefined): string[] =>
+        session?.sent.map((call) => call.method) ?? [];
+
+    it("applies capture and emulation commands to children that attach later", async () => {
+        const { a, tab, handle } = await tabWithChild();
+
+        await a.send(tab, "Network.enable", {});
+        await a.send(tab, "Network.setBlockedURLs", { urls: ["*.png"] });
+        const child = handle?.addChild("cross", true, CROSS);
+
+        await handle?.settled();
+
+        expect(child?.sent).toEqual([
+            expect.objectContaining({ method: "Page.enable" }),
+            expect.objectContaining({ method: "Network.enable" }),
+            expect.objectContaining({ method: "Network.setBlockedURLs", params: { urls: ["*.png"] } }),
+        ]);
+    });
+
+    it("applies a command to children that already exist and keeps only its latest value", async () => {
+        const { a, tab, handle } = await tabWithChild();
+        const child = handle?.addChild("cross", true, CROSS);
+
+        await handle?.settled();
+        await a.send(tab, "Fetch.enable", { patterns: [{ urlPattern: "*/a" }] });
+        await a.send(tab, "Fetch.enable", { patterns: [{ urlPattern: "*/b" }] });
+        const late = handle?.addChild("late", true, CROSS);
+
+        await handle?.settled();
+
+        expect(child?.sent.filter((call) => call.method === "Fetch.enable")).toHaveLength(2);
+        expect(late?.sent.filter((call) => call.method === "Fetch.enable")).toEqual([
+            expect.objectContaining({ params: { patterns: [{ urlPattern: "*/b" }] } }),
+        ]);
+    });
+
+    it("stops replaying a domain after it is disabled and tells existing children", async () => {
+        const { a, tab, handle } = await tabWithChild();
+        const child = handle?.addChild("cross", true, CROSS);
+
+        await handle?.settled();
+        await a.send(tab, "Fetch.enable", { patterns: [] });
+        await a.send(tab, "Fetch.disable", {});
+        const late = handle?.addChild("late", true, CROSS);
+
+        await handle?.settled();
+
+        expect(sentMethods(child)).toContain("Fetch.disable");
+        expect(sentMethods(late)).not.toContain("Fetch.enable");
+    });
+
+    it("does not copy commands that only belong to the tab session", async () => {
+        const { a, tab, handle } = await tabWithChild();
+        const child = handle?.addChild("cross", true, CROSS);
+
+        await handle?.settled();
+        await a.send(tab, "Runtime.evaluate", { expression: "1" });
+        await a.send(tab, "Emulation.setDeviceMetricsOverride", { width: 1 });
+
+        expect(sentMethods(child)).not.toContain("Runtime.evaluate");
+        expect(sentMethods(child)).not.toContain("Emulation.setDeviceMetricsOverride");
+    });
+
+    it("forwards network and console events of child sessions under the tab", async () => {
+        const { a, emitted, tab, handle } = await tabWithChild();
+
+        await a.subscribe(tab, "Network.requestWillBeSent");
+        await a.subscribe(tab, "Runtime.consoleAPICalled");
+        await a.subscribe(tab, "Page.loadEventFired");
+        const child = handle?.addChild("cross", true, CROSS);
+
+        await handle?.settled();
+        child?.emit("Network.requestWillBeSent", { requestId: "1.1" });
+        child?.emit("Runtime.consoleAPICalled", { type: "log" });
+        child?.emit("Page.loadEventFired", { timestamp: 1 });
+
+        expect(emitted.a).toEqual([
+            { event: "cdp.event", params: { targetId: tab, event: "Network.requestWillBeSent", params: { requestId: "1.1" } } },
+            { event: "cdp.event", params: { targetId: tab, event: "Runtime.consoleAPICalled", params: { type: "log" } } },
+        ]);
+    });
+
+    it("forwards events of a child that was already there when the subscription started", async () => {
+        const { a, emitted, tab, handle } = await tabWithChild();
+        const child = handle?.addChild("cross", true, CROSS);
+
+        await handle?.settled();
+        await a.subscribe(tab, "Network.requestWillBeSent");
+        child?.emit("Network.requestWillBeSent", { requestId: "1.1" });
+        a.unsubscribe(tab, "Network.requestWillBeSent");
+        child?.emit("Network.requestWillBeSent", { requestId: "1.2" });
+
+        expect(emitted.a).toHaveLength(1);
+        expect(child?.listenerCount("Network.requestWillBeSent")).toBe(0);
+    });
+
+    it("answers a paused request on the child session that raised it", async () => {
+        const { a, tab, handle, backend } = await tabWithChild();
+
+        await a.subscribe(tab, "Fetch.requestPaused");
+        const child = handle?.addChild("cross", true, CROSS);
+
+        await handle?.settled();
+        child?.emit("Fetch.requestPaused", { requestId: "interception-1" });
+        await a.send(tab, "Fetch.fulfillRequest", { requestId: "interception-1", responseCode: 200 });
+        await a.send(tab, "Fetch.continueRequest", { requestId: "interception-main" });
+
+        expect(child?.sent.filter((call) => call.method === "Fetch.fulfillRequest")).toHaveLength(1);
+        expect(sentMethods(backend.sessions.get(tab))).toContain("Fetch.continueRequest");
+        expect(sentMethods(child)).not.toContain("Fetch.continueRequest");
+    });
+
+    it("answers a dialog on the child session that opened it", async () => {
+        const { a, tab, handle, backend } = await tabWithChild();
+
+        await a.subscribe(tab, "Page.javascriptDialogOpening");
+        await a.subscribe(tab, "Page.javascriptDialogClosed");
+        const child = handle?.addChild("cross", true, CROSS);
+
+        await handle?.settled();
+        child?.emit("Page.javascriptDialogOpening", { message: "hi" });
+        await a.send(tab, "Page.handleJavaScriptDialog", { accept: true });
+        child?.emit("Page.javascriptDialogClosed", { result: true });
+        await a.send(tab, "Page.handleJavaScriptDialog", { accept: true });
+
+        expect(child?.sent.filter((call) => call.method === "Page.handleJavaScriptDialog")).toHaveLength(1);
+        expect(
+            backend.sessions.get(tab)?.sent.filter((call) => call.method === "Page.handleJavaScriptDialog"),
+        ).toHaveLength(1);
+    });
+
+    it("forgets what a child raised once it detaches", async () => {
+        const { a, tab, handle, backend } = await tabWithChild();
+
+        await a.subscribe(tab, "Fetch.requestPaused");
+        const child = handle?.addChild("cross", true, CROSS);
+
+        await handle?.settled();
+        child?.emit("Fetch.requestPaused", { requestId: "interception-1" });
+        handle?.removeChild("cross");
+        await a.send(tab, "Fetch.continueRequest", { requestId: "interception-1" });
+
+        expect(sentMethods(backend.sessions.get(tab))).toContain("Fetch.continueRequest");
+        expect(child?.listenerCount("Fetch.requestPaused")).toBe(0);
+    });
+
+    it("keeps a failing child from failing the command on the tab", async () => {
+        const { a, tab, handle } = await tabWithChild();
+        const child = handle?.addChild("cross", true, CROSS);
+
+        if (child) child.failure = new Error("gone");
+
+        await expect(a.send(tab, "Network.enable", {})).resolves.toBeDefined();
     });
 });

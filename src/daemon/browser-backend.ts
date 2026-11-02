@@ -21,6 +21,7 @@ export interface ChildTargetInfo {
 
 export interface ChildSessionOptions {
     onDetached(child: ChildTargetInfo): void;
+    onAttached?(child: FrameChildSession): Promise<void>;
 }
 
 export interface FrameChildSession extends BackendSession {

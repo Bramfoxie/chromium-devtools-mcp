@@ -86,7 +86,7 @@ export class ChildTargets implements ChildSessionHandle {
         handle.listen(peer, 0);
         await deps.send(peer, "Target.setAutoAttach", {
             autoAttach            : true,
-            waitForDebuggerOnStart: false,
+            waitForDebuggerOnStart: true,
             flatten               : true,
             filter                : [{ type: "iframe", exclude: false }],
         });
@@ -184,6 +184,7 @@ export class ChildTargets implements ChildSessionHandle {
             parsed.data.sessionId,
             parsed.data.targetInfo.targetId,
             parsed.data.targetInfo.url,
+            parsed.data.waitingForDebugger === true,
         );
     }
 
@@ -193,6 +194,7 @@ export class ChildTargets implements ChildSessionHandle {
         sessionId: string,
         targetId : string,
         url      : string | undefined,
+        waiting  : boolean,
     ): void {
         if (this.closed || this.known.has(sessionId)) return;
 
@@ -215,18 +217,35 @@ export class ChildTargets implements ChildSessionHandle {
             url    : url ?? "",
         };
         const adopted = this.deps.adopt(sessionId, targetId);
+        const known: KnownChild = { child, session: adopted, depth };
 
-        this.known.set(sessionId, { child, session: adopted, depth });
+        this.known.set(sessionId, known);
         this.unmatched.add(sessionId);
         this.listen(adopted, depth);
-        void this.deps
+        void this.start(adopted, known, waiting);
+    }
+
+    private async start(adopted: CdpSession, known: KnownChild, waiting: boolean): Promise<void> {
+        await this.deps
             .send(adopted, "Target.setAutoAttach", {
                 autoAttach            : true,
-                waitForDebuggerOnStart: false,
+                waitForDebuggerOnStart: true,
                 flatten               : true,
                 filter                : [{ type: "iframe", exclude: false }],
             })
             .catch((error: unknown) => this.deps.log(`could not auto attach an iframe: ${describeError(error)}`));
+
+        try {
+            await this.options.onAttached?.(wrap(adopted, known.child));
+        } catch (error) {
+            this.deps.log(`a child attach handler threw: ${describeError(error)}`);
+        }
+
+        if (!waiting) return;
+
+        await this.deps
+            .send(adopted, "Runtime.runIfWaitingForDebugger", {})
+            .catch((error: unknown) => this.deps.log(`could not resume an iframe: ${describeError(error)}`));
     }
 
     private detached(params: unknown): void {

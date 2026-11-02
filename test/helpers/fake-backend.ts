@@ -61,16 +61,21 @@ export class FakeSession implements BackendSession {
 
 export class FakeChildHandle implements ChildSessionHandle {
     readonly childrenOf = new Map<string, FakeSession>();
-    readonly confirmed: string[] = [];
+    readonly confirmed        : string[] = [];
     detachedAll = false;
     private readonly infos = new Map<string, FrameChildSession["child"]>();
     private readonly unmatched = new Set<string>();
+    private readonly attaching: Array<Promise<void>> = [];
 
     constructor(
         private readonly backend: FakeBackend,
         readonly targetId       : string,
         private readonly options: ChildSessionOptions,
     ) {}
+
+    async settled(): Promise<void> {
+        await Promise.all(this.attaching);
+    }
 
     addChild(
         key  : string,
@@ -101,6 +106,9 @@ export class FakeChildHandle implements ChildSessionHandle {
             url      : "",
         });
         this.unmatched.add(key);
+        const attached = this.options.onAttached?.(this.wrap(key)) ?? Promise.resolve();
+
+        this.attaching.push(attached.catch(() => undefined));
 
         return session;
     }

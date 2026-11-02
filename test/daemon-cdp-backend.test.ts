@@ -351,7 +351,7 @@ describe("child targets", () => {
             browser.calls.find((call) => call.method === "Target.setAutoAttach")?.params,
         ).toEqual({
             autoAttach            : true,
-            waitForDebuggerOnStart: false,
+            waitForDebuggerOnStart: true,
             flatten               : true,
             filter                : [{ type: "iframe", exclude: false }],
         });

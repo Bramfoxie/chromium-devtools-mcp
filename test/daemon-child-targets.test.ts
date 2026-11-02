@@ -77,10 +77,17 @@ function setup() {
 
         return { sessionId } as CdpSession;
     };
-    const attach = (targetId: string, sessionId: string, session: CdpSession, type = "iframe") =>
+    const attach = (
+        targetId : string,
+        sessionId: string,
+        session  : CdpSession,
+        type = "iframe",
+        waitingForDebugger = false,
+    ) =>
         emit(session, "Target.attachedToTarget", {
             sessionId,
             targetInfo: { targetId, type, url: `https://${targetId}.example/` },
+            waitingForDebugger,
         }, session.sessionId);
 
     return { sent, detached, log, peer, deps, emit, attach, childSession };
@@ -97,12 +104,71 @@ describe("ChildTargets.attach", () => {
                 method : "Target.setAutoAttach",
                 params : {
                     autoAttach            : true,
-                    waitForDebuggerOnStart: false,
+                    waitForDebuggerOnStart: true,
                     flatten               : true,
                     filter                : [{ type: "iframe", exclude: false }],
                 },
             },
         ]);
+    });
+
+    it("lets the attach handler run before a paused child resumes", async () => {
+        const { sent, peer, deps, attach } = setup();
+        const order: string[] = [];
+        const handle = await ChildTargets.attach(
+            peer,
+            {
+                onDetached: () => undefined,
+                onAttached: async (child) => {
+                    order.push(`attached ${child.child.sessionId}`);
+                },
+            },
+            deps,
+        );
+
+        attach("child1", "child-session-1", peer, "iframe", true);
+        await vi.waitFor(() =>
+            expect(sent.map((call) => call.method)).toContain("Runtime.runIfWaitingForDebugger"));
+
+        expect(order).toEqual(["attached child-session-1"]);
+        expect(sent.filter((call) => call.session === "child-session-1").map((call) => call.method))
+            .toEqual(["Target.setAutoAttach", "Runtime.runIfWaitingForDebugger"]);
+        expect(handle.childCount()).toBe(1);
+    });
+
+    it("resumes a paused child even when the attach handler fails", async () => {
+        const { sent, peer, deps, attach } = setup();
+
+        vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+        await ChildTargets.attach(
+            peer,
+            {
+                onDetached: () => undefined,
+                onAttached: async () => {
+                    throw new Error("boom");
+                },
+            },
+            deps,
+        );
+
+        attach("child1", "child-session-1", peer, "iframe", true);
+        await vi.waitFor(() =>
+            expect(sent.map((call) => call.method)).toContain("Runtime.runIfWaitingForDebugger"));
+    });
+
+    it("does not resume a child that was not paused", async () => {
+        const { sent, peer, deps, attach } = setup();
+        let attached = 0;
+
+        await ChildTargets.attach(
+            peer,
+            { onDetached: () => undefined, onAttached: async () => void (attached += 1) },
+            deps,
+        );
+        attach("child1", "child-session-1", peer);
+        await vi.waitFor(() => expect(attached).toBe(1));
+
+        expect(sent.map((call) => call.method)).not.toContain("Runtime.runIfWaitingForDebugger");
     });
 
     it("tracks iframe sessions of the tab and ignores other envelopes", async () => {
