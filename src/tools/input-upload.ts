@@ -195,7 +195,10 @@ export const inputUpload = defineTool({
                 files        : validated.map((file) => file.path),
             });
         });
-        const count = await attachedCount(context.access, targetId, element);
+        const navigatedAway = changedUrl(acted.urlBefore, acted.urlAfter).urlAfter !== undefined;
+        const count = navigatedAway
+            ? validated.length
+            : await attachedCount(context.access, targetId, element);
 
         if (count !== validated.length) {
             throw new ToolError(

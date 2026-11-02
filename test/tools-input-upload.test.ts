@@ -50,13 +50,15 @@ function memoryFs(entries: Record<string, MemoryEntry>): UploadFileSystem {
 }
 
 interface UploadWorld {
-    state? : Record<string, unknown>;
-    files? : number;
-    hidden?: boolean;
+    state?           : Record<string, unknown>;
+    files?           : number;
+    hidden?          : boolean;
+    navigateOnAttach?: boolean;
 }
 
 function uploadFake(world: UploadWorld = {}): FakeAccess {
     const fake = new FakeAccess();
+    let navigated = false;
 
     fake.respond = (_targetId, method, params) => {
         switch (method) {
@@ -77,11 +79,18 @@ function uploadFake(world: UploadWorld = {}): FakeAccess {
 
                 return BOX_MODEL;
             case "DOM.setFileInputFiles":
+                navigated = world.navigateOnAttach === true;
+
                 return {};
             case "Emulation.setFocusEmulationEnabled":
                 return {};
             case "Runtime.evaluate":
-                return { result: { type: "string", value: "https://page.example/" } };
+                return {
+                    result: {
+                        type : "string",
+                        value: navigated ? "https://page.example/uploaded" : "https://page.example/",
+                    },
+                };
 
             case "Runtime.callFunctionOn": {
                 const declaration = String(
@@ -89,6 +98,8 @@ function uploadFake(world: UploadWorld = {}): FakeAccess {
                 );
 
                 if (declaration.includes("element.files")) {
+                    if (navigated) throw new Error("Cannot find context with specified id");
+
                     return { result: { type: "object", value: { files: world.files ?? 2 } } };
                 }
 
@@ -308,6 +319,34 @@ describe("input_upload", () => {
 
             expect(result.isError).toBe(true);
             expect(contentOf(result)).toContain("accepted 1 of 2 files");
+        } finally {
+            await fs.rm(dir, { recursive: true, force: true });
+        }
+    });
+
+    it("reports success with the new url when attaching navigates the page", async () => {
+        const { runtime } = runtimeWith(uploadFake({ navigateOnAttach: true }));
+        const real = await import("node:os");
+        const path = await import("node:path");
+        const fs = await import("node:fs/promises");
+        const dir = await fs.mkdtemp(path.join(real.tmpdir(), "cdm-upload-"));
+
+        try {
+            const first = path.join(dir, "first.txt");
+
+            await fs.writeFile(first, "a");
+            const result = await runTool(
+                inputUpload,
+                { target: { uid: "1_1" }, files: [first] },
+                extra(),
+                runtime,
+            );
+
+            expect(result.isError).not.toBe(true);
+            expect(result.structuredContent).toMatchObject({
+                ok      : true,
+                urlAfter: "https://page.example/uploaded",
+            });
         } finally {
             await fs.rm(dir, { recursive: true, force: true });
         }
