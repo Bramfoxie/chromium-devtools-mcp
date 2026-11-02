@@ -69,6 +69,14 @@ export function pageHostOf(origin: string): string {
     return new URL(origin).hostname;
 }
 
+function partialFailure(action: string, applied: number, total: number, cause: unknown): Error {
+    if (cause instanceof ToolError) return cause;
+
+    return new ToolError(
+        `The browser failed to ${action} a storage entry after ${applied} of ${total} were applied. Read the storage to see its current state, then retry.`,
+    );
+}
+
 async function storageCount(
     access  : DaemonAccess,
     targetId: string,
@@ -234,13 +242,18 @@ async function writeDomStorage(
             throw new ToolError(`At most ${WRITE_MAX_ENTRIES} entries can be set at once.`);
         }
 
+        let applied = 0;
+
         for (const [key, value] of entries) {
             throwIfCancelled(signal);
             await access.send(targetId, "DOMStorage.setDOMStorageItem", {
                 storageId: { securityOrigin: origin, isLocalStorage: local },
                 key,
                 value,
+            }).catch((error: unknown) => {
+                throw partialFailure("set", applied, entries.length, error);
             });
+            applied += 1;
         }
 
         const remaining = await storageCount(access, targetId, origin, local);
@@ -265,12 +278,17 @@ async function writeDomStorage(
             throw new ToolError("The remove action needs keys to remove.");
         }
 
+        let applied = 0;
+
         for (const key of keys) {
             throwIfCancelled(signal);
             await access.send(targetId, "DOMStorage.removeDOMStorageItem", {
                 storageId: { securityOrigin: origin, isLocalStorage: local },
                 key,
+            }).catch((error: unknown) => {
+                throw partialFailure("remove", applied, keys.length, error);
             });
+            applied += 1;
         }
 
         const remaining = await storageCount(access, targetId, origin, local);

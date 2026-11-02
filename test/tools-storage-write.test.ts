@@ -226,6 +226,56 @@ describe("storage_write", () => {
         expect(fake.sent.map((call) => call.method)).not.toContain("Network.setCookie");
     });
 
+    it("reports how many DOM storage entries were applied before a failure", async () => {
+        const { fake, runtime } = setup();
+        let calls = 0;
+
+        fake.respond = (tab, method) => {
+            if (method === "Runtime.evaluate") return { result: { value: "https://a.example/p" } };
+
+            if (method === "DOMStorage.setDOMStorageItem" && ++calls === 3) {
+                throw new Error("quota");
+            }
+
+            return {};
+        };
+
+        const result = await runTool(
+            storageWrite,
+            { kind: "local", action: "set", entries: { a: "1", b: "2", c: "3", d: "4" } },
+            extra(),
+            runtime,
+        );
+
+        expect(result.isError).toBe(true);
+        expect(textOf(result)).toContain("after 2 of 4 were applied");
+    });
+
+    it("reports how many DOM storage keys were removed before a failure", async () => {
+        const { fake, runtime } = setup();
+        let calls = 0;
+
+        fake.respond = (tab, method) => {
+            if (method === "Runtime.evaluate") return { result: { value: "https://a.example/p" } };
+
+            if (method === "DOMStorage.removeDOMStorageItem" && ++calls === 2) {
+                throw new Error("gone");
+            }
+
+            return {};
+        };
+
+        const result = await runTool(
+            storageWrite,
+            { kind: "session", action: "remove", keys: ["a", "b", "c"] },
+            extra(),
+            runtime,
+        );
+
+        expect(result.isError).toBe(true);
+        expect(textOf(result)).toContain("after 1 of 3 were applied");
+    });
+
     it("reports a browser cookie refusal", async () => {
         const { fake, runtime } = setup();
 
