@@ -161,9 +161,7 @@ type MatchedEntry = z.infer<typeof matchedEntrySchema>;
 type Winner = { rule: number; declaration: number };
 
 function cascadeWinners(entries: MatchedEntry[]): Map<string, Winner> {
-    // CDP orders matched rules least specific first. Per property the
-    // winner is the last important declaration when any is important,
-    // else the last declaration.
+    // Per property the last important declaration wins, else the last declaration.
     const importantByName = new Set<string>();
 
     for (const entry of entries) {
@@ -233,8 +231,7 @@ export function shapeMatchedRules(
 export function shapeInherited(
     inherited: NonNullable<z.infer<typeof matchedSchema>["inherited"]>,
 ): InheritedStyle[] {
-    // Ancestor rules arrive least specific first: the last matching
-    // declaration per property wins, mirroring the cascade.
+    // The last matching declaration per property wins.
     const shaped: InheritedStyle[] = [];
     const seen = new Set<string>();
 

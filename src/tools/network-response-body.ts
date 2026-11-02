@@ -132,8 +132,7 @@ export const networkResponseBody = defineTool({
             };
         }
 
-        // Base64 is truncated on a 4-char boundary: the field stays
-        // decodable and the marker lives outside the data.
+        // Base64 is cut on a 4-char boundary; the marker stays outside the data.
         if (parsed.data.base64Encoded && !isTextMimeType(mimeType)) {
             const chars = Math.floor(maxChars / 4) * 4;
             const totalLength = parsed.data.body.length;

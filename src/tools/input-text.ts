@@ -96,8 +96,7 @@ async function dispatchKeyEvents(
     events: KeyEventPlan[],
     signal: AbortSignal,
 ): Promise<void> {
-    // Keys held down are released on any abnormal exit, so the page never
-    // keeps Control or Shift logically down.
+    // Keys held down are released on any abnormal exit.
     const downs: KeyEventPlan[] = [];
     let completed = false;
 

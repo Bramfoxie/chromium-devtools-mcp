@@ -95,7 +95,6 @@ export async function ensureNoDialog(dialogs: DialogState, tab: string): Promise
     );
 }
 
-// Kept for callers that already ensured capture on this tab.
 export function assertNoDialog(dialogs: DialogState, tab: string): void {
     const open = dialogs.open(tab);
 
@@ -201,9 +200,7 @@ export class DialogState {
                 ...(promptText === undefined ? {} : { promptText }),
             });
         } catch (error) {
-            // The dialog went away on its own; the stale record must not block script tools.
-            // Only clear when the same dialog is still open: a newer dialog
-            // must never be forgotten, and its history stays single.
+            // Clear only when the same dialog is still open.
             if (error instanceof RpcError && error.code === ErrorCode.cdpError) {
                 if (state.open === open) {
                     this.record(state, open, "closed");

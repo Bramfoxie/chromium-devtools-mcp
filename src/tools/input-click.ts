@@ -271,8 +271,7 @@ export const inputClick = defineTool({
 
         throwIfCancelled(context.signal);
 
-        // The release must reach the page even when the press path fails:
-        // a pressed button left down drags the page until the tab closes.
+        // The release must reach the page even when the press path fails.
         const acted = await navigationOf(context.access, targetId, async () => {
             await context.access.send(targetId, "Input.dispatchMouseEvent", {
                 type      : "mouseMoved",

@@ -215,8 +215,7 @@ export async function elementState(
     const result = await access.send(tab, "Runtime.callFunctionOn", {
         functionDeclaration: STATE_EXPRESSION,
         objectId           : element.objectId,
-        // callFunctionOn binds this but leaves declared parameters undefined,
-        // so the element travels as the first argument too.
+        // The element is passed as the first argument too: declared parameters stay undefined.
         arguments          : [{ objectId: element.objectId }],
         returnByValue      : true,
     });

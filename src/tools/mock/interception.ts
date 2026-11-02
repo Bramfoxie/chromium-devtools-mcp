@@ -400,8 +400,7 @@ export class InterceptionManager {
     }
 
     private async enable(tab: string, state: TabInterception): Promise<void> {
-        // Subscribe first: the daemon drops events nobody listens to, so any
-        // request paused between Fetch.enable and subscribe would hang.
+        // Subscribe first: the daemon drops events nobody listens to.
         if (!state.subscribed) {
             await this.access.subscribe(tab, FETCH_EVENT);
             state.subscribed = true;

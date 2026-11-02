@@ -69,10 +69,7 @@ export function navigationWaitReduce(
             return state;
 
         case "stopped": {
-            // A history navigation restored from cache sends no lifecycle events,
-            // and its stop arrives before its navigation event. A stop from the
-            // old page must not finish the wait: only a stop after the new
-            // navigation with its loader is a result.
+            // Only a stop after the new navigation with its loader is a result.
             if (!state.navigated) return { ...state, stopped: true };
 
             if (
@@ -259,8 +256,7 @@ export const pageNavigate = defineTool({
 
         const deadline = createDeadline(context.signal, timeoutMs, () => context.clock.now());
 
-        // The document changes even when the navigation errors or the wait
-        // times out: uids of the old document go stale in a finally below.
+        // The document changes even when the navigation fails; old uids go stale.
         try {
             if (waitUntil === "none") {
                 await navigate(context, deadline, targetId, action, args.url, args.ignoreCache);

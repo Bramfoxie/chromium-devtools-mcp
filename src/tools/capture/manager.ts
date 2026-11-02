@@ -112,8 +112,7 @@ export class CaptureManager {
 
         if (capture.consoleEnabled) return;
 
-        // Subscribe first: the daemon drops events nobody listens to, so the
-        // replay emitted during enable would be lost otherwise.
+        // Subscribe first: the daemon drops events nobody listens to.
         for (const event of CONSOLE_EVENTS) await this.access.subscribe(tab, event);
 
         try {
@@ -228,8 +227,7 @@ export class CaptureManager {
                 (query.levels === undefined || query.levels.includes(value.level)) &&
                 (query.textContains === undefined || value.text.includes(query.textContains)),
             );
-        // Newest takes the tail, oldest the head: paging never returns the
-        // oldest entries in reverse when the buffer exceeds the limit.
+        // Newest takes the tail, oldest the head.
         const kept = query.order === "newest"
             ? filtered.slice(-query.limit)
             : filtered.slice(0, query.limit);

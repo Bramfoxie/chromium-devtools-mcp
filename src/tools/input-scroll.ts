@@ -113,9 +113,7 @@ async function wheelScroll(
 ): Promise<WheelScrollResult> {
     await context.access.send(targetId, "Input.dispatchMouseEvent", wheelParams(point, deltaX, deltaY));
 
-    // A wheel event applies asynchronously: smooth scrolling and the compositor
-    // move the page after the dispatch resolves, so poll until the position is
-    // stable instead of trusting one fixed sleep.
+    // Poll until the scroll position is stable.
     const after = await settleScroll(context, targetId);
 
     // Only the window position is reported: a container under the wheel point may scroll instead.

@@ -142,8 +142,7 @@ export function buildDeviceResetCommands(): CdpCommand[] {
     ];
 }
 
-// Single owner of the setUserAgentOverride call: device and locale fields merge here,
-// and one reset keeps the other side. An empty user agent restores the real one.
+// Single owner of setUserAgentOverride: device and locale fields merge here.
 export function buildUserAgentCommand(parts: UserAgentParts): CdpCommand | undefined {
     if (parts.userAgent === undefined && parts.acceptLanguage === undefined) {
         return { method: "Emulation.setUserAgentOverride", params: { userAgent: "" } };
@@ -188,8 +187,7 @@ const MEDIA_FEATURE_OF = {
 } as const;
 
 export function buildMediaCommands(state: MediaState): CdpCommand[] {
-    // Only explicitly set features are sent: omitted features keep the
-    // browser default instead of being forced to no-preference.
+    // Only explicitly set features are sent.
     const features = (
         Object.entries({
             colorScheme  : state.colorScheme,

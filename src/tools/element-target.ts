@@ -123,8 +123,7 @@ export class ElementRegistry {
         const state = this.state(tab);
 
         return nodes.map((node) => {
-            // The same element keeps its uid: repeated queries do not burn
-            // through the per-tab budget.
+            // The same element keeps its uid.
             const key = `${node.backendNodeId}|${node.frameId ?? ""}`;
             const known = state.byNode.get(key);
 

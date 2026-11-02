@@ -144,8 +144,7 @@ export class IpcClient {
         });
     }
 
-    // The IPC wait is the CDP wait plus a margin; multi-step methods get
-    // a larger bound because they run several sequential CDP commands.
+    // The IPC wait is the CDP wait plus a margin.
     private timeoutFor(method: string, params: unknown): number {
         const declared = (params as { timeoutMs?: unknown } | null | undefined)?.timeoutMs;
 
