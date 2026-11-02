@@ -32,7 +32,7 @@ export const newTab = defineTool({
     description: "Open a new background tab and select it.",
     access     : "mutate",
     input      : z.strictObject({
-        url   : z.string().min(1).max(2048).optional().describe("URL to open, http or https. Defaults to about:blank."),
+        url   : z.string().min(1).max(2048).optional().describe("URL to open: http, https or about:blank. Defaults to about:blank."),
         select: z.boolean().optional().describe("Select the new tab. Defaults to true."),
     }),
     output : z.strictObject({ tab: tabObject }),

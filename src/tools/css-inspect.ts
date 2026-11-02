@@ -284,7 +284,7 @@ const rectSchema = z.strictObject({
 
 export const cssInspect = defineTool({
     name       : "css_inspect",
-    description: "Read the computed style, matched CSS rules and box of an element.",
+    description: "Read the computed style, matched CSS rules and box of an element. The box is null for an element without a rendered box, such as display none.",
     access     : "read",
     input      : z.strictObject({
         tab                : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),

@@ -213,7 +213,7 @@ export const pageNavigate = defineTool({
     input : z.strictObject({
         tab        : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
         action     : z.enum(["url", "back", "forward", "reload"]).optional().describe("What to do. Defaults to url."),
-        url        : z.string().min(1).max(2048).optional().describe("URL to open, required for the url action."),
+        url        : z.string().min(1).max(2048).optional().describe("URL to open, http, https or about:blank. Required for the url action."),
         waitUntil  : waitUntilSchema.optional().describe("Wait for the load event, DOMContentLoaded, or return at once. Defaults to load."),
         timeoutMs  : z.number().int().min(1).max(NAVIGATE_MAX_TIMEOUT_MS).optional().describe("How long to wait for the page. Defaults to 30000 ms."),
         ignoreCache: z.boolean().optional().describe("Reload ignoring the cache. Only for the reload action."),
