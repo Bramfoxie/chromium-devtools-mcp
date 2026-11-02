@@ -22,9 +22,18 @@ type Extra = RequestHandlerExtra<ServerRequest, ServerNotification>;
 
 const extra = () => ({ signal: new AbortController().signal }) as Extra;
 
+const frozenClock = {
+    now  : () => 0,
+    sleep: (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
+};
+
 function setup(access?: FakeAccess) {
     const fake = access ?? new FakeAccess();
-    const runtime = new ToolRuntime({ access: fake.asAccess(), config: managedConfig });
+    const runtime = new ToolRuntime({
+        access: fake.asAccess(),
+        config: managedConfig,
+        clock : frozenClock,
+    });
 
     return { fake, runtime };
 }
