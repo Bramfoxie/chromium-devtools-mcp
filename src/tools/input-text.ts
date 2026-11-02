@@ -50,6 +50,8 @@ const valueSchema = z.object({
     }),
 });
 
+const CONTEXT_GONE = /Cannot find context|Could not find object|Cannot find object/i;
+
 const editableCache = new Map<string, string>();
 
 export function platformCacheKey(tab: string, generation: number): string {
@@ -132,15 +134,23 @@ async function readValue(
     access : DaemonAccess,
     tab    : string,
     element: ResolvedElement,
-): Promise<{ length: number; text: string }> {
-    const parsed = valueSchema.safeParse(
-        await access.send(tab, "Runtime.callFunctionOn", {
+): Promise<{ length: number; text: string } | undefined> {
+    let response: unknown;
+
+    try {
+        response = await access.send(tab, "Runtime.callFunctionOn", {
             functionDeclaration: VALUE_EXPRESSION,
             objectId           : element.objectId,
             arguments          : [{ objectId: element.objectId }],
             returnByValue      : true,
-        }),
-    );
+        });
+    } catch (error) {
+        if (error instanceof Error && CONTEXT_GONE.test(error.message)) return undefined;
+
+        throw error;
+    }
+
+    const parsed = valueSchema.safeParse(response);
 
     if (!parsed.success || parsed.data.result.value === undefined) {
         throw new ToolError(
@@ -270,9 +280,10 @@ export const inputType = defineTool({
             };
         }
 
-        const navigatedAway = changedUrl(acted.urlBefore, acted.urlAfter).urlAfter !== undefined;
+        const urlChanged = changedUrl(acted.urlBefore, acted.urlAfter).urlAfter !== undefined;
+        const outcome = urlChanged ? undefined : await readValue(context.access, targetId, element);
 
-        if (navigatedAway) {
+        if (outcome === undefined) {
             return {
                 ok         : true,
                 target     : summary,
@@ -284,7 +295,6 @@ export const inputType = defineTool({
             };
         }
 
-        const outcome = await readValue(context.access, targetId, element);
         const contains = outcome.text.includes(args.text);
 
         return {

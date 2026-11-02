@@ -28,10 +28,11 @@ const BOX_MODEL = {
 };
 
 interface TextWorld {
-    state?          : Record<string, unknown>;
-    value?          : { length: number; text: string };
-    platform?       : string;
-    navigateOnEnter?: boolean;
+    state?                  : Record<string, unknown>;
+    value?                  : { length: number; text: string };
+    platform?               : string;
+    navigateOnEnter?        : boolean;
+    staleUrlAfterNavigation?: boolean;
 }
 
 function textFake(world: TextWorld = {}): FakeAccess {
@@ -75,7 +76,7 @@ function textFake(world: TextWorld = {}): FakeAccess {
                     return {
                         result: {
                             type : "string",
-                            value: navigated ? "https://page.example/results" : "https://page.example/",
+                            value: navigated && world.staleUrlAfterNavigation !== true ? "https://page.example/results" : "https://page.example/",
                         },
                     };
                 }
@@ -292,6 +293,22 @@ describe("input_type", () => {
             ok      : true,
             urlAfter: "https://page.example/results",
         });
+    });
+
+    it("reports success when the page navigates before the url changes", async () => {
+        const { runtime } = runtimeWith(
+            textFake({ navigateOnEnter: true, staleUrlAfterNavigation: true }),
+        );
+
+        const result = await runTool(
+            inputType,
+            { target: { uid: "1_1" }, text: "hello", submit: true },
+            extra(),
+            runtime,
+        );
+
+        expect(result.isError).not.toBe(true);
+        expect(result.structuredContent).toMatchObject({ ok: true, valueLength: 0 });
     });
 
     it("dispatches per character key events with a delay, falling back for other scripts", async () => {
