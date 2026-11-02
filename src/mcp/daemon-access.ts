@@ -89,6 +89,8 @@ export class DaemonAccess {
 
         this.registrations.push(registration);
 
+        if (this.attachedClient !== undefined) void this.attach(registration);
+
         return () => {
             const index = this.registrations.indexOf(registration);
 

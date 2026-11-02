@@ -84,6 +84,21 @@ describe("DaemonAccess events", () => {
         });
     });
 
+    it("delivers events to a handler registered after the link is already attached", async () => {
+        const link = new FakeLink(() => ({ tabs: [] }));
+        const access = new DaemonAccess({ link: link.asLink() });
+        const seen: unknown[] = [];
+
+        await access.listTabs("owned");
+        await vi.waitFor(() => expect(link.clients).toHaveLength(1));
+        access.on("tab.closed", (params) => seen.push(params));
+        await access.listTabs("owned");
+        await vi.waitFor(() => {
+            link.clients[0]?.emit("tab.closed", { targetId: "t1" });
+            expect(seen).toEqual([{ targetId: "t1" }]);
+        });
+    });
+
     it("keeps handlers across reconnects and attaches them to the new client", async () => {
         const link = new FakeLink(() => ({ tabs: [] }));
         const access = new DaemonAccess({ link: link.asLink() });
