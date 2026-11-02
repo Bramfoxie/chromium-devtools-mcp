@@ -227,6 +227,19 @@ describe.skipIf(!present)("cross-site iframe in a real browser", () => {
         expect(await textOf(tab, "#d", frame)).toBe("deepclicked");
     });
 
+    it("input_click works whether the tab is hidden or visible", async () => {
+        const tab = await crossTab("/xnested", 2);
+        const frame = await frameIdOf(tab, "/deep");
+        const state = await env.ok("js_evaluate", { tab, expression: "document.visibilityState" });
+
+        expect(["hidden", "visible"]).toContain(state.value);
+
+        const outcome = await env.ok("input_click", { tab, target: { selector: "#d", frame } });
+
+        expect(outcome.ok).toBe(true);
+        expect(await textOf(tab, "#d", frame)).toBe("deepclicked");
+    });
+
     it("input_click and input_hover leave no pointer probe in the cross-site frame", async () => {
         const tab = await crossTab("/xpointer");
         const frame = "iframe[name=cross]";
