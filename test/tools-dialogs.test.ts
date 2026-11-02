@@ -8,6 +8,7 @@ import {
     ToolError,
     ToolRuntime,
 } from "../src/tools/index.js";
+import { ensureNoDialog } from "../src/tools/dialogs.js";
 import { FakeAccess } from "./helpers/fake-access.js";
 import { managedConfig } from "./helpers/daemon-env.js";
 
@@ -41,6 +42,58 @@ describe("DialogState", () => {
             { targetId: "tab1", event: "Page.javascriptDialogOpening" },
             { targetId: "tab1", event: "Page.javascriptDialogClosed" },
         ]);
+    });
+
+    it("subscribes before enabling Page so an opening event is not missed", async () => {
+        const { fake, state } = dialogs();
+        const order: string[] = [];
+        const send = fake.send.bind(fake);
+        const subscribe = fake.subscribe.bind(fake);
+
+        fake.send = async (...args) => {
+            order.push(`send:${args[1]}`);
+
+            return send(...args);
+        };
+
+        fake.subscribe = async (...args) => {
+            order.push(`subscribe:${args[1]}`);
+
+            return subscribe(...args);
+        };
+
+        await state.ensure("tab1");
+        expect(order).toEqual([
+            "subscribe:Page.javascriptDialogOpening",
+            "subscribe:Page.javascriptDialogClosed",
+            "send:Page.enable",
+        ]);
+    });
+
+    it("reports a possibly open dialog when Page.enable times out", async () => {
+        const { fake, state } = dialogs();
+
+        fake.failSend = () => new RpcError(ErrorCode.cdpTimeout, "timed out");
+
+        const failure = await state.ensure("tab1").catch((error: unknown) => error);
+
+        expect(failure).toBeInstanceOf(ToolError);
+        expect((failure as Error).message).toContain("dialog may already be open");
+        expect(fake.sent[0]?.timeoutMs).toBeGreaterThan(0);
+        expect(state.pageEnabled("tab1")).toBe(false);
+    });
+
+    it("ensureNoDialog propagates ensure errors except not_found and not_owned", async () => {
+        const { fake, state } = dialogs();
+
+        fake.failSend = () => new RpcError(ErrorCode.cdpError, "boom");
+        await expect(ensureNoDialog(state, "tab1")).rejects.toThrow("boom");
+
+        fake.failSend = () => new RpcError(ErrorCode.notFound, "gone");
+        await expect(ensureNoDialog(state, "tab1")).resolves.toBeUndefined();
+
+        fake.failSend = () => new RpcError(ErrorCode.notOwned, "not yours");
+        await expect(ensureNoDialog(state, "tab1")).resolves.toBeUndefined();
     });
 
     it("records an opening dialog and clears it when closed", () => {

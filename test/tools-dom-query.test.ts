@@ -207,13 +207,12 @@ describe("dom_query", () => {
             returned: 1,
         });
         expect(fake.sent.map((call) => call.method)).toEqual([
-            "Page.enable",
             "DOM.getDocument",
             "DOM.querySelector",
             "Runtime.evaluate",
             "DOM.describeNode",
         ]);
-        const expression = (fake.sent[3]?.params as { expression?: string })?.expression ?? "";
+        const expression = (fake.sent[2]?.params as { expression?: string })?.expression ?? "";
 
         for (const name of DEFAULT_QUERY_ATTRIBUTES) {
             expect(expression).toContain(name);
@@ -524,7 +523,6 @@ describe("dom_query piercing", () => {
 
         expect(result.isError).not.toBe(true);
         expect(fake.sent.map((call) => call.method)).toEqual([
-            "Page.enable",
             "DOM.getDocument",
             "Page.createIsolatedWorld",
             "DOM.getDocument",
@@ -532,9 +530,9 @@ describe("dom_query piercing", () => {
             "Runtime.evaluate",
             "DOM.describeNode",
         ]);
-        expect(fake.sent[2]?.params).toMatchObject({ frameId: "cross" });
-        expect(fake.sent[4]?.params).toEqual({ nodeId: 11, selector: "#pay-btn" });
-        expect(fake.sent[5]?.params).toMatchObject({ contextId: 7 });
+        expect(fake.sent[1]?.params).toMatchObject({ frameId: "cross" });
+        expect(fake.sent[3]?.params).toEqual({ nodeId: 11, selector: "#pay-btn" });
+        expect(fake.sent[4]?.params).toMatchObject({ contextId: 7 });
         expect(runtime.elements.lookup("tab1", "0_1")).toEqual({
             backendNodeId  : 141,
             frameId        : "cross",
@@ -581,7 +579,6 @@ describe("dom_query piercing", () => {
 
         expect(result.isError).not.toBe(true);
         expect(fake.sent.map((call) => call.method)).toEqual([
-            "Page.enable",
             "DOM.getDocument",
             "DOM.querySelector",
             "DOM.describeNode",
@@ -590,9 +587,9 @@ describe("dom_query piercing", () => {
             "Runtime.evaluate",
             "DOM.describeNode",
         ]);
-        expect(fake.sent[4]?.params).toMatchObject({ frameId: "cross" });
-        expect(fake.sent[5]?.params).toEqual({ nodeId: 11, selector: "#same-btn" });
-        expect(fake.sent[6]?.params).toMatchObject({ contextId: 7 });
+        expect(fake.sent[3]?.params).toMatchObject({ frameId: "cross" });
+        expect(fake.sent[4]?.params).toEqual({ nodeId: 11, selector: "#same-btn" });
+        expect(fake.sent[5]?.params).toMatchObject({ contextId: 7 });
     });
 
     it("matches through shadow roots with pierce", async () => {
@@ -611,7 +608,6 @@ describe("dom_query piercing", () => {
 
         expect(result.isError).not.toBe(true);
         expect(fake.sent.map((call) => call.method)).toEqual([
-            "Page.enable",
             "DOM.getDocument",
             "DOM.enable",
             "DOM.getDocument",
@@ -622,7 +618,7 @@ describe("dom_query piercing", () => {
             "DOM.describeNode",
             "DOM.describeNode",
         ]);
-        const expression = (fake.sent[7]?.params as { expression?: string })?.expression ?? "";
+        const expression = (fake.sent[6]?.params as { expression?: string })?.expression ?? "";
 
         expect(expression).toContain("shadowRoot");
         expect(result.structuredContent).toMatchObject({ total: 2, returned: 2 });

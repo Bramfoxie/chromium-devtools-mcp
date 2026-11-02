@@ -106,7 +106,9 @@ describe("page_info", () => {
     it("falls back to the tab list when the page is unresponsive and names the source", async () => {
         const fake = new FakeAccess();
 
-        fake.failSend = () => new RpcError(ErrorCode.cdpTimeout, "CDP request timed out.");
+        fake.failSend = (_targetId, method) => method === "Page.enable"
+            ? undefined
+            : new RpcError(ErrorCode.cdpTimeout, "CDP request timed out.");
         const { runtime } = setup(fake);
 
         await runTool(newTab, { url: "https://example.org/" }, extra(), runtime);

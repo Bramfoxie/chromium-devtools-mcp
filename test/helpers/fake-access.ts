@@ -27,7 +27,7 @@ export class FakeAccess {
     readonly events = new Map<string, Set<(params: unknown) => void>>();
     readonly resets = new Set<() => void>();
     generation = 0;
-    failSend?            : (targetId: string, method: string) => Error;
+    failSend?            : (targetId: string, method: string) => Error | undefined;
     respond?                 : (
         targetId: string,
         method  : string,
@@ -148,6 +148,8 @@ export class FakeAccess {
         const failure = this.failSend?.(targetId, method);
 
         if (failure) throw failure;
+
+        if (method === "Page.enable") return {};
 
         return this.respond?.(targetId, method, params) ?? this.evaluate ?? {
             result: { type: "undefined" },

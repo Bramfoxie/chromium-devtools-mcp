@@ -16,6 +16,8 @@ export const DIALOG_HISTORY_MESSAGE_CLIP = 200;
 
 export const DIALOG_HISTORY_LIMIT = 50;
 
+export const DIALOG_ENABLE_TIMEOUT_MS = 3000;
+
 export type DialogPolicy = "none" | "accept" | "dismiss";
 
 export type DialogResolution = "accept" | "dismiss" | "policy" | "closed";
@@ -86,7 +88,16 @@ function parseEnvelope(value: unknown): {
 }
 
 export async function ensureNoDialog(dialogs: DialogState, tab: string): Promise<void> {
-    await dialogs.ensure(tab).catch(() => undefined);
+    await dialogs.ensure(tab).catch((error: unknown) => {
+        if (
+            error instanceof RpcError &&
+            (error.code === ErrorCode.notFound || error.code === ErrorCode.notOwned)
+        ) {
+            return;
+        }
+
+        throw error;
+    });
 
     const open = dialogs.open(tab);
 
@@ -144,17 +155,29 @@ export class DialogState {
     async ensure(tab: string): Promise<void> {
         const state = this.state(tab);
 
-        if (!state.pageEnabled) {
-            await this.access.send(tab, "Page.enable", {});
-            state.pageEnabled = true;
-        }
-
         for (const event of DIALOG_EVENTS) {
             if (state.subscribed.has(event)) continue;
 
             await this.access.subscribe(tab, event);
             state.subscribed.add(event);
         }
+
+        if (state.pageEnabled) return;
+
+        try {
+            await this.access.send(tab, "Page.enable", {}, DIALOG_ENABLE_TIMEOUT_MS);
+        } catch (error) {
+            if (error instanceof RpcError && error.code === ErrorCode.cdpTimeout) {
+                throw new ToolError(
+                    "The tab did not answer Page.enable in time, so a JavaScript dialog may already be open in it. " +
+                    "Resolve the dialog in the browser and try again.",
+                );
+            }
+
+            throw error;
+        }
+
+        state.pageEnabled = true;
     }
 
     open(tab: string): OpenDialog | undefined {

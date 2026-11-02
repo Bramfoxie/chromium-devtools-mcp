@@ -93,7 +93,7 @@ Each emulation tool returns the full emulation state of the tab, plus what the p
 
 Input tools never bring the browser window to the front. The page believes it is focused through CDP focus emulation, enabled once per tab, so mouse and keyboard events behave like a real user while your windows stay put.
 
-Dialog capture starts when a tab is created or selected: while a dialog is open, tools that run page scripts fail fast and name `page_dialogs` instead of timing out. The dialog policy auto-resolves later dialogs including `beforeunload` and is cleared on reset.
+Dialog capture starts when a tab is created or selected: while a dialog is open, tools that run page scripts fail fast and name `page_dialogs` instead of timing out. The dialog policy auto-resolves later dialogs including `beforeunload` and is cleared on reset. A dialog that was already open before the tab was first created or selected cannot be observed: the browser does not answer Page.enable while it is open, so the first call fails after 3 seconds with a message to resolve the dialog in the browser.
 
 Storage tools only touch the page origin. Cookie reads never leave the page URL: no `urls` parameter is sent and `Network.getAllCookies` is never used. Cookie writes always carry the page URL, and the domain must equal the page host or be its parent domain. Values are never logged; cookie values are only returned with `includeValues: true`.
 

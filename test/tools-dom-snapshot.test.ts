@@ -117,11 +117,10 @@ describe("dom_snapshot", () => {
             frames    : [],
         });
         expect(fake.sent.map((call) => call.method)).toEqual([
-            "Page.enable",
             "Accessibility.getFullAXTree",
             "DOM.getDocument",
         ]);
-        expect(fake.sent[2]?.params).toEqual({ depth: SNAPSHOT_DOM_DEPTH, pierce: true });
+        expect(fake.sent[1]?.params).toEqual({ depth: SNAPSHOT_DOM_DEPTH, pierce: true });
         expect(runtime.elements.lookup("tab1", "2_1")).toEqual({ backendNodeId: 11 });
         expect(runtime.elements.lookup("tab1", "2_2")).toEqual({ backendNodeId: 12 });
         expect(runtime.elements.lookup("tab1", old ?? "")).toBeUndefined();
