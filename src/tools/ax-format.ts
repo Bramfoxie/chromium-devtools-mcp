@@ -174,14 +174,15 @@ function quote(value: string): string {
     return `"${clipAxText(value).replace(/"/g, "'")}"`;
 }
 
+function isFrameRole(role: string): boolean {
+    return role === "iframe" || role === "frame";
+}
+
 function wantsUid(node: AxNode): boolean {
+    if (isFrameRole(node.role)) return true;
     if (SKIPPED_ROLES.has(node.role)) return false;
     if (INTERACTIVE_ROLES.has(node.role)) return true;
     if (LANDMARK_ROLES.has(node.role)) return true;
-
-    if (node.role === "heading" || node.role === "iframe" || node.role === "frame") {
-        return node.name !== "";
-    }
 
     return node.name !== "";
 }
@@ -252,7 +253,7 @@ function lineFor(node: AxNode, uid: string, options: AxFormatOptions): string {
         parts.push(`desc=${quote(node.description)}`);
     }
 
-    if (node.role === "iframe" || node.role === "frame") {
+    if (isFrameRole(node.role)) {
         const frameId = node.backendNodeId === undefined
             ? undefined
             : options.frameFor?.(node.backendNodeId);
@@ -290,7 +291,8 @@ export function formatAxTree(nodes: AxNode[], options: AxFormatOptions): AxForma
 
         const hidden = node.ignored || node.hidden;
         const wanted = (!hidden || options.includeHidden) &&
-            (!options.interactiveOnly || INTERACTIVE_ROLES.has(node.role)) &&
+            (!options.interactiveOnly || INTERACTIVE_ROLES.has(node.role) ||
+                isFrameRole(node.role)) &&
             wantsUid(node);
 
         let uid: string | undefined;

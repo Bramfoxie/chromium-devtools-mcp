@@ -248,6 +248,20 @@ describe("formatAxTree", () => {
         );
     });
 
+    it("shows unnamed iframes with their frame id, also when only interactive nodes are listed", () => {
+        const nodes = [
+            node({ nodeId: "1", role: "generic", childIds: ["2", "3"], backendNodeId: 11 }),
+            node({ nodeId: "2", role: "iframe", backendNodeId: 12 }),
+            node({ nodeId: "3", role: "button", name: "Go", backendNodeId: 13 }),
+        ];
+        const frames = { frameFor: (id: number) => (id === 12 ? "F1" : undefined) };
+
+        expect(formatAxTree(nodes, options(frames)).text).toBe('[1_1] iframe frame=F1\n[1_2] button "Go"');
+        expect(formatAxTree(nodes, options({ ...frames, interactiveOnly: true })).text).toBe(
+            '[1_1] iframe frame=F1\n[1_2] button "Go"',
+        );
+    });
+
     it("formats only the subtree of the starting backend node", () => {
         const nodes = [
             node({ nodeId: "1", role: "navigation", name: "Main", childIds: ["2"], backendNodeId: 11 }),
