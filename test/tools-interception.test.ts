@@ -131,6 +131,25 @@ describe("InterceptionManager", () => {
         expect(fake.subscribed).toEqual([{ targetId: "tab1", event: "Fetch.requestPaused" }]);
     });
 
+    it("narrows the Fetch pattern by the resource type of a rule", async () => {
+        const { fake, manager } = interception();
+        const base = { method: undefined, fail: undefined, delayMs: 0, times: undefined };
+        const response = {
+            status     : 200,
+            headers    : [],
+            bodyBase64 : undefined,
+            contentType: undefined,
+        };
+
+        manager.add("tab1", { ...base, urlPattern: "*/api/*", resourceType: "XHR", response });
+        manager.add("tab1", { ...base, urlPattern: "*/page", resourceType: undefined, response });
+        await manager.sync("tab1");
+
+        expect(fake.sent.find((call) => call.method === "Fetch.enable")?.params).toEqual({
+            patterns: [{ urlPattern: "*/api/*", resourceType: "XHR" }, { urlPattern: "*/page" }],
+        });
+    });
+
     it("disables when the last rule is removed", async () => {
         const { fake, manager } = interception();
 

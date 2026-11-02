@@ -422,7 +422,10 @@ export class InterceptionManager {
         }
 
         try {
-            const patterns = state.rules.map((rule) => ({ urlPattern: rule.urlPattern }));
+            const patterns = state.rules.map((rule) => ({
+                urlPattern: rule.urlPattern,
+                ...(rule.resourceType === undefined ? {} : { resourceType: rule.resourceType }),
+            }));
 
             await this.access.send(tab, "Fetch.enable", { patterns });
             state.enableSent = true;
