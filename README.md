@@ -2,7 +2,7 @@
 
 MCP server that lets AI agents drive your real Chromium browser through the DevTools Protocol.
 
-Status: early development. The core (config, browser connection, daemon, MCP entrypoint), the tab tools and the navigation and inspection tools work; the rest of the browser tools are not published yet.
+Status: early development. The core (config, browser connection, daemon, MCP entrypoint) and all planned browser tools work. The domain allowlist, confirmation of dangerous actions and the client installer are not implemented yet; read-only mode works.
 
 ## Features
 
@@ -10,7 +10,7 @@ Status: early development. The core (config, browser connection, daemon, MCP ent
 - Tabs open in the background. Bringing a window to the front is refused unless `allowFocus` is on.
 - Headless and interactive modes for the managed profile.
 - Several MCP clients share one browser through a per-user daemon, each in its own session.
-- Planned: the rest of the browser tools, one-command install into your MCP client, domain allowlist and confirmation of dangerous actions.
+- Planned: one-command install into your MCP client, domain allowlist and confirmation of dangerous actions.
 
 ## Usage
 
@@ -72,13 +72,13 @@ Each session keeps its own tab selection. `new_tab` opens a background tab and s
 - `input_upload`: attach local files to a file input. This is the most sensitive tool: it sends local files to a web page. Paths are validated on the server machine (absolute, existing regular readable files under 100 MiB, at most 20), symlinks are followed, and results carry file names and sizes only, never contents.
 - `console_logs`: read console messages, uncaught exceptions and browser messages of a tab, with level and text filters, paging and clear.
 - `network_requests`: read HTTP requests of a tab with URL, method, resource type, status and failure filters.
-- `network_response_body`: read the response body of a request from `network_requests`. Binary bodies need `asBase64`.
+- `network_response_body`: read the response body of a request from `network_requests`. Binary bodies need `asBase64`; without it the result has `needsBase64: true` and no body. `maxChars` defaults to 50000 and allows up to 500000. Bodies over the 32 MiB transport limit are refused. Redirect responses have no body.
 - `network_mock`: mock responses or fail requests by Fetch wildcard pattern, with delay and a use count. First match in insertion order wins.
 - `page_dialogs`: see and resolve JavaScript dialogs, or set an automatic accept or dismiss policy for later ones.
 - `page_wait`: wait for a selector, text, URL, load state or expression. A timeout returns `met: false`, not an error.
 - `storage_read`: read local storage, session storage or cookies of the page origin. Cookie values are secrets and stay hidden unless `includeValues` is true.
 - `storage_write`: write local storage, session storage or cookies of the page origin. Cookie domains must match the page host. `clear` needs `confirm: true`.
-- `page_pdf`: print a tab to PDF with orientation, paper, margins and page ranges. Needs a headless managed browser when the headed browser refuses to print.
+- `page_pdf`: print a tab to PDF with orientation, paper, margins and page ranges. Needs a headless managed browser when the headed browser refuses to print. The PDF defaults to 8 MiB and `maxBytes` raises that to 24 MiB; a larger PDF is refused with a hint to use `pageRanges`.
 - `page_metrics`: read performance counters, layout metrics and navigation timing of a tab.
 - `screenshot`: capture a tab as an image. Defaults to jpeg quality 80; supports viewport, full page, element and clip shots.
 - `list_devices`: list the built in devices for `emulate_device`, with an optional name or kind filter.
@@ -89,11 +89,11 @@ Each session keeps its own tab selection. `new_tab` opens a background tab and s
 
 Every tool returns its result as JSON text plus structured content. Large outputs are truncated with an explicit marker. `screenshot` and `page_pdf` also return an image or embedded resource block. Mutating tools (`new_tab`, `select_tab`, `close_tab`, `page_navigate`, `js_evaluate`, `click`, `input_click`, `input_hover`, `input_type`, `input_key`, `input_scroll`, `input_select`, `input_upload`, `emulate_device`, `emulate_media`, `emulate_network`, `emulate_locale`, `storage_write`) are refused in read-only mode, and so are `screenshot` calls with a `target`, `network_mock` actions other than `list` and `page_dialogs` actions other than `status` or with a policy; the domain allowlist and dangerous action confirmations are planned.
 
-Each emulation tool returns the full emulation state of the tab, plus what the page reports (viewport, media queries, language) when the page answers. `reset: true` removes only the overrides of that tool. Overrides live in the tab session: they survive cross site navigation but are gone when the tab closes or the session resets. Device emulation reports the inner size the page sees: without a viewport meta tag a mobile page keeps its default 980 CSS pixel layout width.
+Each emulation tool returns the full emulation state of the tab, plus what the page reports (viewport, media queries, language) when the page answers. `reset: true` removes only the overrides of that tool. Overrides live in the tab session and are gone when the tab closes or the session resets. Device emulation reports the inner size the page sees: without a viewport meta tag a mobile page keeps its default 980 CSS pixel layout width.
 
 Input tools never bring the browser window to the front. The page believes it is focused through CDP focus emulation, enabled once per tab, so mouse and keyboard events behave like a real user while your windows stay put.
 
-Dialog capture starts when a tab is created or selected: while a dialog is open, tools that run page scripts fail fast and name `page_dialogs` instead of timing out. The dialog policy auto-resolves later dialogs including `beforeunload` and is cleared on reset. A dialog that was already open before the tab was first created or selected cannot be observed: the browser does not answer Page.enable while it is open, so the first call fails after 3 seconds with a message to resolve the dialog in the browser.
+Dialog capture starts when a tab is created or selected: while a dialog is open, tools that run page scripts fail fast and name `page_dialogs` instead of timing out. The dialog policy auto-resolves later dialogs including `beforeunload` and is cleared on reset. A dialog that was already open before the tab was first created or selected cannot be observed, so `page_dialogs` cannot see or resolve it: the browser does not answer Page.enable while it is open, so the first call fails after 3 seconds with a message to resolve the dialog in the browser.
 
 Storage tools only touch the page origin. Cookie reads never leave the page URL: no `urls` parameter is sent and `Network.getAllCookies` is never used. Cookie writes always carry the page URL, and the domain must equal the page host or be its parent domain. Values are never logged; cookie values are only returned with `includeValues: true`.
 
@@ -115,7 +115,13 @@ Clicks and typing work the same across boundaries: boxes are viewport coordinate
 
 Text results are capped per call: snapshots and evaluation results default to 50000 characters and can be raised to 200000 with `maxChars` or `maxResultChars`. The daemon protocol itself carries requests up to 1 MiB and responses up to 32 MiB. Elements hidden with `display: none` are absent from the accessibility tree, so snapshots never list them, even with `includeHidden`.
 
-Console and network tools read bounded per-tab buffers: 1000 entries and 2 MiB for console messages, 2000 records and 8 MiB for network requests. Only output since capture started is kept, plus what the browser replays on enable. Console capture starts when a tab is created or selected; network capture starts lazily on the first network tool call for a tab. Evicted entries are reported as `droppedCount`. Sensitive query values (names containing `token`, `key`, `secret`, `password`, `auth`, `session`, `sig` or `code`) and sensitive header values (`authorization`, `cookie`, `set-cookie`, `proxy-authorization`, `x-api-key`, names containing `token` or `secret`) are replaced by `[redacted]`.
+Console and network tools read bounded per-tab buffers: 1000 entries and 2 MiB for console messages, 2000 records and 8 MiB for network requests. Only output since capture started is kept, plus what the browser replays on enable. Console capture starts when a tab is created or selected, or on the first `console_logs` call if that did not happen. Network capture starts lazily on the first `network_requests` or `network_response_body` call for a tab, so that first call may return nothing and records appear on later calls. A record for a request that began before capture started can have an empty `method` or `url`; method filters never match an empty method. Evicted entries are reported as `droppedCount`.
+
+Redaction applies to network records. In URLs, the userinfo part and the values of query and fragment parameters whose names contain `token`, `key`, `secret`, `password`, `auth`, `session`, `sig` or `code` (case-insensitive, after percent decoding) are replaced by `[redacted]`. Header values are replaced when the name is `authorization`, `cookie`, `set-cookie`, `proxy-authorization` or `x-api-key`, or contains `token`, `secret`, `auth`, `key`, `session`, `password`, `code` or `sig`; the values of `referer`, `location`, `origin` and `content-location` are redacted as URLs. Console text, page content and response bodies are not redacted.
+
+`urlRegex` of `network_requests` and `page_wait` takes a restricted regular expression: up to 200 characters, at most 2 unbounded repeats (`*`, `+`, `{n,}`), no repeated groups that contain repeats or alternation, no backreferences and no lookarounds. A pattern outside this subset is an error. The pattern is tested against the first 2048 characters of the URL.
+
+`timeoutMs` bounds the whole call, including setup. `page_wait` with `loadState: "networkidle"` needs 500 ms of observed quiet; quiet is measured by network capture, so it counts only from when capture started.
 
 Screenshots default to 4 MiB and 4096 pixels per side, raisable to 16 MiB; PDFs default to 8 MiB, raisable to 24 MiB.
 
@@ -170,7 +176,7 @@ An unknown flag, a missing value or a stray argument is an error, so a typo neve
 
 1. Repository, npm name and CI.
 2. Core: config, CDP client, browser discovery, managed and attach modes, daemon.
-3. Tools: tabs (done), navigation and inspection (done), input, network, emulation, storage, dialogs, network mocking.
+3. Tools: tabs, navigation and inspection, input, observation, emulation, control and storage, network mocking, shadow DOM and iframes (all done).
 4. Safety controls (read-only mode works, the rest planned).
 5. Client installer.
 6. First release.
