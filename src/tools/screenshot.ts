@@ -3,14 +3,15 @@ import { ErrorCode, RpcError } from "../daemon/index.js";
 import type { DaemonAccess } from "../mcp/index.js";
 import { defineTool, type ToolContext } from "./define-tool.js";
 import {
-    type ElementRegistry,
     type ElementTarget,
     boxOf,
+    elementAccess,
     elementTargetSchema,
     resolveElement,
     revealElement,
 } from "./element-target.js";
 import { ToolError } from "./errors.js";
+import { frameChain, mapRect, measureChain, revealChain, settleRendering } from "./frame-geometry.js";
 import { type ImageSize, imageSize } from "./image-size.js";
 import { binaryResult, imageBlock } from "./result.js";
 
@@ -176,23 +177,31 @@ async function layoutOf(access: DaemonAccess, tab: string): Promise<PageLayout> 
 }
 
 async function targetBoxOf(
-    access  : DaemonAccess,
-    elements: ElementRegistry,
-    tab     : string,
-    target  : ElementTarget,
-    frames  : ToolContext["frames"],
+    context: ToolContext,
+    tab    : string,
+    target : ElementTarget,
 ): Promise<ScreenshotClip> {
-    const element = await resolveElement(access, elements, tab, target, { frames });
-    const revealed = await revealElement(access, tab, { objectId: element.objectId });
+    const element = await resolveElement(context.access, context.elements, tab, target, {
+        frames: context.frames,
+    });
+    const owner = elementAccess(context.access, element);
+    const revealed = await revealElement(owner, tab, { objectId: element.objectId });
     const measured = revealed.box === null
-        ? await boxOf(access, tab, { objectId: element.objectId })
+        ? await boxOf(owner, tab, { objectId: element.objectId })
         : revealed;
 
     if (measured.box === null || !measured.visible) {
         throw new ToolError("The element has no visible box to capture. Check that it is rendered.");
     }
 
-    return measured.box;
+    if (element.isolated !== true || element.frameId === undefined) return measured.box;
+
+    const chain = await frameChain(context.access, context.frames, tab, element.frameId);
+
+    await revealChain(chain, tab, measured.box);
+    await settleRendering([context.access, ...chain.links.map((link) => link.access), owner], tab);
+
+    return mapRect((await measureChain(chain, tab)).toTop, measured.box);
 }
 
 interface CaptureRequest {
@@ -315,13 +324,7 @@ export const screenshot = defineTool({
 
         const targetBox = args.target === undefined
             ? undefined
-            : await targetBoxOf(
-                context.access,
-                context.elements,
-                targetId,
-                args.target,
-                context.frames,
-            );
+            : await targetBoxOf(context, targetId, args.target);
         const layout = await layoutOf(context.access, targetId);
         const pageBox = targetBox === undefined || layout.viewport === undefined
             ? targetBox

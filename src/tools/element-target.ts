@@ -747,12 +747,8 @@ async function resolveBySelector(
 }
 
 export interface ResolveElementOptions {
-    frames?       : FrameState;
-    allowIsolated?: boolean;
+    frames?: FrameState;
 }
-
-const ISOLATED_UNSUPPORTED =
-    "The element is inside a cross-site frame, which this tool cannot act on. Use click or dom_query for elements in that frame.";
 
 export function elementAccess(access: DaemonAccess, element: ElementNode): DaemonAccess {
     return element.isolated === true && element.frameId !== undefined
@@ -766,22 +762,6 @@ export async function resolveElement(
     tab     : string,
     target  : ElementTarget,
     options : ResolveElementOptions = {},
-): Promise<ResolvedElement> {
-    const element = await resolveAnyElement(access, elements, tab, target, options);
-
-    if (element.isolated === true && options.allowIsolated !== true) {
-        throw new ToolError(ISOLATED_UNSUPPORTED);
-    }
-
-    return element;
-}
-
-async function resolveAnyElement(
-    access  : DaemonAccess,
-    elements: ElementRegistry,
-    tab     : string,
-    target  : ElementTarget,
-    options : ResolveElementOptions,
 ): Promise<ResolvedElement> {
     const frames = framesOf(options.frames);
 

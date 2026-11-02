@@ -1,6 +1,7 @@
 import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { inflateSync } from "node:zlib";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { chromeAvailable, eventually, html, startEnv, type Env } from "./browser-env.js";
 
@@ -9,9 +10,17 @@ let env: Env;
 
 type Row = Record<string, unknown>;
 
+interface Rect {
+    x     : number;
+    y     : number;
+    width : number;
+    height: number;
+}
+
 const POINTER = `<div style="height:30px"></div>
 <button id="b" style="margin-left:20px;width:80px;height:40px" onclick="this.textContent='clicked'">b</button>
-<button id="h" style="margin-left:20px;width:80px;height:40px" onmouseover="this.textContent='hovered'">h</button>`;
+<button id="h" style="margin-left:20px;width:80px;height:40px" onmouseover="this.textContent='hovered'">h</button>
+<div id="red" style="margin:12px 0 0 30px;width:40px;height:20px;background:rgb(255,0,0)"></div>`;
 
 const FORMS = `<input id="t"><div id="out">idle</div>
 <select id="s"><option value="a">A</option><option value="b">B</option></select>
@@ -63,11 +72,7 @@ beforeAll(async () => {
         "/xforms",
         html(`<div style="height:900px"></div><iframe name="cross" style="width:500px;height:300px" src="${env.other.origin}/forms"></iframe><div style="height:900px"></div>`),
     );
-    env.other.pages.set("/nest", html(nest(`${env.fixture.origin}/deep`)));
-    env.other.pages.set(
-        "/leaf",
-        html(`<button id="q" onclick="this.textContent='leafclicked'">leaf</button>`),
-    );
+    env.other.pages.set("/leaf", html(`<button id="q" onclick="this.textContent='leafclicked'">leaf</button>`));
     env.other.pages.set(
         "/wrap",
         html(`<button id="w">wrap</button><iframe name="same" src="${env.other.origin}/leaf"></iframe>`),
@@ -76,6 +81,7 @@ beforeAll(async () => {
         "/xwrap",
         html(`<iframe name="cross" src="${env.other.origin}/wrap"></iframe>`),
     );
+    env.other.pages.set("/nest", html(nest(`${env.fixture.origin}/deep`)));
     env.fixture.pages.set("/deep", html(DEEP));
     env.fixture.pages.set(
         "/xpointer",
@@ -312,6 +318,105 @@ describe.skipIf(!present)("cross-site iframe in a real browser", { timeout: 30_0
         expect(Number(scrolled.y)).toBeGreaterThan(0);
     });
 
+    it("js_evaluate runs a function against an element of the cross-site frame", async () => {
+        const tab = await crossTab("/xpointer");
+        const frame = "iframe[name=cross]";
+        const own = await env.ok("js_evaluate", {
+            tab,
+            target    : { selector: "#b", frame },
+            expression: "return this.id + ':' + (this.ownerDocument.defaultView === window) + ':' + location.origin",
+        });
+
+        expect(own).toMatchObject({ ok: true, value: `b:true:${env.other.origin}` });
+        const object = await env.ok("js_evaluate", {
+            tab,
+            target    : { selector: "#b", frame },
+            expression: "return { id: this.id, tag: this.localName }",
+        });
+
+        expect(object.value).toEqual({ id: "b", tag: "button" });
+    });
+
+    it("css_inspect reads styles and a box in page coordinates for the cross-site frame", async () => {
+        const tab = await crossTab("/xpointer");
+        const frame = "iframe[name=cross]";
+        const inspected = await env.ok("css_inspect", {
+            tab,
+            target    : { selector: "#red", frame },
+            properties: ["background-color", "width"],
+        });
+        const box = inspected.box as { border: Rect };
+        const outer = await env.ok("js_evaluate", {
+            tab,
+            expression: "(() => { const r = document.querySelector('iframe').getBoundingClientRect(); return { x: r.x + 4 + 6, y: r.y + 4 + 6 }; })()",
+        });
+        const origin = outer.value as { x: number; y: number };
+
+        expect(inspected.computed).toMatchObject({ "background-color": "rgb(255, 0, 0)", width: "40px" });
+        expect(box.border).toMatchObject({ width: 40, height: 20 });
+        const local = await localBox(tab, frame);
+
+        expect(Math.abs(box.border.x - (origin.x + local.x))).toBeLessThanOrEqual(1);
+        expect(Math.abs(box.border.y - (origin.y + local.y))).toBeLessThanOrEqual(1);
+    });
+
+    it("screenshot with a target captures the element of the cross-site frame", async () => {
+        const tab = await crossTab("/xpointer");
+        const shot = await env.call("screenshot", {
+            tab,
+            target: { selector: "#red", frame: "iframe[name=cross]" },
+            format: "png",
+        });
+        const image = (shot.blocks as Array<{ type: string; data?: string }>).find(
+            (block) => block.type === "image",
+        );
+        const png = decodePng(Buffer.from(String(image?.data), "base64"));
+
+        expect(shot.isError).toBe(false);
+        expect([png.width, png.height]).toEqual([40, 20]);
+        expect(pixelAt(png, 20, 10)).toEqual([255, 0, 0]);
+        expect(pixelAt(png, 1, 1)).toEqual([255, 0, 0]);
+        expect(pixelAt(png, 38, 18)).toEqual([255, 0, 0]);
+    });
+
+    it("dom_snapshot renders the cross-site frame and its element ids drive other tools", async () => {
+        const tab = await crossTab("/xpointer");
+        const snap = await env.ok("dom_snapshot", { tab });
+        const cross = (snap.frames as Row[]).find((frame) => frame.isolated === true);
+        const line = /\[(\d+_\d+)\] button "b"/.exec(String(snap.snapshot));
+
+        expect(Number(cross?.nodeCount)).toBeGreaterThan(0);
+        expect(line).not.toBeNull();
+        await env.ok("input_click", { tab, target: { uid: String(line?.[1]) } });
+        expect(await textOf(tab, "#b", "iframe[name=cross]")).toBe("clicked");
+    });
+
+    it("dom_snapshot with a root inside the cross-site frame limits the snapshot to it", async () => {
+        const tab = await crossTab("/xpointer");
+        const frame = "iframe[name=cross]";
+        const found = await env.ok("dom_query", { tab, selector: "#b", frame, attributes: [] });
+        const uid = String((found.matches as Row[])[0]?.uid);
+        const snap = await env.ok("dom_snapshot", { tab, root: { uid } });
+
+        expect(String(snap.snapshot)).toContain('button "b"');
+        expect(String(snap.snapshot)).not.toContain('button "h"');
+    });
+
+    it("dom_snapshot gives a frame nested in the cross-site frame its own document", async () => {
+        const tab = await crossTab("/xwrap", 2);
+        const snap = await env.ok("dom_snapshot", { tab });
+        const frames = snap.frames as Row[];
+        const wrap = frames.find((frame) => String(frame.url).endsWith("/wrap"));
+        const leaf = frames.find((frame) => String(frame.url).endsWith("/leaf"));
+        const lines = String(snap.snapshot);
+
+        expect(wrap?.nodeCount).toBeGreaterThan(0);
+        expect(leaf?.nodeCount).toBeGreaterThan(0);
+        expect(lines).toContain('button "wrap"');
+        expect(lines).toContain('button "leaf"');
+        expect(lines.match(/button "wrap"/g)).toHaveLength(1);
+    });
+
     it("input_click reaches an element of a frame nested in the cross-site frame", async () => {
         const tab = await crossTab("/xwrap", 2);
         const frame = await frameIdOf(tab, "/leaf");
@@ -321,3 +426,67 @@ describe.skipIf(!present)("cross-site iframe in a real browser", { timeout: 30_0
         expect(await textOf(tab, "#q", frame)).toBe("leafclicked");
     });
 });
+
+async function localBox(tab: string, frame: string): Promise<{ x: number; y: number }> {
+    const read = await env.ok("dom_query", { tab, selector: "#red", frame });
+    const box = (read.matches as Array<{ box?: { x: number; y: number } }>)[0]?.box;
+
+    return { x: box?.x ?? 0, y: box?.y ?? 0 };
+}
+
+interface Png {
+    width : number;
+    height: number;
+    data  : Buffer;
+}
+
+function decodePng(file: Buffer): Png {
+    const width = file.readUInt32BE(16);
+    const height = file.readUInt32BE(20);
+    const channels = file[25] === 6 ? 4 : 3;
+    const parts: Buffer[] = [];
+
+    for (let at = 8; at < file.length;) {
+        const length = file.readUInt32BE(at);
+
+        if (file.toString("latin1", at + 4, at + 8) === "IDAT") {
+            parts.push(file.subarray(at + 8, at + 8 + length));
+        }
+
+        at += 12 + length;
+    }
+
+    const raw = inflateSync(Buffer.concat(parts));
+    const stride = width * channels;
+    const data = Buffer.alloc(height * stride);
+
+    for (let row = 0; row < height; row += 1) {
+        const filter = raw[row * (stride + 1)] ?? 0;
+
+        for (let col = 0; col < stride; col += 1) {
+            const value = raw[row * (stride + 1) + 1 + col] ?? 0;
+            const left = col >= channels ? data[row * stride + col - channels] ?? 0 : 0;
+            const up = row > 0 ? data[(row - 1) * stride + col] ?? 0 : 0;
+            const corner = row > 0 && col >= channels
+                ? data[(row - 1) * stride + col - channels] ?? 0
+                : 0;
+            const estimate = left + up - corner;
+            const dLeft = Math.abs(estimate - left);
+            const dUp = Math.abs(estimate - up);
+            const dCorner = Math.abs(estimate - corner);
+            const paeth = dLeft <= dUp && dLeft <= dCorner ? left : dUp <= dCorner ? up : corner;
+            const predictor = [0, left, up, (left + up) >> 1, paeth][filter] ?? 0;
+
+            data[row * stride + col] = (value + predictor) & 255;
+        }
+    }
+
+    return { width, height, data: Object.assign(data, { channels }) as Buffer };
+}
+
+function pixelAt(png: Png, x: number, y: number): number[] {
+    const channels = (png.data as Buffer & { channels: number }).channels;
+    const at = (y * png.width + x) * channels;
+
+    return [png.data[at] ?? 0, png.data[at + 1] ?? 0, png.data[at + 2] ?? 0];
+}

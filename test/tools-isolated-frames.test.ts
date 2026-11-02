@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ElementRegistry, FrameState, resolveElement, ToolError } from "../src/tools/index.js";
+import { ElementRegistry, FrameState, resolveElement } from "../src/tools/index.js";
 import { bindAccess, isolatedDocumentNode } from "../src/tools/frame-scope.js";
 import { FakeAccess } from "./helpers/fake-access.js";
 
@@ -90,7 +90,7 @@ describe("isolatedDocumentNode", () => {
 });
 
 describe("elements in a cross site frame", () => {
-    async function resolve(frame: string, allowIsolated: boolean) {
+    async function resolve(frame: string) {
         const fake = crossFake();
         const frames = new FrameState({ access: fake.asAccess() });
 
@@ -101,14 +101,14 @@ describe("elements in a cross site frame", () => {
             new ElementRegistry(),
             "tab1",
             { selector: "#pay-btn", frame },
-            { frames, allowIsolated },
+            { frames },
         );
 
         return { fake, resolved };
     }
 
     it("resolves an element through the session that owns the frame", async () => {
-        const { fake, resolved } = await resolve("cross", true);
+        const { fake, resolved } = await resolve("cross");
 
         expect(resolved).toEqual({
             backendNodeId: 7,
@@ -125,15 +125,8 @@ describe("elements in a cross site frame", () => {
     });
 
     it("resolves the frame named by an iframe selector the main document cannot open", async () => {
-        const { resolved } = await resolve("#frame", true);
+        const { resolved } = await resolve("#frame");
 
         expect(resolved).toMatchObject({ frameId: "cross", isolated: true });
-    });
-
-    it("refuses an element in such a frame for tools that cannot act on it", async () => {
-        const failure = await resolve("cross", false).catch((error: unknown) => error);
-
-        expect(failure).toBeInstanceOf(ToolError);
-        expect((failure as Error).message).toContain("cross-site frame");
     });
 });

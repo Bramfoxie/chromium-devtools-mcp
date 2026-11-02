@@ -5,6 +5,7 @@ import { defineTool } from "./define-tool.js";
 import { createDeadline, type Deadline } from "./deadline.js";
 import { ensureNoDialog } from "./dialogs.js";
 import {
+    elementAccess,
     type ElementRegistry,
     type ElementTarget,
     elementTargetSchema,
@@ -212,6 +213,7 @@ export const jsEvaluate = defineTool({
         let result: unknown;
         let elementObjectId: string | undefined;
         const deadline = createDeadline(context.signal, timeoutMs, () => context.clock.now());
+        const scope = { access: context.access };
 
         try {
             const outcome = await evaluate(context.access, context.elements, targetId, {
@@ -220,6 +222,7 @@ export const jsEvaluate = defineTool({
                 deadline,
                 target    : args.target,
                 frames    : context.frames,
+                scope,
             });
 
             result = outcome.response;
@@ -228,7 +231,7 @@ export const jsEvaluate = defineTool({
             const timedOut = deadline.expired() && !context.signal.aborted;
 
             if (timedOut || (error instanceof RpcError && error.code === ErrorCode.cdpTimeout)) {
-                void context.access
+                void scope.access
                     .send(targetId, "Runtime.terminateExecution", {}, TERMINATE_TIMEOUT_MS)
                     .catch(() => undefined);
 
@@ -245,7 +248,7 @@ export const jsEvaluate = defineTool({
         const parsed = evaluatedSchema.safeParse(result);
 
         if (!parsed.success) {
-            await releaseObjects(context.access, targetId, [
+            await releaseObjects(scope.access, targetId, [
                 looseObjectId(result),
                 elementObjectId,
             ]);
@@ -270,7 +273,7 @@ export const jsEvaluate = defineTool({
                 ? {}
                 : { columnNumber: exception.columnNumber };
 
-            await releaseObjects(context.access, targetId, [
+            await releaseObjects(scope.access, targetId, [
                 resultObjectId,
                 exceptionObjectId,
                 elementObjectId,
@@ -291,7 +294,7 @@ export const jsEvaluate = defineTool({
 
         try {
             const extracted = await extractStructuredValue(
-                context.access,
+                scope.access,
                 targetId,
                 remote,
                 deadline.remainingMs(),
@@ -308,7 +311,7 @@ export const jsEvaluate = defineTool({
                 ...(shaped.value === undefined ? {} : { value: shaped.value }),
             };
         } finally {
-            await releaseObjects(context.access, targetId, [resultObjectId, elementObjectId]);
+            await releaseObjects(scope.access, targetId, [resultObjectId, elementObjectId]);
         }
     },
 });
@@ -319,6 +322,7 @@ interface EvaluateRequest {
     deadline    : Deadline;
     target      : ElementTarget | undefined;
     frames?     : import("./frames.js").FrameState;
+    scope       : { access: DaemonAccess };
 }
 
 interface EvaluateOutcome {
@@ -460,11 +464,14 @@ async function evaluate(
     const element = await resolveElement(access, elements, targetId, request.target, {
         frames: request.frames,
     });
+    const owner = elementAccess(access, element);
+
+    request.scope.access = owner;
 
     let response: unknown;
 
     try {
-        response = await access.send(
+        response = await owner.send(
             targetId,
             "Runtime.callFunctionOn",
             {
@@ -481,7 +488,7 @@ async function evaluate(
             { signal: request.deadline.signal },
         );
     } catch (error) {
-        await releaseObjects(access, targetId, [element.objectId]);
+        await releaseObjects(owner, targetId, [element.objectId]);
 
         throw error;
     }

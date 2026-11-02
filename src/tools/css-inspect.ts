@@ -1,9 +1,10 @@
 import { z } from "zod";
 import type { DaemonAccess } from "../mcp/index.js";
-import { defineTool } from "./define-tool.js";
+import { defineTool, type ToolContext } from "./define-tool.js";
 import { ensureNoDialog } from "./dialogs.js";
-import { elementTargetSchema, resolveElement } from "./element-target.js";
+import { elementAccess, elementTargetSchema, resolveElement } from "./element-target.js";
 import { ToolError } from "./errors.js";
+import { frameChain, mapRect, measureChain } from "./frame-geometry.js";
 
 export const CSS_MAX_RULES_DEFAULT = 30;
 
@@ -338,8 +339,9 @@ export const cssInspect = defineTool({
             args.target,
             { frames: context.frames },
         );
+        const owner = elementAccess(context.access, element);
 
-        await context.access.send(targetId, "Runtime.releaseObject", {
+        await owner.send(targetId, "Runtime.releaseObject", {
             objectId: element.objectId,
         }).catch(() => undefined);
 
@@ -349,7 +351,7 @@ export const cssInspect = defineTool({
         const includeBox = args.includeBox ?? true;
 
         const described = describedSchema.safeParse(
-            await context.access.send(targetId, "DOM.describeNode", {
+            await owner.send(targetId, "DOM.describeNode", {
                 backendNodeId: element.backendNodeId,
                 depth        : 0,
             }),
@@ -363,12 +365,12 @@ export const cssInspect = defineTool({
 
         const nodeId = described.data.node.nodeId;
 
-        await context.access.send(targetId, "DOM.enable", {});
-        await context.access.send(targetId, "CSS.enable", {});
+        await owner.send(targetId, "DOM.enable", {});
+        await owner.send(targetId, "CSS.enable", {});
 
         try {
             const computed = computedSchema.safeParse(
-                await context.access.send(targetId, "CSS.getComputedStyleForNode", { nodeId }),
+                await owner.send(targetId, "CSS.getComputedStyleForNode", { nodeId }),
             );
 
             if (!computed.success) {
@@ -385,7 +387,7 @@ export const cssInspect = defineTool({
 
             if (includeMatchedRules) {
                 const matched = matchedSchema.safeParse(
-                    await context.access.send(targetId, "CSS.getMatchedStylesForNode", { nodeId }),
+                    await owner.send(targetId, "CSS.getMatchedStylesForNode", { nodeId }),
                 );
 
                 if (!matched.success) {
@@ -403,7 +405,10 @@ export const cssInspect = defineTool({
                 dropped = droppedWinners(rules, maxRules);
             }
 
-            const box = includeBox ? await readBox(context.access, targetId, nodeId) : null;
+            const local = includeBox ? await readBox(owner, targetId, nodeId) : null;
+            const box = local !== null && element.isolated === true && element.frameId !== undefined
+                ? await pageBox(context, targetId, element.frameId, local)
+                : local;
 
             return {
                 computed      : shapeComputed(computed.data.computedStyle, wanted),
@@ -415,7 +420,7 @@ export const cssInspect = defineTool({
                 droppedWinners: dropped,
             };
         } finally {
-            await context.access.send(targetId, "CSS.disable", {}).catch(() => undefined);
+            await owner.send(targetId, "CSS.disable", {}).catch(() => undefined);
         }
     },
 });
@@ -425,6 +430,23 @@ export interface CssBox {
     padding: CssRect;
     border : CssRect;
     margin : CssRect;
+}
+
+async function pageBox(
+    context : ToolContext,
+    targetId: string,
+    frameId : string,
+    box     : CssBox,
+): Promise<CssBox> {
+    const chain = await frameChain(context.access, context.frames, targetId, frameId);
+    const { toTop } = await measureChain(chain, targetId);
+
+    return {
+        content: mapRect(toTop, box.content),
+        padding: mapRect(toTop, box.padding),
+        border : mapRect(toTop, box.border),
+        margin : mapRect(toTop, box.margin),
+    };
 }
 
 async function readBox(

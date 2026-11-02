@@ -109,8 +109,7 @@ async function resolveActionable(
     target  : ElementTarget,
 ): Promise<{ element: ResolvedElement; checked: ActionableElement; uid: string | undefined }> {
     const element = await resolveElement(context.access, context.elements, targetId, target, {
-        frames       : context.frames,
-        allowIsolated: true,
+        frames: context.frames,
     });
     const owner = elementAccess(context.access, element);
     const checked = await ensureActionable(owner, targetId, element, {
@@ -305,7 +304,7 @@ export const inputClick = defineTool({
             context.elements,
             targetId,
             args.target,
-            { frames: context.frames, allowIsolated: true },
+            { frames: context.frames },
         );
         const { point, state } = await mousePoint(
             context,
@@ -414,7 +413,7 @@ export const inputHover = defineTool({
             context.elements,
             targetId,
             args.target,
-            { frames: context.frames, allowIsolated: true },
+            { frames: context.frames },
         );
         const { point, state } = await mousePoint(
             context,

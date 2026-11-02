@@ -3,8 +3,9 @@ import type { DaemonAccess } from "../mcp/index.js";
 import { toAxNodes, type AxDomInfo, type AxNode, formatAxTree } from "./ax-format.js";
 import { defineTool, type ToolContext } from "./define-tool.js";
 import { ensureNoDialog } from "./dialogs.js";
-import { elementTargetSchema, resolveElement } from "./element-target.js";
+import { elementAccess, elementTargetSchema, resolveElement } from "./element-target.js";
 import { ToolError } from "./errors.js";
+import { bindAccess } from "./frame-scope.js";
 import { truncateText } from "./result.js";
 
 export const SNAPSHOT_DEFAULT_CHARS = 50_000;
@@ -244,6 +245,8 @@ export const domSnapshot = defineTool({
         const maxFrames = args.maxFrames ?? SNAPSHOT_DEFAULT_MAX_FRAMES;
 
         let backendNodeId: number | undefined;
+        let scoped = context.access;
+        let rootFrame: { frameId: string } | undefined;
 
         if (args.root !== undefined) {
             const root = await resolveElement(
@@ -255,30 +258,43 @@ export const domSnapshot = defineTool({
             );
 
             backendNodeId = root.backendNodeId;
+            scoped = elementAccess(context.access, root);
 
-            await context.access.send(targetId, "Runtime.releaseObject", {
+            if (root.isolated === true && root.frameId !== undefined) {
+                rootFrame = { frameId: root.frameId };
+            }
+
+            await scoped.send(targetId, "Runtime.releaseObject", {
                 objectId: root.objectId,
             }).catch(() => undefined);
         }
 
         const tree: unknown = backendNodeId === undefined
-            ? await context.access.send(targetId, "Accessibility.getFullAXTree", {
+            ? await scoped.send(targetId, "Accessibility.getFullAXTree", {
                 depth: SNAPSHOT_MAX_AX_DEPTH,
             })
-            : await context.access.send(targetId, "Accessibility.getPartialAXTree", {
+            : await scoped.send(targetId, "Accessibility.getPartialAXTree", {
                 backendNodeId,
                 fetchRelatives: true,
             });
         const limitedTree = limitAxNodes(toAxNodes(tree), backendNodeId === undefined);
         const nodes = limitedTree.nodes;
-        const dom = await domInfo(context.access, targetId);
+        const dom = await domInfo(scoped, targetId);
         const generation = context.elements.nextGeneration(targetId);
         const ownerFrames = iframeFrameMap(dom.root);
+        const rootNode = rootFrame === undefined
+            ? {}
+            : {
+                frameId        : rootFrame.frameId,
+                isolated       : true,
+                frameGeneration: context.frames.generation(targetId, rootFrame.frameId),
+            };
 
         const formatted = formatAxTree(nodes, {
             interactiveOnly,
             includeHidden,
-            uidFor          : (id) => context.elements.assign(targetId, [{ backendNodeId: id }])[0],
+            uidFor: (id) =>
+                context.elements.assign(targetId, [{ backendNodeId: id, ...rootNode }])[0],
             domFor          : (id) => dom.info.get(id),
             startBackendNode: backendNodeId,
             frameFor        : (id) => ownerFrames.get(id),
@@ -289,12 +305,13 @@ export const domSnapshot = defineTool({
                 interactiveOnly,
                 includeHidden,
             })
-            : { sections: [], omitted: [] as string[], limited: false };
+            : { sections: [], omitted: [] as string[], limited: false, domLimited: false };
         const sections = [formatted.text, ...collected.sections.map((frame) => frame.text)].filter(
             (text) => text !== "",
         );
         const shaped = truncateText(sections.join("\n"), maxChars);
-        const depthLimited = backendNodeId === undefined && domDepthLimited(dom.root);
+        const depthLimited = backendNodeId === undefined &&
+            (domDepthLimited(dom.root) || collected.domLimited);
         const axLimited = limitedTree.limited || collected.limited;
         const notes = [
             ...(depthLimited
@@ -331,7 +348,12 @@ async function frameSections(
     root     : unknown,
     maxFrames: number,
     options  : { interactiveOnly: boolean; includeHidden: boolean },
-): Promise<{ sections: FrameSection[]; omitted: string[]; limited: boolean }> {
+): Promise<{
+    sections  : FrameSection[];
+    omitted   : string[];
+    limited   : boolean;
+    domLimited: boolean;
+}> {
     const docs = frameDocBackends(root);
 
     await context.frames.ensure(targetId).catch(() => undefined);
@@ -388,7 +410,73 @@ async function frameSections(
         }
     }
 
-    return { sections, omitted, limited };
+    const covered = new Set(docs.map((doc) => doc.frameId));
+    const remote = frames.filter((frame) => frame.isolated && !covered.has(frame.frameId));
+    let domLimited = false;
+
+    for (const frame of remote) {
+        if (sections.length + omitted.length >= maxFrames) {
+            omitted.push(frame.frameId);
+
+            continue;
+        }
+
+        const section = await isolatedSection(context, targetId, frame.frameId, options);
+
+        if (section === undefined) continue;
+
+        limited = limited || section.limited;
+        domLimited = domLimited || section.domLimited;
+
+        if (section.text !== "") {
+            sections.push({ frameId: frame.frameId, text: section.text, count: section.count });
+        }
+    }
+
+    return { sections, omitted, limited, domLimited };
+}
+
+async function isolatedSection(
+    context : ToolContext,
+    targetId: string,
+    frameId : string,
+    options : { interactiveOnly: boolean; includeHidden: boolean },
+): Promise<
+    { text: string; count: number; limited: boolean; domLimited: boolean } | undefined
+> {
+    const bound = bindAccess(context.access, frameId);
+    const tree: unknown = await bound.send(targetId, "Accessibility.getFullAXTree", {
+        depth: SNAPSHOT_MAX_AX_DEPTH,
+        frameId,
+    }).catch(() => undefined);
+
+    if (tree === undefined) return undefined;
+
+    const dom = await domInfo(bound, targetId).catch(() => undefined);
+    const capped = limitAxNodes(toAxNodes(tree), true);
+    const generation = context.frames.generation(targetId, frameId);
+    const owners = dom === undefined ? new Map<number, string>() : iframeFrameMap(dom.root);
+    const formatted = formatAxTree(capped.nodes, {
+        interactiveOnly: options.interactiveOnly,
+        includeHidden  : options.includeHidden,
+        uidFor         : (id) =>
+            context.elements.assign(targetId, [{
+                backendNodeId  : id,
+                frameId,
+                isolated       : true,
+                frameGeneration: generation,
+            }])[0],
+        domFor          : (id) => dom?.info.get(id),
+        startBackendNode: undefined,
+        frameFor        : (id) => owners.get(id),
+    });
+
+    return {
+        text      : formatted.text,
+        count     : formatted.nodeCount,
+        limited   : capped.limited,
+        domLimited: dom !== undefined && domDepthLimited(dom.root),
+    };
 }
 
 function frameSummaries(

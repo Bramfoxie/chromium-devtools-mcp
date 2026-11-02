@@ -161,7 +161,7 @@ export const inputUpload = defineTool({
             context.elements,
             targetId,
             args.target,
-            { frames: context.frames, allowIsolated: true },
+            { frames: context.frames },
         );
         const owner = elementAccess(context.access, element);
         const checked = await ensureActionable(owner, targetId, element, {

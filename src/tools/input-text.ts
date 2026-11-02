@@ -226,7 +226,7 @@ export const inputType = defineTool({
                 context.elements,
                 targetId,
                 args.target,
-                { frames: context.frames, allowIsolated: true },
+                { frames: context.frames },
             );
             const checked = await ensureActionable(
                 elementAccess(context.access, resolved),
@@ -414,7 +414,7 @@ export const inputKey = defineTool({
                 context.elements,
                 targetId,
                 args.target,
-                { frames: context.frames, allowIsolated: true },
+                { frames: context.frames },
             );
             const owner = elementAccess(context.access, resolved);
             const checked = await ensureActionable(owner, targetId, resolved, {
