@@ -4,7 +4,7 @@ import { defineTool } from "./define-tool.js";
 import { ensureNoDialog } from "./dialogs.js";
 import { ToolError } from "./errors.js";
 import { throwIfCancelled } from "./registry.js";
-import { pageOrigin } from "./storage-read.js";
+import { pageLocation } from "./storage-read.js";
 
 export const WRITE_MAX_ENTRIES = 100;
 
@@ -77,6 +77,10 @@ function partialFailure(action: string, applied: number, total: number, cause: u
     );
 }
 
+function unexpected(method: string): ToolError {
+    return new ToolError(`The browser sent an unexpected response to ${method}. Try the call again.`);
+}
+
 async function storageCount(
     access  : DaemonAccess,
     targetId: string,
@@ -89,14 +93,18 @@ async function storageCount(
         }),
     );
 
-    return parsed.success ? parsed.data.entries.length : 0;
+    if (!parsed.success) throw unexpected("DOMStorage.getDOMStorageItems");
+
+    return parsed.data.entries.length;
 }
 
 async function cookieCount(access: DaemonAccess, targetId: string): Promise<number> {
     const parsed = z.object({ cookies: z.array(z.object({ name: z.string() }).passthrough()) })
         .safeParse(await access.send(targetId, "Network.getCookies"));
 
-    return parsed.success ? parsed.data.cookies.length : 0;
+    if (!parsed.success) throw unexpected("Network.getCookies");
+
+    return parsed.data.cookies.length;
 }
 
 export const storageWrite = defineTool({
@@ -150,12 +158,10 @@ export const storageWrite = defineTool({
         await ensureNoDialog(context.dialogs, targetId);
         throwIfCancelled(context.signal);
 
-        const origin = await pageOrigin(context.access, targetId);
+        const { href: pageUrl, origin } = await pageLocation(context.access, targetId);
         const host = pageHostOf(origin);
 
         if (args.kind === "cookies") {
-            const pageUrl = await pageUrlOf(context, targetId);
-
             return writeCookies(
                 context.access,
                 targetId,
@@ -177,32 +183,6 @@ export const storageWrite = defineTool({
         );
     },
 });
-
-interface PageUrlContext {
-    access: DaemonAccess;
-}
-
-async function pageUrlOf(context: PageUrlContext, targetId: string): Promise<string> {
-    const tabs = await context.access.listTabs("owned");
-    const known = tabs.find((tab) => tab.targetId === targetId);
-
-    if (known !== undefined && known.url !== "") return known.url;
-
-    const result = await context.access.send(
-        targetId,
-        "Runtime.evaluate",
-        { expression: "location.href", returnByValue: true },
-        5000,
-    ).catch(() => undefined);
-    const parsed = z.object({
-        result: z.object({ value: z.unknown().optional() }),
-    }).safeParse(result);
-    const value = parsed.success ? parsed.data.result.value : undefined;
-
-    if (typeof value === "string" && value !== "") return value;
-
-    throw new ToolError("The page URL is not available, so cookies cannot be scoped to it.");
-}
 
 type WriteArgs = {
     action  : "set" | "remove" | "clear";
@@ -441,9 +421,10 @@ async function writeCookies(
             path  : z.string(),
         }).passthrough()),
     }).safeParse(await access.send(targetId, "Network.getCookies"));
-    const scoped = (parsed.success ? parsed.data.cookies : []).filter((cookie) =>
-        cookieDomainAllowed(cookie.domain, host),
-    );
+
+    if (!parsed.success) throw unexpected("Network.getCookies");
+
+    const scoped = parsed.data.cookies.filter((cookie) => cookieDomainAllowed(cookie.domain, host));
 
     for (const cookie of scoped) {
         throwIfCancelled(signal);

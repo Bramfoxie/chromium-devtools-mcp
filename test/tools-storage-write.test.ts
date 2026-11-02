@@ -194,7 +194,7 @@ describe("storage_write", () => {
         expect(fake.sent.map((call) => call.method)).toContain("DOMStorage.clear");
     });
 
-    it("sets cookies with the page URL and matching domains", async () => {
+    it("sets cookies with the live page URL and matching domains", async () => {
         const { fake, runtime } = setup();
 
         fake.respond = (tab, method) => {
@@ -219,7 +219,7 @@ describe("storage_write", () => {
         expect(result.isError).not.toBe(true);
         expect(JSON.stringify(result.structuredContent)).not.toContain("secret");
         expect(fake.sent.find((call) => call.method === "Network.setCookie")?.params)
-            .toMatchObject({ name: "sid", value: "secret", url: "https://a.example/page", domain: "a.example" });
+            .toMatchObject({ name: "sid", value: "secret", url: "https://a.example/p", domain: "a.example" });
     });
 
     it("refuses a foreign cookie domain", async () => {
@@ -314,7 +314,7 @@ describe("storage_write", () => {
         expect(textOf(result)).toContain("was refused by the browser");
     });
 
-    it("removes cookies with the page URL", async () => {
+    it("removes cookies with the live page URL", async () => {
         const { fake, runtime } = setup();
 
         fake.respond = (tab, method) => {
@@ -333,7 +333,7 @@ describe("storage_write", () => {
 
         expect(result.structuredContent).toMatchObject({ changed: 1 });
         expect(fake.sent.find((call) => call.method === "Network.deleteCookies")?.params)
-            .toMatchObject({ name: "sid", url: "https://a.example/page" });
+            .toMatchObject({ name: "sid", url: "https://a.example/p" });
     });
 
     it("clears cookies one by one with confirm", async () => {
@@ -378,6 +378,28 @@ describe("storage_write", () => {
 
         expect(cleared.structuredContent).toMatchObject({ changed: 2, remaining: 0 });
         expect(fake.sent.filter((call) => call.method === "Network.deleteCookies")).toHaveLength(2);
+    });
+
+    it("fails a cookie clear when the cookie list cannot be read", async () => {
+        const { fake, runtime } = setup();
+
+        fake.respond = (tab, method) => {
+            if (method === "Runtime.evaluate") return { result: { value: "https://a.example/p" } };
+            if (method === "Network.getCookies") return { unexpected: true };
+
+            return {};
+        };
+
+        const result = await runTool(
+            storageWrite,
+            { kind: "cookies", action: "clear", confirm: true },
+            extra(),
+            runtime,
+        );
+
+        expect(result.isError).toBe(true);
+        expect(textOf(result)).toContain("Network.getCookies");
+        expect(fake.sent.map((call) => call.method)).not.toContain("Network.deleteCookies");
     });
 
     it("rejects storage fields for cookies and cookie fields for storage", async () => {
