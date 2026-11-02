@@ -266,13 +266,6 @@ describe("DialogState", () => {
         expect(state.open("tab2")).toBeUndefined();
         expect(state.policyOf("tab2")).toBe("none");
     });
-
-    it("treats navigation as the dialog going away", () => {
-        const { state } = dialogs();
-
-        state.navigated("tab1");
-        expect(state.historyOf("tab1")).toEqual([]);
-    });
 });
 
 describe("dialog precondition", () => {

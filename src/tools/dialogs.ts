@@ -198,15 +198,6 @@ export class DialogState {
         return (this.tabs.get(tab)?.history ?? []).map((entry) => ({ ...entry }));
     }
 
-    navigated(tab: string): void {
-        const state = this.tabs.get(tab);
-
-        if (state?.open === undefined) return;
-
-        this.record(state, state.open, "closed");
-        state.open = undefined;
-    }
-
     async resolve(
         tab       : string,
         accept    : boolean,
