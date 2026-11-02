@@ -67,7 +67,7 @@ Each session keeps its own tab selection. `new_tab` opens a background tab and s
 - `input_hover`: hover an element with trusted CDP mouse events, so hover styles and menus react.
 - `input_type`: type text into a field, with `clear` and `submit` options. Passwords are typed but never echoed back.
 - `input_key`: press a key or chord like `Enter` or `ControlOrMeta+C`. `ControlOrMeta` resolves from the browser platform.
-- `input_scroll`: scroll by wheel deltas, to the top or bottom, or an element into view. Falls back to script scrolling only when the wheel provably moved nothing, and reports which ran.
+- `input_scroll`: scroll by wheel deltas, to the top or bottom, or an element into view. Reports honestly when the wheel left the window position unchanged.
 - `input_select`: choose options of a `select` by value, label or index.
 - `input_upload`: attach local files to a file input. This is the most sensitive tool: it sends local files to a web page. Paths are validated on the server machine (absolute, existing regular readable files under 100 MiB, at most 20), symlinks are followed, and results carry file names and sizes only, never contents.
 - `console_logs`: read console messages, uncaught exceptions and browser messages of a tab, with level and text filters, paging and clear.

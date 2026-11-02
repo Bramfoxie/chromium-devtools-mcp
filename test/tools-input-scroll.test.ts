@@ -215,6 +215,7 @@ describe("input_scroll", () => {
 
         expect(result.isError).not.toBe(true);
         expect(result.structuredContent).toMatchObject({ method: "wheel", y: 0 });
+        expect(JSON.stringify(result.structuredContent)).toContain("window did not move");
         expect(
             fake.sent.filter((entry) =>
                 entry.method === "Runtime.evaluate" &&

@@ -96,7 +96,7 @@ export function wheelParams(
 
 export interface WheelScrollResult {
     position: ScrollPosition;
-    method  : "wheel" | "script";
+    method  : "wheel";
 }
 
 export function scrollMoved(before: ScrollPosition, after: ScrollPosition): boolean {
@@ -118,13 +118,7 @@ async function wheelScroll(
     // stable instead of trusting one fixed sleep.
     const after = await settleScroll(context, targetId);
 
-    // Only the window position is reported: a container under the wheel point
-    // may have scrolled while the window stayed. Never apply the script
-    // fallback on top of a scroll the wheel already caused.
-    if (scrollMoved(before, after)) return { position: after, method: "wheel" };
-
-    // The wheel moved the window nothing: report it instead of double
-    // scrolling the page by script.
+    // Only the window position is reported: a container under the wheel point may scroll instead.
     return { position: after, method: "wheel" };
 }
 
@@ -187,7 +181,7 @@ export const inputScroll = defineTool({
         ok    : z.boolean().describe("Whether the scroll ran."),
         target: targetSummarySchema.optional().describe("The element scrolled into view, when a target was given."),
         effect: z.string().describe("Short summary of what happened."),
-        method: z.enum(["wheel", "script", "intoView"]).describe("How the page was scrolled: trusted wheel events, script fallback, or scrollIntoView for an element."),
+        method: z.enum(["wheel", "intoView"]).describe("How the page was scrolled: trusted wheel events or scrollIntoView for an element."),
         x     : z.number().describe("Horizontal scroll position after the scroll."),
         y     : z.number().describe("Vertical scroll position after the scroll."),
         maxX  : z.number().describe("Maximum horizontal scroll position."),
@@ -232,9 +226,13 @@ export const inputScroll = defineTool({
         throwIfCancelled(context.signal);
         const scrolled = await wheelScroll(context, targetId, state, point, deltaX, deltaY);
 
+        const moved = scrollMoved(state, scrolled.position);
+
         return {
             ok    : true,
-            effect: `The page was scrolled by (${deltaX}, ${deltaY}).`,
+            effect: moved
+                ? `The page was scrolled by (${deltaX}, ${deltaY}).`
+                : `The wheel event was sent by (${deltaX}, ${deltaY}) but the window did not move. A scrollable container under the point may have scrolled, or the page is at its edge.`,
             method: scrolled.method,
             x     : scrolled.position.x,
             y     : scrolled.position.y,
@@ -302,7 +300,7 @@ async function scrollToEdge(
 ): Promise<{
     ok    : boolean;
     effect: string;
-    method: "wheel" | "script";
+    method: "wheel";
     x     : number;
     y     : number;
     maxX  : number;
@@ -311,7 +309,7 @@ async function scrollToEdge(
     const atEdge = (position: ScrollPosition): boolean =>
         to === "top" ? position.y <= 0 : position.y >= position.maxY;
     let current = before;
-    let method: "wheel" | "script" = "wheel";
+    const method = "wheel" as const;
 
     for (let wheel = 0; wheel < EDGE_WHEEL_LIMIT && !atEdge(current); wheel += 1) {
         const remaining = to === "top" ? -current.y : current.maxY - current.y;
@@ -320,7 +318,6 @@ async function scrollToEdge(
         const progressed = scrollMoved(current, scrolled.position);
 
         current = scrolled.position;
-        method = scrolled.method;
 
         if (!progressed) break;
     }
