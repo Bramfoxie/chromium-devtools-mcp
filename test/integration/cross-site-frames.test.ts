@@ -91,11 +91,11 @@ beforeAll(async () => {
         "/xnested",
         html(`<iframe name="outer" style="margin:30px 0 0 25px;border:3px solid red;padding:5px;width:400px;height:300px" src="${env.other.origin}/nest"></iframe>`),
     );
-}, 60_000);
+});
 
 afterAll(async () => {
     await env?.stop();
-}, 60_000);
+});
 
 async function textOf(tab: string, selector: string, frame: string): Promise<unknown> {
     const read = await env.ok("dom_query", { tab, selector, frame, attributes: [] });
@@ -110,7 +110,7 @@ async function frameIdOf(tab: string, urlEnd: string): Promise<string> {
     return String(found?.frameId);
 }
 
-describe.skipIf(!present)("cross-site iframe in a real browser", { timeout: 30_000 }, () => {
+describe.skipIf(!present)("cross-site iframe in a real browser", () => {
     it("dom_snapshot lists the cross-site frame as isolated with its url and parent", async () => {
         const tab = await crossTab();
         const snap = await env.ok("dom_snapshot", { tab });

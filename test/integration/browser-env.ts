@@ -190,6 +190,8 @@ export async function startEnv(): Promise<Env> {
         return outcome.data;
     };
 
+    await ok("list_tabs");
+
     return {
         fixture,
         other,

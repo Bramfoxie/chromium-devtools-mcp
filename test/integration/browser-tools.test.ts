@@ -43,11 +43,11 @@ beforeAll(async () => {
     for (const [route, body] of Object.entries(PAGES)) {
         env.fixture.pages.set(route, route === "/data" ? { body, status: 200, type: "application/json" } : html(body));
     }
-}, 60_000);
+});
 
 afterAll(async () => {
     await env?.stop();
-}, 60_000);
+});
 
 describe.skipIf(!present)("real browser", () => {
     it("new_tab with a url returns after the page committed and loaded", async () => {
@@ -289,7 +289,7 @@ describe.skipIf(!present)("real browser", () => {
         });
 
         expect(info.maxY).toBeGreaterThan(90_000);
-    }, 60_000);
+    });
 
     it("input_type with submit that navigates returns ok", async () => {
         await env.open("/form");
@@ -431,7 +431,7 @@ describe.skipIf(!present)("real browser", () => {
 
         expect(size.height).toBeGreaterThan(800);
         expect(size.height).toBeLessThan(1000);
-    }, 60_000);
+    });
 });
 
 function pngSize(data: string | undefined): { width: number; height: number } {
