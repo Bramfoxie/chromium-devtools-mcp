@@ -251,6 +251,21 @@ export async function revealChain(chain: FrameChain, tab: string, rect: Rect): P
     }
 }
 
+const SETTLE_EXPRESSION = `new Promise((resolve) => {
+  const timer = setTimeout(resolve, 150);
+  requestAnimationFrame(() => requestAnimationFrame(() => { clearTimeout(timer); resolve(true); }));
+})`;
+
+export async function settleRendering(accesses: DaemonAccess[], tab: string): Promise<void> {
+    for (const access of accesses) {
+        await access.send(tab, "Runtime.evaluate", {
+            expression   : SETTLE_EXPRESSION,
+            awaitPromise : true,
+            returnByValue: true,
+        }).catch(() => undefined);
+    }
+}
+
 const COVER_EXPRESSION = `function (x, y) {
   const doc = this.ownerDocument;
   const el = doc.elementFromPoint(x, y);

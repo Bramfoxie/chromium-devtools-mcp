@@ -6,6 +6,15 @@ let env: Env;
 
 type Row = Record<string, unknown>;
 
+const POINTER = `<div style="height:30px"></div>
+<button id="b" style="margin-left:20px;width:80px;height:40px" onclick="this.textContent='clicked'">b</button>
+<button id="h" style="margin-left:20px;width:80px;height:40px" onmouseover="this.textContent='hovered'">h</button>`;
+
+const nest = (deep: string) =>
+    `<div style="height:20px"></div><iframe name="inner" style="margin-left:15px;border:2px solid blue;width:250px;height:150px" src="${deep}"></iframe>`;
+
+const DEEP = `<button id="d" style="margin:10px;width:60px;height:30px" onclick="this.textContent='deepclicked'">d</button>`;
+
 const INNER = `<h1 id="inner">cross</h1><button id="go" onclick="this.textContent='clicked'">go</button>
 <script>addEventListener("message",()=>{fetch("/xdata");console.log("oopif-message")})</script>`;
 
@@ -13,13 +22,15 @@ async function trigger(tab: string): Promise<void> {
     await env.ok("js_evaluate", { tab, expression: "frames[0].postMessage('go', '*'); 1" });
 }
 
-async function crossTab(): Promise<string> {
-    const tab = await env.open("/xframe");
+async function crossTab(route = "/xframe", count = 1): Promise<string> {
+    const tab = await env.open(route);
 
     await eventually(async () => {
         const snap = await env.ok("dom_snapshot", { tab });
 
-        return (snap.frames as Row[]).some((frame) => frame.isolated === true) ? true : undefined;
+        return (snap.frames as Row[]).filter((frame) => frame.isolated === true).length >= count
+            ? true
+            : undefined;
     });
 
     return tab;
@@ -35,11 +46,35 @@ beforeAll(async () => {
         "/xframe",
         html(`<iframe name="cross" id="cross" src="${env.other.origin}/inner"></iframe>`),
     );
+    env.other.pages.set("/pointer", html(POINTER));
+    env.other.pages.set("/nest", html(nest(`${env.fixture.origin}/deep`)));
+    env.fixture.pages.set("/deep", html(DEEP));
+    env.fixture.pages.set(
+        "/xpointer",
+        html(`<div style="height:1400px"></div><iframe name="cross" style="margin-left:40px;border:4px solid red;padding:6px;width:320px;height:240px" src="${env.other.origin}/pointer"></iframe><div style="height:600px"></div>`),
+    );
+    env.fixture.pages.set(
+        "/xnested",
+        html(`<iframe name="outer" style="margin:30px 0 0 25px;border:3px solid red;padding:5px;width:400px;height:300px" src="${env.other.origin}/nest"></iframe>`),
+    );
 }, 60_000);
 
 afterAll(async () => {
     await env?.stop();
 }, 60_000);
+
+async function textOf(tab: string, selector: string, frame: string): Promise<unknown> {
+    const read = await env.ok("dom_query", { tab, selector, frame, attributes: [] });
+
+    return (read.matches as Row[])[0]?.text;
+}
+
+async function frameIdOf(tab: string, urlEnd: string): Promise<string> {
+    const snap = await env.ok("dom_snapshot", { tab });
+    const found = (snap.frames as Row[]).find((frame) => String(frame.url).endsWith(urlEnd));
+
+    return String(found?.frameId);
+}
 
 describe.skipIf(!present)("cross-site iframe in a real browser", { timeout: 30_000 }, () => {
     it("dom_snapshot lists the cross-site frame as isolated with its url and parent", async () => {
@@ -82,10 +117,6 @@ describe.skipIf(!present)("cross-site iframe in a real browser", { timeout: 30_0
         const uid = String((await textOf())?.uid);
 
         await env.ok("click", { tab, target: { uid } });
-        const input = await env.call("input_click", { tab, target: { selector: "#go", frame } });
-
-        expect(input.isError).toBe(true);
-        expect(input.text).toContain("cross-site frame");
     });
 
     it("network_requests records a request made by the cross-site frame", async () => {
@@ -139,5 +170,50 @@ describe.skipIf(!present)("cross-site iframe in a real browser", { timeout: 30_0
         expect((listed.rules as Row[])[0]).toMatchObject({ applications: 1 });
         expect(env.other.hits.get("/xdata") ?? 0).toBe(before);
         await env.ok("network_mock", { tab, action: "clear" });
+    });
+
+    it("input_click clicks an element in an iframe that starts below the viewport", async () => {
+        const tab = await crossTab("/xpointer");
+        const frame = "iframe[name=cross]";
+        const outcome = await env.ok("input_click", { tab, target: { selector: "#b", frame } });
+
+        expect(outcome.ok).toBe(true);
+        expect(await textOf(tab, "#b", frame)).toBe("clicked");
+        const scrolled = await env.ok("js_evaluate", { tab, expression: "window.scrollY" });
+
+        expect(Number(scrolled.value)).toBeGreaterThan(0);
+    });
+
+    it("input_click reaches an element two cross-site frames deep", async () => {
+        const tab = await crossTab("/xnested", 2);
+        const frame = await frameIdOf(tab, "/deep");
+        const outcome = await env.ok("input_click", { tab, target: { selector: "#d", frame } });
+
+        expect(outcome.ok).toBe(true);
+        expect(await textOf(tab, "#d", frame)).toBe("deepclicked");
+    });
+
+    it("input_hover hovers an element of the cross-site frame", async () => {
+        const tab = await crossTab("/xpointer");
+        const frame = "iframe[name=cross]";
+        const outcome = await env.ok("input_hover", { tab, target: { selector: "#h", frame } });
+
+        expect(outcome.hovered).toBe(true);
+        expect(await textOf(tab, "#h", frame)).toBe("hovered");
+    });
+
+    it("input_click refuses when an element of the parent page covers the iframe", async () => {
+        const tab = await crossTab("/xpointer");
+        const frame = "iframe[name=cross]";
+
+        await env.ok("js_evaluate", {
+            tab,
+            expression: "const o = document.createElement('div'); o.id = 'veil'; o.style.cssText = 'position:fixed;left:0;top:0;width:100%;height:100%'; document.body.append(o); 1",
+        });
+        const refused = await env.call("input_click", { tab, target: { selector: "#b", frame } });
+
+        expect(refused.isError).toBe(true);
+        expect(refused.text).toContain("veil");
+        expect(await textOf(tab, "#b", frame)).toBe("b");
     });
 });

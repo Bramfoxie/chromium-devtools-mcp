@@ -154,6 +154,30 @@ describe("hitTest", () => {
         });
     });
 
+    it("marks the call as local to the frame and does not retry through the tab", async () => {
+        const fake = actionableFake({});
+
+        await expect(
+            hitTest(fake.asAccess(), "tab1", element, { x: 12, y: 34 }, true),
+        ).resolves.toEqual({ kind: "hit" });
+        const call = fake.sent.find((entry) => entry.method === "Runtime.callFunctionOn");
+
+        expect(call?.params).toMatchObject({
+            arguments: [{ objectId: "obj-7" }, { value: 12 }, { value: 34 }, { value: true }],
+        });
+    });
+
+    it("surfaces a script error of a local hit test instead of probing the tab", async () => {
+        const fake = new FakeAccess();
+
+        fake.respond = () => ({ result: { type: "object", subtype: "error" } });
+
+        await expect(
+            hitTest(fake.asAccess(), "tab1", element, { x: 12, y: 34 }, true),
+        ).rejects.toThrow("unexpected hit test result");
+        expect(fake.sent.some((entry) => entry.method === "Runtime.evaluate")).toBe(false);
+    });
+
     it("reports the covering element", async () => {
         const fake = actionableFake({
             hit: { kind: "covered", tag: "div", id: "overlay", classes: ["modal"] },
@@ -479,11 +503,17 @@ function hitFixture(): FakeDocument {
     return document;
 }
 
-function runHitExpression(target: FakeElement, x = 60, y = 45): HitScriptVerdict {
-    const value: unknown = runInNewContext(`(${HIT_EXPRESSION})(element, x, y)`, {
+function runHitExpression(
+    target: FakeElement,
+    x = 60,
+    y = 45,
+    local = false,
+): HitScriptVerdict {
+    const value: unknown = runInNewContext(`(${HIT_EXPRESSION})(element, x, y, local)`, {
         element: target,
         x,
         y,
+        local,
     });
 
     return JSON.parse(JSON.stringify(value)) as HitScriptVerdict;
@@ -526,6 +556,23 @@ describe("HIT_EXPRESSION in a real JavaScript engine", () => {
             id     : "panel",
             classes: [],
         });
+    });
+
+    it("stops at the frame root when the parent window is cross-origin and the call is local", () => {
+        const document = hitFixture();
+        const target = new FakeElement(document, "button", "save");
+        const view = document.defaultView as FakeView;
+
+        view.parent = new FakeView(new FakeDocument());
+        Object.defineProperty(view.parent, "document", {
+            get() {
+                throw new Error("SecurityError");
+            },
+        });
+        document.topHit = target;
+
+        expect(runHitExpression(target, 60, 45, true)).toEqual({ kind: "hit" });
+        expect(() => runHitExpression(target, 60, 45, false)).toThrow("SecurityError");
     });
 
     it("reports a hidden target as hidden", () => {

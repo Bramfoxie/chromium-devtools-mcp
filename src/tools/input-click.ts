@@ -10,6 +10,7 @@ import {
 import { clickPointOf, type ClickPoint, TOP_LEVEL_ORIGIN } from "./coordinates.js";
 import { defineTool, type ToolContext } from "./define-tool.js";
 import { ensureNoDialog } from "./dialogs.js";
+import { frameChain, mapPoint, measureChain, outerHitTest, revealChain, settleRendering } from "./frame-geometry.js";
 import {
     elementTargetSchema,
     type ElementTarget,
@@ -119,13 +120,6 @@ async function resolveActionable(
     return { element, checked, uid: target.uid };
 }
 
-function pointOf(
-    box     : Rect,
-    position: { x: number; y: number } | undefined,
-): ClickPoint {
-    return clickPointOf(box, position, TOP_LEVEL_ORIGIN);
-}
-
 async function mousePoint(
     context : ToolContext,
     targetId: string,
@@ -134,14 +128,26 @@ async function mousePoint(
     verb    : string,
     force   : boolean,
 ): Promise<{ point: ClickPoint; state: ElementState; box: Rect }> {
-    const scrolled = await ensureActionable(context.access, targetId, element, {
+    const owner = elementAccess(context.access, element);
+    const scrolled = await ensureActionable(owner, targetId, element, {
         checkDisabled: true,
     });
-    const point = pointOf(scrolled.box, position);
+    const local = clickPointOf(scrolled.box, position, TOP_LEVEL_ORIGIN);
 
-    if (force) return { point, state: scrolled.state, box: scrolled.box };
+    if (element.isolated === true && element.frameId !== undefined) {
+        const point = await isolatedPoint(context, targetId, element.frameId, scrolled.box, local, {
+            owner,
+            element,
+            verb,
+            force,
+        });
 
-    const hit = await hitTest(context.access, targetId, element, point);
+        return { point, state: scrolled.state, box: scrolled.box };
+    }
+
+    if (force) return { point: local, state: scrolled.state, box: scrolled.box };
+
+    const hit = await hitTest(context.access, targetId, element, local);
 
     if (hit.kind === "covered") throw new ToolError(coveredMessage(hit.by, verb));
 
@@ -151,7 +157,51 @@ async function mousePoint(
         );
     }
 
-    return { point, state: scrolled.state, box: scrolled.box };
+    return { point: local, state: scrolled.state, box: scrolled.box };
+}
+
+async function isolatedPoint(
+    context : ToolContext,
+    targetId: string,
+    frameId : string,
+    box     : Rect,
+    local   : ClickPoint,
+    request : { owner: DaemonAccess; element: ResolvedElement; verb: string; force: boolean },
+): Promise<ClickPoint> {
+    const chain = await frameChain(context.access, context.frames, targetId, frameId);
+
+    await revealChain(chain, targetId, box);
+    await settleRendering(
+        [context.access, ...chain.links.map((link) => link.access), request.owner],
+        targetId,
+    );
+
+    const measured = await measureChain(chain, targetId);
+    const point = mapPoint(measured.toTop, local);
+
+    if (request.force) return point;
+
+    const inner = await hitTest(request.owner, targetId, request.element, local, true);
+
+    if (inner.kind === "covered") throw new ToolError(coveredMessage(inner.by, request.verb));
+
+    if (inner.kind === "outside") {
+        throw new ToolError(
+            "The target point lies outside the frame viewport. Scroll the frame and try again.",
+        );
+    }
+
+    const outer = await outerHitTest(chain, measured, targetId, local);
+
+    if (outer.kind === "covered") throw new ToolError(coveredMessage(outer.by, request.verb));
+
+    if (outer.kind === "outside") {
+        throw new ToolError(
+            "The target point lies outside the page viewport. Scroll the page and try again.",
+        );
+    }
+
+    return point;
 }
 
 export const click = defineTool({
@@ -255,7 +305,7 @@ export const inputClick = defineTool({
             context.elements,
             targetId,
             args.target,
-            { frames: context.frames },
+            { frames: context.frames, allowIsolated: true },
         );
         const { point, state } = await mousePoint(
             context,
@@ -364,7 +414,7 @@ export const inputHover = defineTool({
             context.elements,
             targetId,
             args.target,
-            { frames: context.frames },
+            { frames: context.frames, allowIsolated: true },
         );
         const { point, state } = await mousePoint(
             context,
@@ -392,7 +442,7 @@ export const inputHover = defineTool({
         }
 
         const parsed = hoverSchema.safeParse(
-            await context.access.send(targetId, "Runtime.callFunctionOn", {
+            await elementAccess(context.access, element).send(targetId, "Runtime.callFunctionOn", {
                 functionDeclaration: HOVER_EXPRESSION,
                 objectId           : element.objectId,
                 arguments          : [{ objectId: element.objectId }],

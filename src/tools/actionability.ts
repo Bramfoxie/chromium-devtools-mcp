@@ -93,7 +93,7 @@ export const STATE_EXPRESSION = `function (element) {
   };
 }`;
 
-export const HIT_EXPRESSION = `function (element, x, y) {
+export const HIT_EXPRESSION = `function (element, x, y, local) {
   const px = Number(x), py = Number(y);
   const doc = element.ownerDocument;
   if (doc === null || doc.defaultView === null) return { kind: "outside" };
@@ -108,7 +108,12 @@ export const HIT_EXPRESSION = `function (element, x, y) {
   };
   if (!shown(element)) return { kind: "hidden" };
   let top = doc.defaultView;
-  while (top.parent !== top) top = top.parent;
+  while (top.parent !== top) {
+    if (local === true) {
+      try { void top.parent.document; } catch (error) { break; }
+    }
+    top = top.parent;
+  }
   const topDoc = top.document;
   let scope = topDoc;
   let sx = px, sy = py;
@@ -246,6 +251,7 @@ export async function hitTest(
     tab    : string,
     element: ResolvedElement,
     point  : { x: number; y: number },
+    local  : boolean = false,
 ): Promise<HitResult> {
     let result: unknown;
 
@@ -257,11 +263,12 @@ export async function hitTest(
                 { objectId: element.objectId },
                 { value: point.x },
                 { value: point.y },
+                ...(local ? [{ value: true }] : []),
             ],
             returnByValue: true,
         });
     } catch (error) {
-        if (isCrossOriginHitTest(error)) {
+        if (!local && isCrossOriginHitTest(error)) {
             return isolatedHitTest(access, tab, point);
         }
 
@@ -271,7 +278,7 @@ export async function hitTest(
     const parsed = hitSchema.safeParse(result);
 
     if (!parsed.success || parsed.data.result.value === undefined) {
-        if (parsed.success && parsed.data.result.subtype === "error") {
+        if (!local && parsed.success && parsed.data.result.subtype === "error") {
             return isolatedHitTest(access, tab, point);
         }
 

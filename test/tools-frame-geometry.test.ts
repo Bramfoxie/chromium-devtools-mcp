@@ -11,6 +11,7 @@ import {
     outerHitTest,
     ownerGeometry,
     revealChain,
+    settleRendering,
 } from "../src/tools/frame-geometry.js";
 import { FakeAccess } from "./helpers/fake-access.js";
 
@@ -251,5 +252,23 @@ describe("outerHitTest", () => {
         const measured = await measureChain(chain, "tab1");
 
         expect(await outerHitTest(chain, measured, "tab1", { x: 5000, y: 5000 })).toEqual({ kind: "outside" });
+    });
+});
+
+describe("settleRendering", () => {
+    it("waits for animation frames in every session and ignores a session that fails", async () => {
+        const fake = new FakeAccess();
+
+        fake.failSend = (_tab, method) =>
+            method === "Runtime.evaluate" && fake.sent.length === 1
+                ? new RpcError(ErrorCode.cdpError, "Cannot find context with specified id")
+                : undefined;
+        fake.respond = () => ({ result: { type: "boolean", value: true } });
+
+        await settleRendering([fake.asAccess(), fake.asAccess()], "tab1");
+
+        expect(fake.sent.map((call) => call.method)).toEqual(["Runtime.evaluate", "Runtime.evaluate"]);
+        expect(fake.sent[0]?.params).toMatchObject({ awaitPromise: true, returnByValue: true });
+        expect(String(fake.sent[0]?.params?.expression)).toContain("requestAnimationFrame");
     });
 });
