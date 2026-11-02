@@ -24,6 +24,7 @@ const INTERNAL_MESSAGE = "The daemon failed to handle the request.";
 export interface ClientConnection {
     readonly clientName: string;
     sendEvent(event: string, params?: unknown): void;
+    sendFinalEvent(event: string, params?: unknown): Promise<void>;
     close(): void;
 }
 
@@ -113,6 +114,18 @@ export function acceptConnection(socket: net.Socket, options: AcceptOptions): vo
         socket.write(line);
     };
 
+    const writeFinal = (message: unknown): Promise<void> =>
+        new Promise((resolve) => {
+            if (socket.destroyed || !socket.writable) {
+                resolve();
+
+                return;
+            }
+
+            socket.end(encodeMessage(message, MAX_RESPONSE_BYTES), () => resolve());
+            socket.once("close", () => resolve());
+        });
+
     const reply = (id: number, outcome: { result: unknown } | { error: RpcError }) => {
         const message =
             "error" in outcome
@@ -180,6 +193,15 @@ export function acceptConnection(socket: net.Socket, options: AcceptOptions): vo
                     write({ event, params: eventParams });
                 } catch (error) {
                     logDaemon(`could not encode event ${quoted(event)}: ${describeError(error)}`);
+                }
+            },
+            sendFinalEvent: (event, eventParams) => {
+                try {
+                    return writeFinal({ event, params: eventParams });
+                } catch (error) {
+                    logDaemon(`could not encode event ${quoted(event)}: ${describeError(error)}`);
+
+                    return Promise.resolve();
                 }
             },
             close: () => socket.destroy(),

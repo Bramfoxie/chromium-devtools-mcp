@@ -1,4 +1,5 @@
 import net from "node:net";
+import { Duplex } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
     type AcceptOptions,
@@ -764,5 +765,55 @@ describe("closing", () => {
             "other-client",
             "test-client",
         ]);
+    });
+});
+
+class FlushingPipe extends Duplex {
+    readonly delivered: string[] = [];
+
+    override _read(): void {}
+
+    override _write(
+        chunk    : Buffer,
+        _encoding: BufferEncoding,
+        done     : (error?: Error | null) => void,
+    ): void {
+        setTimeout(() => {
+            if (this.destroyed) return;
+
+            this.delivered.push(chunk.toString("utf8"));
+            done();
+        }, 10);
+    }
+
+    override _destroy(error: Error | null, done: (error?: Error | null) => void): void {
+        done(error);
+    }
+}
+
+describe("final events", () => {
+    it("delivers a final event over a pipe that discards unflushed data when destroyed", async () => {
+        const pipe = new FlushingPipe();
+        const ready: ClientConnection[] = [];
+
+        acceptConnection(pipe as unknown as net.Socket, {
+            token  : "t".repeat(64),
+            handler: async () => undefined,
+            onReady: (connection) => ready.push(connection),
+        });
+        const hello = { id: 1, method: "hello", params: { token: "t".repeat(64), clientName: "c" } };
+
+        pipe.push(`${JSON.stringify(hello)}\n`);
+        await vi.waitFor(() => expect(ready).toHaveLength(1));
+        await vi.waitFor(() => expect(pipe.delivered).toHaveLength(1));
+
+        await ready[0]?.sendFinalEvent("daemon.failed", { message: "no browser" });
+        pipe.destroy();
+
+        expect(pipe.delivered).toHaveLength(2);
+        expect(JSON.parse(pipe.delivered[1] ?? "")).toEqual({
+            event : "daemon.failed",
+            params: { message: "no browser" },
+        });
     });
 });

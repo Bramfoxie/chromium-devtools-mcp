@@ -254,7 +254,7 @@ export async function runDaemon(
     const stop = (reason: StopReason, error?: Error): Promise<DaemonOutcome> => {
         stopping ??= (async () => {
             controller.abort();
-            if (reason === "failed" && error) daemon.announceFailure(error.message);
+            if (reason === "failed" && error) await daemon.announceFailure(error.message);
 
             await quietly("close the sessions", () => daemon.shutdown());
             await quietly("stop the browser", () =>

@@ -12,6 +12,8 @@ import {
 } from "./server.js";
 import { SessionRegistry } from "./sessions.js";
 
+const FAILURE_FLUSH_TIMEOUT_MS = 1000;
+
 export interface DaemonOptions {
     token          : string;
     allowFocus     : boolean;
@@ -93,11 +95,23 @@ export class Daemon {
         });
     };
 
-    announceFailure(reason: string): void {
+    async announceFailure(
+        reason        : string,
+        flushTimeoutMs: number = FAILURE_FLUSH_TIMEOUT_MS,
+    ): Promise<void> {
         const message = boundedFailureMessage(reason);
+        const sent = [...this.connections].map((connection) =>
+            connection.sendFinalEvent(DaemonEvent.failed, { message }),
+        );
+        let timer: NodeJS.Timeout | undefined;
+        const bound = new Promise<void>((resolve) => {
+            timer = setTimeout(resolve, flushTimeoutMs);
+        });
 
-        for (const connection of this.connections) {
-            connection.sendEvent(DaemonEvent.failed, { message });
+        try {
+            await Promise.race([Promise.all(sent), bound]);
+        } finally {
+            clearTimeout(timer);
         }
     }
 
