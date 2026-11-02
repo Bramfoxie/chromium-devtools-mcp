@@ -114,6 +114,10 @@ export function shapeRemoteValue(remote: RemoteObject, maxChars: number): Shaped
     const hasValue = "value" in remote && remote.value !== undefined &&
         (remote.objectId === undefined || remote.subtype === "null" || remote.subtype === "array" || remote.type !== "object");
 
+    if (remote.type === "undefined") {
+        return { type, value: undefined, truncated: false, totalLength: 0 };
+    }
+
     if (!hasValue) {
         const text = remote.unserializableValue ?? described;
         const shaped = truncateText(text, maxChars);
@@ -142,11 +146,12 @@ export function shapeRemoteValue(remote: RemoteObject, maxChars: number): Shaped
 }
 
 const evaluatedOutput = z.strictObject({
-    ok       : z.boolean().describe("False when the page threw an exception instead of returning a value."),
-    type     : z.string().optional().describe("CDP type of the result, with the subtype when present."),
-    value    : z.unknown().optional().describe("The value, or a truncated string with a marker when it exceeds maxResultChars."),
-    truncated: z.boolean().optional().describe("Whether the value was truncated."),
-    exception: z.strictObject({
+    ok         : z.boolean().describe("False when the page threw an exception instead of returning a value."),
+    type       : z.string().optional().describe("CDP type of the result, with the subtype when present."),
+    value      : z.unknown().optional().describe("The value, or a truncated string with a marker when it exceeds maxResultChars. Absent when the result is undefined, which type reports."),
+    truncated  : z.boolean().optional().describe("Whether the value was truncated."),
+    totalLength: z.number().int().optional().describe("Characters in the full value, present only when truncated."),
+    exception  : z.strictObject({
         text        : z.string().describe("Exception text from the page."),
         lineNumber  : z.number().optional().describe("Line number of the exception, when known."),
         columnNumber: z.number().optional().describe("Column number of the exception, when known."),
@@ -275,8 +280,9 @@ export const jsEvaluate = defineTool({
         return {
             ok       : true as const,
             type     : shaped.type,
-            value    : shaped.value,
             truncated: shaped.truncated,
+            ...(shaped.truncated ? { totalLength: shaped.totalLength } : {}),
+            ...(shaped.value === undefined ? {} : { value: shaped.value }),
         };
     },
 });

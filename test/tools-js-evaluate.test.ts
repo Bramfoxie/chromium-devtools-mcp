@@ -102,9 +102,11 @@ describe("shapeRemoteValue", () => {
         expect(
             shapeRemoteValue({ type: "function", description: "function () { [native code] }" }, 50000),
         ).toMatchObject({ type: "function", value: "function () { [native code] }" });
-        expect(shapeRemoteValue({ type: "undefined" }, 50000)).toMatchObject({
-            type : "undefined",
-            value: "undefined",
+        expect(shapeRemoteValue({ type: "undefined" }, 50000)).toEqual({
+            type       : "undefined",
+            value      : undefined,
+            truncated  : false,
+            totalLength: 0,
         });
         expect(shapeRemoteValue({ type: "object", subtype: "node", description: "div#main" }, 5)).toMatchObject({
             type     : "node",
@@ -218,6 +220,19 @@ describe("js_evaluate", () => {
         ]);
     });
 
+    it("reports an undefined result by type without a value", async () => {
+        const fake = new FakeAccess();
+
+        fake.respond = () => ({ result: { type: "undefined" } });
+        const { runtime } = setup(fake);
+
+        await runTool(newTab, {}, extra(), runtime);
+
+        const result = await runTool(jsEvaluate, { expression: "void 0" }, extra(), runtime);
+
+        expect(result.structuredContent).toStrictEqual({ ok: true, type: "undefined", truncated: false });
+    });
+
     it("honors awaitPromise, timeoutMs and maxResultChars", async () => {
         const fake = new FakeAccess();
 
@@ -234,7 +249,11 @@ describe("js_evaluate", () => {
             runtime,
         );
 
-        expect(result.structuredContent).toMatchObject({ ok: true, truncated: true });
+        expect(result.structuredContent).toMatchObject({
+            ok         : true,
+            truncated  : true,
+            totalLength: 12,
+        });
         expect(fake.sent[0]?.timeoutMs).toBe(5000);
         expect(fake.sent[0]?.params).toMatchObject({ awaitPromise: false });
     });
