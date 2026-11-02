@@ -22,7 +22,9 @@ export const MOCK_RESOURCE_TYPE_MAX_CHARS = 64;
 
 export const MOCK_TIMES_MAX = 1_000_000;
 
-const BODY_TEXT_LIMIT = Math.floor(MOCK_BODY_MAX_BYTES * 0.75);
+const BASE64_CHARS_MAX = Math.ceil(MOCK_BODY_MAX_BYTES / 3) * 4;
+
+const BASE64_PATTERN = /^[A-Za-z0-9+/]*={0,2}$/;
 
 const failReasonSchema = z.enum([
     "Failed",
@@ -48,11 +50,17 @@ const headerName = z.string()
         message: "Header names must be valid HTTP tokens.",
     });
 
+const headerValue = z.string()
+    .max(MOCK_HEADER_VALUE_MAX_CHARS)
+    .refine((value) => !/[\r\n\0]/.test(value), {
+        message: "Header values must not contain CR, LF or NUL characters.",
+    });
+
 const responseSchema = z.strictObject({
-    status     : z.number().int().min(100).max(599).describe("HTTP status of the mocked response."),
-    headers    : z.record(headerName, z.string().max(MOCK_HEADER_VALUE_MAX_CHARS)).optional().describe("Response headers, at most 50."),
-    body       : z.string().max(BODY_TEXT_LIMIT).optional().describe("Response body as text, mutually exclusive with bodyBase64."),
-    bodyBase64 : z.string().max(MOCK_BODY_MAX_BYTES).optional().describe("Response body as base64, mutually exclusive with body."),
+    status     : z.number().int().min(200).max(599).describe("HTTP status of the mocked response, 200 to 599."),
+    headers    : z.record(headerName, headerValue).optional().describe("Response headers, at most 50."),
+    body       : z.string().max(MOCK_BODY_MAX_BYTES).optional().describe("Response body as text, mutually exclusive with bodyBase64."),
+    bodyBase64 : z.string().max(BASE64_CHARS_MAX).optional().describe("Response body as base64, mutually exclusive with body."),
     contentType: z.string().min(1).max(256).optional().describe("Content type, added when no content-type header is given."),
 });
 
@@ -86,6 +94,12 @@ const ruleSchema = z.strictObject({
     createdAt   : z.string().describe("ISO time when the rule was added."),
 });
 
+function bodyTooLarge(): ToolError {
+    return new ToolError(
+        `The body is over the ${MOCK_BODY_MAX_BYTES} byte limit. Send a smaller body.`,
+    );
+}
+
 export function ruleInputOf(args: MockAddInput): RuleInput {
     const hasResponse = args.response !== undefined;
     const hasFail = args.fail !== undefined;
@@ -107,30 +121,22 @@ export function ruleInputOf(args: MockAddInput): RuleInput {
     }
 
     if (args.response?.body !== undefined) {
-        const encoded = Buffer.from(args.response.body, "utf8").toString("base64");
+        const bytes = Buffer.from(args.response.body, "utf8");
 
-        if (Buffer.byteLength(encoded) > MOCK_BODY_MAX_BYTES) {
-            throw new ToolError(
-                `The body is over the ${MOCK_BODY_MAX_BYTES} byte limit. Send a smaller body.`,
-            );
-        }
+        if (bytes.length > MOCK_BODY_MAX_BYTES) throw bodyTooLarge();
 
-        bodyBase64 = encoded;
+        bodyBase64 = bytes.toString("base64");
     }
 
     if (args.response?.bodyBase64 !== undefined) {
-        let decoded: Buffer;
+        const encoded = args.response.bodyBase64;
 
-        try {
-            decoded = Buffer.from(args.response.bodyBase64, "base64");
-        } catch {
+        if (encoded.length % 4 !== 0 || !BASE64_PATTERN.test(encoded)) {
             throw new ToolError("bodyBase64 is not valid base64.");
         }
 
-        if (decoded.length > MOCK_BODY_MAX_BYTES) {
-            throw new ToolError(
-                `The body is over the ${MOCK_BODY_MAX_BYTES} byte limit. Send a smaller body.`,
-            );
+        if (Buffer.from(args.response.bodyBase64, "base64").length > MOCK_BODY_MAX_BYTES) {
+            throw bodyTooLarge();
         }
 
         bodyBase64 = args.response.bodyBase64;

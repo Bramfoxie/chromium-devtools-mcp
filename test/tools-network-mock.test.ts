@@ -51,6 +51,31 @@ describe("ruleInputOf", () => {
         expect(input.response?.bodyBase64).toBe(Buffer.from("hi").toString("base64"));
     });
 
+    it("rejects a base64 body that is not valid base64", () => {
+        expect(() =>
+            ruleInputOf({ urlPattern: "*", response: { status: 200, bodyBase64: "not base64!" } }),
+        ).toThrow("not valid base64");
+        expect(() =>
+            ruleInputOf({ urlPattern: "*", response: { status: 200, bodyBase64: "Yg=" } }),
+        ).toThrow("not valid base64");
+        expect(ruleInputOf({ urlPattern: "*", response: { status: 200, bodyBase64: "Yg==" } })
+            .response?.bodyBase64).toBe("Yg==");
+    });
+
+    it("validates a body of the maximum size without exhausting the stack", () => {
+        const bodyBase64 = Buffer.alloc(10 * 1024 * 1024).toString("base64");
+
+        expect(ruleInputOf({ urlPattern: "*", response: { status: 200, bodyBase64 } })
+            .response?.bodyBase64).toHaveLength(bodyBase64.length);
+    });
+
+    it("measures a text body in bytes of its encoded form", () => {
+        const body = "\u00e9".repeat(5 * 1024 * 1024 + 1);
+
+        expect(() => ruleInputOf({ urlPattern: "*", response: { status: 200, body } }))
+            .toThrow("byte limit");
+    });
+
     it("rejects both bodies", () => {
         expect(() =>
             ruleInputOf({ urlPattern: "*", response: { status: 200, body: "a", bodyBase64: "Yg==" } }),
@@ -67,6 +92,23 @@ describe("network_mock", () => {
             pattern: "https://a.example/*",
         });
         expect(found?.target?.({ action: "list" })).toBeUndefined();
+    });
+
+    it("rejects a status outside 200 to 599 and header values with line breaks", async () => {
+        const { fake, runtime } = setup();
+
+        for (const rule of [
+            { urlPattern: "*", response: { status: 199 } },
+            { urlPattern: "*", response: { status: 600 } },
+            { urlPattern: "*", response: { status: 200, headers: { "x-a": "a\r\nset-cookie: b=1" } } },
+        ]) {
+            const result = await runTool(networkMock, { action: "add", rule }, extra(), runtime);
+
+            expect(result.isError).toBe(true);
+            expect(textOf(result)).toContain("Invalid arguments");
+        }
+
+        expect(fake.sent.map((call) => call.method)).not.toContain("Fetch.enable");
     });
 
     it("adds a response rule and enables Fetch", async () => {
