@@ -337,13 +337,19 @@ describe("input_click", () => {
         });
         const mouse = fake.sent.filter((entry) => entry.method === "Input.dispatchMouseEvent");
 
-        expect(mouse[1]?.params).toMatchObject({
-            x         : 10,
-            y         : 20,
-            button    : "right",
-            buttons   : 2,
-            clickCount: 2,
-            modifiers : 2,
+        expect(mouse.map((entry) => [entry.params?.type, entry.params?.clickCount])).toEqual([
+            ["mouseMoved", 0],
+            ["mousePressed", 1],
+            ["mouseReleased", 1],
+            ["mousePressed", 2],
+            ["mouseReleased", 2],
+        ]);
+        expect(mouse[3]?.params).toMatchObject({
+            x        : 10,
+            y        : 20,
+            button   : "right",
+            buttons  : 2,
+            modifiers: 2,
         });
     });
 

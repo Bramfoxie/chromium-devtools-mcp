@@ -283,38 +283,31 @@ export const inputClick = defineTool({
                 buttons   : 0,
                 clickCount: 0,
             });
-            await context.access.send(targetId, "Input.dispatchMouseEvent", {
-                type: "mousePressed",
-                x   : point.x,
-                y   : point.y,
-                modifiers,
-                button,
-                buttons,
-                clickCount,
-            });
 
-            try {
+            for (let count = 1; count <= clickCount; count += 1) {
+                const at = { x: point.x, y: point.y, modifiers, button, buttons };
+
                 await context.access.send(targetId, "Input.dispatchMouseEvent", {
-                    type: "mouseReleased",
-                    x   : point.x,
-                    y   : point.y,
-                    modifiers,
-                    button,
-                    buttons,
-                    clickCount,
+                    type      : "mousePressed",
+                    ...at,
+                    clickCount: count,
                 });
-            } catch (error) {
-                await context.access.send(targetId, "Input.dispatchMouseEvent", {
-                    type: "mouseReleased",
-                    x   : point.x,
-                    y   : point.y,
-                    modifiers,
-                    button,
-                    buttons,
-                    clickCount,
-                }).catch(() => undefined);
 
-                throw error;
+                try {
+                    await context.access.send(targetId, "Input.dispatchMouseEvent", {
+                        type      : "mouseReleased",
+                        ...at,
+                        clickCount: count,
+                    });
+                } catch (error) {
+                    await context.access.send(targetId, "Input.dispatchMouseEvent", {
+                        type      : "mouseReleased",
+                        ...at,
+                        clickCount: count,
+                    }).catch(() => undefined);
+
+                    throw error;
+                }
             }
         });
 
