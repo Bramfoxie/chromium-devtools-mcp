@@ -720,6 +720,33 @@ describe("resolveElement frame ids", () => {
         expect(fake.sent[2]?.params).toEqual({ nodeId: 11, selector: "#pay-btn" });
     });
 
+    it("fails naming a known frame that has no document yet", async () => {
+        const { fake, elements } = frameSetup();
+        const inner = fake.respond;
+
+        fake.respond = (targetId, method, params) => {
+            if (method === "DOM.getDocument") {
+                return { root: { nodeId: 1, nodeName: "#document", children: [] } };
+            }
+
+            return inner?.(targetId, method, params);
+        };
+
+        const { FrameState } = await import("../src/tools/index.js");
+        const frames = new FrameState({ access: fake.asAccess() });
+
+        await frames.ensure("tab1");
+
+        const failure = await resolveElement(fake.asAccess(), elements, "tab1", {
+            selector: "#pay-btn",
+            frame   : "cross",
+        }, { frames }).catch((error: unknown) => error);
+
+        expect((failure as Error).message).toContain("has no document yet");
+        expect((failure as Error).message).toContain("cross");
+        expect(fake.sent.map((call) => call.method)).not.toContain("DOM.querySelector");
+    });
+
     it("reports a stale uid when its frame navigated", async () => {
         const { fake, elements } = frameSetup();
         const { FrameState } = await import("../src/tools/index.js");

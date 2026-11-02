@@ -371,7 +371,13 @@ async function scopeNode(
             const resolved = await frames.resolve(tab, frame);
             const scope = await frameContentNode(access, tab, rootId, resolved.frameId);
 
-            if (scope !== undefined) return { nodeId: scope, frameId: resolved.frameId };
+            if (scope === undefined) {
+                throw new ToolError(
+                    `The frame ${JSON.stringify(frame)} has no document yet. Wait for it to load and try again.`,
+                );
+            }
+
+            return { nodeId: scope, frameId: resolved.frameId };
         } catch (error) {
             // Unknown frame ids fall through to the iframe selector path.
             if (error instanceof ToolError && !error.message.startsWith("No frame ")) throw error;
