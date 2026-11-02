@@ -376,10 +376,12 @@ export const inputHover = defineTool({
 
         throwIfCancelled(context.signal);
 
+        const leadInX = point.x >= 1 ? point.x - 1 : point.x + 1;
+
         for (let step = 0; step < HOVER_DEFAULT_STEPS; step += 1) {
             await context.access.send(targetId, "Input.dispatchMouseEvent", {
                 type      : "mouseMoved",
-                x         : point.x - (HOVER_DEFAULT_STEPS - 1 - step),
+                x         : step === HOVER_DEFAULT_STEPS - 1 ? point.x : leadInX,
                 y         : point.y,
                 modifiers : 0,
                 button    : "none",

@@ -33,6 +33,7 @@ interface MouseWorld {
     urlAfter?   : string;
     hovered?    : boolean;
     clickThrows?: boolean;
+    left?       : number;
 }
 
 function mouseFake(world: MouseWorld = {}): FakeAccess {
@@ -50,8 +51,14 @@ function mouseFake(world: MouseWorld = {}): FakeAccess {
                 return { node: { backendNodeId: 101 } };
             case "DOM.scrollIntoViewIfNeeded":
                 return {};
-            case "DOM.getBoxModel":
-                return BOX_MODEL;
+
+            case "DOM.getBoxModel": {
+                const left = world.left ?? 10;
+                const quad = [left, 20, left + 100, 20, left + 100, 70, left, 70];
+
+                return { model: { content: quad, padding: quad, border: quad, margin: quad } };
+            }
+
             case "Emulation.setFocusEmulationEnabled":
                 return {};
             case "Input.dispatchMouseEvent":
@@ -457,6 +464,25 @@ describe("input_hover", () => {
         expect(mouse).toHaveLength(2);
         expect(mouse[0]?.params).toMatchObject({ type: "mouseMoved", x: 59, y: 45 });
         expect(mouse[1]?.params).toMatchObject({ type: "mouseMoved", x: 60, y: 45 });
+    });
+
+    it("leads in from inside the viewport when the point is at x 0", async () => {
+        const { fake, runtime } = runtimeWith(mouseFake({ left: 0 }));
+
+        selected(runtime);
+        runtime.elements.nextGeneration("tab1");
+        runtime.elements.assign("tab1", [{ backendNodeId: 101 }]);
+        const result = await runTool(
+            inputHover,
+            { target: { uid: "1_1" }, position: { x: 0, y: 5 } },
+            extra(),
+            runtime,
+        );
+
+        expect(result.isError).not.toBe(true);
+        const mouse = fake.sent.filter((entry) => entry.method === "Input.dispatchMouseEvent");
+
+        expect(mouse.map((entry) => entry.params?.x)).toEqual([1, 0]);
     });
 
     it("reports a miss when :hover is not set and hovers through with force", async () => {
