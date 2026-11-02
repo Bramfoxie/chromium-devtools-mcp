@@ -200,7 +200,7 @@ export const DEVICES: DeviceSpec[] = [
         kind             : "desktop",
         width            : 2560,
         height           : 1440,
-        deviceScaleFactor: 1.5,
+        deviceScaleFactor: 1,
         mobile           : false,
         touch            : false,
         userAgent:
@@ -222,7 +222,7 @@ export const DEVICES: DeviceSpec[] = [
         kind             : "desktop",
         width            : 3840,
         height           : 2160,
-        deviceScaleFactor: 2,
+        deviceScaleFactor: 1,
         mobile           : false,
         touch            : false,
         userAgent:

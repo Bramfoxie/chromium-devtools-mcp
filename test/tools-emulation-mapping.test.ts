@@ -73,6 +73,12 @@ describe("devices table", () => {
         expect(kinds).toEqual(new Set(["phone", "tablet", "desktop"]));
     });
 
+    it("gives wide desktop viewports a scale factor of 1", () => {
+        for (const device of DEVICES.filter((entry) => entry.kind === "desktop" && entry.width >= 1920)) {
+            expect(device.deviceScaleFactor, device.name).toBe(1);
+        }
+    });
+
     it("filters by kind and by a case insensitive name query", () => {
         expect(filterDevices({ kind: "phone" }).every((device) => device.kind === "phone")).toBe(true);
         expect(filterDevices({ kind: "tablet" }).length).toBeGreaterThan(0);
