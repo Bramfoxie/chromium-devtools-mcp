@@ -371,14 +371,17 @@ async function waitForLoadState(
         await context.capture.ensureNetwork(targetId);
     }
 
-    const baseline = state === "networkidle" ? context.capture.idleNetworkMs(targetId) : 0;
-    const quietFrom = baseline === Number.MAX_SAFE_INTEGER ? started : context.clock.now();
+    const quietFrom = context.clock.now();
+    const observedIdle = (): number => Math.min(
+        context.capture.idleNetworkMs(targetId, quietFrom),
+        context.clock.now() - quietFrom,
+    );
 
     for (;;) {
         throwIfCancelled(context.signal);
 
         if (state === "networkidle") {
-            const idle = context.capture.idleNetworkMs(targetId, quietFrom);
+            const idle = observedIdle();
 
             if (idle >= WAIT_NETWORK_IDLE_MS) {
                 return {
@@ -410,7 +413,7 @@ async function waitForLoadState(
 
         if (context.clock.now() - started >= timeoutMs) {
             const detail = state === "networkidle"
-                ? { idleMs: context.capture.idleNetworkMs(targetId, quietFrom) }
+                ? { idleMs: observedIdle() }
                 : { readyState: (await readyState(context.access, targetId)) ?? "unknown" };
 
             return { met: false, elapsedMs: context.clock.now() - started, detail };

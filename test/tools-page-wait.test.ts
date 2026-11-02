@@ -288,15 +288,19 @@ describe("page_wait", () => {
         expect(loaded.structuredContent).toMatchObject({ met: true, detail: { readyState: "complete" } });
     });
 
-    it("treats an empty network buffer as idle", async () => {
-        const { fake, runtime } = setup();
+    it("requires 500 ms of observed quiet even with an empty network buffer", async () => {
+        const { fake, runtime, sleeps } = setup();
 
         await runtime.capture.ensureNetwork("tab1");
         fake.sent.length = 0;
 
         const result = await runTool(pageWait, { loadState: "networkidle" }, extra(), runtime);
+        const detail = (result.structuredContent as { detail: { idleMs: number } }).detail;
 
         expect(result.structuredContent).toMatchObject({ met: true });
+        expect(detail.idleMs).toBeGreaterThanOrEqual(500);
+        expect(detail.idleMs).toBeLessThan(Number.MAX_SAFE_INTEGER);
+        expect(sleeps.length).toBeGreaterThan(0);
         expect(fake.sent.map((call) => call.method)).not.toContain("Network.disable");
     });
 
@@ -304,7 +308,10 @@ describe("page_wait", () => {
         const { fake, runtime } = setup();
         let now = 1_700_000_000_000;
 
-        Object.assign(runtime.clock, { now: () => now });
+        Object.assign(runtime.clock, {
+            now  : () => now,
+            sleep: async (ms: number) => void (now += ms),
+        });
         await runtime.capture.ensureNetwork("tab1");
         fake.emit("cdp.event", {
             targetId: "tab1",
@@ -333,7 +340,7 @@ describe("page_wait", () => {
         expect(result.structuredContent).toMatchObject({ met: true });
         expect(
             (result.structuredContent as { detail: { idleMs: number } }).detail.idleMs,
-        ).toBeGreaterThanOrEqual(600);
+        ).toBeGreaterThanOrEqual(500);
     });
 
     it("ignores replayed records that predate the wait", async () => {
