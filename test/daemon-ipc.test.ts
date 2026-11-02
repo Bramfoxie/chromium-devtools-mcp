@@ -1,3 +1,4 @@
+import { mkdir } from "node:fs/promises";
 import net from "node:net";
 import { Duplex } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -815,5 +816,32 @@ describe("final events", () => {
             event : "daemon.failed",
             params: { message: "no browser" },
         });
+    });
+});
+
+describe("failure reporting on the client", () => {
+    it("keeps the failure when the connection ends in the same chunk as the event", async () => {
+        const { socketPath: path, runtimeDir } = await harness.options();
+
+        if (runtimeDir) await mkdir(runtimeDir, { recursive: true });
+
+        const server = net.createServer((socket) => {
+            socket.on("error", () => undefined);
+            socket.once("data", (data) => {
+                const { id } = JSON.parse(data.toString("utf8")) as { id: number };
+                const hello = JSON.stringify({ id, result: { ok: true } });
+                const failed = JSON.stringify({ event: "daemon.failed", params: { message: "no browser" } });
+
+                socket.end(`${hello}\n${failed}\n`);
+            });
+        });
+
+        await new Promise<void>((resolve) => server.listen(path, resolve));
+        harness.track(() => new Promise<void>((resolve) => void server.close(() => resolve())));
+        const client = await IpcClient.connect({ socketPath: path, token: "t", clientName: "c" });
+
+        harness.track(() => client.close());
+        await vi.waitFor(() => expect(client.closed).toBe(true));
+        expect(client.failure).toBe("no browser");
     });
 });
