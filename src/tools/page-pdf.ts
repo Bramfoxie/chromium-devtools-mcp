@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ErrorCode, RpcError } from "../daemon/index.js";
 import { defineTool } from "./define-tool.js";
 import { ToolError } from "./errors.js";
 import { binaryResult, resourceBlock } from "./result.js";
@@ -119,7 +120,9 @@ export const pagePdf = defineTool({
                 ...(args.pageRanges === undefined ? {} : { pageRanges: args.pageRanges }),
                 preferCSSPageSize: args.preferCSSPageSize ?? false,
             });
-        } catch {
+        } catch (error) {
+            if (!(error instanceof RpcError) || error.code !== ErrorCode.cdpError) throw error;
+
             throw new ToolError(
                 "The browser refused to print this tab to PDF. It needs a headless managed browser, or the tab shows a page that cannot be printed.",
             );

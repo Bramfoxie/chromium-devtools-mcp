@@ -169,6 +169,34 @@ describe("page_pdf", () => {
         expect(JSON.stringify(result.content)).toContain("headless managed browser");
     });
 
+    it("keeps the own message of errors that are not a print refusal", async () => {
+        const cases = [
+            [ErrorCode.cdpTimeout, "did not answer in time"],
+            [ErrorCode.browserClosed, "new_tab"],
+            [ErrorCode.resultTooLarge, "Narrow the request"],
+        ] as const;
+
+        for (const [code, expected] of cases) {
+            const fake = new FakeAccess();
+
+            fake.respond = (_targetId, method) => {
+                if (method === "Page.printToPDF") throw new RpcError(code, "boom");
+
+                return {};
+            };
+
+            const { runtime } = setup(fake);
+
+            await runTool(newTab, {}, extra(), runtime);
+            const result = await runTool(pagePdf, {}, extra(), runtime);
+            const text = JSON.stringify(result.content);
+
+            expect(result.isError, code).toBe(true);
+            expect(text, code).toContain(expected);
+            expect(text, code).not.toContain("headless managed browser");
+        }
+    });
+
     it("names new_tab without a selection", async () => {
         const { runtime } = setup();
         const result = await runTool(pagePdf, {}, extra(), runtime);
