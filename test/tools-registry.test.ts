@@ -320,6 +320,56 @@ describe("tool declarations", () => {
     });
 });
 
+describe("open world annotation", () => {
+    const CLOSED = [
+        "close_tab",
+        "emulate_device",
+        "emulate_locale",
+        "emulate_media",
+        "emulate_network",
+        "list_devices",
+        "list_sessions",
+        "list_tabs",
+        "page_dialogs",
+        "select_tab",
+    ];
+
+    it("is true for tools that reach pages and false for session, tab and emulation control", async () => {
+        const server = createMcpServer("1.0.0");
+
+        registerTools({ server, tools: allTools, runtime: runtime() });
+        const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
+        const client = new Client({ name: "test-client", version: "1.0.0" });
+
+        await Promise.all([server.connect(serverSide), client.connect(clientSide)]);
+        const listed = (await client.listTools()).tools;
+        const open = listed.filter((tool) => tool.annotations?.openWorldHint === true);
+        const closed = listed.filter((tool) => tool.annotations?.openWorldHint === false);
+
+        expect(closed.map((tool) => tool.name).sort()).toEqual(CLOSED);
+        expect(open.length + closed.length).toBe(listed.length);
+
+        for (const name of [
+            "new_tab",
+            "page_navigate",
+            "js_evaluate",
+            "click",
+            "input_click",
+            "input_type",
+            "network_mock",
+            "dom_query",
+            "dom_snapshot",
+            "network_requests",
+            "storage_write",
+        ]) {
+            expect(open.map((tool) => tool.name)).toContain(name);
+        }
+
+        await client.close();
+        await server.close();
+    });
+});
+
 describe("tab url resolution", () => {
     it("lists tabs for a mutating call only when a domain allowlist is set", async () => {
         const scopes = async (config: Config) => {

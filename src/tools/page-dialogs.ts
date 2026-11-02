@@ -22,7 +22,8 @@ const historySchema = z.strictObject({
 });
 
 export const pageDialogs = defineTool({
-    name: "page_dialogs",
+    name       : "page_dialogs",
+    closedWorld: true,
     description:
         "See and resolve JavaScript dialogs (alert, confirm, prompt, beforeunload) of a tab, or set an automatic policy.",
     access: (args: unknown) => {

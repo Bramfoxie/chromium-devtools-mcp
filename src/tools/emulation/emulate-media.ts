@@ -41,6 +41,7 @@ const reportedSchema = z.strictObject({
 
 export const emulateMedia = defineTool({
     name       : "emulate_media",
+    closedWorld: true,
     description: "Emulate a media type and media features on a tab. Only the given fields change; reset removes every media override.",
     access     : "mutate",
     input      : z.strictObject({

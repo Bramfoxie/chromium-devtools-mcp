@@ -50,7 +50,8 @@ const reportedSchema = z.strictObject({
 });
 
 export const emulateLocale = defineTool({
-    name: "emulate_locale",
+    name       : "emulate_locale",
+    closedWorld: true,
     description:
         "Emulate locale, timezone and Accept-Language on a tab. Applies to new page loads: navigator.language changes after the next navigation, and number and date formatting follow the locale. Geolocation is not emulated. reset restores the real locale and timezone.",
     access: "mutate",

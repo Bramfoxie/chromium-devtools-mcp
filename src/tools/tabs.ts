@@ -90,6 +90,7 @@ export const newTab = defineTool({
 
 export const listTabs = defineTool({
     name       : "list_tabs",
+    closedWorld: true,
     description: "List tabs of the session or tabs available to claim.",
     access     : "read",
     input      : z.strictObject({
@@ -145,6 +146,7 @@ export const listTabs = defineTool({
 
 export const selectTab = defineTool({
     name       : "select_tab",
+    closedWorld: true,
     description: "Select a tab of the session, claiming an available tab when needed.",
     access     : "mutate",
     input      : z.strictObject({ tab: tabId }),
@@ -197,6 +199,7 @@ export const selectTab = defineTool({
 
 export const closeTab = defineTool({
     name       : "close_tab",
+    closedWorld: true,
     description: "Close a tab opened by this session.",
     access     : "mutate",
     input      : z.strictObject({ tab: tabId.optional().describe("Tab id. Defaults to the selected tab.") }),
@@ -242,6 +245,7 @@ export const closeTab = defineTool({
 
 export const listSessions = defineTool({
     name       : "list_sessions",
+    closedWorld: true,
     description: "List open sessions of the daemon without their tab details.",
     access     : "read",
     input      : z.strictObject({}),

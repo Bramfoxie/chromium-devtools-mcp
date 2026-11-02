@@ -19,6 +19,7 @@ const listedDevice = z.strictObject({
 
 export const listDevices = defineTool({
     name       : "list_devices",
+    closedWorld: true,
     description: "List the built in devices for emulate_device, with an optional name or kind filter.",
     access     : "read",
     input      : z.strictObject({

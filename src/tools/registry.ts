@@ -38,7 +38,7 @@ export function toolAnnotations(tool: AnyTool): {
         title          : tool.name,
         readOnlyHint   : !mutate,
         destructiveHint: dangerous,
-        openWorldHint  : false,
+        openWorldHint  : tool.closedWorld !== true,
     };
 }
 
