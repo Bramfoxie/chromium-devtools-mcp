@@ -54,9 +54,26 @@ const clipSchema = z.strictObject({
 
 const capturedSchema = z.object({ data: z.string().min(1) });
 
-const layoutSchema = z.object({
-    layoutViewport: z.object({ clientWidth: z.number(), clientHeight: z.number() }),
+const viewportSchema = z.object({
+    pageX       : z.number().optional(),
+    pageY       : z.number().optional(),
+    clientWidth : z.number(),
+    clientHeight: z.number(),
 });
+
+const contentSchema = z.object({ width: z.number(), height: z.number() });
+
+const layoutSchema = z.object({
+    layoutViewport   : viewportSchema,
+    cssLayoutViewport: viewportSchema.optional(),
+    contentSize      : contentSchema.optional(),
+    cssContentSize   : contentSchema.optional(),
+});
+
+interface PageLayout {
+    viewport?: ScreenshotClip;
+    content? : ImageSize;
+}
 
 export function roundClip(clip: ScreenshotClip): ScreenshotClip {
     return {
@@ -72,80 +89,86 @@ export function planScreenshot(args: {
     clip?       : ScreenshotClip | undefined;
     targetBox?  : ScreenshotClip | undefined;
     scale?      : number | undefined;
-    viewport?   : { width: number; height: number } | undefined;
+    viewport?   : ScreenshotClip | undefined;
+    content?    : ImageSize | undefined;
     maxDimension: number;
 }): ScreenshotPlan {
     const scale = args.scale ?? 1;
     const box = args.targetBox ?? args.clip;
 
-    if (box !== undefined) {
-        const clip = roundClip(box);
-        const longest = Math.max(clip.width, clip.height);
-        const fit = longest > args.maxDimension ? args.maxDimension / longest : 1;
-        const effective = Math.min(scale, fit);
+    if (box !== undefined) return planClip(roundClip(box), scale, args.maxDimension, true);
 
-        return {
-            clip,
-            scale     : effective === 1 ? undefined : effective,
-            clipped   : true,
-            scaledDown: effective < 1,
-        };
-    }
+    if (args.fullPage === true) {
+        if (args.content !== undefined && args.content.width > 0 && args.content.height > 0) {
+            const whole = roundClip({ x: 0, y: 0, ...args.content });
 
-    // A default viewport clip pins the shot to the document origin: on a
-    // scrolled page the wrong region is captured. Send no clip unless the
-    // caller asked for a scale or a dimension clamp.
-    if (args.fullPage === true || (scale === 1 && args.viewport === undefined)) {
+            return planClip(whole, scale, args.maxDimension, false);
+        }
+
+        if (scale !== 1) throw unknownSizeError();
+
         return { clip: undefined, scale: undefined, clipped: false, scaledDown: false };
     }
 
-    if (args.viewport !== undefined) {
-        const viewport = args.viewport;
+    if (args.viewport === undefined || args.viewport.width <= 0 || args.viewport.height <= 0) {
+        if (scale !== 1) throw unknownSizeError();
 
-        if (viewport.width <= 0 || viewport.height <= 0) {
-            return { clip: undefined, scale: undefined, clipped: false, scaledDown: false };
-        }
-
-        const longest = Math.max(viewport.width, viewport.height);
-        const fit = longest > args.maxDimension ? args.maxDimension / longest : 1;
-        const effective = Math.min(scale, fit);
-
-        if (effective === 1) {
-            return { clip: undefined, scale: undefined, clipped: false, scaledDown: false };
-        }
-
-        return {
-            clip      : roundClip({ x: 0, y: 0, width: viewport.width, height: viewport.height }),
-            scale     : effective === 1 ? undefined : effective,
-            clipped   : false,
-            scaledDown: effective < 1,
-        };
+        return { clip: undefined, scale: undefined, clipped: false, scaledDown: false };
     }
 
+    const plan = planClip(roundClip(args.viewport), scale, args.maxDimension, false);
+
+    return plan.scale === undefined ? { ...plan, clip: undefined } : plan;
+}
+
+function planClip(
+    clip        : ScreenshotClip,
+    scale       : number,
+    maxDimension: number,
+    clipped     : boolean,
+): ScreenshotPlan {
+    const longest = Math.max(clip.width, clip.height);
+    const fit = longest > maxDimension ? maxDimension / longest : 1;
+    const effective = Math.min(scale, fit);
+
     return {
-        clip      : undefined,
-        scale     : scale === 1 ? undefined : scale,
-        clipped   : false,
-        scaledDown: false,
+        clip,
+        scale     : effective === 1 ? undefined : effective,
+        clipped,
+        scaledDown: effective < 1,
     };
+}
+
+function unknownSizeError(): ToolError {
+    return new ToolError(
+        "The browser did not report the viewport size, so scale cannot be applied. Capture without scale or pass an explicit clip.",
+    );
 }
 
 export function retryQuality(quality: number): number {
     return Math.min(quality, SCREENSHOT_RETRY_QUALITY);
 }
 
-async function viewportOf(access: DaemonAccess, tab: string): Promise<ImageSize | undefined> {
+async function layoutOf(access: DaemonAccess, tab: string): Promise<PageLayout> {
     try {
         const layout = layoutSchema.safeParse(await access.send(tab, "Page.getLayoutMetrics", {}));
 
-        if (!layout.success) return undefined;
+        if (!layout.success) return {};
+
+        const viewport = layout.data.cssLayoutViewport ?? layout.data.layoutViewport;
+        const content = layout.data.cssContentSize ?? layout.data.contentSize;
 
         return {
-            width : layout.data.layoutViewport.clientWidth,
-            height: layout.data.layoutViewport.clientHeight,
+            viewport: {
+                x     : viewport.pageX ?? 0,
+                y     : viewport.pageY ?? 0,
+                width : viewport.clientWidth,
+                height: viewport.clientHeight,
+            },
+            ...(content === undefined ? {} : { content }),
         };
     } catch {
-        return undefined;
+        return {};
     }
 }
 
@@ -241,7 +264,7 @@ export const screenshot = defineTool({
         quality     : z.number().int().min(1).max(100).optional().describe("Quality for jpeg and webp. Defaults to 80."),
         fullPage    : z.boolean().optional().describe("Capture beyond the viewport. Defaults to false."),
         target      : elementTargetSchema.optional().describe("Clip to this element after scrolling it into view."),
-        clip        : clipSchema.optional().describe("Clip to this CSS rectangle. Rejected together with target."),
+        clip        : clipSchema.optional().describe("Clip to this CSS rectangle in page coordinates measured from the document origin. Rejected together with target."),
         scale       : z.number().min(0.1).max(2).optional().describe("Scale factor. Defaults to 1."),
         maxBytes    : z.number().int().min(1024).max(SCREENSHOT_MAX_BYTES_LIMIT).optional().describe("Maximum image bytes. Defaults to 4 MiB."),
         maxDimension: z.number().int().min(64).max(16384).optional().describe("Clamp the longest side to this many pixels. Defaults to 4096."),
@@ -282,15 +305,21 @@ export const screenshot = defineTool({
                 args.target,
                 context.frames,
             );
-        const viewport = targetBox !== undefined || args.clip !== undefined
-            ? undefined
-            : await viewportOf(context.access, targetId);
+        const layout = await layoutOf(context.access, targetId);
+        const pageBox = targetBox === undefined || layout.viewport === undefined
+            ? targetBox
+            : {
+                ...targetBox,
+                x: targetBox.x + layout.viewport.x,
+                y: targetBox.y + layout.viewport.y,
+            };
         const plan = planScreenshot({
-            fullPage: args.fullPage,
-            clip    : args.clip,
-            targetBox,
-            scale   : args.scale,
-            viewport: viewport === undefined ? undefined : { ...viewport },
+            fullPage : args.fullPage,
+            clip     : args.clip,
+            targetBox: pageBox,
+            scale    : args.scale,
+            viewport : layout.viewport,
+            content  : layout.content,
             maxDimension,
         });
 

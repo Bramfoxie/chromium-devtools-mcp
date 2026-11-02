@@ -1,6 +1,7 @@
 import type { RequestHandlerExtra } from "@modelcontextprotocol/sdk/shared/protocol.js";
 import type { ServerNotification, ServerRequest } from "@modelcontextprotocol/sdk/types.js";
 import { describe, expect, it } from "vitest";
+import { ErrorCode, RpcError } from "../src/daemon/index.js";
 import {
     imageSize,
     newTab,
@@ -90,11 +91,16 @@ describe("planScreenshot", () => {
         });
         const scaled = planScreenshot({
             scale       : 0.5,
-            viewport    : { width: 100, height: 50 },
+            viewport    : { x: 0, y: 20, width: 100, height: 50 },
             maxDimension: 4096,
         });
 
-        expect(scaled).toMatchObject({ clipped: false, scaledDown: true, scale: 0.5 });
+        expect(scaled).toMatchObject({
+            clip      : { x: 0, y: 20, width: 100, height: 50 },
+            clipped   : false,
+            scaledDown: true,
+            scale     : 0.5,
+        });
     });
 
     it("prefers the element box and degrades without a viewport", () => {
@@ -105,7 +111,7 @@ describe("planScreenshot", () => {
         });
 
         expect(plan.clip).toMatchObject({ width: 10, height: 10 });
-        expect(planScreenshot({ scale: 0.5, maxDimension: 4096 }).clip).toBeUndefined();
+        expect(() => planScreenshot({ scale: 0.5, maxDimension: 4096 })).toThrow(/viewport size/);
     });
 
     it("derives the retry quality", () => {
@@ -245,6 +251,111 @@ describe("screenshot", () => {
         expect(result.structuredContent).toMatchObject({ clipped: true });
         expect(shot?.params).toMatchObject({ clip: { x: 1, y: 2, width: 10, height: 6 } });
         expect(calls).toContain("DOM.scrollIntoViewIfNeeded");
+    });
+
+    function scrolledFake(onCapture: (params: Record<string, unknown>) => void) {
+        const fake = new FakeAccess();
+
+        fake.respond = (_targetId, method, params) => {
+            if (method === "Page.captureScreenshot") {
+                onCapture(params ?? {});
+
+                return { data: PNG_2X3.toString("base64") };
+            }
+
+            if (method === "Page.getLayoutMetrics") {
+                const viewport = { pageX: 40, pageY: 300, clientWidth: 1280, clientHeight: 720 };
+                const content = { x: 0, y: 0, width: 1280, height: 6000 };
+
+                return {
+                    layoutViewport   : viewport,
+                    contentSize      : content,
+                    cssLayoutViewport: viewport,
+                    cssContentSize   : content,
+                };
+            }
+
+            if (method === "DOM.getDocument") return { root: { nodeId: 1 } };
+            if (method === "DOM.querySelector") return { nodeId: 9 };
+            if (method === "DOM.resolveNode") return { object: { objectId: "obj-9" } };
+            if (method === "DOM.describeNode") return { node: { backendNodeId: 9 } };
+            if (method === "DOM.scrollIntoViewIfNeeded") return {};
+
+            if (method === "DOM.getBoxModel") {
+                return {
+                    model: {
+                        content: [1, 2, 11, 2, 11, 8, 1, 8],
+                        padding: [1, 2, 11, 2, 11, 8, 1, 8],
+                        border : [1, 2, 11, 2, 11, 8, 1, 8],
+                        margin : [1, 2, 11, 2, 11, 8, 1, 8],
+                    },
+                };
+            }
+
+            return {};
+        };
+
+        return fake;
+    }
+
+    it("adds the scroll offset to an element clip on a scrolled page", async () => {
+        const seen: Array<Record<string, unknown>> = [];
+        const { runtime } = setup(scrolledFake((params) => void seen.push(params)));
+
+        await runTool(newTab, {}, extra(), runtime);
+        await runTool(screenshot, { target: { selector: "h1" } }, extra(), runtime);
+
+        expect(seen[0]).toMatchObject({ clip: { x: 41, y: 302, width: 10, height: 6 } });
+    });
+
+    it("anchors a scaled viewport shot at the scroll position", async () => {
+        const seen: Array<Record<string, unknown>> = [];
+        const { runtime } = setup(scrolledFake((params) => void seen.push(params)));
+
+        await runTool(newTab, {}, extra(), runtime);
+        await runTool(screenshot, { scale: 0.5 }, extra(), runtime);
+
+        expect(seen[0]).toMatchObject({
+            clip: { x: 40, y: 300, width: 1280, height: 720, scale: 0.5 },
+        });
+    });
+
+    it("captures the whole document for a full page and honors scale and maxDimension", async () => {
+        const seen: Array<Record<string, unknown>> = [];
+        const { runtime } = setup(scrolledFake((params) => void seen.push(params)));
+
+        await runTool(newTab, {}, extra(), runtime);
+        await runTool(screenshot, { fullPage: true }, extra(), runtime);
+        await runTool(screenshot, { fullPage: true, scale: 0.5 }, extra(), runtime);
+        await runTool(screenshot, { fullPage: true, maxDimension: 3000 }, extra(), runtime);
+
+        expect(seen[0]).toMatchObject({
+            captureBeyondViewport: true,
+            clip                 : { x: 0, y: 0, width: 1280, height: 6000, scale: 4096 / 6000 },
+        });
+        expect(seen[1]).toMatchObject({ clip: { width: 1280, height: 6000, scale: 0.5 } });
+        expect(seen[2]).toMatchObject({ clip: { width: 1280, height: 6000, scale: 0.5 } });
+    });
+
+    it("refuses a scale it cannot apply without layout metrics", async () => {
+        const fake = new FakeAccess();
+
+        fake.respond = (_targetId, method) => {
+            if (method === "Page.getLayoutMetrics") throw new RpcError(ErrorCode.cdpError, "no metrics");
+
+            return { data: PNG_2X3.toString("base64") };
+        };
+
+        const { runtime } = setup(fake);
+
+        await runTool(newTab, {}, extra(), runtime);
+
+        const viewport = await runTool(screenshot, { scale: 0.5 }, extra(), runtime);
+        const full = await runTool(screenshot, { fullPage: true, scale: 0.5 }, extra(), runtime);
+
+        expect(viewport.isError).toBe(true);
+        expect(JSON.stringify(viewport.content)).toContain("viewport size");
+        expect(full.isError).toBe(true);
     });
 
     it("retries once with a lower quality when over the limit", async () => {
