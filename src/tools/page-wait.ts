@@ -332,11 +332,15 @@ async function runScript(
     return { met: outcome.met, elapsedMs: context.clock.now() - started, detail: outcome.detail };
 }
 
-async function currentUrl(access: DaemonAccess, targetId: string): Promise<string | undefined> {
+async function evaluateString(
+    access    : DaemonAccess,
+    targetId  : string,
+    expression: string,
+): Promise<string | undefined> {
     const result = await access.send(
         targetId,
         "Runtime.evaluate",
-        { expression: "location.href", returnByValue: true },
+        { expression, returnByValue: true },
         5000,
     ).catch(() => undefined);
     const parsed = z.object({
@@ -345,6 +349,10 @@ async function currentUrl(access: DaemonAccess, targetId: string): Promise<strin
     const value = parsed.success ? parsed.data.result.value : undefined;
 
     return typeof value === "string" ? value : undefined;
+}
+
+async function currentUrl(access: DaemonAccess, targetId: string): Promise<string | undefined> {
+    return evaluateString(access, targetId, "location.href");
 }
 
 async function waitForUrl(
@@ -442,18 +450,7 @@ async function waitForLoadState(
 }
 
 async function readyState(access: DaemonAccess, targetId: string): Promise<string | undefined> {
-    const result = await access.send(
-        targetId,
-        "Runtime.evaluate",
-        { expression: "document.readyState", returnByValue: true },
-        5000,
-    ).catch(() => undefined);
-    const parsed = z.object({
-        result: z.object({ value: z.unknown().optional() }),
-    }).safeParse(result);
-    const value = parsed.success ? parsed.data.result.value : undefined;
-
-    return typeof value === "string" ? value : undefined;
+    return evaluateString(access, targetId, "document.readyState");
 }
 
 export const pageWait = defineTool({
