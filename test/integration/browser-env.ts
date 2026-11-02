@@ -103,6 +103,12 @@ export interface ToolOutcome {
     blocks : Array<{ type: string }>;
 }
 
+const LOG_TAIL_CHARS = 4000;
+
+function tail(text: string): string {
+    return text.length > LOG_TAIL_CHARS ? text.slice(-LOG_TAIL_CHARS) : text;
+}
+
 export interface Env {
     fixture: Fixture;
     other  : Fixture;
@@ -140,6 +146,17 @@ export async function startEnv(): Promise<Env> {
         instance  : () => options,
     };
     let daemon: RunningDaemon | undefined;
+    let daemonOutcome = "the daemon has not stopped";
+    let stderrLog = "";
+    const realWrite = process.stderr.write;
+
+    process.stderr.write = ((chunk: string | Uint8Array, ...rest: unknown[]) => {
+        stderrLog = tail(stderrLog + String(chunk));
+
+        return (realWrite as (...args: unknown[]) => boolean).call(process.stderr, chunk, ...rest);
+    }) as typeof process.stderr.write;
+    const diagnostics = () =>
+        `\n--- daemon outcome ---\n${daemonOutcome}\n--- daemon and browser messages (last ${LOG_TAIL_CHARS} chars) ---\n${tail(stderrLog)}`;
     const link = new DaemonLink(
         { identity: daemonIdentity(config), isolated: true },
         {
@@ -151,7 +168,13 @@ export async function startEnv(): Promise<Env> {
                     idleTimeoutMs: 600_000,
                 });
 
-                return { exited: daemon.done.then(() => undefined) };
+                daemonOutcome = "the daemon is running";
+
+                return {
+                    exited: daemon.done.then((outcome) => {
+                        daemonOutcome = `stopped: ${outcome.reason}${outcome.error ? ` (${outcome.error.message})` : ""}`;
+                    }),
+                };
             },
             sleep         : (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
             now           : () => Date.now(),
@@ -185,12 +208,18 @@ export async function startEnv(): Promise<Env> {
     const ok: Env["ok"] = async (name, args) => {
         const outcome = await call(name, args);
 
-        if (outcome.isError) throw new Error(`${name} failed: ${outcome.text}`);
+        if (outcome.isError) throw new Error(`${name} failed: ${outcome.text}${diagnostics()}`);
 
         return outcome.data;
     };
 
-    await ok("list_tabs");
+    try {
+        await ok("list_tabs");
+    } catch (error) {
+        process.stderr.write = realWrite;
+
+        throw error;
+    }
 
     return {
         fixture,
@@ -204,6 +233,7 @@ export async function startEnv(): Promise<Env> {
             return String((tab.tab as { tab: string }).tab);
         },
         stop: async () => {
+            process.stderr.write = realWrite;
             await client.close().catch(() => undefined);
             await server.close().catch(() => undefined);
             await link.close().catch(() => undefined);
