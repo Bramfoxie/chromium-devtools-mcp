@@ -84,10 +84,14 @@ describe("ruleInputOf", () => {
 });
 
 describe("network_mock", () => {
-    it("is a mutate tool without response bodies in list", async () => {
+    it("decides access by action and keeps bodies out of list", async () => {
         const found = allTools.find((tool) => tool.name === "network_mock");
+        const access = found?.access as (args: unknown) => string;
 
-        expect(found?.access).toBe("mutate");
+        expect(access({ action: "list" })).toBe("read");
+        expect(access({ action: "add" })).toBe("mutate");
+        expect(access({ action: "remove" })).toBe("mutate");
+        expect(access({ action: "clear" })).toBe("mutate");
         expect(found?.target?.({ action: "add", rule: { urlPattern: "https://a.example/*" } })).toEqual({
             pattern: "https://a.example/*",
         });
@@ -277,7 +281,7 @@ describe("network_mock", () => {
         expect(textOf(listed)).toContain("takes no rule or id");
     });
 
-    it("is refused in read-only mode", async () => {
+    it("allows list in read-only mode and refuses changes", async () => {
         const readOnly: Config = {
             ...managedConfig,
             safety: { ...managedConfig.safety, readOnly: true },
@@ -294,9 +298,19 @@ describe("network_mock", () => {
             "tab1",
         );
 
-        const result = await runTool(networkMock, { action: "list" }, extra(), runtime);
+        const listed = await runTool(networkMock, { action: "list" }, extra(), runtime);
 
-        expect(result.isError).toBe(true);
-        expect(textOf(result)).toContain("read-only mode");
+        expect(listed.isError).not.toBe(true);
+
+        for (const args of [
+            { action: "add", rule: { urlPattern: "*", fail: { reason: "Failed" } } },
+            { action: "remove", id: "mock1" },
+            { action: "clear" },
+        ]) {
+            const result = await runTool(networkMock, args, extra(), runtime);
+
+            expect(result.isError).toBe(true);
+            expect(textOf(result)).toContain("read-only mode");
+        }
     });
 });

@@ -183,7 +183,7 @@ describe("page_dialogs", () => {
         expect(textOf(result)).toContain("No tab is selected");
     });
 
-    it("is refused in read-only mode", async () => {
+    it("allows status in read-only mode and refuses changes", async () => {
         const readOnly: Config = {
             ...managedConfig,
             safety: { ...managedConfig.safety, readOnly: true },
@@ -191,9 +191,16 @@ describe("page_dialogs", () => {
         const { runtime } = setup(readOnly);
 
         select(runtime);
-        const result = await runTool(pageDialogs, {}, extra(), runtime);
 
-        expect(result.isError).toBe(true);
-        expect(textOf(result)).toContain("read-only mode");
+        const status = await runTool(pageDialogs, {}, extra(), runtime);
+
+        expect(status.isError).not.toBe(true);
+
+        for (const args of [{ action: "accept" }, { action: "dismiss" }, { policy: "none" }]) {
+            const refused = await runTool(pageDialogs, args, extra(), runtime);
+
+            expect(refused.isError).toBe(true);
+            expect(textOf(refused)).toContain("read-only mode");
+        }
     });
 });

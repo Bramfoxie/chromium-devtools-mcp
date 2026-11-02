@@ -25,8 +25,14 @@ export const pageDialogs = defineTool({
     name: "page_dialogs",
     description:
         "See and resolve JavaScript dialogs (alert, confirm, prompt, beforeunload) of a tab, or set an automatic policy.",
-    access: "mutate",
-    input : z.strictObject({
+    access: (args: unknown) => {
+        const { action, policy } = args as { action?: unknown; policy?: unknown };
+
+        return (action === undefined || action === "status") && policy === undefined
+            ? "read"
+            : "mutate";
+    },
+    input: z.strictObject({
         tab       : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
         action    : z.enum(["status", "accept", "dismiss"]).optional().describe("What to do. Defaults to status."),
         promptText: z.string().max(DIALOG_PROMPT_TEXT_MAX_CHARS).optional().describe("Text for a prompt, up to 10000 characters."),

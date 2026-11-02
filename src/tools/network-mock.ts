@@ -165,8 +165,9 @@ export const networkMock = defineTool({
     name: "network_mock",
     description:
         "Mock network responses or fail requests of a tab by URL pattern. The first matching rule in insertion order wins.",
-    access: "mutate",
-    input : z.strictObject({
+    access: (args: unknown) =>
+        (args as { action?: unknown } | null)?.action === "list" ? "read" : "mutate",
+    input: z.strictObject({
         tab   : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
         action: z.enum(["add", "remove", "list", "clear"]).describe("What to do."),
         rule  : addSchema.optional().describe("Rule to add, for the add action."),

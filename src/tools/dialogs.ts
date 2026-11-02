@@ -107,7 +107,7 @@ export async function ensureNoDialog(dialogs: DialogState, tab: string): Promise
 
     throw new ToolError(
         `${article} ${open.type} dialog is open in this tab and blocks page scripts. ` +
-        "Use page_dialogs to see it and accept or dismiss it first.",
+        "Use page_dialogs with action status to see it, then accept or dismiss it (not allowed in read-only mode).",
     );
 }
 
@@ -121,7 +121,7 @@ export function assertNoDialog(dialogs: DialogState, tab: string): void {
 
     throw new ToolError(
         `${article} ${open.type} dialog is open in this tab and blocks page scripts. ` +
-        "Use page_dialogs to see it and accept or dismiss it first.",
+        "Use page_dialogs with action status to see it, then accept or dismiss it (not allowed in read-only mode).",
     );
 }
 

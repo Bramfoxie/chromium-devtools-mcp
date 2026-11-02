@@ -51,11 +51,11 @@ function minimalArgs(name: string): Record<string, unknown> {
         case "storage_read":
             return {};
         case "page_dialogs":
-            return { action: "status" };
+            return { action: "dismiss" };
         case "storage_write":
             return { kind: "cookies", action: "clear", confirm: true };
         case "network_mock":
-            return { action: "list" };
+            return { action: "clear" };
         case "emulate_device":
             return { device: "iPhone SE" };
         case "emulate_media":
@@ -159,9 +159,7 @@ describe("tool declarations", () => {
             "input_type",
             "input_upload",
             "js_evaluate",
-            "network_mock",
             "new_tab",
-            "page_dialogs",
             "page_navigate",
             "select_tab",
             "storage_write",
