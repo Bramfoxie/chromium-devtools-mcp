@@ -8,6 +8,7 @@ import {
     MOCK_HEADER_VALUE_MAX_CHARS,
     MOCK_HEADERS_MAX,
     MOCK_RULES_MAX,
+    MOCK_TOTAL_BODY_MAX_BYTES,
     MOCK_URL_PATTERN_MAX_CHARS,
     type FailReason,
     type InterceptionManager,
@@ -205,7 +206,16 @@ export const networkMock = defineTool({
                 );
             }
 
-            const added = context.mock.add(targetId, ruleInputOf(args.rule));
+            const input = ruleInputOf(args.rule);
+            const incoming = Buffer.from(input.response?.bodyBase64 ?? "", "base64").length;
+
+            if (context.mock.bodyBytes() + incoming > MOCK_TOTAL_BODY_MAX_BYTES) {
+                throw new ToolError(
+                    `Mock bodies of all rules can hold at most ${MOCK_TOTAL_BODY_MAX_BYTES} bytes. Remove rules with large bodies first.`,
+                );
+            }
+
+            const added = context.mock.add(targetId, input);
 
             try {
                 await context.mock.sync(targetId);

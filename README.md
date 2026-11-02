@@ -97,7 +97,7 @@ Dialog capture starts when a tab is created or selected: while a dialog is open,
 
 Storage tools only touch the page origin. Cookie reads never leave the page URL: no `urls` parameter is sent and `Network.getAllCookies` is never used. Cookie writes always carry the page URL, and the domain must equal the page host or be its parent domain. Values are never logged; cookie values are only returned with `includeValues: true`.
 
-Mock rules live per tab in the MCP process: at most 100 rules, bodies up to 10 MiB, delays up to 30 seconds. Requests that match no rule continue untouched. Rules survive navigation and are removed on tab close, session reset and `clear`. A `times` limit expires the rule after that many applications.
+Mock rules live per tab in the MCP process: at most 100 rules, bodies up to 10 MiB each and 64 MiB in total, delays up to 30 seconds. Requests that match no rule continue untouched. Rules survive navigation and are removed on tab close, session reset and `clear`. A `times` limit expires the rule after that many applications.
 
 ## Element ids
 

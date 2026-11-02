@@ -16,6 +16,8 @@ export const MOCK_HEADERS_MAX = 50;
 
 export const MOCK_BODY_MAX_BYTES = 10 * 1024 * 1024;
 
+export const MOCK_TOTAL_BODY_MAX_BYTES = 64 * 1024 * 1024;
+
 export const MOCK_DELAY_MAX_MS = 30_000;
 
 export type FailReason =
@@ -205,6 +207,18 @@ export class InterceptionManager {
 
             if (typeof targetId === "string") void this.forget(targetId);
         });
+    }
+
+    bodyBytes(): number {
+        let total = 0;
+
+        for (const state of this.tabs.values()) {
+            for (const rule of state.rules) {
+                total += Buffer.from(rule.response?.bodyBase64 ?? "", "base64").length;
+            }
+        }
+
+        return total;
     }
 
     enabled(tab: string): boolean {

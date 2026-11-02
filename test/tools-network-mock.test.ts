@@ -111,6 +111,30 @@ describe("network_mock", () => {
         expect(fake.sent.map((call) => call.method)).not.toContain("Fetch.enable");
     });
 
+    it("bounds the bodies of all rules together", async () => {
+        const { runtime } = setup();
+        const body = Buffer.alloc(10 * 1024 * 1024).toString("base64");
+        const results: boolean[] = [];
+
+        for (let index = 0; index < 7; index += 1) {
+            const result = await runTool(
+                networkMock,
+                {
+                    action: "add",
+                    rule  : { urlPattern: `*/${index}`, response: { status: 200, bodyBase64: body } },
+                },
+                extra(),
+                runtime,
+            );
+
+            results.push(result.isError === true);
+
+            if (result.isError === true) expect(textOf(result)).toContain("Remove rules");
+        }
+
+        expect(results).toEqual([false, false, false, false, false, false, true]);
+    });
+
     it("adds a response rule and enables Fetch", async () => {
         const { fake, runtime } = setup();
         const result = await runTool(
