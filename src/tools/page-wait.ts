@@ -6,6 +6,7 @@ import { defineTool, type ToolContext } from "./define-tool.js";
 import { ensureNoDialog } from "./dialogs.js";
 import { MAX_FRAME_LENGTH } from "./element-target.js";
 import { ToolError } from "./errors.js";
+import { exceptionText } from "./js-evaluate.js";
 import { throwIfCancelled } from "./registry.js";
 
 export const WAIT_DEFAULT_TIMEOUT_MS = 10_000;
@@ -301,6 +302,23 @@ async function runScript(
         throw error;
     } finally {
         context.signal.removeEventListener("abort", onAbort);
+    }
+
+    const failure = z.object({
+        exceptionDetails: z.object({
+            text     : z.string(),
+            exception: z.object({
+                type       : z.string(),
+                description: z.string().optional(),
+            }).optional(),
+        }),
+    }).safeParse(result);
+
+    if (failure.success) {
+        throw new ToolError(
+            `The wait condition threw in the page: ${exceptionText(failure.data.exceptionDetails).replace(/\.$/, "")}. ` +
+            "Fix the selector or expression and call page_wait again.",
+        );
     }
 
     const outcome = waitOutcomeOf(result);

@@ -181,6 +181,29 @@ describe("page_wait", () => {
         expect(String(fake.sent[1]?.params?.expression)).toContain(".ready");
     });
 
+    it("names a syntax error or invalid selector thrown in the page", async () => {
+        const { fake, runtime } = setup();
+
+        fake.respond = () => ({
+            result          : { type: "object", subtype: "error", className: "SyntaxError" },
+            exceptionDetails: {
+                exceptionId: 1,
+                text       : "Uncaught",
+                exception  : {
+                    type       : "object",
+                    description: "SyntaxError: Failed to execute 'querySelectorAll' on 'Document': '[' is not a valid selector.\n    at <anonymous>:3:1",
+                },
+            },
+        });
+
+        const result = await runTool(pageWait, { selector: "[" }, extra(), runtime);
+
+        expect(result.isError).toBe(true);
+        expect(textOf(result)).toContain("is not a valid selector");
+        expect(textOf(result)).not.toContain("unexpected response");
+        expect(textOf(result)).not.toContain("..");
+    });
+
     it("returns met false with detail on timeout instead of an error", async () => {
         const { fake, runtime } = setup();
 
