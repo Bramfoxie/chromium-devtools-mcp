@@ -190,6 +190,30 @@ describe("ChildTargets.attach", () => {
         expect(seen).toEqual(["child-session-1"]);
     });
 
+    it("does not keep listener stops of detached children", async () => {
+        const { peer, deps, attach, emit } = setup();
+        const stops: number[] = [];
+        const counting: ChildTargetsDeps = {
+            ...deps,
+            on: (session, event, handler) => {
+                const stop = deps.on(session, event, handler);
+                const index = stops.push(0) - 1;
+
+                return () => {
+                    stops[index] = (stops[index] ?? 0) + 1;
+                    stop();
+                };
+            },
+        };
+        const handle = await ChildTargets.attach(peer, { onDetached: () => undefined }, counting);
+
+        attach("child1", "child-session-1", peer);
+        emit(peer, "Target.detachedFromTarget", { sessionId: "child-session-1" }, "peer-session");
+        await handle.detachAll();
+
+        expect(Math.max(...stops)).toBe(1);
+    });
+
     it("forgets a nested child on its parent session detach", async () => {
         const { peer, deps, attach, emit, childSession } = setup();
         const seen: string[] = [];

@@ -157,7 +157,11 @@ export class ChildTargets implements ChildSessionHandle {
         if (stop === undefined) return;
 
         this.listeners.delete(sessionId);
-        for (const off of stop) off();
+
+        for (const off of stop) {
+            off();
+            this.off.splice(this.off.indexOf(off), 1);
+        }
     }
 
     private attached(
