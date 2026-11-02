@@ -260,7 +260,6 @@ export {
     EVALUATE_MAX_TIMEOUT_MS,
     exceptionText,
     formatExceptionStack,
-    isBareEmptyObject,
     isFunctionExpression,
     jsEvaluate,
     shapeRemoteValue,

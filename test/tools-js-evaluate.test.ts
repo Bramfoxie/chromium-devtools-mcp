@@ -6,7 +6,6 @@ import {
     elementFunctionDeclaration,
     exceptionText,
     formatExceptionStack,
-    isBareEmptyObject,
     isFunctionExpression,
     jsEvaluate,
     newTab,
@@ -120,18 +119,6 @@ describe("shapeRemoteValue", () => {
         expect(
             shapeRemoteValue({ type: "object", className: "Window", description: "Window", objectId: "obj-2" }, 50000),
         ).toMatchObject({ type: "object", value: "Window" });
-    });
-});
-
-describe("isBareEmptyObject", () => {
-    it("detects an empty object without any description", () => {
-        expect(isBareEmptyObject({ type: "object", value: {} })).toBe(true);
-        expect(isBareEmptyObject({ type: "object", value: { a: 1 } })).toBe(false);
-        expect(isBareEmptyObject({ type: "object", subtype: "array", value: [] })).toBe(false);
-        expect(isBareEmptyObject({ type: "object", subtype: "null", value: null })).toBe(false);
-        expect(isBareEmptyObject({ type: "object", value: {}, description: "h1" })).toBe(false);
-        expect(isBareEmptyObject({ type: "object", value: {}, objectId: "obj-1" })).toBe(false);
-        expect(isBareEmptyObject({ type: "string", value: "" })).toBe(false);
     });
 });
 

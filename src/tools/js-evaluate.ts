@@ -108,17 +108,6 @@ export function exceptionText(exception: NonNullable<Evaluated["exceptionDetails
     return exception.text;
 }
 
-export function isBareEmptyObject(remote: RemoteObject): boolean {
-    return remote.type === "object" &&
-        remote.subtype === undefined &&
-        remote.objectId === undefined &&
-        remote.description === undefined &&
-        remote.unserializableValue === undefined &&
-        typeof remote.value === "object" &&
-        remote.value !== null &&
-        Object.keys(remote.value).length === 0;
-}
-
 export function shapeRemoteValue(remote: RemoteObject, maxChars: number): ShapedValue {
     const type = remote.subtype ?? remote.type;
     const described = remote.description ?? remote.className ?? remote.type;
