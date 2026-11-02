@@ -1021,6 +1021,21 @@ describe("frame targets", () => {
         );
     });
 
+    it("surfaces the child attach failure for a frame id instead of unknown frame", async () => {
+        const { backend, open } = setup();
+        const a = await open("a");
+        const tab = await a.createTab("https://a.example/");
+
+        await a.send(tab, "Page.enable", undefined);
+        backend.failures.attachChildren = [new Error("auto attach refused")];
+
+        const error = await a
+            .send(tab, "Page.enable", undefined, undefined, "cross")
+            .catch((caught: unknown) => caught);
+
+        expect(String((error as Error).message)).toContain("auto attach refused");
+    });
+
     it("keeps child sessions of one session away from another", async () => {
         const { backend, open } = setup();
         const a = await open("a");

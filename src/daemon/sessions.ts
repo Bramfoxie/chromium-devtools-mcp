@@ -512,7 +512,7 @@ export class ClientSession {
     ): Promise<BackendSession> {
         if (frameId === undefined) return this.attached(targetId, tab);
 
-        const children = await this.childrenOf(targetId, tab).catch(() => undefined);
+        const children = await this.childrenOf(targetId, tab);
         const entry = tab.frames.get(frameId);
 
         if (entry?.session === undefined) {

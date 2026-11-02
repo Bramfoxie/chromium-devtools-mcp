@@ -139,7 +139,7 @@ export class FakeBackend implements BrowserBackend {
     >();
     readonly sessions = new Map<string, FakeSession>();
     readonly childHandles: FakeChildHandle[] = [];
-    failures: Partial<Record<"createContext" | "createTarget" | "closeTarget" | "attach", Error[]>> =
+    failures: Partial<Record<"createContext" | "createTarget" | "closeTarget" | "attach" | "attachChildren", Error[]>> =
         {};
     gates: Partial<
         Record<
@@ -220,6 +220,7 @@ export class FakeBackend implements BrowserBackend {
         session: BackendSession,
         options: ChildSessionOptions,
     ): Promise<ChildSessionHandle> {
+        this.fail("attachChildren");
         const page = session as FakeSession | undefined;
         const handle = new FakeChildHandle(this, page?.targetId ?? "unknown", options);
 
