@@ -226,13 +226,7 @@ export class InterceptionManager {
     }
 
     rulesOf(tab: string): MockRule[] {
-        return (this.tabs.get(tab)?.rules ?? []).map((rule) => ({
-            ...rule,
-            response: rule.response === undefined ? undefined : {
-                ...rule.response,
-                headers: rule.response.headers.map((header) => ({ ...header })),
-            },
-        }));
+        return (this.tabs.get(tab)?.rules ?? []).map(copyRule);
     }
 
     add(tab: string, input: RuleInput): MockRule {
@@ -250,13 +244,7 @@ export class InterceptionManager {
 
         state.rules.push(rule);
 
-        return {
-            ...rule,
-            response: rule.response === undefined ? undefined : {
-                ...rule.response,
-                headers: rule.response.headers.map((header) => ({ ...header })),
-            },
-        };
+        return copyRule(rule);
     }
 
     remove(tab: string, id: string): MockRule | undefined {
@@ -495,4 +483,14 @@ export class InterceptionManager {
 
         return state;
     }
+}
+
+function copyRule(rule: MockRule): MockRule {
+    return {
+        ...rule,
+        response: rule.response === undefined ? undefined : {
+            ...rule.response,
+            headers: rule.response.headers.map((header) => ({ ...header })),
+        },
+    };
 }
