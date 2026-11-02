@@ -298,6 +298,22 @@ describe("screenshot", () => {
         return fake;
     }
 
+    it("refuses an element shot in read-only mode and still allows a viewport shot", async () => {
+        const fake = shotFake(JPEG_5X7.toString("base64"));
+        const runtime = new ToolRuntime({
+            access: fake.asAccess(),
+            config: { ...managedConfig, safety: { ...managedConfig.safety, readOnly: true } },
+        });
+
+        const clipped = await runTool(screenshot, { target: { selector: "h1" } }, extra(), runtime);
+        const plain = await runTool(screenshot, { tab: "tab1" }, extra(), runtime);
+
+        expect(clipped.isError).toBe(true);
+        expect(JSON.stringify(clipped.content)).toContain("read-only mode");
+        expect(fake.sent.some((call) => call.method === "DOM.scrollIntoViewIfNeeded")).toBe(false);
+        expect(plain.isError).not.toBe(true);
+    });
+
     it("adds the scroll offset to an element clip on a scrolled page", async () => {
         const seen: Array<Record<string, unknown>> = [];
         const { runtime } = setup(scrolledFake((params) => void seen.push(params)));

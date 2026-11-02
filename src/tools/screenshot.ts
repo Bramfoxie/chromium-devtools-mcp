@@ -257,8 +257,9 @@ export const screenshot = defineTool({
     name: "screenshot",
     description:
         "Capture a tab as an image. Defaults to jpeg quality 80 to keep outputs small; works on background tabs without focusing them.",
-    access: "read",
-    input : z.strictObject({
+    access: (args: unknown) =>
+        (args as { target?: unknown } | null)?.target === undefined ? "read" : "mutate",
+    input: z.strictObject({
         tab         : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
         format      : z.enum(["png", "jpeg", "webp"]).optional().describe("Image format. Defaults to jpeg."),
         quality     : z.number().int().min(1).max(100).optional().describe("Quality for jpeg and webp. Defaults to 80."),
