@@ -31,6 +31,32 @@ function textOf(result: Awaited<ReturnType<typeof runTool>>): string {
     return JSON.stringify(result.content);
 }
 
+describe("list_tabs clipping", () => {
+    it("clips titles and URLs on code points and marks the omission", async () => {
+        const { fake, runtime } = setup();
+
+        await runTool(newTab, {}, extra(), runtime);
+        const [tab] = fake.tabs;
+
+        if (tab === undefined) throw new Error("expected a tab");
+
+        tab.title = "\u{1F600}".repeat(600);
+        tab.url = `https://example.org/${"a".repeat(2100)}`;
+
+        const result = await runTool(listTabs, {}, extra(), runtime);
+        const content = result.structuredContent as {
+            tabs: Array<{ title: string; url: string }>;
+        };
+        const [listed] = content.tabs;
+
+        expect(listed?.title).toBe(
+            `${"\u{1F600}".repeat(500)}[truncated: 100 of 600 characters omitted]`,
+        );
+        expect(listed?.url).toMatch(/\[truncated: \d+ of 2120 characters omitted\]$/);
+        expect(listed?.title).not.toMatch(/[\ud800-\udbff](?![\udc00-\udfff])/);
+    });
+});
+
 describe("new_tab", () => {
     it("opens a tab and selects it by default", async () => {
         const { fake, runtime } = setup();

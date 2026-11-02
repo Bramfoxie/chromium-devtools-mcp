@@ -2,6 +2,10 @@ import { z } from "zod";
 import { RpcError, ErrorCode } from "../daemon/index.js";
 import { defineTool } from "./define-tool.js";
 import { ToolError } from "./errors.js";
+import { truncateText } from "./result.js";
+
+const TAB_URL_MAX_CHARS = 2000;
+const TAB_TITLE_MAX_CHARS = 500;
 
 const tabId = z.string().min(1).max(128).describe("Tab id returned by the tab tools.");
 
@@ -82,8 +86,8 @@ export const listTabs = defineTool({
 
         const slice = (list: typeof tabs) => list.slice(0, limit).map((tab) => ({
             tab    : tab.targetId,
-            url    : tab.url.length <= 2000 ? tab.url : `${tab.url.slice(0, 2000)}...`,
-            title  : tab.title.length <= 500 ? tab.title : `${tab.title.slice(0, 500)}...`,
+            url    : truncateText(tab.url, TAB_URL_MAX_CHARS).text,
+            title  : truncateText(tab.title, TAB_TITLE_MAX_CHARS).text,
             owned  : tab.owned,
             created: tab.created,
         }));
@@ -201,7 +205,7 @@ export const closeTab = defineTool({
         const tabs = await context.access.listTabs("owned");
         const rest = tabs.filter((tab) => tab.targetId !== targetId);
         const next = context.state.selected === targetId
-            ? selectionOf(rest, undefined) ?? rest[0]?.targetId
+            ? rest[0]?.targetId
             : selectionOf(tabs, context.state.selected);
 
         context.tabs.refresh(tabs, next);
