@@ -3,7 +3,12 @@ import type { DaemonAccess } from "../mcp/index.js";
 import { ensureActionable } from "./actionability.js";
 import { defineTool, type ToolContext } from "./define-tool.js";
 import { ensureNoDialog } from "./dialogs.js";
-import { elementTargetSchema, resolveElement, type ResolvedElement } from "./element-target.js";
+import {
+    elementAccess,
+    elementTargetSchema,
+    resolveElement,
+    type ResolvedElement,
+} from "./element-target.js";
 import { ToolError } from "./errors.js";
 import { changedUrl, navigationOf, summarizeTarget, targetSummarySchema } from "./input-click.js";
 import {
@@ -221,11 +226,14 @@ export const inputType = defineTool({
                 context.elements,
                 targetId,
                 args.target,
-                { frames: context.frames },
+                { frames: context.frames, allowIsolated: true },
             );
-            const checked = await ensureActionable(context.access, targetId, resolved, {
-                checkDisabled: true,
-            });
+            const checked = await ensureActionable(
+                elementAccess(context.access, resolved),
+                targetId,
+                resolved,
+                { checkDisabled: true },
+            );
 
             if (checked.state.fileInput) {
                 throw new ToolError(
@@ -253,7 +261,9 @@ export const inputType = defineTool({
         }
 
         const acted = await navigationOf(context.access, targetId, async () => {
-            if (element !== undefined) await focusElement(context.access, targetId, element);
+            if (element !== undefined) {
+                await focusElement(elementAccess(context.access, element), targetId, element);
+            }
 
             if (args.clear === true) await clearField(context, targetId);
 
@@ -281,7 +291,9 @@ export const inputType = defineTool({
         }
 
         const urlChanged = changedUrl(acted.urlBefore, acted.urlAfter).urlAfter !== undefined;
-        const outcome = urlChanged ? undefined : await readValue(context.access, targetId, element);
+        const outcome = urlChanged
+            ? undefined
+            : await readValue(elementAccess(context.access, element), targetId, element);
 
         if (outcome === undefined) {
             return {
@@ -402,14 +414,15 @@ export const inputKey = defineTool({
                 context.elements,
                 targetId,
                 args.target,
-                { frames: context.frames },
+                { frames: context.frames, allowIsolated: true },
             );
-            const checked = await ensureActionable(context.access, targetId, resolved, {
+            const owner = elementAccess(context.access, resolved);
+            const checked = await ensureActionable(owner, targetId, resolved, {
                 checkDisabled: true,
             });
 
             summary = summarizeTarget(args.target.uid, checked.state);
-            await focusElement(context.access, targetId, resolved);
+            await focusElement(owner, targetId, resolved);
         }
 
         const events = planKeyPress(parsed, platform, repeat);

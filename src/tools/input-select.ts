@@ -3,7 +3,12 @@ import type { DaemonAccess } from "../mcp/index.js";
 import { ensureActionable } from "./actionability.js";
 import { defineTool } from "./define-tool.js";
 import { ensureNoDialog } from "./dialogs.js";
-import { elementTargetSchema, resolveElement, type ResolvedElement } from "./element-target.js";
+import {
+    elementAccess,
+    elementTargetSchema,
+    resolveElement,
+    type ResolvedElement,
+} from "./element-target.js";
 import { ToolError } from "./errors.js";
 import { changedUrl, navigationOf, summarizeTarget, targetSummarySchema } from "./input-click.js";
 import { throwIfCancelled } from "./registry.js";
@@ -218,9 +223,10 @@ export const inputSelect = defineTool({
             context.elements,
             targetId,
             args.target,
-            { frames: context.frames },
+            { frames: context.frames, allowIsolated: true },
         );
-        const checked = await ensureActionable(context.access, targetId, element, {
+        const owner = elementAccess(context.access, element);
+        const checked = await ensureActionable(owner, targetId, element, {
             checkDisabled: true,
         });
 
@@ -230,7 +236,7 @@ export const inputSelect = defineTool({
             );
         }
 
-        const { multiple, options } = await readSelect(context.access, targetId, element);
+        const { multiple, options } = await readSelect(owner, targetId, element);
         const by: SelectBy = args.values !== undefined
             ? { values: args.values }
             : args.labels !== undefined
@@ -241,7 +247,7 @@ export const inputSelect = defineTool({
         if ("error" in matched) throw new ToolError(matched.error);
 
         const acted = await navigationOf(context.access, targetId, () =>
-            context.access.send(targetId, "Runtime.callFunctionOn", {
+            owner.send(targetId, "Runtime.callFunctionOn", {
                 functionDeclaration: SELECT_WRITE_EXPRESSION,
                 objectId           : element.objectId,
                 arguments          : [{ objectId: element.objectId }, { value: matched.indexes }],

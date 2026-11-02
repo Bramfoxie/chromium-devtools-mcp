@@ -1,3 +1,6 @@
+import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { chromeAvailable, eventually, html, startEnv, type Env } from "./browser-env.js";
 
@@ -9,6 +12,14 @@ type Row = Record<string, unknown>;
 const POINTER = `<div style="height:30px"></div>
 <button id="b" style="margin-left:20px;width:80px;height:40px" onclick="this.textContent='clicked'">b</button>
 <button id="h" style="margin-left:20px;width:80px;height:40px" onmouseover="this.textContent='hovered'">h</button>`;
+
+const FORMS = `<input id="t"><div id="out">idle</div>
+<select id="s"><option value="a">A</option><option value="b">B</option></select>
+<input id="f" type="file">
+<div style="height:3000px"></div><button id="far">far</button>
+<script>document.getElementById("t").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") document.getElementById("out").textContent = "enter";
+});</script>`;
 
 const nest = (deep: string) =>
     `<div style="height:20px"></div><iframe name="inner" style="margin-left:15px;border:2px solid blue;width:250px;height:150px" src="${deep}"></iframe>`;
@@ -47,6 +58,11 @@ beforeAll(async () => {
         html(`<iframe name="cross" id="cross" src="${env.other.origin}/inner"></iframe>`),
     );
     env.other.pages.set("/pointer", html(POINTER));
+    env.other.pages.set("/forms", html(FORMS));
+    env.fixture.pages.set(
+        "/xforms",
+        html(`<div style="height:900px"></div><iframe name="cross" style="width:500px;height:300px" src="${env.other.origin}/forms"></iframe><div style="height:900px"></div>`),
+    );
     env.other.pages.set("/nest", html(nest(`${env.fixture.origin}/deep`)));
     env.fixture.pages.set("/deep", html(DEEP));
     env.fixture.pages.set(
@@ -215,5 +231,72 @@ describe.skipIf(!present)("cross-site iframe in a real browser", { timeout: 30_0
         expect(refused.isError).toBe(true);
         expect(refused.text).toContain("veil");
         expect(await textOf(tab, "#b", frame)).toBe("b");
+    });
+
+    it("input_type types into a field of the cross-site frame and reads the value back", async () => {
+        const tab = await crossTab("/xforms");
+        const frame = "iframe[name=cross]";
+        const typed = await env.ok("input_type", { tab, target: { selector: "#t", frame }, text: "hello" });
+
+        expect(typed).toMatchObject({ ok: true, contains: true, valueLength: 5 });
+        const slow = await env.ok("input_type", {
+            tab,
+            target : { selector: "#t", frame },
+            text   : "ab",
+            delayMs: 5,
+        });
+
+        expect(slow).toMatchObject({ ok: true, contains: true, valueLength: 7 });
+    });
+
+    it("input_key presses a key in the focused field of the cross-site frame", async () => {
+        const tab = await crossTab("/xforms");
+        const frame = "iframe[name=cross]";
+
+        await env.ok("input_key", { tab, target: { selector: "#t", frame }, key: "Enter" });
+
+        expect(await textOf(tab, "#out", frame)).toBe("enter");
+    });
+
+    it("input_select picks an option of a select in the cross-site frame", async () => {
+        const tab = await crossTab("/xforms");
+        const picked = await env.ok("input_select", {
+            tab,
+            target: { selector: "#s", frame: "iframe[name=cross]" },
+            labels: ["B"],
+        });
+
+        expect(picked.selected).toEqual([{ value: "b", label: "B" }]);
+    });
+
+    it("input_upload attaches a file to a file input of the cross-site frame", async () => {
+        const tab = await crossTab("/xforms");
+        const dir = await realpath(await mkdtemp(join(tmpdir(), "cdm-xsite-up-")));
+
+        try {
+            const file = join(dir, "note.txt");
+
+            await writeFile(file, "payload");
+            const attached = await env.ok("input_upload", {
+                tab,
+                target: { selector: "#f", frame: "iframe[name=cross]" },
+                files : [file],
+            });
+
+            expect(attached.files).toEqual([{ name: "note.txt", size: 7 }]);
+        } finally {
+            await rm(dir, { recursive: true, force: true });
+        }
+    });
+
+    it("input_scroll brings an element of the cross-site frame into view", async () => {
+        const tab = await crossTab("/xforms");
+        const scrolled = await env.ok("input_scroll", {
+            tab,
+            target: { selector: "#far", frame: "iframe[name=cross]" },
+        });
+
+        expect(scrolled).toMatchObject({ ok: true, method: "intoView" });
+        expect(Number(scrolled.y)).toBeGreaterThan(0);
     });
 });

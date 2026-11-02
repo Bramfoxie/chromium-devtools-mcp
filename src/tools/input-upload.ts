@@ -3,7 +3,12 @@ import type { DaemonAccess } from "../mcp/index.js";
 import { ensureActionable } from "./actionability.js";
 import { defineTool } from "./define-tool.js";
 import { ensureNoDialog } from "./dialogs.js";
-import { elementTargetSchema, resolveElement, type ResolvedElement } from "./element-target.js";
+import {
+    elementAccess,
+    elementTargetSchema,
+    resolveElement,
+    type ResolvedElement,
+} from "./element-target.js";
 import { ToolError } from "./errors.js";
 import { changedUrl, navigationOf, summarizeTarget, targetSummarySchema } from "./input-click.js";
 import { throwIfCancelled } from "./registry.js";
@@ -156,9 +161,10 @@ export const inputUpload = defineTool({
             context.elements,
             targetId,
             args.target,
-            { frames: context.frames },
+            { frames: context.frames, allowIsolated: true },
         );
-        const checked = await ensureActionable(context.access, targetId, element, {
+        const owner = elementAccess(context.access, element);
+        const checked = await ensureActionable(owner, targetId, element, {
             checkDisabled: true,
             checkVisible : false,
         });
@@ -178,7 +184,7 @@ export const inputUpload = defineTool({
         throwIfCancelled(context.signal);
 
         const acted = await navigationOf(context.access, targetId, async () => {
-            await context.access.send(targetId, "DOM.setFileInputFiles", {
+            await owner.send(targetId, "DOM.setFileInputFiles", {
                 backendNodeId: element.backendNodeId,
                 files        : validated.map((file) => file.path),
             });
@@ -186,7 +192,7 @@ export const inputUpload = defineTool({
         const navigatedAway = changedUrl(acted.urlBefore, acted.urlAfter).urlAfter !== undefined;
         const count = navigatedAway
             ? validated.length
-            : await attachedCount(context.access, targetId, element);
+            : await attachedCount(owner, targetId, element);
 
         if (count !== validated.length) {
             throw new ToolError(

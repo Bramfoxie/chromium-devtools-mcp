@@ -4,12 +4,15 @@ import { ensureActionable } from "./actionability.js";
 import { defineTool, type ToolContext } from "./define-tool.js";
 import { ensureNoDialog } from "./dialogs.js";
 import {
+    boxOf,
+    elementAccess,
     elementTargetSchema,
     type ElementTarget,
     resolveElement,
     type ResolvedElement,
 } from "./element-target.js";
 import { ToolError } from "./errors.js";
+import { frameChain, revealChain } from "./frame-geometry.js";
 import { summarizeTarget, targetSummarySchema } from "./input-click.js";
 import { throwIfCancelled } from "./registry.js";
 
@@ -281,20 +284,33 @@ async function scrollToElement(
         context.elements,
         targetId,
         target,
-        { frames: context.frames },
+        { frames: context.frames, allowIsolated: true },
     );
-    const checked = await ensureActionable(context.access, targetId, element, {
+    const owner = elementAccess(context.access, element);
+    const checked = await ensureActionable(owner, targetId, element, {
         checkDisabled: false,
     });
 
-    await context.access.send(targetId, "Runtime.callFunctionOn", {
+    await owner.send(targetId, "Runtime.callFunctionOn", {
         functionDeclaration: SCROLL_INTO_VIEW_EXPRESSION,
         objectId           : element.objectId,
         arguments          : [{ objectId: element.objectId }, { value: block }],
         returnByValue      : true,
     });
 
-    const after = await scrollState(context.access, targetId);
+    if (element.isolated === true && element.frameId !== undefined) {
+        const placed = await boxOf(owner, targetId, { objectId: element.objectId });
+
+        if (placed.box !== null) {
+            await revealChain(
+                await frameChain(context.access, context.frames, targetId, element.frameId),
+                targetId,
+                placed.box,
+            );
+        }
+    }
+
+    const after = await scrollState(owner, targetId);
 
     return {
         ok    : true,
