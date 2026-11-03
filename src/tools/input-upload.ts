@@ -126,6 +126,7 @@ export const inputUpload = defineTool({
         "Attach local files to a file input. The most sensitive input tool: it sends local files to a web page.",
     access   : "mutate",
     dangerous: true,
+    summarize: (args) => `It sends these local files to the page: ${args.files.slice(0, 5).join(", ")}${args.files.length > 5 ? ", ..." : ""}`,
     input    : z.strictObject({
         tab   : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
         target: elementTargetSchema.describe("Element uid from a snapshot or query, or a CSS selector. Must resolve to an input of type file."),

@@ -6,6 +6,7 @@ import type {
     ServerRequest,
 } from "@modelcontextprotocol/sdk/types.js";
 import type { AnyTool } from "./define-tool.js";
+import { confirmationRefusal } from "./confirmation.js";
 import { ToolRuntime } from "./context.js";
 import { ToolError, toToolMessage } from "./errors.js";
 import { errorResult, jsonResult } from "./result.js";
@@ -169,11 +170,27 @@ export async function runTool(
 
     if (!decision.allowed) return errorResult(`${decision.reason} ${decision.hint}`);
 
+    const confirming = dangerous && runtime.config.safety.confirmDangerous;
+
+    if (confirming) {
+        const outcome = runtime.confirm === undefined
+            ? "unsupported" as const
+            : await runtime.confirm(
+                {
+                    tool   : tool.name,
+                    summary: tool.summarize?.(parsed.data as never) ?? "It can reach beyond the page.",
+                },
+                extra.signal,
+            );
+
+        if (outcome !== "accepted") return errorResult(confirmationRefusal(tool.name, outcome));
+    }
+
     const generation = runtime.access.sessionGeneration;
 
     try {
         const output = await raceWithSignal(
-            tool.handler(parsed.data, runtime.context(extra.signal)),
+            tool.handler(parsed.data, runtime.context(extra.signal, confirming)),
             extra.signal,
         );
         const validated = tool.output.safeParse(output);

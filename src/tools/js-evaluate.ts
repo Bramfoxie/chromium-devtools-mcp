@@ -185,8 +185,10 @@ export const jsEvaluate = defineTool({
     name: "js_evaluate",
     description:
         "Run JavaScript in a tab and return the result. Page exceptions come back as data, not as tool errors.",
-    access: "mutate",
-    input : z.strictObject({
+    access   : "mutate",
+    dangerous: true,
+    summarize: (args) => `It runs this script in the page: ${args.expression.slice(0, 300)}`,
+    input    : z.strictObject({
         tab           : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
         expression    : z.string().min(1).max(EVALUATE_MAX_EXPRESSION_CHARS).describe("JavaScript expression to evaluate."),
         awaitPromise  : z.boolean().optional().describe("Await a promise result. Defaults to true."),

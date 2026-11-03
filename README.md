@@ -2,7 +2,7 @@
 
 MCP server that lets AI agents drive your real Chromium browser through the DevTools Protocol.
 
-Status: early development. The core (config, browser connection, daemon, MCP entrypoint) and all planned browser tools work. The domain allowlist, confirmation of dangerous actions and the client installer are not implemented yet; read-only mode works.
+Status: early development. The core (config, browser connection, daemon, MCP entrypoint) and all planned browser tools work. The safety options (read-only mode, domain allowlist, confirmation of dangerous actions) work; the client installer is not implemented yet.
 
 ## Features
 
@@ -155,7 +155,7 @@ The file is `~/.config/chromium-devtools-mcp/config.json` on macOS and Linux and
 | `isolated`                | `--isolated`, `--no-isolated` | `CHROMIUM_DEVTOOLS_MCP_ISOLATED`          | open the session in an isolated browser context                       | false                                  |
 | `safety.readOnly`         | `--read-only`                 | `CHROMIUM_DEVTOOLS_MCP_READ_ONLY`         | refuse actions that change pages                                      | false                                  |
 | `safety.allowedDomains`   | `--allowed-domains`           | `CHROMIUM_DEVTOOLS_MCP_ALLOWED_DOMAINS`   | comma separated list of hosts, see Safety                             | empty, no limit                        |
-| `safety.confirmDangerous` | `--confirm-dangerous`         | `CHROMIUM_DEVTOOLS_MCP_CONFIRM_DANGEROUS` | ask before dangerous actions (planned)                                | false                                  |
+| `safety.confirmDangerous` | `--confirm-dangerous`         | `CHROMIUM_DEVTOOLS_MCP_CONFIRM_DANGEROUS` | ask before dangerous actions, see Safety                              | false                                  |
 
 In managed mode the default `debugPort` is 0, so Chrome picks a free port at every launch and the daemon reads the real port back. The port is not predictable, which keeps the unauthenticated debugging endpoint on loopback hard to find for other local processes. A browser left running on the managed profile is found through the profile, not through the port. Set `debugPort` explicitly only when something else needs a fixed port. In attach mode the port is the fallback used to find a browser started with `--remote-debugging-port`, so its default stays 9222.
 
@@ -178,6 +178,10 @@ With a list set:
 - A mutating tool refuses a tab whose current URL is outside the list, and refuses an element inside a frame whose origin is outside the list. Read tools keep working on such tabs. `page_navigate` to an allowed URL, `new_tab`, `select_tab` and `close_tab` stay available so a tab can be moved away or closed.
 - The URL is read when the tool starts, so a page that navigates itself later is caught at the next mutating call.
 
+`safety.confirmDangerous` asks the user before a dangerous call. Dangerous tools are `js_evaluate`, `page_wait` with an `expression`, `storage_write`, `storage_read` with `kind: "cookies"` and `input_upload`; they carry `destructiveHint: true`. With the option on, the server asks through MCP elicitation and runs the tool only when the user accepts. The question names the tool and a short summary (the script, the storage kind and action, or the file paths) and never contains cookie values or file contents. A client without elicitation support gets an error that tells the owner to set `safety.confirmDangerous` to false, and a declined or failed question also runs nothing. `close_tab`, `network_mock` and the `input_*` tools other than `input_upload` are not dangerous. `close_tab` only closes tabs opened by the session; a tab it merely claimed is refused.
+
+`safety.readOnly` refuses every tool that changes page or browser state: `new_tab`, `select_tab`, `close_tab`, `page_navigate`, `js_evaluate`, `click`, `input_*`, `emulate_*`, `storage_write`, `page_wait` with an `expression`, `network_mock` actions other than `list`, `page_dialogs` actions other than `status` or with a policy, and `screenshot` with a `target`. Reading tools, including cookie reads, keep working. A tool whose annotation depends on its arguments reports `readOnlyHint: false`, and only the calls that change state are refused.
+
 The daemon enforces the safety options of each session itself, so a client cannot widen them by talking to the daemon directly. For a session it refuses `tab.create` and `Page.navigate` outside the allowlist or in read-only mode, and it applies the options to the CDP methods that reach beyond the page: `Network.getCookies` and `Storage.getCookies` (reads), `Network.setCookie`, `Network.setCookies`, `Network.deleteCookies`, `Storage.setCookies`, `Storage.clearCookies` and `DOM.setFileInputFiles` (changes). Changes are refused in read-only mode; changes are refused when the tab (or the frame given) is outside the allowlist or when a cookie is written for a `url` or `domain` outside it. Methods of the `Storage` domain and `Network.setCookies` are also blocked by the general method policy.
 
 ## Supported
@@ -192,7 +196,7 @@ The daemon enforces the safety options of each session itself, so a client canno
 1. Repository, npm name and CI.
 2. Core: config, CDP client, browser discovery, managed and attach modes, daemon.
 3. Tools: tabs, navigation and inspection, input, observation, emulation, control and storage, network mocking, shadow DOM and iframes (all done).
-4. Safety controls (read-only mode works, the rest planned).
+4. Safety controls (done).
 5. Client installer.
 6. First release.
 7. Later: performance traces and Core Web Vitals, Lighthouse, heap snapshots.

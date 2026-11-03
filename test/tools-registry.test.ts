@@ -172,7 +172,7 @@ describe("tool declarations", () => {
             typeof tool.dangerous === "function" ? tool.dangerous({}) : (tool.dangerous ?? false),
         ).map((tool) => tool.name);
 
-        expect(dangerous.sort()).toEqual(["input_upload", "storage_write"]);
+        expect(dangerous.sort()).toEqual(["input_upload", "js_evaluate", "storage_write"]);
     });
 
     it("runs every real mutate tool through the safety gate", async () => {

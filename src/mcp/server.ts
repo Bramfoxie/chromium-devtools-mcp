@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { pathFor, type Config } from "../config/index.js";
+import { elicitationConfirmer } from "../tools/confirmation.js";
 import { allTools, registerTools, ToolRuntime } from "../tools/index.js";
 import { DaemonAccess } from "./daemon-access.js";
 import {
@@ -152,7 +153,11 @@ export function registerServerTools(
     options: ToolServerOptions = {},
 ): ToolRuntime {
     const access = options.access ?? new DaemonAccess({ link });
-    const runtime = new ToolRuntime({ access, config });
+    const runtime = new ToolRuntime({
+        access,
+        config,
+        confirm: elicitationConfirmer(server.server),
+    });
 
     access.on("tab.closed", (params) => {
         const targetId = (params as { targetId?: unknown } | null)?.targetId;

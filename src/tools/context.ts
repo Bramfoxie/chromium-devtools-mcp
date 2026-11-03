@@ -1,5 +1,6 @@
 import type { Config } from "../config/index.js";
 import type { DaemonAccess, DaemonTab } from "../mcp/index.js";
+import { confirmedAccess, type Confirmer } from "./confirmation.js";
 import { CaptureManager } from "./capture/manager.js";
 import type { ToolClock, ToolContext } from "./define-tool.js";
 import { DialogState } from "./dialogs.js";
@@ -65,6 +66,7 @@ export interface ToolRuntimeOptions {
     mock?     : InterceptionManager;
     emulation?: EmulationState;
     upload?   : UploadEnvironment;
+    confirm?  : Confirmer;
 }
 
 export class ToolRuntime {
@@ -80,6 +82,7 @@ export class ToolRuntime {
     readonly mock     : InterceptionManager;
     readonly emulation: EmulationState;
     readonly upload   : UploadEnvironment;
+    readonly confirm  : Confirmer | undefined;
 
     constructor(options: ToolRuntimeOptions) {
         this.access = options.access;
@@ -104,13 +107,14 @@ export class ToolRuntime {
             new InterceptionManager({ access: options.access, clock: this.clock });
         this.emulation = options.emulation ?? new EmulationState();
         this.upload = options.upload ?? nodeUploadEnvironment();
+        this.confirm = options.confirm;
     }
 
-    context(signal: AbortSignal): ToolContext {
+    context(signal: AbortSignal, confirmed = false): ToolContext {
         const tabs = this.tabs;
 
         return {
-            access   : this.access,
+            access   : confirmed ? confirmedAccess(this.access) : this.access,
             tabs,
             elements : this.elements,
             frames   : this.frames,

@@ -21,6 +21,7 @@ export class FakeAccess {
         params?   : Record<string, unknown>;
         timeoutMs?: number;
         frameId?  : string;
+        confirmed?: boolean;
     }> = [];
     readonly order       : string[] = [];
     readonly subscribed  : Array<{ targetId: string; event: string; frameId?: string }> = [];
@@ -144,9 +145,16 @@ export class FakeAccess {
         params?   : Record<string, unknown>,
         timeoutMs?: number,
         frameId?  : string,
-        options?  : { signal?: AbortSignal },
+        options?  : { signal?: AbortSignal; confirmed?: boolean },
     ): Promise<unknown> {
-        this.sent.push({ targetId, method, params, timeoutMs, frameId });
+        this.sent.push({
+            targetId,
+            method,
+            params,
+            timeoutMs,
+            frameId,
+            ...(options?.confirmed === true ? { confirmed: true } : {}),
+        });
         this.order.push(`send ${method}`);
         const failure = this.failSend?.(targetId, method);
 

@@ -252,7 +252,9 @@ export const storageRead = defineTool({
         "Read local storage, session storage or cookies of the page origin. Cookie values are secrets and stay hidden unless includeValues is true.",
     access   : "read",
     dangerous: (args) => args.kind === "cookies",
-    input    : z.strictObject({
+    summarize: (args) =>
+        `It reads the cookies of the page${args.includeValues === true ? ", including their values" : ""}.`,
+    input: z.strictObject({
         tab          : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
         kind         : z.enum(["local", "session", "cookies"]).describe("What to read."),
         keys         : z.array(z.string().min(1).max(STORAGE_MAX_KEY_CHARS)).max(STORAGE_MAX_KEYS).optional().describe("Storage keys to read, for local and session. Defaults to all."),

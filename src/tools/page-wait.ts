@@ -455,7 +455,9 @@ export const pageWait = defineTool({
 
         return expression === undefined ? "read" : "mutate";
     },
-    input: z.strictObject({
+    dangerous: (args) => args.expression !== undefined,
+    summarize: (args) => `It runs this script in the page: ${(args.expression ?? "").slice(0, 300)}`,
+    input    : z.strictObject({
         tab       : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
         selector  : conditionSchema.shape.selector,
         state     : conditionSchema.shape.state,

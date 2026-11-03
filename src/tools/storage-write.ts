@@ -113,6 +113,7 @@ export const storageWrite = defineTool({
         "Write local storage, session storage or cookies of the page origin. Values are never echoed back.",
     access   : "mutate",
     dangerous: true,
+    summarize: (args) => `It will ${args.action} ${args.kind} of the page origin.`,
     input    : z.strictObject({
         tab    : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
         kind   : z.enum(["local", "session", "cookies"]).describe("What to write."),

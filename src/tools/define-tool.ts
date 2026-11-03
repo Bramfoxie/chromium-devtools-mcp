@@ -65,6 +65,7 @@ export interface ToolDefinition<
     closedWorld? : boolean;
     access       : ToolAccess;
     dangerous?   : boolean | ((args: z.output<TInputSchema>) => boolean);
+    summarize?   : (args: z.output<TInputSchema>) => string;
     tabUrlExempt?: boolean | ((args: z.output<TInputSchema>) => boolean);
     input        : TInputSchema;
     output       : TOutputSchema;
