@@ -8,7 +8,9 @@ import type { DialogState } from "./dialogs.js";
 import type { ElementRegistry } from "./element-target.js";
 import type { InterceptionManager } from "./mock/interception.js";
 import type { EmulationState } from "./emulation/state.js";
+import type { ScreencastRecorder } from "./perf/screencast-recorder.js";
 import type { TraceRecorder } from "./perf/trace-recorder.js";
+import type { VideoTools } from "./perf/video.js";
 import type { FocusEmulation } from "./focus-emulation.js";
 import type { FrameState } from "./frames.js";
 import type { UploadEnvironment } from "./upload-environment.js";
@@ -42,22 +44,24 @@ interface TabSelection {
 }
 
 export interface ToolContext {
-    access   : DaemonAccess;
-    state    : SessionState;
-    tabs     : TabSelection;
-    elements : ElementRegistry;
-    frames   : FrameState;
-    focus    : FocusEmulation;
-    capture  : CaptureManager;
-    dialogs  : DialogState;
-    mock     : InterceptionManager;
-    emulation: EmulationState;
-    upload   : UploadEnvironment;
-    trace    : TraceRecorder;
-    artifacts: ArtifactStore;
-    config   : Config;
-    clock    : ToolClock;
-    signal   : AbortSignal;
+    access    : DaemonAccess;
+    state     : SessionState;
+    tabs      : TabSelection;
+    elements  : ElementRegistry;
+    frames    : FrameState;
+    focus     : FocusEmulation;
+    capture   : CaptureManager;
+    dialogs   : DialogState;
+    mock      : InterceptionManager;
+    emulation : EmulationState;
+    upload    : UploadEnvironment;
+    trace     : TraceRecorder;
+    screencast: ScreencastRecorder;
+    video     : VideoTools;
+    artifacts : ArtifactStore;
+    config    : Config;
+    clock     : ToolClock;
+    signal    : AbortSignal;
     forgetTab(targetId: string): Promise<void>;
 }
 

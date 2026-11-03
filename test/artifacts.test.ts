@@ -22,6 +22,7 @@ function fakeIO(listing: Array<{ name: string; modifiedMs: number }> = []) {
     const calls: string[] = [];
     const io: ArtifactIO = {
         ensureDir: async (dir) => void calls.push(`ensure ${dir}`),
+        makeDir  : async (dir) => void calls.push(`make ${dir}`),
         write    : async (file, data) => void written.push({ file, data }),
         list     : async () => listing,
         remove   : async (file) => void removed.push(file),
@@ -115,9 +116,77 @@ describe("DirectoryArtifactStore", () => {
     });
 });
 
+describe("DirectoryArtifactStore directories", () => {
+    it("creates a directory named by kind, time and a random part and writes files into it", async () => {
+        const { io, written, calls } = fakeIO();
+        const dir = await storeWith(io).directory("screencast");
+        const root = path.join("/data/artifacts", "screencast-20261103T123456-0123456789ab");
+
+        expect(dir.path).toBe(root);
+        expect(calls).toEqual(["ensure /data/artifacts", `make ${root}`]);
+        await expect(dir.write("frame-0001.jpg", new Uint8Array(7))).resolves.toBe(7);
+        await expect(dir.write("frames", "abc")).resolves.toBe(3);
+        expect(written.map((entry) => entry.file)).toEqual([
+            path.join(root, "frame-0001.jpg"),
+            path.join(root, "frames"),
+        ]);
+    });
+
+    it.each(["../x.jpg", "a/b.jpg", "Frame.jpg", "a.b.c", "", "a b"])(
+        "refuses the file name %s inside a directory",
+        async (name) => {
+            const { io, written } = fakeIO();
+            const dir = await storeWith(io).directory("screencast");
+
+            await expect(dir.write(name, "x")).rejects.toThrow(/may use lowercase letters/);
+            await expect(dir.remove(name)).rejects.toThrow(/may use lowercase letters/);
+            expect(written).toEqual([]);
+        },
+    );
+
+    it("removes a file of a directory", async () => {
+        const { io, removed } = fakeIO();
+        const dir = await storeWith(io).directory("screencast");
+
+        await dir.remove("frame-0001.jpg");
+
+        expect(removed).toEqual([path.join(dir.path, "frame-0001.jpg")]);
+    });
+
+    it("refuses a bad kind and explains a directory that cannot be created", async () => {
+        const { io } = fakeIO();
+
+        await expect(storeWith(io).directory("Bad Kind")).rejects.toThrow(/lowercase letters/);
+        await expect(
+            storeWith({
+                ...io,
+                makeDir: async () => {
+                    throw new Error("EEXIST");
+                },
+            }).directory("screencast"),
+        ).rejects.toThrow(/Could not create .*EEXIST/);
+    });
+
+    it("removes old directories of its own along with old files", async () => {
+        const day = 24 * 60 * 60 * 1000;
+        const { io, removed } = fakeIO([
+            { name: "screencast-20261101T000000-aaaaaaaaaaaa", modifiedMs: NOW - 2 * day },
+            { name: "screencast-20261103T100000-bbbbbbbbbbbb", modifiedMs: NOW - 1000 },
+            { name: "screencast", modifiedMs: NOW - 9 * day },
+        ]);
+
+        await storeWith(io).directory("screencast");
+
+        expect(removed).toEqual([
+            path.join("/data/artifacts", "screencast-20261101T000000-aaaaaaaaaaaa"),
+        ]);
+    });
+});
+
 describe("noArtifacts", () => {
     it("says the server cannot save files", async () => {
         await expect(noArtifacts.write("trace", "json", "x")).rejects.toThrow(/no directory for files/);
+        await expect(noArtifacts.directory("shots")).rejects.toThrow(/no directory for files/);
     });
 });
 

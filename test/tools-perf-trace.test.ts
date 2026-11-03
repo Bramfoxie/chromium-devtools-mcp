@@ -57,6 +57,7 @@ function setup(config: Config = managedConfig): Setup {
 
             return { path: `/data/artifacts/${kind}.${extension}`, bytes: String(data).length };
         },
+        directory: () => Promise.reject(new Error("not used")),
     };
 
     fake.respond = (_tab, method) => {

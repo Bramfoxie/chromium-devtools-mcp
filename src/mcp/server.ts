@@ -10,7 +10,7 @@ import {
     nodeArtifactIO,
 } from "../tools/artifacts.js";
 import { elicitationConfirmer } from "../tools/confirmation.js";
-import { allTools, registerTools, ToolRuntime } from "../tools/index.js";
+import { allTools, registerTools, ToolRuntime, type VideoTools } from "../tools/index.js";
 import { DaemonAccess } from "./daemon-access.js";
 import {
     connectToDaemon,
@@ -156,6 +156,7 @@ export interface ToolServerOptions {
     access?   : DaemonAccess;
     tools?    : typeof allTools;
     artifacts?: ArtifactStore;
+    video?    : VideoTools;
 }
 
 export function registerServerTools(
@@ -170,6 +171,7 @@ export function registerServerTools(
         config,
         confirm: elicitationConfirmer(server.server),
         ...(options.artifacts === undefined ? {} : { artifacts: options.artifacts }),
+        ...(options.video === undefined ? {} : { video: options.video }),
     });
 
     runtime.attach();

@@ -100,7 +100,7 @@ const readOnly: Config = {
 };
 
 describe("tool declarations", () => {
-    it("declares forty two tools with unique names, descriptions and access", () => {
+    it("declares forty four tools with unique names, descriptions and access", () => {
         expect(allTools.map((tool) => tool.name)).toEqual([
             "list_tabs",
             "list_sessions",
@@ -127,6 +127,8 @@ describe("tool declarations", () => {
             "perf_trace_start",
             "perf_trace_stop",
             "heap_snapshot",
+            "screencast_start",
+            "screencast_stop",
             "screenshot",
             "list_devices",
             "emulate_device",
@@ -359,6 +361,8 @@ describe("open world annotation", () => {
         "page_dialogs",
         "perf_trace_start",
         "perf_trace_stop",
+        "screencast_start",
+        "screencast_stop",
         "select_tab",
     ];
 
@@ -597,7 +601,7 @@ describe("runTool", () => {
 });
 
 describe("tools/list", () => {
-    it("lists exactly the forty two tools with their schemas", async () => {
+    it("lists exactly the forty four tools with their schemas", async () => {
         const server = createMcpServer("1.0.0");
 
         registerTools({ server, tools: allTools, runtime: runtime() });
@@ -633,6 +637,8 @@ describe("tools/list", () => {
             "perf_trace_start",
             "perf_trace_stop",
             "heap_snapshot",
+            "screencast_start",
+            "screencast_stop",
             "screenshot",
             "list_devices",
             "emulate_device",

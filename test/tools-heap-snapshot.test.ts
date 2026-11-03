@@ -31,6 +31,7 @@ function setup(options: { chunks?: string[]; failSnapshot?: boolean } = {}) {
 
             return { path: `/data/artifacts/${kind}.${extension}`, bytes: String(data).length };
         },
+        directory: () => Promise.reject(new Error("not used")),
     };
 
     fake.respond = (_tab, method) => {

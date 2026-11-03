@@ -84,6 +84,8 @@ const READING: Case[] = [
     ["perf_trace_start", {}],
     ["perf_trace_stop", {}],
     ["heap_snapshot", {}],
+    ["screencast_start", {}],
+    ["screencast_stop", {}],
     ["screenshot", {}],
     ["list_devices", {}],
 ];

@@ -10,7 +10,7 @@ import { connectBrowser } from "../../src/daemon/runner.js";
 import type { Config } from "../../src/config/index.js";
 import { connectToDaemon, daemonIdentity, type DaemonLayout, runDaemon, type RunningDaemon } from "../../src/daemon/index.js";
 import { createMcpServer, DaemonLink, registerServerTools } from "../../src/mcp/index.js";
-import { DirectoryArtifactStore, nodeArtifactIO } from "../../src/tools/index.js";
+import { DirectoryArtifactStore, nodeArtifactIO, type VideoTools } from "../../src/tools/index.js";
 import { createSocketHarness } from "../helpers/daemon-socket.js";
 
 export function chromeAvailable(): boolean {
@@ -118,6 +118,7 @@ export interface Env {
 export async function startEnv(
     safety?: Config["safety"],
     allowFocus = false,
+    video? : VideoTools,
 ): Promise<Env> {
     const harness = createSocketHarness();
     const home = await mkdtemp(path.join(os.tmpdir(), "cdm-it-home-"));
@@ -191,6 +192,7 @@ export async function startEnv(
             dir: artifactsDir,
             io : nodeArtifactIO(options.platform, options.uid),
         }),
+        ...(video === undefined ? {} : { video }),
     });
     const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
     const client = new Client({ name: "it", version: "0.0.0" });

@@ -72,6 +72,10 @@ export { fillForm } from "./fill-form.js";
 
 export { heapSnapshot } from "./perf/heap-snapshot.js";
 
+export { screencastStart, screencastStop } from "./perf/screencast.js";
+
+export { type VideoTools, nodeVideoTools } from "./perf/video.js";
+
 export { perfTraceStart, perfTraceStop } from "./perf/perf-trace.js";
 
 export { inputDrag } from "./input-drag.js";
@@ -139,6 +143,7 @@ export { emulateGeolocation } from "./emulation/emulate-geolocation.js";
 export { checkAcceptLanguage, emulateLocale, hasLocaleSelection } from "./emulation/emulate-locale.js";
 
 export {
+    type ArtifactDirectory,
     type ArtifactFile,
     type ArtifactIO,
     type ArtifactStore,

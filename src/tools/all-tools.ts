@@ -21,6 +21,7 @@ import { jsEvaluate } from "./js-evaluate.js";
 import { networkMock } from "./network-mock.js";
 import { networkRequests } from "./network-requests.js";
 import { networkResponseBody } from "./network-response-body.js";
+import { screencastStart, screencastStop } from "./perf/screencast.js";
 import { heapSnapshot } from "./perf/heap-snapshot.js";
 import { perfTraceStart, perfTraceStop } from "./perf/perf-trace.js";
 import { pageDialogs } from "./page-dialogs.js";
@@ -60,6 +61,8 @@ export const allTools: AnyTool[] = [
     perfTraceStart,
     perfTraceStop,
     heapSnapshot,
+    screencastStart,
+    screencastStop,
     screenshot,
     listDevices,
     emulateDevice,
