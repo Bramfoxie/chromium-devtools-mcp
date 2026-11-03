@@ -18,5 +18,7 @@ The daemon enforces the safety options of each session itself, so a client canno
 ### Limits of the allowlist
 
 - Only top-level URLs and the frame a tool acts in are checked. Subresource and iframe loads from other hosts are not blocked.
+- An element target given as a `>>>` iframe selector chain, or as `pierce` into an iframe, is not tied to a frame origin by the gate; only a `frame` option or a uid of a frame element is.
+- A frame lookup that fails under an allowlist is not checked: the call is gated by the tab URL alone.
 - `network_mock` patterns are not matched against the list; only the URL of the tab is checked.
 - Cookie reads are gated by `safety.confirmDangerous` only, not by `safety.allowedDomains`.

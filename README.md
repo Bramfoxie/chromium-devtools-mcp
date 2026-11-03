@@ -47,7 +47,7 @@ First run:
 | Trusted input events (CDP) and DOM-level click as separate tools    |          ✅           |         ❌          |
 | Shadow DOM and cross-site iframe piercing in every element tool     |          ✅           |         ❌          |
 | Network mocking and failing requests                                |          ✅           |         ❌          |
-| Response bodies with redaction of secrets in URLs and headers       |          ✅           |         ❌          |
+| Network records with redaction of secrets in URLs and headers       |          ✅           |         ❌          |
 | Storage read and write (local, session, cookies)                    |          ✅           |         ❌          |
 | PDF export                                                          |          ✅           |         ❌          |
 | Built-in device list, locale, timezone, media, network emulation    |          ✅           |         ❌          |
@@ -120,6 +120,7 @@ Env names, file paths and rules: [docs/configuration.md](docs/configuration.md).
 - [Output limits](docs/output-limits.md)
 - [Daemon and sessions](docs/daemon.md)
 - [Installer](docs/install.md)
+- [Contributing](CONTRIBUTING.md), [security policy](SECURITY.md) and [code of conduct](CODE_OF_CONDUCT.md)
 
 ## License
 

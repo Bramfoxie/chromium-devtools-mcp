@@ -5,6 +5,7 @@ Every tool with its behavior. Element targeting is in [frames-and-shadow-dom.md]
 ## Tabs and sessions
 
 - `list_sessions`: list open sessions of the daemon without their tab details. Each session shows the client name the MCP client sent in its initialize request, or `chromium-devtools-mcp` when it sent none.
+- `list_tabs`: list the tabs of the session, or with `scope: "available"` the tabs it can claim. Each tab has its id, `url`, `title`, `owned`, `created` and, for owned tabs, `selected`. `limit` defaults to 100 (maximum 500); `total` counts the tabs in the scope and `truncated` tells whether the limit dropped some.
 - `select_tab`: select an owned tab, claiming an available one when needed. Never focuses it.
 - `new_tab`: open a background tab and select it. With a `url` it waits for the page to commit and load, for at most `timeoutMs` (default 30000), and returns the committed `url` and `title`, `waited` (`load`, `timeout` or `none`), the document `readyState` and the HTTP `status` when observed. A download, an empty 204 response or a network error does not fail the call: the tab stays open, on `about:blank` for a download or a 204 and on the browser error page for a network error, and `navigationError` says why. The tab is never brought to the front.
 - `close_tab`: close a tab opened by this session.
@@ -28,13 +29,13 @@ Every tool with its behavior. Element targeting is in [frames-and-shadow-dom.md]
 - `input_scroll`: scroll by wheel deltas, to the top or bottom, or an element into view. Reports honestly when the wheel left the window position unchanged.
 - `input_select`: choose options of a `select` by value, label or index.
 - `input_upload`: attach local files to a file input. This is the most sensitive tool: it sends local files to a web page. Paths are validated on the server machine (absolute, existing regular readable files under 100 MiB, at most 20), symlinks are followed, and results carry file names and sizes only, never contents.
-- `console_logs`: read console messages, uncaught exceptions and browser messages of a tab, with level and text filters, paging and clear.
 
 ## Observation, control and storage
 
 - `network_requests`: read HTTP requests of a tab with URL, method, resource type, status and failure filters.
 - `network_response_body`: read the response body of a request from `network_requests`. Binary bodies need `asBase64`; without it the result has `needsBase64: true` and no body. `maxChars` defaults to 50000 and allows up to 500000; a base64 body is cut at a multiple of 4 characters and always keeps at least 4. Bodies over the 32 MiB transport limit are refused. Redirect responses have no body.
 - `network_mock`: mock responses or fail requests by Fetch wildcard pattern, with delay and a use count. First match in insertion order wins.
+- `console_logs`: read console messages, uncaught exceptions and browser messages of a tab, with level and text filters, paging and clear.
 - `page_dialogs`: see and resolve JavaScript dialogs, or set an automatic accept or dismiss policy for later ones.
 - `page_wait`: wait for a selector, text, URL, load state or expression. A timeout returns `met: false`, not an error.
 - `storage_read`: read local storage, session storage or cookies of the page origin. Cookie values are secrets and stay hidden unless `includeValues` is true.
@@ -51,7 +52,7 @@ Every tool with its behavior. Element targeting is in [frames-and-shadow-dom.md]
 - `emulate_network`: emulate network conditions with a preset (offline, slow-3g, fast-3g, 4g, wifi, none), custom latency and throughput (a throughput of 0 is rejected, use -1 to remove the limit), or blocked URL patterns. The none preset also clears blocked URLs, and reset: true cannot be combined with other fields. Shares `Network.enable` with the capture tools and never disables capture.
 - `emulate_locale`: emulate locale, timezone and Accept-Language. Takes effect on the next page load: `navigator.language` changes after navigation, and number and date formatting follow the locale. Geolocation is not emulated: it needs the Browser domain, which is not reachable through a tab.
 
-## Annotations and safety
+## Behavior notes
 
 Each emulation tool returns the full emulation state of the tab, plus what the page reports (viewport, media queries, language) when the page answers. `reset: true` removes only the overrides of that tool. Overrides live in the tab session and are gone when the tab closes or the session resets. Device emulation reports the inner size the page sees: without a viewport meta tag a mobile page keeps its default 980 CSS pixel layout width.
 
@@ -61,4 +62,4 @@ Dialog capture starts when a tab is created or selected: while a dialog is open,
 
 Storage tools only touch the page origin. Cookie reads never leave the page URL: no `urls` parameter is sent and `Network.getAllCookies` is never used. Cookie writes always carry the page URL, and the domain must equal the page host or be its parent domain. Values are never logged; cookie values are only returned with `includeValues: true`.
 
-Mock rules live per tab in the MCP process: at most 100 rules, bodies up to 10 MiB each and 64 MiB in total, delays up to 30 seconds. Requests that match no rule continue untouched. Rules survive navigation and are removed on tab close, session reset and `clear`. A `times` limit expires the rule after that many applications.
+Mock rules live per tab in the MCP process: at most 100 rules, bodies up to 10 MiB each and 64 MiB in total, delays up to 30 seconds. Requests that match no rule continue untouched. Rules survive navigation and are removed on tab close, session reset and `clear`. A `times` limit expires the rule after that many applications. A request delayed by `delayMs` stays held until the delay ends. `remove` deletes only the rule: while other rules remain, a request already held by the removed rule is still answered with that rule's response when its delay ends, and when the removed rule was the last one, interception is disabled and held requests continue to the network unmocked. `clear` and any other disabling of interception release held requests the same way, unmocked.
