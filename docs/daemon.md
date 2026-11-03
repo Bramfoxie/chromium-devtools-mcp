@@ -19,3 +19,5 @@ How the per-user daemon, sessions, browser modes and attach setup work.
 - Start Chrome with `--remote-debugging-port=<debugPort>`. Chrome 136 and newer ignore this flag on the default profile, so it also needs `--user-data-dir` pointing to another directory.
 
 Until the browser allows it, the daemon prints these instructions, returns them to the client and keeps checking.
+
+Once the browser allows it, the status message changes to a request to click Allow in Chrome and the daemon logs `Connecting to Chrome on port <port>.`. A connection attempt that Chrome does not complete within 120 seconds is closed and logged as `could not connect to the browser yet, retrying`; the daemon then resolves the endpoint again and retries on a new connection. The log line `Connected to Chrome on port <port>.` marks the end of the wait.

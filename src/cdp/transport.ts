@@ -102,11 +102,18 @@ function connectSocket(
             return;
         }
 
+        const budget = setTimeout(() => {
+            signal?.removeEventListener("abort", onAbort);
+            fail(`opening handshake did not finish within ${handshakeTimeoutMs} ms`);
+            socket.terminate();
+        }, handshakeTimeoutMs);
         const onAbort = () => {
+            clearTimeout(budget);
             fail("the connection attempt was cancelled");
             socket.terminate();
         };
         const onError = (error: Error) => {
+            clearTimeout(budget);
             signal?.removeEventListener("abort", onAbort);
             fail(error.message);
             socket.terminate();
@@ -122,6 +129,7 @@ function connectSocket(
 
         signal?.addEventListener("abort", onAbort, { once: true });
         socket.once("open", () => {
+            clearTimeout(budget);
             signal?.removeEventListener("abort", onAbort);
             socket.off("error", onError);
             resolve(wrap(socket));

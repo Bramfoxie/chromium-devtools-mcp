@@ -1,4 +1,5 @@
 import { lstat, readFile } from "node:fs/promises";
+import http from "node:http";
 import net from "node:net";
 import os from "node:os";
 import { pathFor, type Config } from "../config/index.js";
@@ -257,57 +258,74 @@ export function probePort(port: number, signal?: AbortSignal): Promise<boolean> 
     });
 }
 
-async function readCapped(response: Response, maxBytes: number): Promise<string | undefined> {
-    if (response.body === null) return "";
-
-    const reader = response.body.getReader();
-    const chunks: Uint8Array[] = [];
-    let total = 0;
-
-    for (;;) {
-        const { done, value } = await reader.read();
-
-        if (done) break;
-
-        total += value.byteLength;
-
-        if (total > maxBytes) {
-            await reader.cancel().catch(() => undefined);
-
-            return undefined;
-        }
-
-        chunks.push(value);
-    }
-
-    return Buffer.concat(chunks).toString("utf8");
-}
-
-export async function fetchVersion(
+// Resolves to the parsed JSON, or undefined on any failure; the socket is always destroyed.
+export function fetchVersion(
     port   : number,
     signal?: AbortSignal,
     timeoutMs = VERSION_TIMEOUT_MS,
 ): Promise<unknown> {
-    const timeout = AbortSignal.timeout(timeoutMs);
+    return new Promise((resolve) => {
+        const chunks: Buffer[] = [];
+        let total = 0;
+        let settled = false;
+        let request: http.ClientRequest | undefined;
+        const finish = (value: unknown) => {
+            if (settled) return;
 
-    try {
-        const response = await fetch(`http://127.0.0.1:${port}/json/version`, {
-            signal  : signal ? AbortSignal.any([timeout, signal]) : timeout,
-            redirect: "error",
-        });
+            settled = true;
+            clearTimeout(timer);
+            signal?.removeEventListener("abort", onAbort);
+            request?.destroy();
+            resolve(value);
+        };
+        const onAbort = () => finish(undefined);
+        const timer = setTimeout(() => finish(undefined), timeoutMs);
 
-        if (!response.ok) return undefined;
+        if (signal?.aborted) return finish(undefined);
 
-        const declared = Number(response.headers.get("content-length"));
+        signal?.addEventListener("abort", onAbort, { once: true });
 
-        if (Number.isFinite(declared) && declared > MAX_VERSION_BYTES) return undefined;
+        try {
+            request = http.get(
+                {
+                    host   : "127.0.0.1",
+                    port,
+                    path   : "/json/version",
+                    agent  : false,
+                    headers: { connection: "close" },
+                },
+                (response) => {
+                    const declared = Number(response.headers["content-length"]);
 
-        const text = await readCapped(response, MAX_VERSION_BYTES);
+                    const tooLarge = Number.isFinite(declared) && declared > MAX_VERSION_BYTES;
 
-        return text === undefined ? undefined : JSON.parse(text);
-    } catch {
-        return undefined;
-    }
+                    if (response.statusCode !== 200 || tooLarge) {
+                        finish(undefined);
+
+                        return;
+                    }
+
+                    response.on("data", (chunk: Buffer) => {
+                        total += chunk.byteLength;
+
+                        if (total > MAX_VERSION_BYTES) finish(undefined);
+                        else chunks.push(chunk);
+                    });
+                    response.on("end", () => {
+                        try {
+                            finish(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+                        } catch {
+                            finish(undefined);
+                        }
+                    });
+                    response.on("error", () => finish(undefined));
+                },
+            );
+            request.on("error", () => finish(undefined));
+        } catch {
+            finish(undefined);
+        }
+    });
 }
 
 export function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {

@@ -62,11 +62,13 @@ export function approvalMessage(): string {
 }
 
 export interface ConnectorDeps {
-    launch     : typeof launchManaged;
-    attach     : typeof attachBrowser;
-    findRunning: (profileDir: string, debugPort: number) => Promise<AttachEndpoint | undefined>;
-    connect    : (url: string, handshakeMs?: number, signal?: AbortSignal) => Promise<CdpClient>;
-    sleep      : (ms: number, signal?: AbortSignal) => Promise<void>;
+    launch      : typeof launchManaged;
+    attach      : typeof attachBrowser;
+    findRunning : (profileDir: string, debugPort: number) => Promise<AttachEndpoint | undefined>;
+    connect     : (url: string, handshakeMs?: number, signal?: AbortSignal) => Promise<CdpClient>;
+    sleep       : (ms: number, signal?: AbortSignal) => Promise<void>;
+    handshakeMs?: number;
+    retryMs?    : number;
 }
 
 const HEADLESS_AGENT = /HeadlessChrome/;
@@ -186,16 +188,20 @@ export function createConnector(overrides: Partial<ConnectorDeps> = {}): Browser
 
             if (endpoint.source === "port-file") hooks.onWaiting(approvalMessage());
 
+            logDaemon(`Connecting to Chrome on port ${endpoint.port}.`);
+
             try {
-                const url = endpoint.webSocketUrl;
-                const client = await deps.connect(url, APPROVAL_HANDSHAKE_MS, signal);
+                const budget = deps.handshakeMs ?? APPROVAL_HANDSHAKE_MS;
+                const client = await deps.connect(endpoint.webSocketUrl, budget, signal);
+
+                logDaemon(`Connected to Chrome on port ${endpoint.port}.`);
 
                 return { client, stop: () => client.close() };
             } catch (error) {
                 if (signal.aborted) throw error;
 
                 logDaemon(`could not connect to the browser yet, retrying: ${describeError(error)}`);
-                await deps.sleep(RETRY_MS, signal);
+                await deps.sleep(deps.retryMs ?? RETRY_MS, signal);
             }
         }
     };
