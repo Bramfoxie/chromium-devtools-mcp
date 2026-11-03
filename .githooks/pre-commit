@@ -12,7 +12,7 @@ staged=$(git -c core.quotePath=false diff --cached --name-only --diff-filter=ACM
 printf '%s\n' "$staged" | grep -qE '(^|/)(AGENTS|CLAUDE)\.md$' && fail "AGENTS.md and CLAUDE.md must not be committed"
 
 printf '%s\n' "$staged" | while IFS= read -r f; do
-  if git show ":$f" | has_typography; then
+  if readme_without_marks "$f" | has_typography; then
     fail "typographic dash, quote, ellipsis or emoji found in $f"
   fi
   case "$f" in .githooks/*) continue ;; esac

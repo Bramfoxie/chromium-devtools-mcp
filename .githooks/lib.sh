@@ -9,3 +9,12 @@ has_typography() {
 has_attribution() {
   grep -qiE "$attribution"
 }
+
+# README.md may use the check mark and cross mark emoji in its comparison table.
+readme_without_marks() {
+  if [ "$1" = "README.md" ]; then
+    git show ":$1" | LC_ALL=C sed -e "s/$(printf '\342\234\205')//g" -e "s/$(printf '\342\235\214')//g"
+  else
+    git show ":$1"
+  fi
+}
