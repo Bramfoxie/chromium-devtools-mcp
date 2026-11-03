@@ -16,7 +16,11 @@ async function sendBestEffort(
 ): Promise<boolean> {
     try {
         for (const command of commands) {
-            await access.send(targetId, command.method, command.params);
+            await access.send({
+                targetId,
+                method: command.method,
+                params: command.params,
+            });
         }
 
         return true;
@@ -41,7 +45,11 @@ export async function runSteps(
             for (const command of step.commands) {
                 throwIfCancelled(signal);
                 attempted = true;
-                await access.send(targetId, command.method, command.params);
+                await access.send({
+                    targetId,
+                    method: command.method,
+                    params: command.params,
+                });
             }
         } catch (error) {
             if (attempted && step.undo !== undefined) {

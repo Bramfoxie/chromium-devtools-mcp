@@ -110,8 +110,16 @@ export class CaptureManager {
         for (const event of CONSOLE_EVENTS) await this.access.subscribe(tab, event);
 
         try {
-            await this.access.send(tab, "Runtime.enable", {});
-            await this.access.send(tab, "Log.enable", {});
+            await this.access.send({
+                targetId: tab,
+                method  : "Runtime.enable",
+                params  : {},
+            });
+            await this.access.send({
+                targetId: tab,
+                method  : "Log.enable",
+                params  : {},
+            });
         } catch (error) {
             for (const event of CONSOLE_EVENTS) {
                 await this.access.unsubscribe(tab, event).catch(() => undefined);
@@ -131,7 +139,11 @@ export class CaptureManager {
         for (const event of NETWORK_EVENTS) await this.access.subscribe(tab, event);
 
         try {
-            await this.access.send(tab, "Network.enable", {});
+            await this.access.send({
+                targetId: tab,
+                method  : "Network.enable",
+                params  : {},
+            });
         } catch (error) {
             for (const event of NETWORK_EVENTS) {
                 await this.access.unsubscribe(tab, event).catch(() => undefined);

@@ -305,8 +305,12 @@ export class InterceptionManager {
         );
 
         if (rule === undefined || state === undefined) {
-            await resolve(() => this.access.send(tab, "Fetch.continueRequest", {
-                requestId: paused.requestId,
+            await resolve(() => this.access.send({
+                targetId: tab,
+                method  : "Fetch.continueRequest",
+                params  : {
+                    requestId: paused.requestId,
+                },
             }));
 
             return;
@@ -381,16 +385,24 @@ export class InterceptionManager {
         if (rule.response !== undefined) {
             const body = rule.response.bodyBase64;
 
-            resolved = await resolve(() => this.access.send(tab, "Fetch.fulfillRequest", {
-                requestId      : paused.requestId,
-                responseCode   : rule.response?.status ?? 200,
-                responseHeaders: headersForCdp(rule.response as MockResponse),
-                ...(body === undefined ? {} : { body }),
+            resolved = await resolve(() => this.access.send({
+                targetId: tab,
+                method  : "Fetch.fulfillRequest",
+                params  : {
+                    requestId      : paused.requestId,
+                    responseCode   : rule.response?.status ?? 200,
+                    responseHeaders: headersForCdp(rule.response as MockResponse),
+                    ...(body === undefined ? {} : { body }),
+                },
             }));
         } else {
-            resolved = await resolve(() => this.access.send(tab, "Fetch.failRequest", {
-                requestId  : paused.requestId,
-                errorReason: rule.fail ?? "Failed",
+            resolved = await resolve(() => this.access.send({
+                targetId: tab,
+                method  : "Fetch.failRequest",
+                params  : {
+                    requestId  : paused.requestId,
+                    errorReason: rule.fail ?? "Failed",
+                },
             }));
         }
 
@@ -408,7 +420,11 @@ export class InterceptionManager {
 
         if (!state.enableSent) return;
 
-        await this.access.send(tab, "Fetch.disable", {}).catch(() => undefined);
+        await this.access.send({
+            targetId: tab,
+            method  : "Fetch.disable",
+            params  : {},
+        }).catch(() => undefined);
     }
 
     async reset(): Promise<void> {
@@ -434,8 +450,12 @@ export class InterceptionManager {
             } catch (error) {
                 logDaemon(`could not resolve a paused request: ${describeError(error)}`);
 
-                await this.access.send(envelope.targetId, "Fetch.continueRequest", {
-                    requestId: paused.requestId,
+                await this.access.send({
+                    targetId: envelope.targetId,
+                    method  : "Fetch.continueRequest",
+                    params  : {
+                        requestId: paused.requestId,
+                    },
                 }).catch((nested: unknown) => {
                     logDaemon(`could not continue a paused request: ${describeError(nested)}`);
                 });
@@ -445,8 +465,12 @@ export class InterceptionManager {
         }).catch((error: unknown) => {
             logDaemon(`mock handler failed: ${describeError(error)}`);
 
-            return this.access.send(envelope.targetId, "Fetch.continueRequest", {
-                requestId: paused.requestId,
+            return this.access.send({
+                targetId: envelope.targetId,
+                method  : "Fetch.continueRequest",
+                params  : {
+                    requestId: paused.requestId,
+                },
             }).then(() => undefined).catch(() => undefined);
         });
     }
@@ -463,7 +487,11 @@ export class InterceptionManager {
                 ...(rule.resourceType === undefined ? {} : { resourceType: rule.resourceType }),
             }));
 
-            await this.access.send(tab, "Fetch.enable", { patterns });
+            await this.access.send({
+                targetId: tab,
+                method  : "Fetch.enable",
+                params  : { patterns },
+            });
             state.enableSent = true;
             state.enabled = true;
         } catch (error) {
@@ -487,7 +515,11 @@ export class InterceptionManager {
 
         await Promise.all(entries.map(async ([requestId, entry]) => {
             entry.release();
-            await this.access.send(tab, "Fetch.continueRequest", { requestId }).catch(() => undefined);
+            await this.access.send({
+                targetId: tab,
+                method  : "Fetch.continueRequest",
+                params  : { requestId },
+            }).catch(() => undefined);
         }));
     }
 
@@ -503,7 +535,11 @@ export class InterceptionManager {
 
         state.enableSent = false;
 
-        await this.access.send(tab, "Fetch.disable", {}).catch(() => undefined);
+        await this.access.send({
+            targetId: tab,
+            method  : "Fetch.disable",
+            params  : {},
+        }).catch(() => undefined);
     }
 
     private state(tab: string): TabInterception {

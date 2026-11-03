@@ -82,8 +82,12 @@ export const networkResponseBody = defineTool({
         let result: unknown;
 
         try {
-            result = await context.access.send(targetId, "Network.getResponseBody", {
-                requestId: known.record.requestId,
+            result = await context.access.send({
+                targetId,
+                method: "Network.getResponseBody",
+                params: {
+                    requestId: known.record.requestId,
+                },
             });
         } catch (error) {
             if (error instanceof RpcError && error.code === ErrorCode.resultTooLarge) {

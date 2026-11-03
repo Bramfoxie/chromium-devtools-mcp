@@ -125,12 +125,12 @@ export async function pageLocation(
     access  : DaemonAccess,
     targetId: string,
 ): Promise<{ href: string; origin: string }> {
-    const result = await access.send(
+    const result = await access.send({
         targetId,
-        "Runtime.evaluate",
-        { expression: "location.href", returnByValue: true },
-        PAGE_LOCATION_TIMEOUT_MS,
-    );
+        method   : "Runtime.evaluate",
+        params   : { expression: "location.href", returnByValue: true },
+        timeoutMs: PAGE_LOCATION_TIMEOUT_MS,
+    });
     const parsed = evaluatedSchema.safeParse(result);
     const value = parsed.success ? parsed.data.result.value : undefined;
 
@@ -171,11 +171,19 @@ async function readDomStorage(
     maxChars  : number,
     withValues: boolean,
 ): Promise<Pick<z.infer<typeof storageOutput>, "count" | "returned" | "truncated" | "entries">> {
-    await access.send(targetId, "DOMStorage.enable", {});
+    await access.send({
+        targetId,
+        method: "DOMStorage.enable",
+        params: {},
+    });
 
     const items = itemsSchema.safeParse(
-        await access.send(targetId, "DOMStorage.getDOMStorageItems", {
-            storageId: { securityOrigin: origin, isLocalStorage: local },
+        await access.send({
+            targetId,
+            method: "DOMStorage.getDOMStorageItems",
+            params: {
+                storageId: { securityOrigin: origin, isLocalStorage: local },
+            },
         }),
     );
 
@@ -216,7 +224,10 @@ async function readCookies(
     maxChars  : number,
     withValues: boolean,
 ): Promise<Pick<z.infer<typeof storageOutput>, "count" | "returned" | "truncated" | "cookies">> {
-    const parsed = cookiesSchema.safeParse(await access.send(targetId, "Network.getCookies"));
+    const parsed = cookiesSchema.safeParse(await access.send({
+        targetId,
+        method: "Network.getCookies",
+    }));
 
     if (!parsed.success) {
         throw new ToolError(

@@ -96,14 +96,13 @@ async function readValue<T>(
 ): Promise<T | undefined> {
     try {
         const parsed = schema.safeParse(
-            await access.send(
+            await access.send({
                 targetId,
-                "Runtime.evaluate",
-                { expression, returnByValue: true },
-                EMULATION_READ_TIMEOUT_MS,
-                undefined,
-                signal === undefined ? undefined : { signal },
-            ),
+                method   : "Runtime.evaluate",
+                params   : { expression, returnByValue: true },
+                timeoutMs: EMULATION_READ_TIMEOUT_MS,
+                ...signal === undefined ? undefined : { signal },
+            }),
         );
 
         if (!parsed.success || parsed.data.result.type === "undefined") return undefined;
