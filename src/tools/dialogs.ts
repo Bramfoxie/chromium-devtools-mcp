@@ -1,7 +1,7 @@
 import { parseEnvelope } from "./cdp-envelope.js";
 import { z } from "zod";
 import type { DaemonAccess } from "../mcp/index.js";
-import { describeError, logDaemon } from "../daemon/log.js";
+import { describeError, logDaemon } from "../util/log.js";
 import { ErrorCode, RpcError } from "../daemon/index.js";
 import type { ToolClock } from "./define-tool.js";
 import { ToolError } from "./errors.js";

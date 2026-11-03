@@ -2,7 +2,7 @@ import { ChildSync, isMirroredEvent, isReplicated } from "./child-sync.js";
 import type { FrameSummary } from "./frames.js";
 import type { BrowserBackend, TargetInfo } from "./browser-backend.js";
 import { RpcError } from "./errors.js";
-import { describeError, logDaemon } from "./log.js";
+import { describeError, logDaemon } from "../util/log.js";
 import {
     checkGuardedCall,
     checkOpenUrl,

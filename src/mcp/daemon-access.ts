@@ -8,7 +8,7 @@ import {
     type SessionSummary,
     type TabInfo,
 } from "../daemon/wire.js";
-import { describeError, logDaemon, quoted } from "../daemon/log.js";
+import { describeError, logDaemon, quoted } from "../util/log.js";
 import type { DaemonLink } from "./daemon-link.js";
 import { AppError } from "../util/app-error.js";
 

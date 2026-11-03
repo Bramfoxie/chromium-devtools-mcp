@@ -1,6 +1,6 @@
 import { parseEnvelope } from "../cdp-envelope.js";
 import type { DaemonAccess } from "../../mcp/index.js";
-import { describeError, logDaemon } from "../../daemon/log.js";
+import { describeError, logDaemon } from "../../util/log.js";
 import type { ToolClock } from "../define-tool.js";
 
 const FETCH_EVENT = "Fetch.requestPaused";

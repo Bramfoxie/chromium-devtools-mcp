@@ -8,7 +8,7 @@ import {
     type ChildTargetInfo,
     type FrameChildSession,
 } from "./browser-backend.js";
-import { describeError, logDaemon } from "./log.js";
+import { describeError, logDaemon } from "../util/log.js";
 
 export const CHILD_AUTO_ATTACH_TIMEOUT_MS = 5000;
 

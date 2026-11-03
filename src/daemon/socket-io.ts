@@ -2,7 +2,7 @@ import { chmod, mkdir, rm } from "node:fs/promises";
 import net from "node:net";
 import type { InstanceIO, ListeningServer } from "./lock.js";
 import { errorCode } from "./errors.js";
-import { logDaemon } from "./log.js";
+import { logDaemon } from "../util/log.js";
 import { removeStaleLock } from "./stale-lock.js";
 import { sleep } from "../util/sleep.js";
 

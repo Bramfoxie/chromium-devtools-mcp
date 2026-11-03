@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { RpcError } from "./errors.js";
-import { quoted } from "./log.js";
+import { quoted } from "../util/log.js";
 import { normalizeUrl } from "./method-policy.js";
 import { ErrorCode } from "./protocol.js";
 import { requestParamSchemas } from "./wire.js";

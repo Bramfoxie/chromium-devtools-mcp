@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { main } from "./cli-main.js";
-import { ignoreStreamErrors } from "./daemon/log.js";
+import { ignoreStreamErrors } from "./util/log.js";
 
 ignoreStreamErrors();
 

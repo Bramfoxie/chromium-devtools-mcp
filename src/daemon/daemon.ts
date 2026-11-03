@@ -3,7 +3,7 @@ import type { BrowserBackend } from "./browser-backend.js";
 import { createRequestHandler, type DaemonStatus } from "./handler.js";
 import type { DaemonIdentity } from "./identity.js";
 import { boundedFailureMessage, DaemonEvent } from "./protocol.js";
-import { describeError, logDaemon } from "./log.js";
+import { describeError, logDaemon } from "../util/log.js";
 import {
     acceptConnection,
     type ClientConnection,

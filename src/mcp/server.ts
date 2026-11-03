@@ -16,7 +16,7 @@ import {
     type DaemonLayout,
     type IpcClient,
 } from "../daemon/index.js";
-import { describeError, logDaemon } from "../daemon/log.js";
+import { describeError, logDaemon } from "../util/log.js";
 import { DaemonLink, type LinkDeps } from "./daemon-link.js";
 import { spawnDaemonProcess } from "./spawn-daemon.js";
 import { sleep } from "../util/sleep.js";

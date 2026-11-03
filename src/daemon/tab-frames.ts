@@ -7,7 +7,7 @@ import type {
     FrameChildSession,
 } from "./browser-backend.js";
 import { RpcError } from "./errors.js";
-import { describeError, logDaemon } from "./log.js";
+import { describeError, logDaemon } from "../util/log.js";
 import { ErrorCode } from "./protocol.js";
 import type { Emit } from "./client-session.js";
 

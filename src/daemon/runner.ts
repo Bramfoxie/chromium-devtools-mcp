@@ -12,7 +12,7 @@ import { AlreadyRunningError } from "./errors.js";
 import { daemonIdentity } from "./identity.js";
 import { currentLayout, type DaemonLayout } from "./layout.js";
 import { acquireInstance } from "./lock.js";
-import { describeError, logDaemon } from "./log.js";
+import { describeError, logDaemon } from "../util/log.js";
 import { realInstanceIO } from "./socket-io.js";
 import { ensureToken, readToken } from "./token.js";
 import { abortableSleep } from "../util/sleep.js";

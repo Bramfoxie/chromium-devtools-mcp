@@ -1,6 +1,6 @@
 import net from "node:net";
 import { IpcCancelledError, IpcClosedError, IpcTimeoutError, RpcError } from "./errors.js";
-import { describeError, logDaemon, quoted } from "./log.js";
+import { describeError, logDaemon, quoted } from "../util/log.js";
 import {
     encodeMessage,
     LineDecoder,

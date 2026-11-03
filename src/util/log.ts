@@ -1,6 +1,6 @@
 import type { Writable } from "node:stream";
-import { messageOf } from "../util/message-of.js";
-import { writeLogLine } from "../util/stderr.js";
+import { messageOf } from "./message-of.js";
+import { writeLogLine } from "./stderr.js";
 
 const MAX_LOGGED_CHARS = 200;
 

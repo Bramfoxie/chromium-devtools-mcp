@@ -10,7 +10,7 @@ import { ToolRuntime } from "./context.js";
 import { admit } from "./gate.js";
 import { ToolError, toToolMessage } from "./errors.js";
 import { errorResult, jsonResult } from "./result.js";
-import { logDaemon } from "../daemon/log.js";
+import { logDaemon } from "../util/log.js";
 import { SessionResetError } from "../mcp/index.js";
 
 export const CANCELLED_MESSAGE = "The request was cancelled. Call the tool again if needed.";
