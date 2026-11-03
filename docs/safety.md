@@ -10,6 +10,7 @@ With a list set:
 - An element target with `pierce: true` is checked at execution time: the URL of the document that holds the matched element must be inside the list, otherwise the tool refuses. A `>>>` chain only crosses shadow roots and stays in the frame it starts in.
 - When the frame of the target cannot be looked up, the call is refused with a message to call the tool again.
 - The URL is read when the tool starts, so a page that navigates itself later is caught at the next mutating call.
+- `storage_write` reads the page URL again right before it writes and refuses when it is outside the list.
 
 `safety.confirmDangerous` asks the user before a dangerous call. Dangerous tools are `js_evaluate`, `page_wait` with an `expression`, `storage_write`, `storage_read` with `kind: "cookies"` and `input_upload`; they carry `destructiveHint: true`. With the option on, the server asks through MCP elicitation and runs the tool only when the user accepts. The question names the tool and a short summary (the script, the storage kind and action, or the file paths) and never contains cookie values or file contents. A client without elicitation support gets an error that tells the owner to set `safety.confirmDangerous` to false, and a declined or failed question also runs nothing. `close_tab`, `network_mock` and the `input_*` tools other than `input_upload` are not dangerous. `close_tab` only closes tabs opened by the session; a tab it merely claimed is refused.
 

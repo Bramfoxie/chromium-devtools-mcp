@@ -3,6 +3,7 @@ import type { DaemonAccess } from "../mcp/index.js";
 import { defineTool } from "./define-tool.js";
 import { ensureNoDialog } from "./dialogs.js";
 import { ToolError } from "./errors.js";
+import { assertPageAllowed } from "./page-allowed.js";
 import { throwIfCancelled } from "./registry.js";
 import { pageLocation } from "./storage-read.js";
 
@@ -160,6 +161,9 @@ export const storageWrite = defineTool({
         throwIfCancelled(context.signal);
 
         const { href: pageUrl, origin } = await pageLocation(context.access, targetId);
+
+        assertPageAllowed(context, pageUrl);
+
         const host = pageHostOf(origin);
 
         if (args.kind === "cookies") {
