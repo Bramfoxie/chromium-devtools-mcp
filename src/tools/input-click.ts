@@ -2,6 +2,7 @@ import { z } from "zod";
 import { changedUrl, navigationOf, summarizeTarget, targetSummarySchema } from "./input-outcome.js";
 import { mousePoint } from "./input-point.js";
 import { ensureActionable } from "./actionability.js";
+import { elementAtPoint, ensureInsideViewport, ensurePointAllowed, pointSchema } from "./point-target.js";
 import { defineTool, type ToolContext } from "./define-tool.js";
 import { ensureNoDialog } from "./dialogs.js";
 import { type PointerRoute, type PointerTarget, withPointerDelivery } from "./pointer-delivery.js";
@@ -215,20 +216,31 @@ function dispatchClick(
 export const inputClick = defineTool({
     name: "input_click",
     description:
-        "Click at an element with trusted CDP mouse events, like a real user, without focusing the window.",
+        "Click an element, or a point of the viewport given in CSS pixels (the coordinates of a screenshot at scale 1), with trusted CDP mouse events, like a real user, without focusing the window.",
     access: "mutate",
     input : z.strictObject({
         tab       : tabSchema,
-        target    : elementTargetSchema.describe("Element uid from a snapshot or query, or a CSS selector."),
+        target    : elementTargetSchema.optional().describe("Element uid from a snapshot or query, or a CSS selector. Pass this or point."),
+        point     : pointSchema.optional().describe("Viewport point to click, for example read from a screenshot. Pass this or target."),
         button    : z.enum(MOUSE_BUTTONS).optional().describe("Mouse button. Defaults to left."),
         clickCount: z.number().int().min(1).max(CLICK_COUNT_MAX).optional().describe("How many clicks in a row, 1 to 3. Defaults to 1."),
         modifiers : z.array(z.enum(KEY_MODIFIERS)).max(4).optional().describe("Held modifiers, for example Control for a control click."),
-        position  : positionSchema.optional().describe("Offset in CSS pixels from the top left corner of the element. Defaults to the center."),
-        force     : z.boolean().optional().describe("Skip the hit test and click through a covering element. Defaults to false."),
+        position  : positionSchema.optional().describe("With target: offset in CSS pixels from the top left corner of the element. Defaults to the center."),
+        force     : z.boolean().optional().describe("With target: skip the hit test and click through a covering element. Defaults to false."),
+    }).superRefine((value, ctx) => {
+        if ((value.target === undefined) === (value.point === undefined)) {
+            ctx.addIssue({ code: "custom", message: "Pass exactly one of target or point." });
+        }
+
+        const targetOnly = value.position !== undefined || value.force !== undefined;
+
+        if (value.point !== undefined && targetOnly) {
+            ctx.addIssue({ code: "custom", message: "position and force apply to target only." });
+        }
     }),
     output: z.strictObject({
         ok      : z.boolean().describe("Whether the mouse events were dispatched."),
-        target  : targetSummarySchema.describe("The element that was clicked."),
+        target  : targetSummarySchema.optional().describe("The element that was clicked. For a point, the element under it, omitted when there is none."),
         effect  : z.string().describe("Short summary of what happened."),
         urlAfter: z.string().optional().describe("URL after the click, present only when the click navigated."),
     }),
@@ -240,7 +252,37 @@ export const inputClick = defineTool({
         await ensureNoDialog(context.dialogs, targetId);
         await context.focus.ensure(context.access, targetId);
 
-        return withElement(context, targetId, args.target, async (element) => {
+        const button = args.button ?? "left";
+        const clickCount = args.clickCount ?? 1;
+        const plan: ClickPlan = {
+            button,
+            clickCount,
+            modifiers: [...new Set(args.modifiers ?? [])],
+        };
+        const times = clickCount > 1 ? ` ${clickCount} times` : "";
+
+        if (args.point !== undefined) {
+            const { point } = args;
+
+            await ensureInsideViewport(context, targetId, point);
+            await ensurePointAllowed("input_click", context, targetId, point);
+
+            const under = await elementAtPoint(context, targetId, point);
+            const acted = await dispatchClick(context, targetId, undefined, point, plan);
+
+            return {
+                ok    : true,
+                ...(under === undefined ? {} : { target: { ...under } }),
+                effect: `The point (${point.x}, ${point.y}) was ${button} clicked${times}.`,
+                ...changedUrl(acted.urlBefore, acted.urlAfter),
+            };
+        }
+
+        const elementTarget = args.target;
+
+        if (elementTarget === undefined) throw new ToolError("Pass exactly one of target or point.");
+
+        return withElement(context, targetId, elementTarget, async (element) => {
             const { point, state, route } = await mousePoint(
                 context,
                 targetId,
@@ -249,19 +291,12 @@ export const inputClick = defineTool({
                 "click",
                 args.force ?? false,
             );
-
-            const button = args.button ?? "left";
-            const clickCount = args.clickCount ?? 1;
-            const acted = await dispatchClick(context, targetId, route, point, {
-                button,
-                clickCount,
-                modifiers: [...new Set(args.modifiers ?? [])],
-            });
+            const acted = await dispatchClick(context, targetId, route, point, plan);
 
             return {
                 ok    : true,
-                target: summarizeTarget(args.target.uid, state),
-                effect: `The element was ${button} clicked${clickCount > 1 ? ` ${clickCount} times` : ""}.`,
+                target: summarizeTarget(elementTarget.uid, state),
+                effect: `The element was ${button} clicked${times}.`,
                 ...changedUrl(acted.urlBefore, acted.urlAfter),
             };
         });

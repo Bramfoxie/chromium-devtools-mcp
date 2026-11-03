@@ -8,7 +8,7 @@ With a list set:
 
 - `new_tab` and `page_navigate` refuse a URL outside the list, and `page_navigate` with `back` or `forward` refuses a history entry outside it.
 - After a navigation, the tab URL that the page ended on after redirects is checked too. When it is outside the list, the tab is moved to `about:blank` and the tool reports the host and what to do (`page_navigate` fails with an error, `new_tab` returns it as `navigationError` and keeps the tab open). If the tab cannot be moved, the message says it still shows that page.
-- A mutating tool refuses a tab whose current URL is outside the list, and refuses an element inside a frame whose origin is outside the list. Read tools keep working on such tabs. `page_navigate` to an allowed URL, `new_tab`, `select_tab` and `close_tab` stay available so a tab can be moved away or closed.
+- A mutating tool refuses a tab whose current URL is outside the list, and refuses an element, or an `input_click` point, inside a frame whose origin is outside the list. Read tools keep working on such tabs. `page_navigate` to an allowed URL, `new_tab`, `select_tab` and `close_tab` stay available so a tab can be moved away or closed.
 - An element target with `pierce: true` is checked at execution time: the URL of the document that holds the matched element must be inside the list, otherwise the tool refuses. A `>>>` chain only crosses shadow roots and stays in the frame it starts in.
 - When the frame of the target cannot be looked up, the call is refused with a message to call the tool again.
 - The URL is read when the tool starts, so a page that navigates itself later is caught at the next mutating call.

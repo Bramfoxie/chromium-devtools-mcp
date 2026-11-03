@@ -23,7 +23,7 @@ Every tool with its behavior. Element targeting is in [frames-and-shadow-dom.md]
 
 ## Input
 
-- `input_click`: click with trusted CDP mouse events, like a real user. Refuses a covered element unless `force` is passed.
+- `input_click`: click with trusted CDP mouse events, like a real user. Pass either a `target` element or a `point`, never both. With a `target` it refuses a covered element unless `force` is passed. A `point` is `{ x, y }` in CSS pixels from the top left corner of the viewport, which are the pixel coordinates of a viewport `screenshot` at scale 1, so a vision based agent can click what it sees. The events go to the tab at those coordinates, also over a cross-site frame, and no hit test is made: the result names the element under the point (an `iframe` for a frame) and omits `target` when nothing is there. A point outside the viewport is refused. `button`, `clickCount` and `modifiers` work for both; `position` and `force` are for a `target` only. With `safety.allowedDomains` a point inside a frame from another origin is refused, and so is a point whose frame cannot be identified.
 - `input_hover`: hover an element with trusted CDP mouse events, so hover styles and menus react.
 - `input_type`: type text into a field, with `clear` and `submit` options. Passwords are typed but never echoed back.
 - `input_key`: press a key or chord like `Enter` or `ControlOrMeta+C`. `ControlOrMeta` resolves from the browser platform. On macOS, Control combined with a letter does not trigger editing commands such as select all; use `Meta+A` or `ControlOrMeta+A` there.
