@@ -530,6 +530,29 @@ describe("runTool", () => {
 
         expect(after.isError).toBe(true);
         expect(JSON.stringify(after.content)).toContain("cancelled");
+        expect(JSON.stringify(after.content)).not.toContain("may already have been applied");
+    });
+
+    it("warns that a cancelled mutating call may have changed the page", async () => {
+        const controller = new AbortController();
+        const never = new Promise<never>(() => undefined);
+        const mutating = defineTool({
+            name       : "mutating",
+            description: "Changes state and never settles.",
+            access     : "mutate",
+            input      : z.strictObject({}),
+            output     : z.strictObject({}),
+            handler    : () => never,
+        });
+        const pending = runTool(mutating, {}, extra(controller.signal), runtime());
+
+        await Promise.resolve();
+        controller.abort();
+        const result = await pending;
+
+        expect(result.isError).toBe(true);
+        expect(JSON.stringify(result.content)).toContain("may already have been applied");
+        expect(JSON.stringify(result.content)).toContain("page_info");
     });
 });
 

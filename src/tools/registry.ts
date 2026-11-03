@@ -14,6 +14,9 @@ import { SessionResetError } from "../mcp/index.js";
 
 export const CANCELLED_MESSAGE = "The request was cancelled. Call the tool again if needed.";
 
+export const CANCELLED_MUTATING_MESSAGE =
+    "The request was cancelled while the tool was running, so its change may already have been applied. Check the page with page_info or dom_query before calling the tool again.";
+
 export interface RegisterToolsOptions {
     server : McpServer;
     tools  : AnyTool[];
@@ -41,11 +44,11 @@ export function toolAnnotations(tool: AnyTool): {
     };
 }
 
-function raceWithSignal<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
-    if (signal.aborted) return Promise.reject(new ToolError(CANCELLED_MESSAGE));
+function raceWithSignal<T>(work: Promise<T>, signal: AbortSignal, message: string): Promise<T> {
+    if (signal.aborted) return Promise.reject(new ToolError(message));
 
     return new Promise<T>((resolve, reject) => {
-        const onAbort = () => reject(new ToolError(CANCELLED_MESSAGE));
+        const onAbort = () => reject(new ToolError(message));
 
         signal.addEventListener("abort", onAbort, { once: true });
         work.then(
@@ -107,6 +110,9 @@ export async function runTool(
         const output = await raceWithSignal(
             tool.handler(parsed.data, runtime.context(extra.signal, admission.confirmed)),
             extra.signal,
+            (typeof tool.access === "function" ? tool.access(parsed.data) : tool.access) === "mutate"
+                ? CANCELLED_MUTATING_MESSAGE
+                : CANCELLED_MESSAGE,
         );
         const validated = tool.output.safeParse(output);
 
