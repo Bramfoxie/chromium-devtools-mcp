@@ -13,7 +13,36 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  ci-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      actions: read
+    steps:
+      - name: Wait for the CI workflow of this commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          for attempt in $(seq 1 120); do
+            runs=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$GITHUB_SHA" --json status,conclusion --limit 20)
+            total=$(printf '%s' "$runs" | jq 'length')
+            open=$(printf '%s' "$runs" | jq '[.[] | select(.status != "completed")] | length')
+            passed=$(printf '%s' "$runs" | jq '[.[] | select(.conclusion == "success")] | length')
+            if [ "$total" -gt 0 ] && [ "$open" -eq 0 ]; then
+              if [ "$passed" -gt 0 ]; then
+                echo "CI passed for ${GITHUB_SHA}."
+                exit 0
+              fi
+              echo "CI did not pass for ${GITHUB_SHA}, so nothing is published. Fix it and run this workflow again."
+              exit 1
+            fi
+            sleep 20
+          done
+          echo "CI did not finish for ${GITHUB_SHA} within 40 minutes."
+          exit 1
+
   publish:
+    needs: ci-gate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
