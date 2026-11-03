@@ -125,15 +125,11 @@ export { pageDetails, pageInfo, pageInfoExpression } from "./page-info.js";
 
 export { pageDialogs } from "./page-dialogs.js";
 
-export {
-    cancelWaitScript,
-    checkConditions,
-    expressionScript,
-    pageWait,
-    selectorScript,
-    textScript,
-    waitOutcomeOf,
-} from "./page-wait.js";
+export { checkConditions, pageWait } from "./page-wait.js";
+
+export { cancelWaitScript, expressionScript, selectorScript, textScript } from "./page-wait-scripts.js";
+
+export { waitOutcomeOf } from "./page-wait-run.js";
 
 export {
     pageLocation,
