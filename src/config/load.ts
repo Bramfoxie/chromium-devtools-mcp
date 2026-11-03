@@ -159,7 +159,7 @@ function fileLayer(file: string, content: string | undefined): Layer {
         throw new ConfigError(`invalid value at safety in ${file}: expected an object`);
     }
 
-    return parsed as Layer;
+    return parsed;
 }
 
 function merge(base: Layer, layer: Layer): Layer {

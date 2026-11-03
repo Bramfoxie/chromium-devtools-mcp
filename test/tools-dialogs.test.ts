@@ -285,7 +285,7 @@ describe("dialog precondition", () => {
         context.tabs.refresh(await fake.listTabs("owned"), "tab1");
         fake.emit = (() => {
             throw new Error("must not emit after attach");
-        }) as never;
+        });
         toolRuntime.dialogs.attach();
         toolRuntime.dialogs.handleCdpEvent({
             targetId: "tab1",

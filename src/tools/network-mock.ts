@@ -10,7 +10,6 @@ import {
     MOCK_RULES_MAX,
     MOCK_TOTAL_BODY_MAX_BYTES,
     MOCK_URL_PATTERN_MAX_CHARS,
-    type FailReason,
     type InterceptionManager,
     type MockResponse,
     type RuleInput,
@@ -156,7 +155,7 @@ export function ruleInputOf(args: MockAddInput): RuleInput {
         method      : args.method,
         resourceType: args.resourceType,
         response,
-        fail        : (args.fail?.reason ?? undefined) as FailReason | undefined,
+        fail        : args.fail?.reason,
         delayMs     : args.delayMs ?? 0,
         times       : args.times,
     };

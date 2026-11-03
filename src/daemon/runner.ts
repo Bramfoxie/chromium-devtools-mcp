@@ -117,11 +117,11 @@ async function closeLeftoverPages(client: CdpClient): Promise<void> {
     if (!Array.isArray(infos)) return;
 
     await Promise.all(
-        infos.map((info: { type?: unknown; targetId?: unknown }) =>
-            info.type === "page" && typeof info.targetId === "string"
-                ? client.send("Target.closeTarget", { targetId: info.targetId }).catch(() => undefined)
-                : undefined,
-        ),
+        infos.map(async (info: { type?: unknown; targetId?: unknown }) => {
+            if (info.type !== "page" || typeof info.targetId !== "string") return;
+
+            await client.send("Target.closeTarget", { targetId: info.targetId }).catch(() => undefined);
+        }),
     );
 }
 

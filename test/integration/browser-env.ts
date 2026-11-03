@@ -148,7 +148,7 @@ export async function startEnv(safety?: Config["safety"]): Promise<Env> {
         stderrLog = tail(stderrLog + String(chunk));
 
         return (realWrite as (...args: unknown[]) => boolean).call(process.stderr, chunk, ...rest);
-    }) as typeof process.stderr.write;
+    });
     const diagnostics = () =>
         `\n--- daemon outcome ---\n${daemonOutcome}\n--- daemon and browser messages (last ${LOG_TAIL_CHARS} chars) ---\n${tail(stderrLog)}`;
     const link = new DaemonLink(

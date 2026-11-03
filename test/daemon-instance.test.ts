@@ -540,7 +540,9 @@ describe("acquireInstance with real sockets", () => {
     it("accepts connections and refuses a second instance", async () => {
         const opts = await realOptions();
         const accepted = new Promise<net.Socket>((resolve) => {
-            acquireInstance(opts, resolve).then((handle) => cleanups.push(() => handle.release()));
+            void acquireInstance(opts, resolve).then((handle) =>
+                cleanups.push(() => handle.release()),
+            );
         });
 
         await vi.waitFor(async () => {
@@ -555,7 +557,9 @@ describe("acquireInstance with real sockets", () => {
     it("survives errors on accepted sockets", async () => {
         const opts = await realOptions();
         const accepted = new Promise<net.Socket>((resolve) => {
-            acquireInstance(opts, resolve).then((handle) => cleanups.push(() => handle.release()));
+            void acquireInstance(opts, resolve).then((handle) =>
+                cleanups.push(() => handle.release()),
+            );
         });
 
         await vi.waitFor(async () => {

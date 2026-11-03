@@ -822,7 +822,7 @@ describe("page_navigate", () => {
             url: "https://example.org/",
         });
         expect(pageNavigate.target?.({ action: "back" } as never)).toBeUndefined();
-        expect(pageNavigate.target?.({ url: "https://example.org/" } as never)).toEqual({
+        expect(pageNavigate.target?.({ url: "https://example.org/" })).toEqual({
             url: "https://example.org/",
         });
     });

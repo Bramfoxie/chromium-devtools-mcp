@@ -98,7 +98,7 @@ async function admitWithChecks(
         tool  : tool.name,
         access,
         config: runtime.config,
-        target: tool.target?.(args as never),
+        target: tool.target?.(args),
         tabUrl,
         ...(frame === undefined ? {} : { frame }),
         dangerous,
@@ -115,7 +115,7 @@ async function admitWithChecks(
         : await runtime.confirm(
             {
                 tool   : tool.name,
-                summary: tool.summarize?.(args as never) ?? "It can reach beyond the page.",
+                summary: tool.summarize?.(args) ?? "It can reach beyond the page.",
             },
             signal,
         );

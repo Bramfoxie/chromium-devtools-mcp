@@ -491,7 +491,7 @@ describe("InterceptionManager", () => {
             manager.add("tab1", ruleOf(1));
             await manager.sync("tab1");
             fake.failSend = (_tab, method) =>
-                method === "Fetch.fulfillRequest" ? new Error("boom") : undefined as never;
+                method === "Fetch.fulfillRequest" ? new Error("boom") : undefined;
 
             await manager.handleCdpEvent(paused("r1"));
             expect(manager.rulesOf("tab1")).toHaveLength(1);
@@ -553,7 +553,7 @@ describe("InterceptionManager", () => {
         await manager.sync("tab1");
         fake.sent.length = 0;
         fake.failSend = (tab, method) =>
-            method === "Fetch.fulfillRequest" ? new Error("boom") : undefined as never;
+            method === "Fetch.fulfillRequest" ? new Error("boom") : undefined;
 
         await manager.handleCdpEvent({
             targetId: "tab1",

@@ -200,7 +200,7 @@ describe("network_mock", () => {
             runtime,
         );
         fake.failSend = (_tab, method) =>
-            method === "Fetch.fulfillRequest" ? new Error("boom") : undefined as never;
+            method === "Fetch.fulfillRequest" ? new Error("boom") : undefined;
 
         await runtime.mock.handleCdpEvent({
             targetId: "tab1",

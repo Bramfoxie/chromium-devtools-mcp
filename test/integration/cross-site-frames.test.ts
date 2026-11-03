@@ -510,7 +510,7 @@ function decodePng(file: Buffer): Png {
         }
     }
 
-    return { width, height, data: Object.assign(data, { channels }) as Buffer };
+    return { width, height, data: Object.assign(data, { channels }) };
 }
 
 function pixelAt(png: Png, x: number, y: number): number[] {

@@ -316,7 +316,7 @@ describe("validation", () => {
 
         expect(config.profileDir).toBe("/home/u/.local/share/chromium-devtools-mcp/profile");
         expect(
-            configFilePath({ env: {}, platform: "freebsd" as never, homedir: "/home/u" }),
+            configFilePath({ env: {}, platform: "freebsd", homedir: "/home/u" }),
         ).toBe("/home/u/.config/chromium-devtools-mcp/config.json");
     });
 });

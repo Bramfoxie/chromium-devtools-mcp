@@ -491,7 +491,7 @@ describe("input_upload in frames", () => {
                 }
             }
 
-            return inner?.(_targetId, method, params) as unknown;
+            return inner?.(_targetId, method, params);
         };
 
         const { runtime } = runtimeWith(fake);

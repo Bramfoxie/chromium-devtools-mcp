@@ -470,13 +470,13 @@ describe("input_key", () => {
         let calls = 0;
 
         fake.failSend = (_targetId, method) => {
-            if (method !== "Input.dispatchKeyEvent") return undefined as never;
+            if (method !== "Input.dispatchKeyEvent") return undefined;
 
             calls += 1;
 
             if (calls === 2) return new Error("CDP gone");
 
-            return undefined as never;
+            return undefined;
         };
 
         const result = await runTool(inputKey, { key: "Control+a" }, extra(), runtime);
@@ -648,7 +648,7 @@ describe("input_type and input_key in frames", () => {
                 return { node: { backendNodeId: 4 } };
             }
 
-            return inner?.(_targetId, method, params) as unknown;
+            return inner?.(_targetId, method, params);
         };
 
         return fake;
