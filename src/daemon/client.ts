@@ -1,5 +1,6 @@
 import net from "node:net";
 import { IpcCancelledError, IpcClosedError, IpcTimeoutError, RpcError } from "./errors.js";
+import { declaredTimeoutMs, timeoutClassOf } from "./request-timeouts.js";
 import { describeError, logDaemon, quoted } from "../util/log.js";
 import {
     encodeMessage,
@@ -16,8 +17,6 @@ const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 const DEFAULT_CONNECT_TIMEOUT_MS = 5000;
 const DECLARED_TIMEOUT_MARGIN_MS = 5000;
 const MULTI_STEP_TIMEOUT_MARGIN_MS = 30_000;
-const CDP_BOUND_METHODS = new Set(["cdp.send", "tab.create"]);
-const MULTI_STEP_METHODS = new Set(["frame.list", "tab.list"]);
 
 export interface IpcConnectOptions {
     socketPath       : string;
@@ -147,19 +146,20 @@ export class IpcClient {
     }
 
     private timeoutFor(method: string, params: unknown): number {
-        const declared = (params as { timeoutMs?: unknown } | null | undefined)?.timeoutMs;
+        const declared = declaredTimeoutMs(params);
+        const timeoutClass = timeoutClassOf(method);
 
-        if (MULTI_STEP_METHODS.has(method)) {
-            return typeof declared === "number" && Number.isFinite(declared)
-                ? declared + MULTI_STEP_TIMEOUT_MARGIN_MS
-                : this.requestTimeoutMs + MULTI_STEP_TIMEOUT_MARGIN_MS;
+        if (timeoutClass === "multi-step") {
+            return (declared ?? this.requestTimeoutMs) + MULTI_STEP_TIMEOUT_MARGIN_MS;
         }
 
-        return typeof declared === "number" && Number.isFinite(declared)
-            ? Math.max(this.requestTimeoutMs, declared + DECLARED_TIMEOUT_MARGIN_MS)
-            : CDP_BOUND_METHODS.has(method)
-                ? this.requestTimeoutMs + DECLARED_TIMEOUT_MARGIN_MS
-                : this.requestTimeoutMs;
+        if (declared !== undefined) {
+            return Math.max(this.requestTimeoutMs, declared + DECLARED_TIMEOUT_MARGIN_MS);
+        }
+
+        return timeoutClass === "cdp-bound"
+            ? this.requestTimeoutMs + DECLARED_TIMEOUT_MARGIN_MS
+            : this.requestTimeoutMs;
     }
 
     on(event: string, handler: IpcEventHandler): () => void {
