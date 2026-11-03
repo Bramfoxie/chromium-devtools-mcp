@@ -84,6 +84,7 @@ function envLayer(env: NodeJS.ProcessEnv): Layer {
         headless  : bool("HEADLESS"),
         profileDir: get("PROFILE_DIR"),
         debugPort : port === undefined ? undefined : toInt(port),
+        wsEndpoint: get("WS_ENDPOINT"),
         allowFocus: bool("ALLOW_FOCUS"),
         isolated  : bool("ISOLATED"),
         safety    : {
@@ -107,6 +108,7 @@ function parseFlags(argv: string[]) {
                 headless           : { type: "boolean" },
                 "profile-dir"      : { type: "string" },
                 "debug-port"       : { type: "string" },
+                "ws-endpoint"      : { type: "string" },
                 "allow-focus"      : { type: "boolean" },
                 isolated           : { type: "boolean" },
                 "read-only"        : { type: "boolean" },
@@ -132,6 +134,7 @@ function argvLayer(argv: string[]): Layer {
         headless  : values.headless,
         profileDir: values["profile-dir"],
         debugPort : typeof port === "string" ? toInt(port) : port,
+        wsEndpoint: values["ws-endpoint"],
         allowFocus: values["allow-focus"],
         isolated  : values.isolated,
         safety    : {

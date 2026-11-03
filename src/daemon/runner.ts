@@ -1,6 +1,8 @@
 import {
     type AttachEndpoint,
     attachBrowser,
+    endpointUnreachableMessage,
+    explicitEndpoint,
     runningInProfile,
 } from "../browser/attach.js";
 import { BrowserLaunchError, launchManaged } from "../browser/launch.js";
@@ -205,8 +207,12 @@ export function createConnector(overrides: Partial<ConnectorDeps> = {}): Browser
     return async (config, hooks, signal) => {
         if (config.mode === "managed") return connectManaged(config, deps, signal);
 
+        let reportedUnreachable = false;
+
         for (;;) {
-            const endpoint = await deps.attach(config, { onWaiting: hooks.onWaiting }, signal);
+            const endpoint = config.wsEndpoint === undefined
+                ? await deps.attach(config, { onWaiting: hooks.onWaiting }, signal)
+                : explicitEndpoint(config.wsEndpoint);
 
             if (endpoint.source === "port-file") hooks.onWaiting(approvalMessage());
 
@@ -221,6 +227,11 @@ export function createConnector(overrides: Partial<ConnectorDeps> = {}): Browser
                 return { client, stop: () => client.close() };
             } catch (error) {
                 if (signal.aborted) throw error;
+
+                if (endpoint.source === "ws-endpoint" && !reportedUnreachable) {
+                    reportedUnreachable = true;
+                    hooks.onWaiting(endpointUnreachableMessage(endpoint.webSocketUrl));
+                }
 
                 logDaemon(`could not connect to the browser yet, retrying: ${describeError(error)}`);
                 await deps.sleep(deps.retryMs ?? RETRY_MS, signal);

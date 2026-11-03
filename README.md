@@ -97,6 +97,7 @@ Sources from lowest to highest priority: defaults, JSON file, `CHROMIUM_DEVTOOLS
 | `headless`                | `--headless`          | false                   |
 | `profileDir`              | `--profile-dir`       | per-user data directory |
 | `debugPort`               | `--debug-port`        | 0 managed, 9222 attach  |
+| `wsEndpoint`              | `--ws-endpoint`       | unset, attach only      |
 | `allowFocus`              | `--allow-focus`       | false                   |
 | `isolated`                | `--isolated`          | false                   |
 | `safety.readOnly`         | `--read-only`         | false                   |

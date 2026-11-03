@@ -321,6 +321,60 @@ describe("validation", () => {
     });
 });
 
+describe("wsEndpoint", () => {
+    const given = "ws://127.0.0.1:9444/devtools/browser/abc";
+
+    it("is unset by default", () => {
+        expect(loadConfig(withFile(undefined)).wsEndpoint).toBeUndefined();
+    });
+
+    it("is read from the file, env and flag in precedence order", () => {
+        const file = JSON.stringify({ wsEndpoint: "ws://127.0.0.1:1/devtools/browser/file" });
+        const env = { CHROMIUM_DEVTOOLS_MCP_WS_ENDPOINT: "ws://127.0.0.1:2/devtools/browser/env" };
+
+        expect(loadConfig(withFile(file)).wsEndpoint).toBe("ws://127.0.0.1:1/devtools/browser/file");
+        expect(loadConfig({ ...withFile(file), env }).wsEndpoint).toBe(
+            "ws://127.0.0.1:2/devtools/browser/env",
+        );
+        expect(
+            loadConfig({ ...withFile(file), env, argv: [`--ws-endpoint=${given}`] }).wsEndpoint,
+        ).toBe(given);
+    });
+
+    it.each([
+        "ws://localhost:9222/devtools/browser/abc",
+        "ws://[::1]:9222/devtools/browser/abc",
+    ])("accepts the loopback endpoint %s", (value) => {
+        expect(loadConfig({ ...withFile(undefined), argv: [`--ws-endpoint=${value}`] }).wsEndpoint).toBe(
+            value,
+        );
+    });
+
+    it.each([
+        "garbage",
+        "http://127.0.0.1:9222/devtools/browser/abc",
+        "wss://127.0.0.1:9222/devtools/browser/abc",
+        "ws://example.com:9222/devtools/browser/abc",
+        "ws://192.168.1.5:9222/devtools/browser/abc",
+        "ws://127.0.0.1/devtools/browser/abc",
+        "ws://127.0.0.1:9222/json/version",
+        "ws://127.0.0.1:9222/devtools/browser/",
+        "ws://user:pass@127.0.0.1:9222/devtools/browser/abc",
+        "ws://127.0.0.1:9222/devtools/browser/abc?x=1",
+        "ws://127.0.0.1:9222/devtools/browser/abc#x",
+    ])("rejects the endpoint %s", (value) => {
+        expect(() =>
+            loadConfig({ ...withFile(undefined), argv: [`--ws-endpoint=${value}`] }),
+        ).toThrow(/wsEndpoint: invalid endpoint/);
+    });
+
+    it("is refused in managed mode", () => {
+        expect(() =>
+            loadConfig({ ...withFile(undefined), argv: ["--mode=managed", `--ws-endpoint=${given}`] }),
+        ).toThrow(/wsEndpoint: is used only in attach mode/);
+    });
+});
+
 describe("paths", () => {
     it("resolves the config file on macOS and Linux", () => {
         expect(configFilePath({ env: {}, platform: "darwin", homedir: "/Users/u" })).toBe(

@@ -25,6 +25,8 @@ export {
     type AttachDeps,
     type AttachEndpoint,
     browserUserDataDir,
+    endpointUnreachableMessage,
+    explicitEndpoint,
     type EndpointSource,
     parseActivePortFile,
     resolveAttachEndpoint,

@@ -2,7 +2,7 @@ import { lstat } from "node:fs/promises";
 import http from "node:http";
 import net from "node:net";
 import os from "node:os";
-import { pathFor, type Config } from "../config/index.js";
+import { BROWSER_PATH_PREFIX, LOOPBACK_HOSTS, pathFor, type Config } from "../config/index.js";
 import { BROWSERS, type BrowserName, type DiscoveryContext } from "./browsers.js";
 import { readIfExists } from "../util/read-if-exists.js";
 import { writeLogLine } from "../util/stderr.js";
@@ -10,14 +10,12 @@ import { abortableSleep } from "../util/sleep.js";
 import { AppError } from "../util/app-error.js";
 
 const PORT_FILE_NAME = "DevToolsActivePort";
-const BROWSER_PATH_PREFIX = "/devtools/browser/";
-const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
 const MAX_VERSION_BYTES = 64 * 1024;
 const VERSION_TIMEOUT_MS = 1000;
 const PORT_PROBE_TIMEOUT_MS = 500;
 const DEFAULT_POLL_INTERVAL_MS = 1000;
 
-export type EndpointSource = "port-file" | "debug-port";
+export type EndpointSource = "port-file" | "debug-port" | "ws-endpoint";
 
 export interface AttachEndpoint {
     port        : number;
@@ -164,6 +162,14 @@ export async function resolveAttachEndpoint(
     if (webSocketUrl) return { port: config.debugPort, webSocketUrl, source: "debug-port" };
 
     return undefined;
+}
+
+export function explicitEndpoint(webSocketUrl: string): AttachEndpoint {
+    return { port: Number(new URL(webSocketUrl).port), webSocketUrl, source: "ws-endpoint" };
+}
+
+export function endpointUnreachableMessage(webSocketUrl: string): string {
+    return `Cannot connect to ${webSocketUrl} yet. Check that the browser is running with remote debugging and that wsEndpoint is its current address, which changes when the browser restarts. Waiting until it answers.`;
 }
 
 export function setupInstructions(config: AttachConfig): string {

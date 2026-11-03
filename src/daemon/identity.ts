@@ -5,6 +5,7 @@ export const identitySchema = z.strictObject({
     browser   : z.string(),
     mode      : z.string(),
     debugPort : z.number(),
+    wsEndpoint: z.string().optional(),
     allowFocus: z.boolean(),
     headless  : z.boolean().optional(),
     profileDir: z.string().optional(),
@@ -12,13 +13,24 @@ export const identitySchema = z.strictObject({
 
 export type DaemonIdentity = z.infer<typeof identitySchema>;
 
-const FIELDS = ["browser", "mode", "debugPort", "allowFocus", "headless", "profileDir"] as const;
+const FIELDS = [
+    "browser",
+    "mode",
+    "debugPort",
+    "wsEndpoint",
+    "allowFocus",
+    "headless",
+    "profileDir",
+] as const;
 
 export type IdentityField = (typeof FIELDS)[number];
 
 // Settings two clients must share; managed-only fields are omitted in attach mode.
 export function daemonIdentity(
-    config: Pick<Config, "browser" | "mode" | "debugPort" | "allowFocus" | "headless" | "profileDir">,
+    config: Pick<
+        Config,
+        "browser" | "mode" | "debugPort" | "wsEndpoint" | "allowFocus" | "headless" | "profileDir"
+    >,
 ): DaemonIdentity {
     const shared = {
         browser   : config.browser,
@@ -27,9 +39,11 @@ export function daemonIdentity(
         allowFocus: config.allowFocus,
     };
 
-    return config.mode === "managed"
-        ? { ...shared, headless: config.headless, profileDir: config.profileDir }
-        : shared;
+    if (config.mode === "managed") {
+        return { ...shared, headless: config.headless, profileDir: config.profileDir };
+    }
+
+    return config.wsEndpoint === undefined ? shared : { ...shared, wsEndpoint: config.wsEndpoint };
 }
 
 export function differingFields(a: DaemonIdentity, b: DaemonIdentity): IdentityField[] {
