@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { redactUrl } from "./network-log.js";
+import { redactUrl } from "./redact.js";
 import { stackTraceSchema } from "../cdp-schemas.js";
 
 const CONSOLE_ENTRY_CLIP_CHARS = 2000;

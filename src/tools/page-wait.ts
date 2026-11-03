@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { type UrlPattern, compileUrlPattern, testUrlPattern } from "./capture/network-log.js";
+import { type UrlPattern, compileUrlPattern, testUrlPattern } from "./capture/url-pattern.js";
 import { defineTool } from "./define-tool.js";
 import { ensureNoDialog } from "./dialogs.js";
 import { MAX_FRAME_LENGTH } from "./element-target.js";

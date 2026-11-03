@@ -1,10 +1,10 @@
 import { z } from "zod";
+import type { NetworkFilter } from "./capture/network-log.js";
 import {
     NETWORK_REGEX_MAX_CHARS,
-    type NetworkFilter,
     type UrlPattern,
     compileUrlPattern,
-} from "./capture/network-log.js";
+} from "./capture/url-pattern.js";
 import { defineTool } from "./define-tool.js";
 import { ToolError } from "./errors.js";
 import { resolveTab, tabSchema } from "./tab-target.js";

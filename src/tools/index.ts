@@ -232,13 +232,13 @@ export {
 export {
     type NetworkFilter,
     type NetworkRecord,
-    compileUrlPattern,
-    testUrlPattern,
     matchNetworkRecord,
-    redactHeaders,
-    redactUrl,
     reduceNetworkEvent,
 } from "./capture/network-log.js";
+
+export { compileUrlPattern, testUrlPattern } from "./capture/url-pattern.js";
+
+export { redactHeaders, redactUrl } from "./capture/redact.js";
 
 export {
     coveredMessage,
