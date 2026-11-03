@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { RpcError, ErrorCode, normalizeUrl } from "../daemon/index.js";
 import { defineTool } from "./define-tool.js";
+import { parkIfForbidden } from "./final-url.js";
 import { ToolError } from "./errors.js";
 import { NAVIGATE_DEFAULT_TIMEOUT_MS, NAVIGATE_MAX_TIMEOUT_MS, loadInTab, type TabLoad } from "./page-navigate.js";
 import { truncateText } from "./result.js";
@@ -29,10 +30,11 @@ function noTabError(): ToolError {
 }
 
 export const newTab = defineTool({
-    name       : "new_tab",
-    description: "Open a new background tab and select it. With a url it waits until the page has loaded or timeoutMs passes, and returns the committed url, the load state reached and the document readyState.",
-    access     : "mutate",
-    input      : z.strictObject({
+    name        : "new_tab",
+    description : "Open a new background tab and select it. With a url it waits until the page has loaded or timeoutMs passes, and returns the committed url, the load state reached and the document readyState.",
+    access      : "mutate",
+    tabUrlExempt: true,
+    input       : z.strictObject({
         url      : z.string().min(1).max(2048).optional().describe("URL to open: http, https or about:blank. Defaults to about:blank."),
         select   : z.boolean().optional().describe("Select the new tab. Defaults to true."),
         timeoutMs: z.number().int().min(1).max(NAVIGATE_MAX_TIMEOUT_MS).optional().describe("How long to wait for the page to load. Defaults to 30000 ms."),
@@ -54,9 +56,19 @@ export const newTab = defineTool({
         await context.frames.ensure(targetId).catch(() => undefined);
 
         const timeoutMs = args.timeoutMs ?? NAVIGATE_DEFAULT_TIMEOUT_MS;
-        const load: TabLoad | undefined = url === undefined || url === "about:blank"
+        const loaded: TabLoad | undefined = url === undefined || url === "about:blank"
             ? undefined
             : await loadInTab(context, targetId, url, timeoutMs);
+        const refusal = loaded === undefined
+            ? undefined
+            : await parkIfForbidden(context, targetId, loaded.page.url);
+        const load: TabLoad | undefined = loaded === undefined || refusal === undefined
+            ? loaded
+            : {
+                waited         : "none",
+                page           : { url: "about:blank", title: "", readyState: "complete" },
+                navigationError: refusal,
+            };
         const tabs = await context.access.listTabs("owned");
         const select = args.select === false ? selectionOf(tabs, context.state.selected) : targetId;
 
@@ -145,13 +157,14 @@ export const listTabs = defineTool({
 });
 
 export const selectTab = defineTool({
-    name       : "select_tab",
-    closedWorld: true,
-    description: "Select a tab of the session, claiming an available tab when needed.",
-    access     : "mutate",
-    input      : z.strictObject({ tab: tabId }),
-    output     : z.strictObject({ tab: tabObject }),
-    handler    : async (args, context) => {
+    name        : "select_tab",
+    closedWorld : true,
+    description : "Select a tab of the session, claiming an available tab when needed.",
+    access      : "mutate",
+    tabUrlExempt: true,
+    input       : z.strictObject({ tab: tabId }),
+    output      : z.strictObject({ tab: tabObject }),
+    handler     : async (args, context) => {
         let tabs = await context.access.listTabs("owned");
         let tab = tabs.find((known) => known.targetId === args.tab);
 
@@ -198,12 +211,13 @@ export const selectTab = defineTool({
 });
 
 export const closeTab = defineTool({
-    name       : "close_tab",
-    closedWorld: true,
-    description: "Close a tab opened by this session.",
-    access     : "mutate",
-    input      : z.strictObject({ tab: tabId.optional().describe("Tab id. Defaults to the selected tab.") }),
-    output     : z.strictObject({
+    name        : "close_tab",
+    closedWorld : true,
+    description : "Close a tab opened by this session.",
+    access      : "mutate",
+    tabUrlExempt: true,
+    input       : z.strictObject({ tab: tabId.optional().describe("Tab id. Defaults to the selected tab.") }),
+    output      : z.strictObject({
         closed  : z.string().describe("Id of the closed tab."),
         selected: z.string().nullable().describe("Id of the newly selected tab, if any."),
     }),

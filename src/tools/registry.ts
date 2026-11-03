@@ -9,6 +9,7 @@ import type { AnyTool } from "./define-tool.js";
 import { ToolRuntime } from "./context.js";
 import { ToolError, toToolMessage } from "./errors.js";
 import { errorResult, jsonResult } from "./result.js";
+import { isRestricted } from "../safety/index.js";
 import { checkSafety, type SafetyAccess } from "./safety.js";
 import { safetyFrameOf } from "./safety-frame.js";
 import { SessionResetError } from "../mcp/index.js";
@@ -51,7 +52,6 @@ function selectedTab(args: unknown, runtime: ToolRuntime): string | undefined {
 }
 
 async function resolveTabUrl(
-    tool   : AnyTool,
     args   : unknown,
     runtime: ToolRuntime,
 ): Promise<string | undefined> {
@@ -136,9 +136,21 @@ export async function runTool(
         ? (tool.dangerous as (args: unknown) => boolean)(parsed.data)
         : (tool.dangerous ?? false);
 
-    const tabUrl = access === "mutate" && runtime.config.safety.allowedDomains.length > 0
-        ? await resolveTabUrl(tool, parsed.data, runtime).catch(() => undefined)
-        : undefined;
+    const exempt = typeof tool.tabUrlExempt === "function"
+        ? (tool.tabUrlExempt as (args: unknown) => boolean)(parsed.data)
+        : (tool.tabUrlExempt ?? false);
+    let tabUrl: string | undefined;
+
+    if (access === "mutate" && isRestricted(runtime.config.safety.allowedDomains) && !exempt) {
+        try {
+            tabUrl = await resolveTabUrl(parsed.data, runtime);
+        } catch {
+            return errorResult(
+                "The tab URL could not be read to check it against safety.allowedDomains. Call the tool again.",
+            );
+        }
+    }
+
     const tab = access === "mutate" ? selectedTab(parsed.data, runtime) : undefined;
     const frame = tab === undefined
         ? undefined

@@ -3,6 +3,8 @@ import { normalizeUrl } from "../daemon/index.js";
 import { defineTool, type ToolContext } from "./define-tool.js";
 import { createDeadline, type Deadline, sendWithin } from "./deadline.js";
 import { ensureNoDialog } from "./dialogs.js";
+import { DomainRefusal, requireAllowedFinalUrl } from "./final-url.js";
+import { describeUrlHost, isRestricted, isUrlAllowed } from "../safety/index.js";
 import { ToolError } from "./errors.js";
 import { throwIfCancelled } from "./registry.js";
 
@@ -213,6 +215,14 @@ async function historyEntryId(
         );
     }
 
+    const domains = context.config.safety.allowedDomains;
+
+    if (isRestricted(domains) && !isUrlAllowed(entry.url, domains)) {
+        throw new ToolError(
+            `The ${direction === "back" ? "previous" : "next"} history entry is on ${describeUrlHost(entry.url)}, which is outside safety.allowedDomains. Navigate to an allowed domain instead, or ask the owner to add it to safety.allowedDomains.`,
+        );
+    }
+
     if (!isOpenableUrl(entry.url)) {
         throw new ToolError(
             `The ${direction === "back" ? "previous" : "next"} history entry is not an http, https or about:blank page. Only http, https and about:blank URLs can be opened.`,
@@ -250,7 +260,8 @@ export const pageNavigate = defineTool({
                 ? undefined
                 : { url: args.url }
             : undefined,
-    handler: async (args, context) => {
+    tabUrlExempt: (args) => (args.action ?? "url") === "url",
+    handler     : async (args, context) => {
         const targetId = args.tab ?? context.state.selected;
 
         if (targetId === undefined) {
@@ -277,6 +288,8 @@ export const pageNavigate = defineTool({
                 await navigate(context, deadline, targetId, action, args.url, args.ignoreCache);
                 const page = await currentPage(context, targetId);
 
+                await requireAllowedFinalUrl(context, targetId, page.url);
+
                 return {
                     tab           : targetId,
                     url           : page.url,
@@ -297,6 +310,8 @@ export const pageNavigate = defineTool({
             );
             const page = await currentPage(context, targetId);
 
+            await requireAllowedFinalUrl(context, targetId, page.url);
+
             const waited: "load" | "domcontentloaded" | "timeout" = state.done ? waitUntil : "timeout";
 
             return {
@@ -309,6 +324,8 @@ export const pageNavigate = defineTool({
                 ...(waited === "timeout" ? { readyState: page.readyState } : {}),
             };
         } catch (error) {
+            if (error instanceof DomainRefusal) throw error;
+
             if (deadline.expired() && !context.signal.aborted) {
                 throw new ToolError(
                     `The navigation did not start within ${timeoutMs} ms. The page may still be loading; check it with page_info or raise timeoutMs.`,
