@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { type DaemonAccess, type SendArguments, toCdpCommand } from "../mcp/index.js";
+import type { CdpCommand, DaemonAccess } from "../mcp/index.js";
 
 interface DocumentNode {
     nodeId          : number;
@@ -26,11 +26,8 @@ export function bindAccess(access: DaemonAccess, frameId: string): DaemonAccess 
     return new Proxy(access, {
         get(target, property) {
             if (property === "send") {
-                return (...args: SendArguments) => {
-                    const command = toCdpCommand(args);
-
-                    return target.send({ ...command, frameId: command.frameId ?? frameId });
-                };
+                return (command: CdpCommand) =>
+                    target.send({ ...command, frameId: command.frameId ?? frameId });
             }
 
             const value: unknown = Reflect.get(target, property, target);

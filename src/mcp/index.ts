@@ -6,10 +6,7 @@ export {
     type DaemonFrame,
     type DaemonTab,
     SessionResetError,
-    type PositionalSend,
-    type SendArguments,
     type SessionSummary,
-    toCdpCommand,
 } from "./daemon-access.js";
 
 export {

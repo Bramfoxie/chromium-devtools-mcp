@@ -219,9 +219,10 @@ export class PointerDelivery {
     private async frameAt(point: Point): Promise<boolean> {
         try {
             const parsed = locationSchema.safeParse(
-                await this.route.relays[0]?.send(this.tab, "DOM.getNodeForLocation", {
-                    x: Math.round(point.x),
-                    y: Math.round(point.y),
+                await this.route.relays[0]?.send({
+                    targetId: this.tab,
+                    method  : "DOM.getNodeForLocation",
+                    params  : { x: Math.round(point.x), y: Math.round(point.y) },
                 }),
             );
 
@@ -346,9 +347,10 @@ export class PointerDelivery {
 
         try {
             const parsed = z.object({ result: z.object({ value: z.number() }) }).safeParse(
-                await top?.send(this.tab, "Runtime.evaluate", {
-                    expression   : "window.devicePixelRatio",
-                    returnByValue: true,
+                await top?.send({
+                    targetId: this.tab,
+                    method  : "Runtime.evaluate",
+                    params  : { expression: "window.devicePixelRatio", returnByValue: true },
                 }),
             );
 
@@ -361,9 +363,10 @@ export class PointerDelivery {
     private async visibility(): Promise<string> {
         try {
             const parsed = z.object({ result: z.object({ value: z.enum(["hidden", "visible", "prerender"]) }) }).safeParse(
-                await this.route.relays[0]?.send(this.tab, "Runtime.evaluate", {
-                    expression   : "document.visibilityState",
-                    returnByValue: true,
+                await this.route.relays[0]?.send({
+                    targetId: this.tab,
+                    method  : "Runtime.evaluate",
+                    params  : { expression: "document.visibilityState", returnByValue: true },
                 }),
             );
 

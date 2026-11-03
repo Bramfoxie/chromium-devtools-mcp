@@ -4,10 +4,7 @@ import {
     type DaemonAccess,
     type DaemonFrame,
     type DaemonTab,
-    type PositionalSend,
-    type SendArguments,
     type SessionSummary,
-    toCdpCommand,
 } from "../../src/mcp/index.js";
 
 export interface FakeAccessOptions {
@@ -148,10 +145,7 @@ export class FakeAccess {
         return this.frames.map((frame) => ({ ...frame }));
     }
 
-    send(command: CdpCommand): Promise<unknown>;
-    send(...args: PositionalSend): Promise<unknown>;
-    async send(...args: SendArguments): Promise<unknown> {
-        const command = toCdpCommand(args);
+    async send(command: CdpCommand): Promise<unknown> {
         const { targetId, method, params, timeoutMs, frameId, signal, confirmed } = command;
 
         this.sent.push({

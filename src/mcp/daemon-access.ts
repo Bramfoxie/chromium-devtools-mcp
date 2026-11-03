@@ -42,35 +42,6 @@ export interface CdpCommand {
     confirmed?: boolean;
 }
 
-export type PositionalSend = [
-    targetId  : string,
-    method    : string,
-    params?   : Record<string, unknown>,
-    timeoutMs?: number,
-    frameId?  : string,
-    options?  : { signal?: AbortSignal; confirmed?: boolean },
-];
-
-export type SendArguments = [command: CdpCommand] | PositionalSend;
-
-export function toCdpCommand(args: SendArguments): CdpCommand {
-    const [first] = args;
-
-    if (typeof first === "object") return first;
-
-    const [targetId, method, params, timeoutMs, frameId, options] = args as PositionalSend;
-
-    return {
-        targetId,
-        method,
-        ...(params === undefined ? {} : { params }),
-        ...(timeoutMs === undefined ? {} : { timeoutMs }),
-        ...(frameId === undefined ? {} : { frameId }),
-        ...(options?.signal === undefined ? {} : { signal: options.signal }),
-        ...(options?.confirmed === true ? { confirmed: true } : {}),
-    };
-}
-
 export type DaemonEventHandler = (params: unknown) => void;
 
 interface EventRegistration {
@@ -160,10 +131,7 @@ export class DaemonAccess {
         return parse("frame.list", frameListSchema, result).frames;
     }
 
-    send(command: CdpCommand): Promise<unknown>;
-    send(...args: PositionalSend): Promise<unknown>;
-    async send(...args: SendArguments): Promise<unknown> {
-        const command = toCdpCommand(args);
+    async send(command: CdpCommand): Promise<unknown> {
         const { targetId, method, params, timeoutMs, frameId, signal, confirmed } = command;
 
         return this.request(

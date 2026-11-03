@@ -8,7 +8,6 @@ import {
     ToolError,
     ToolRuntime,
 } from "../src/tools/index.js";
-import { type SendArguments, toCdpCommand } from "../src/mcp/index.js";
 import { ensureNoDialog } from "../src/tools/dialogs.js";
 import { FakeAccess } from "./helpers/fake-access.js";
 import { managedConfig } from "./helpers/daemon-env.js";
@@ -51,9 +50,7 @@ describe("DialogState", () => {
         const send = fake.send.bind(fake);
         const subscribe = fake.subscribe.bind(fake);
 
-        fake.send = async (...args: SendArguments) => {
-            const command = toCdpCommand(args);
-
+        fake.send = async (command) => {
             order.push(`send:${command.method}`);
 
             return send(command);
