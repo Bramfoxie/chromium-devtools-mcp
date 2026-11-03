@@ -12,6 +12,7 @@ An MCP server that lets AI agents drive Chrome through the DevTools Protocol, ei
 - One per-user daemon serves several MCP clients at once, each in its own session, optionally in an isolated browser context.
 - Never steals focus: tabs open in the background and input does not raise windows. `bring_to_front` exists for the moment you ask to see a tab and works only with `allowFocus` on.
 - Reaches into shadow DOM and cross-site iframes from every element tool.
+- Performance traces, Core Web Vitals, heap snapshots, screen recording, Lighthouse audits, passkey testing and location emulation, each kept to the tab it was asked for.
 - Safety options for agents: read-only mode, domain allowlist, confirmation of dangerous actions.
 
 ## Quick start
@@ -39,11 +40,10 @@ If something does not connect, run `npx chromium-devtools-mcp doctor` (add the s
 
 ## Compared with the official Chrome DevTools MCP
 
+✅ means the project has the capability, ❌ means it has none.
+
 | Capability                                                          | chromium-devtools-mcp | Chrome DevTools MCP |
 | ------------------------------------------------------------------- | :-------------------: | :-----------------: |
-| Attach to your running browser                                      |          ✅           |         ✅          |
-| Managed persistent profile                                          |          ✅           |         ✅          |
-| Isolated browser context per session                                |          ✅           |         ✅          |
 | One shared daemon, isolated sessions for several clients            |          ✅           |         ❌          |
 | Focus never stolen, tabs open in the background                     |          ✅           |         ❌          |
 | Trusted input events (CDP) and DOM-level click as separate tools    |          ✅           |         ❌          |
@@ -55,15 +55,20 @@ If something does not connect, run `npx chromium-devtools-mcp doctor` (add the s
 | Built-in device list, locale, timezone, media, network emulation    |          ✅           |         ❌          |
 | Read-only mode, domain allowlist, confirmation of dangerous actions |          ✅           |         ❌          |
 | Installer for several clients                                       |          ✅           |         ❌          |
-| Browsers other than Chrome                                          |          ❌           |         ❌          |
+| Attach to your running browser                                      |          ✅           |         ✅          |
+| Managed persistent profile                                          |          ✅           |         ✅          |
+| Isolated browser context per session                                |          ✅           |         ✅          |
 | Performance traces and insights                                     |          ✅           |         ✅          |
 | Lighthouse audit                                                    |          ✅           |         ✅          |
 | Heap snapshots                                                      |          ✅           |         ✅          |
 | Screencast recording                                                |          ✅           |         ✅          |
 | WebAuthn virtual authenticators                                     |          ✅           |         ✅          |
 | PWA inspection (manifest, installability, service workers)          |          ✅           |         ✅          |
-| PWA install and extension management                                |          ❌           |         ✅          |
 | Geolocation emulation                                               |          ✅           |         ✅          |
+| PWA install and extension management                                |          ❌           |         ✅          |
+| Browsers other than Chrome                                          |          ❌           |         ❌          |
+
+Lighthouse audits and the video of a screencast use the `lighthouse` and `ffmpeg` programs when they are installed on your machine; `doctor` shows whether they are.
 
 Compared against Chrome DevTools MCP 1.12.0 (2026-10-22, [ChromeDevTools/chrome-devtools-mcp](https://github.com/ChromeDevTools/chrome-devtools-mcp)). A cross on its side means its tool reference lists no tool for that capability. Version 0.1.0 of this project supports Chrome only.
 
@@ -89,7 +94,7 @@ Compared against Chrome DevTools MCP 1.12.0 (2026-10-22, [ChromeDevTools/chrome-
 
 - `safety.readOnly` refuses every tool that changes page or browser state.
 - `safety.allowedDomains` limits where mutating tools may act; redirects are checked too.
-- `safety.confirmDangerous` asks the user through MCP elicitation before scripts, storage writes, cookie reads and file uploads.
+- `safety.confirmDangerous` asks the user through MCP elicitation before scripts, storage writes, cookie reads, file uploads, location emulation and heap snapshots that are saved.
 
 The daemon enforces these per session. Limits and exact rules: [docs/safety.md](docs/safety.md).
 
