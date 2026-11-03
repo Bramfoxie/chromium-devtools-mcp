@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ErrorCode, normalizeUrl, RpcError } from "../src/daemon/index.js";
-import { checkCall, checkEvent } from "../src/daemon/method-policy.js";
+import { checkCall, checkEvent, TRACE_CATEGORIES } from "../src/daemon/method-policy.js";
 
 const off = { allowFocus: false };
 
@@ -114,5 +114,53 @@ describe("checkEvent", () => {
     it("allows events of tab domains and refuses the rest", () => {
         expect(codeOf(() => checkEvent("Network.requestWillBeSent"))).toBeUndefined();
         expect(codeOf(() => checkEvent("Target.targetCreated"))).toBe(ErrorCode.forbiddenMethod);
+    });
+});
+
+describe("tracing", () => {
+    const fixed = { categories: TRACE_CATEGORIES.join(","), transferMode: "ReportEvents" };
+
+    it("starts a trace with the fixed categories and the event transfer mode", () => {
+        expect(checkCall("Tracing.start", undefined, off)).toEqual(fixed);
+        expect(checkCall("Tracing.start", { transferMode: "ReportEvents" }, off)).toEqual(fixed);
+        expect(
+            checkCall("Tracing.start", { categories: "devtools.timeline,loading" }, off),
+        ).toEqual({ categories: "devtools.timeline,loading", transferMode: "ReportEvents" });
+    });
+
+    it.each([
+        [{ categories: "disabled-by-default-memory-infra" }],
+        [{ categories: "devtools.timeline,netlog" }],
+        [{ categories: "" }],
+        [{ categories: 5 }],
+    ])("refuses the categories %j", (params) => {
+        expect(codeOf(() => checkCall("Tracing.start", params, off))).toBe(ErrorCode.forbiddenMethod);
+    });
+
+    it.each([
+        [{ transferMode: "ReturnAsStream" }],
+        [{ traceConfig: { recordMode: "recordUntilFull" } }],
+        [{ streamFormat: "proto" }],
+        [{ bufferUsageReportingInterval: 1 }],
+    ])("refuses the parameters %j", (params) => {
+        expect(codeOf(() => checkCall("Tracing.start", params, off))).toBe(ErrorCode.badRequest);
+    });
+
+    it("allows ending a trace and refuses every other Tracing method", () => {
+        expect(codeOf(() => checkCall("Tracing.end", undefined, off))).toBeUndefined();
+
+        for (const method of [
+            "Tracing.getCategories",
+            "Tracing.requestMemoryDump",
+            "Tracing.recordClockSyncMarker",
+        ]) {
+            expect(codeOf(() => checkCall(method, undefined, off))).toBe(ErrorCode.forbiddenMethod);
+        }
+    });
+
+    it("lets a client listen for the trace data and its end only", () => {
+        expect(codeOf(() => checkEvent("Tracing.dataCollected"))).toBeUndefined();
+        expect(codeOf(() => checkEvent("Tracing.tracingComplete"))).toBeUndefined();
+        expect(codeOf(() => checkEvent("Tracing.bufferUsage"))).toBe(ErrorCode.forbiddenMethod);
     });
 });

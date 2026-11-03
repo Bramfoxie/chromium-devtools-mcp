@@ -16,6 +16,7 @@ import { ErrorCode } from "./protocol.js";
 import { closedError, tabGone, translate } from "./rpc-errors.js";
 import type { TabInfo } from "./wire.js";
 import { type PermissionLedger, type PermissionName } from "./permissions.js";
+import type { TraceLock } from "./trace-lock.js";
 import { type OwnedTab, type Subscription, TabFrames } from "./tab-frames.js";
 
 const DETACH_GRACE_MS = 2000;
@@ -44,6 +45,7 @@ export interface ClientSessionInit {
     clientName?: string;
     safety?    : SessionSafety;
     permissions: PermissionLedger;
+    traceLock  : TraceLock;
 }
 
 export type Emit = (event: string, params?: unknown) => void;
@@ -103,6 +105,7 @@ export class ClientSession {
     readonly clientName         : string;
     private readonly safety     : SessionSafety;
     private readonly permissions: PermissionLedger;
+    private readonly traceLock  : TraceLock;
 
     constructor(init: ClientSessionInit) {
         this.backend = init.backend;
@@ -113,6 +116,7 @@ export class ClientSession {
         this.clientName = init.clientName ?? "";
         this.safety = init.safety ?? NO_SAFETY;
         this.permissions = init.permissions;
+        this.traceLock = init.traceLock;
         this.frames = new TabFrames(this.backend, this.emit, (targetId, tab) =>
             this.assertCurrent(targetId, tab));
     }
@@ -234,6 +238,7 @@ export class ClientSession {
         }
 
         this.forget(targetId);
+        this.traceLock.release(this, targetId);
     }
 
     async listTabs(scope: TabScope): Promise<TabInfo[]> {
@@ -271,6 +276,8 @@ export class ClientSession {
 
         await this.enforceSafety(targetId, tab, method, checked, frameId, confirmed);
 
+        this.enterTrace(method, targetId);
+
         try {
             const session = await this.frames.sessionFor(targetId, tab, frameId);
 
@@ -290,7 +297,19 @@ export class ClientSession {
 
             return result;
         } catch (error) {
+            if (method === "Tracing.start") this.traceLock.release(this);
+
             throw translate(error);
+        } finally {
+            if (method === "Tracing.end") this.traceLock.release(this, targetId);
+        }
+    }
+
+    private enterTrace(method: string, targetId: string): void {
+        if (method === "Tracing.start") {
+            this.traceLock.acquire(this, targetId);
+        } else if (method === "Tracing.end" && this.traceLock.targetOf(this) !== targetId) {
+            throw new RpcError(ErrorCode.forbiddenMethod, "This tab is not recording a trace.");
         }
     }
 
@@ -426,6 +445,7 @@ export class ClientSession {
         if (!tab) return;
 
         this.forget(targetId);
+        this.traceLock.release(this, targetId);
         if (!tab.closing) this.emit("tab.closed", { targetId });
     }
 
@@ -461,6 +481,7 @@ export class ClientSession {
         try {
             await Promise.all([this.dispose(entries), within(detaches, DETACH_GRACE_MS)]);
         } finally {
+            this.traceLock.release(this);
             await this.permissions.releaseAll(this, this.contextId);
 
             for (const [targetId] of entries) {

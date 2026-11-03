@@ -1508,3 +1508,93 @@ describe("state shared with cross site frame sessions", () => {
         await expect(a.send({ targetId: tab, method: "Network.enable", params: {} })).resolves.toMatchObject({ echoed: "Network.enable" });
     });
 });
+
+describe("trace lock", () => {
+    type Sender = { send: (call: { targetId: string; method: string }) => Promise<unknown> };
+
+    const start = (session: Sender, targetId: string) =>
+        session.send({ targetId, method: "Tracing.start" });
+    const end = (session: Sender, targetId: string) =>
+        session.send({ targetId, method: "Tracing.end" });
+
+    async function twoSessions() {
+        const made = setup();
+        const a = await made.open("a");
+        const b = await made.open("b");
+        const tabA = await a.createTab("https://a.example/");
+        const tabB = await b.createTab("https://b.example/");
+
+        return { ...made, a, b, tabA, tabB };
+    }
+
+    it("lets one session record at a time and frees the lock when the trace ends", async () => {
+        const { a, b, tabA, tabB } = await twoSessions();
+
+        await start(a, tabA);
+        expect(await code(start(b, tabB))).toBe(ErrorCode.busy);
+        await end(a, tabA);
+        await expect(start(b, tabB)).resolves.toBeDefined();
+    });
+
+    it("refuses a second trace in the same session", async () => {
+        const { a, tabA } = await twoSessions();
+        const second = await a.createTab("https://c.example/");
+
+        await start(a, tabA);
+
+        expect(await code(start(a, second))).toBe(ErrorCode.busy);
+    });
+
+    it("refuses to end a trace the tab did not start", async () => {
+        const { a, b, tabA, tabB } = await twoSessions();
+
+        await start(a, tabA);
+
+        expect(await code(end(b, tabB))).toBe(ErrorCode.forbiddenMethod);
+        expect(await code(end(a, tabA))).toBeUndefined();
+        expect(await code(end(a, tabA))).toBe(ErrorCode.forbiddenMethod);
+    });
+
+    it("frees the lock when the start fails", async () => {
+        const { a, b, backend, tabA, tabB } = await twoSessions();
+
+        await a.send({ targetId: tabA, method: "Page.enable" });
+        const session = backend.sessions.get(tabA);
+
+        if (session) session.failure = new Error("browser went away");
+
+        await expect(start(a, tabA)).rejects.toThrow();
+
+        if (session) session.failure = undefined;
+
+        await expect(start(b, tabB)).resolves.toBeDefined();
+    });
+
+    it("frees the lock when the tab closes or the session ends", async () => {
+        const { a, b, registry, tabA, tabB } = await twoSessions();
+
+        await start(a, tabA);
+        await a.closeTab(tabA);
+        await expect(start(b, tabB)).resolves.toBeDefined();
+        await end(b, tabB);
+
+        const c = await setupOpen(registry, "c");
+        const tabC = await c.createTab("https://c.example/");
+
+        await start(c, tabC);
+        await registry.close("c");
+        await expect(start(b, tabB)).resolves.toBeDefined();
+    });
+
+    it("frees the lock when the browser destroys the tab", async () => {
+        const { a, b, backend, tabA, tabB } = await twoSessions();
+
+        await start(a, tabA);
+        backend.destroyTarget(tabA);
+        await expect(start(b, tabB)).resolves.toBeDefined();
+    });
+});
+
+async function setupOpen(registry: SessionRegistry<string>, key: string) {
+    return registry.open(key, () => undefined, { isolated: false, clientName: key });
+}

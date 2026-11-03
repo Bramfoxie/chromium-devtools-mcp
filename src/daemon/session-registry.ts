@@ -8,6 +8,7 @@ import {
 import type { SessionSafety } from "./cdp-safety.js";
 import { RpcError } from "./errors.js";
 import { PermissionLedger } from "./permissions.js";
+import { TraceLock } from "./trace-lock.js";
 import { ErrorCode } from "./protocol.js";
 import type { SessionSummary } from "./wire.js";
 import { closedError, translate } from "./rpc-errors.js";
@@ -30,6 +31,7 @@ export class SessionRegistry<K> implements Ownership {
     private readonly stopListening: () => void;
     private shuttingDown = false;
     private readonly permissions  : PermissionLedger;
+    private readonly traceLock = new TraceLock();
 
     constructor(
         private readonly backend: BrowserBackend,
@@ -100,6 +102,7 @@ export class SessionRegistry<K> implements Ownership {
             clientName : options.clientName,
             safety     : options.safety,
             permissions: this.permissions,
+            traceLock  : this.traceLock,
         });
 
         this.sessions.set(key, session);
