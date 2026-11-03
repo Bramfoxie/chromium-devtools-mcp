@@ -15,6 +15,9 @@ concurrency:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    outputs:
+      published: ${{ steps.version.outputs.publish }}
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -29,9 +32,14 @@ jobs:
         run: |
           name=$(node -p "require('./package.json').name")
           version=$(node -p "require('./package.json').version")
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
           if output=$(npm view "${name}@${version}" version 2>&1); then
             echo "publish=false" >> "$GITHUB_OUTPUT"
           elif printf '%s' "$output" | grep -q E404; then
+            if [ ! -s "docs/releases/${version}.md" ]; then
+              echo "docs/releases/${version}.md is missing or empty. Write the release notes before releasing ${version}."
+              exit 1
+            fi
             echo "publish=true" >> "$GITHUB_OUTPUT"
           else
             printf '%s\n' "$output"
@@ -49,3 +57,24 @@ jobs:
         run: npm run build
       - if: steps.version.outputs.publish == 'true'
         run: npm publish --access public
+
+  github-release:
+    needs: publish
+    if: needs.publish.outputs.published == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.publish.outputs.version }}
+        run: |
+          gh release create "v${VERSION}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "v${VERSION}" \
+            --notes-file "docs/releases/${VERSION}.md"
