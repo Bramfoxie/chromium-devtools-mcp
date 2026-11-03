@@ -701,13 +701,13 @@ describe("CaptureManager", () => {
         expect(capture.networkRecord("tab1", 99)).toBeUndefined();
     });
 
-    it("forgets a tab on tab.closed and everything on reset", async () => {
+    it("forgets a tab and everything on reset", async () => {
         const { fake, capture } = manager();
 
         await capture.ensureConsole("tab1");
         await capture.ensureNetwork("tab1");
         fake.emit("cdp.event", consoleCall("before close"));
-        fake.emit("tab.closed", { targetId: "tab1" });
+        capture.forget("tab1");
         expect(capture.consoleEnabled("tab1")).toBe(false);
         expect(capture.networkEnabled("tab1")).toBe(false);
 

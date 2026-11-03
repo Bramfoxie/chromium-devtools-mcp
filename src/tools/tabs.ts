@@ -233,18 +233,15 @@ export const closeTab = defineTool({
             throw error;
         }
 
-        context.capture.forget(targetId);
-        context.dialogs.forget(targetId);
-        context.frames.forget(targetId);
-        context.elements.forget(targetId);
-        await context.mock.forget(targetId);
-        context.emulation.forget(targetId);
+        const selectedBefore = context.state.selected;
+
+        await context.forgetTab(targetId);
 
         const tabs = await context.access.listTabs("owned");
         const rest = tabs.filter((tab) => tab.targetId !== targetId);
-        const next = context.state.selected === targetId
+        const next = selectedBefore === targetId
             ? rest[0]?.targetId
-            : selectionOf(tabs, context.state.selected);
+            : selectionOf(tabs, selectedBefore);
 
         context.tabs.refresh(tabs, next);
 

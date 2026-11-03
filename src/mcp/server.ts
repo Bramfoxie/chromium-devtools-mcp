@@ -159,33 +159,7 @@ export function registerServerTools(
         confirm: elicitationConfirmer(server.server),
     });
 
-    access.on("tab.closed", (params) => {
-        const targetId = (params as { targetId?: unknown } | null)?.targetId;
-
-        if (typeof targetId === "string") {
-            runtime.tabs.forget(targetId);
-            runtime.elements.forget(targetId);
-            runtime.frames.forget(targetId);
-            runtime.focus.forget(targetId);
-            runtime.dialogs.forget(targetId);
-            void runtime.mock.forget(targetId);
-            runtime.emulation.forget(targetId);
-        }
-    });
-    runtime.capture.attach();
-    runtime.dialogs.attach();
-    runtime.frames.attach();
-    runtime.mock.attach();
-    access.forgetStaleState(() => {
-        runtime.tabs.reset();
-        runtime.elements.reset();
-        runtime.frames.reset();
-        runtime.focus.reset();
-        runtime.capture.reset();
-        runtime.dialogs.reset();
-        void runtime.mock.reset();
-        runtime.emulation.reset();
-    });
+    runtime.attach();
     registerTools({ server, tools: options.tools ?? allTools, runtime });
 
     return runtime;

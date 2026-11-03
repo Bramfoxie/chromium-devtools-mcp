@@ -54,6 +54,7 @@ export interface ToolContext {
     config   : Config;
     clock    : ToolClock;
     signal   : AbortSignal;
+    forgetTab(targetId: string): Promise<void>;
 }
 
 export interface ToolDefinition<

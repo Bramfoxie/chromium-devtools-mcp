@@ -213,11 +213,6 @@ export class InterceptionManager {
 
         this.attached = true;
         this.access.on("cdp.event", (params) => void this.handleCdpEvent(params));
-        this.access.on("tab.closed", (params) => {
-            const targetId = (params as { targetId?: unknown } | null)?.targetId;
-
-            if (typeof targetId === "string") void this.forget(targetId);
-        });
     }
 
     bodyBytes(): number {

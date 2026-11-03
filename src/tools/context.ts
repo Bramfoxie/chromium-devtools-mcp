@@ -103,6 +103,45 @@ export class ToolRuntime {
         this.confirm = options.confirm;
     }
 
+    attach(): void {
+        this.access.on("tab.closed", (params) => {
+            const targetId = (params as { targetId?: unknown } | null)?.targetId;
+
+            if (typeof targetId === "string") void this.forgetTab(targetId);
+        });
+        this.capture.attach();
+        this.dialogs.attach();
+        this.frames.attach();
+        this.mock.attach();
+        this.access.forgetStaleState(() => void this.resetAll());
+    }
+
+    async forgetTab(targetId: string): Promise<void> {
+        this.tabs.forget(targetId);
+        this.elements.forget(targetId);
+        this.frames.forget(targetId);
+        this.focus.forget(targetId);
+        this.capture.forget(targetId);
+        this.dialogs.forget(targetId);
+        const mock = this.mock.forget(targetId);
+
+        this.emulation.forget(targetId);
+        await mock;
+    }
+
+    async resetAll(): Promise<void> {
+        this.tabs.reset();
+        this.elements.reset();
+        this.frames.reset();
+        this.focus.reset();
+        this.capture.reset();
+        this.dialogs.reset();
+        const mock = this.mock.reset();
+
+        this.emulation.reset();
+        await mock;
+    }
+
     context(signal: AbortSignal, confirmed = false): ToolContext {
         const tabs = this.tabs;
 
@@ -120,6 +159,7 @@ export class ToolRuntime {
             config   : this.config,
             clock    : this.clock,
             signal,
+            forgetTab: (targetId) => this.forgetTab(targetId),
             state    : {
                 get tabs() {
                     return tabs.knownTabs();

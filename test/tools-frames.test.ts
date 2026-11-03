@@ -161,7 +161,7 @@ describe("FrameState", () => {
         emit(fake, "Page.frameDetached", { frameId: "cross" }, "tab2");
         expect(frames.frameOf("tab1", "cross")).toBeDefined();
 
-        fake.emit("tab.closed", { targetId: "tab1" });
+        frames.forget("tab1");
         expect(frames.framesOf("tab1")).toEqual([]);
         expect(frames.ensured("tab1")).toBe(false);
         frames.forget("tab2");

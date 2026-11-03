@@ -619,8 +619,7 @@ describe("InterceptionManager", () => {
             times       : undefined,
         });
         await manager.sync("tab1");
-        fake.emit("tab.closed", { targetId: "tab1" });
-        await Promise.resolve();
+        await manager.forget("tab1");
         await manager.reset();
 
         expect(fake.sent.map((call) => call.method)).toContain("Fetch.disable");

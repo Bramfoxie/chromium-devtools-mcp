@@ -259,7 +259,7 @@ describe("DialogState", () => {
 
         opening(fake, "tab1", { url: "https://a.example/", message: "a", type: "alert" });
         opening(fake, "tab2", { url: "https://b.example/", message: "b", type: "alert" });
-        fake.emit("tab.closed", { targetId: "tab1" });
+        state.forget("tab1");
         expect(state.open("tab1")).toBeUndefined();
         expect(state.open("tab2")?.message).toBe("b");
         state.reset();

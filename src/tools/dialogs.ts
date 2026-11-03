@@ -124,11 +124,6 @@ export class DialogState {
 
         this.attached = true;
         this.access.on("cdp.event", (params) => this.handleCdpEvent(params));
-        this.access.on("tab.closed", (params) => {
-            const targetId = (params as { targetId?: unknown } | null)?.targetId;
-
-            if (typeof targetId === "string") this.forget(targetId);
-        });
     }
 
     pageEnabled(tab: string): boolean {
