@@ -164,3 +164,62 @@ describe("tracing", () => {
         expect(codeOf(() => checkEvent("Tracing.bufferUsage"))).toBe(ErrorCode.forbiddenMethod);
     });
 });
+
+describe("heap snapshots", () => {
+    it("takes a snapshot with progress reports turned off", () => {
+        expect(checkCall("HeapProfiler.takeHeapSnapshot", undefined, off)).toEqual({
+            reportProgress: false,
+        });
+        expect(
+            checkCall(
+                "HeapProfiler.takeHeapSnapshot",
+                {
+                    reportProgress           : true,
+                    treatGlobalObjectsAsRoots: true,
+                    captureNumericValue      : false,
+                },
+                off,
+            ),
+        ).toEqual({
+            reportProgress           : false,
+            treatGlobalObjectsAsRoots: true,
+            captureNumericValue      : false,
+        });
+    });
+
+    it.each([
+        [{ exposeInternals: true }],
+        [{ captureNumericValue: "yes" }],
+        [{ treatGlobalObjectsAsRoots: 1 }],
+    ])("refuses the snapshot parameters %j", (params) => {
+        expect(codeOf(() => checkCall("HeapProfiler.takeHeapSnapshot", params, off))).toBe(
+            ErrorCode.badRequest,
+        );
+    });
+
+    it("allows a garbage collection without parameters and refuses the rest of the domain", () => {
+        expect(codeOf(() => checkCall("HeapProfiler.collectGarbage", undefined, off))).toBeUndefined();
+        expect(codeOf(() => checkCall("HeapProfiler.collectGarbage", { x: 1 }, off))).toBe(
+            ErrorCode.badRequest,
+        );
+
+        for (const method of [
+            "HeapProfiler.startSampling",
+            "HeapProfiler.getHeapObjectId",
+            "HeapProfiler.addInspectedHeapObject",
+            "HeapProfiler.startTrackingHeapObjects",
+        ]) {
+            expect(codeOf(() => checkCall(method, undefined, off))).toBe(ErrorCode.forbiddenMethod);
+        }
+    });
+
+    it("lets a client listen for the snapshot chunks only", () => {
+        expect(codeOf(() => checkEvent("HeapProfiler.addHeapSnapshotChunk"))).toBeUndefined();
+        expect(codeOf(() => checkEvent("HeapProfiler.reportHeapSnapshotProgress"))).toBe(
+            ErrorCode.forbiddenMethod,
+        );
+        expect(codeOf(() => checkEvent("HeapProfiler.lastSeenObjectId"))).toBe(
+            ErrorCode.forbiddenMethod,
+        );
+    });
+});
