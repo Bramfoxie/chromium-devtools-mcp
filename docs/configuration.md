@@ -14,12 +14,14 @@ The file is `~/.config/chromium-devtools-mcp/config.json` on macOS and Linux and
 | `allowFocus`              | `--allow-focus`               | `CHROMIUM_DEVTOOLS_MCP_ALLOW_FOCUS`       | allow bringing a window to the front                                  | false                                  |
 | `isolated`                | `--isolated`, `--no-isolated` | `CHROMIUM_DEVTOOLS_MCP_ISOLATED`          | open the session in an isolated browser context                       | false                                  |
 | `safety.readOnly`         | `--read-only`                 | `CHROMIUM_DEVTOOLS_MCP_READ_ONLY`         | refuse actions that change pages                                      | false                                  |
-| `safety.allowedDomains`   | `--allowed-domains`           | `CHROMIUM_DEVTOOLS_MCP_ALLOWED_DOMAINS`   | comma separated list of hosts, see [safety.md](safety.md)             | empty, no limit                        |
+| `safety.allowedDomains`   | `--allowed-domains`           | `CHROMIUM_DEVTOOLS_MCP_ALLOWED_DOMAINS`   | comma separated list of host rules, see [safety.md](safety.md)        | empty, no limit                        |
 | `safety.confirmDangerous` | `--confirm-dangerous`         | `CHROMIUM_DEVTOOLS_MCP_CONFIRM_DANGEROUS` | ask before dangerous actions, see [safety.md](safety.md)              | false                                  |
 
 In managed mode the default `debugPort` is 0, so Chrome picks a free port at every launch and the daemon reads the real port back. The port is not predictable, which keeps the unauthenticated debugging endpoint on loopback hard to find for other local processes. A browser left running on the managed profile is found through the profile, not through the port. Set `debugPort` explicitly only when something else needs a fixed port. In attach mode the port is the fallback used to find a browser started with `--remote-debugging-port`, so its default stays 9222.
 
 The default `profileDir` is `~/Library/Application Support/chromium-devtools-mcp/profile` on macOS, `~/.local/share/chromium-devtools-mcp/profile` on Linux and `%LOCALAPPDATA%\chromium-devtools-mcp\profile` on Windows.
+
+`safety.allowedDomains` entries are host rules: `example.com`, `*.example.com`, `localhost:3000` or `[::1]:3000`. An entry that is not one of these forms (a URL such as `https://example.com`, a path, a bare `*`, an empty string or a host with spaces) is a configuration error from every source, the config file, the environment variable and the flag, and the installer reports it with exit code 2.
 
 Boolean env values accept `true`, `1`, `false`, `0`, case-insensitively, with surrounding whitespace ignored. An empty or whitespace-only env value counts as unset. Every boolean flag also accepts a `--no-` form, for example `--no-read-only`.
 

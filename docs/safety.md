@@ -2,6 +2,8 @@
 
 Read-only mode, the domain allowlist and the confirmation of dangerous actions: behavior and limits.
 
+`safety.allowedDomains` is a list of host rules. Accepted forms: a host (`example.com`, matches only that host), a wildcard (`*.example.com`, matches subdomains but not the bare domain), an optional port (`localhost:3000`) and a bracketed IPv6 address (`[::1]:3000`). Without a port a rule matches any port. Any other entry, such as `https://example.com`, `example.com/path`, `*`, an empty string or a host with spaces, is rejected at startup with a configuration error of the form `invalid configuration: safety.allowedDomains.0: invalid entry "https://example.com", accepted forms: ...`. An empty list means no limit.
+
 With a list set:
 
 - `new_tab` and `page_navigate` refuse a URL outside the list, and `page_navigate` with `back` or `forward` refuses a history entry outside it.

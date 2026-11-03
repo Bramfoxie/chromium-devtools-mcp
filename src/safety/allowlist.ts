@@ -24,6 +24,13 @@ function parseRule(pattern: string): Rule | undefined {
     };
 }
 
+export function isValidDomainRule(pattern: string): boolean {
+    return parseRule(pattern) !== undefined;
+}
+
+export const DOMAIN_RULE_FORMS =
+    "host example.com, wildcard *.example.com, optional port localhost:3000, bracketed IPv6 [::1]:3000";
+
 function matches(rule: Rule, host: string, port: string | undefined): boolean {
     if (rule.port !== undefined && rule.port !== port) return false;
 

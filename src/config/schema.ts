@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DOMAIN_RULE_FORMS, isValidDomainRule } from "../safety/index.js";
 
 export const browsers = ["chrome"] as const;
 
@@ -13,8 +14,13 @@ export const configSchema = z.strictObject({
     allowFocus: z.boolean(),
     isolated  : z.boolean(),
     safety    : z.strictObject({
-        readOnly        : z.boolean(),
-        allowedDomains  : z.array(z.string().min(1)),
+        readOnly      : z.boolean(),
+        allowedDomains: z.array(
+            z.string().refine(isValidDomainRule, {
+                error: (issue) =>
+                    `invalid entry ${JSON.stringify(issue.input)}, accepted forms: ${DOMAIN_RULE_FORMS}`,
+            }),
+        ),
         confirmDangerous: z.boolean(),
     }),
 });

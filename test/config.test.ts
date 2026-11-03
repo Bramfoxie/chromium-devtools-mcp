@@ -461,3 +461,32 @@ describe("profileDir", () => {
         expect(win.profileDir).toBe("C:\\data\\p");
     });
 });
+
+describe("allowedDomains validation", () => {
+    const bad = ["https://example.com", "example.com/path", "*", "   ", "a b.com", ""];
+
+    it.each(bad)("rejects the file entry %j and names it with the accepted forms", (entry) => {
+        const file = JSON.stringify({ safety: { allowedDomains: [entry] } });
+
+        expect(() => loadConfig(withFile(file))).toThrow(ConfigError);
+        expect(() => loadConfig(withFile(file))).toThrow(/safety\.allowedDomains\.0: invalid entry/);
+        expect(() => loadConfig(withFile(file))).toThrow(/\*\.example\.com.*localhost:3000.*\[::1\]:3000/);
+    });
+
+    it("rejects a bad entry from the environment and the flag", () => {
+        const env = { CHROMIUM_DEVTOOLS_MCP_ALLOWED_DOMAINS: "a.com,https://b.com" };
+
+        expect(() => loadConfig({ ...withFile(undefined), env })).toThrow(/"https:\/\/b\.com"/);
+        expect(() =>
+            loadConfig({ ...withFile(undefined), argv: ["--allowed-domains=a.com,example.com/x"] }),
+        ).toThrow(/"example\.com\/x"/);
+    });
+
+    it("accepts the documented forms", () => {
+        const domains = ["example.com", "*.example.com", "localhost:3000", "[::1]:3000"];
+        const file = JSON.stringify({ safety: { allowedDomains: domains } });
+        const config = loadConfig(withFile(file));
+
+        expect(config.safety.allowedDomains).toEqual(domains);
+    });
+});
