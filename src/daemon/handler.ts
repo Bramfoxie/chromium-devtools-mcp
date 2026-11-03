@@ -163,14 +163,14 @@ export function createRequestHandler(context: HandlerContext): RequestHandler {
             case "cdp.send": {
                 const request = parseParams(method, params);
 
-                return session.send(
-                    request.targetId,
-                    request.method,
-                    request.params,
-                    request.timeoutMs,
-                    request.frameId,
-                    request.confirmed,
-                );
+                return session.send({
+                    targetId : request.targetId,
+                    method   : request.method,
+                    params   : request.params,
+                    timeoutMs: request.timeoutMs,
+                    frameId  : request.frameId,
+                    confirmed: request.confirmed,
+                });
             }
 
             case "cdp.subscribe": {

@@ -68,7 +68,7 @@ describe("frame listing through the CDP backend", () => {
         browser.attachNestedChild(outer, "inner", "https://c.example/");
         await vi.waitFor(async () => {
             await session.listFrames(tab);
-            await session.send(tab, "Runtime.evaluate", { expression: "1" }, undefined, "inner");
+            await session.send({ targetId: tab, method: "Runtime.evaluate", params: { expression: "1" }, frameId: "inner" });
         });
 
         const call = browser.calls.find((entry) => entry.method === "Runtime.evaluate");

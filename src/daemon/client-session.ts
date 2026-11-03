@@ -31,6 +31,25 @@ export interface TabInfo {
 
 export type TabScope = "owned" | "available";
 
+export interface SendCall {
+    targetId  : string;
+    method    : string;
+    params?   : Record<string, unknown> | undefined;
+    timeoutMs?: number | undefined;
+    frameId?  : string | undefined;
+    confirmed?: boolean | undefined;
+}
+
+export interface ClientSessionInit {
+    backend    : BrowserBackend;
+    registry   : Ownership;
+    emit       : Emit;
+    options    : SessionOptions;
+    contextId  : string | undefined;
+    clientName?: string;
+    safety?    : SessionSafety;
+}
+
 export type Emit = (event: string, params?: unknown) => void;
 
 export interface Ownership {
@@ -59,16 +78,23 @@ export class ClientSession {
     private readonly frames: TabFrames;
     private isClosed = false;
 
-    constructor(
-        private readonly backend : BrowserBackend,
-        private readonly registry: Ownership,
-        private readonly emit    : Emit,
-        private readonly options : SessionOptions,
-        readonly contextId       : string | undefined,
-        readonly clientName      : string = "",
-        private readonly safety  : SessionSafety = NO_SAFETY,
-    ) {
-        this.frames = new TabFrames(backend, emit, (targetId, tab) =>
+    private readonly backend : BrowserBackend;
+    private readonly registry: Ownership;
+    private readonly emit    : Emit;
+    private readonly options : SessionOptions;
+    readonly contextId       : string | undefined;
+    readonly clientName      : string;
+    private readonly safety  : SessionSafety;
+
+    constructor(init: ClientSessionInit) {
+        this.backend = init.backend;
+        this.registry = init.registry;
+        this.emit = init.emit;
+        this.options = init.options;
+        this.contextId = init.contextId;
+        this.clientName = init.clientName ?? "";
+        this.safety = init.safety ?? NO_SAFETY;
+        this.frames = new TabFrames(this.backend, this.emit, (targetId, tab) =>
             this.assertCurrent(targetId, tab));
     }
 
@@ -196,14 +222,9 @@ export class ClientSession {
         return result;
     }
 
-    async send(
-        targetId  : string,
-        method    : string,
-        params    : Record<string, unknown> | undefined,
-        timeoutMs?: number,
-        frameId?  : string,
-        confirmed = false,
-    ): Promise<unknown> {
+    async send(call: SendCall): Promise<unknown> {
+        const { targetId, method, params, timeoutMs, frameId, confirmed = false } = call;
+
         this.ensureOpen();
         const tab = this.owned(targetId);
 

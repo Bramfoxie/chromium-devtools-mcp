@@ -95,15 +95,15 @@ export class SessionRegistry<K> implements Ownership {
         }
 
         this.opening.delete(key);
-        const session = new ClientSession(
-            this.backend,
-            this,
+        const session = new ClientSession({
+            backend   : this.backend,
+            registry  : this,
             emit,
-            this.options,
+            options   : this.options,
             contextId,
-            options.clientName,
-            options.safety,
-        );
+            clientName: options.clientName,
+            safety    : options.safety,
+        });
 
         this.sessions.set(key, session);
         this.sessionIds.set(session, `session${this.nextSessionId++}`);

@@ -121,27 +121,27 @@ describe("session safety in the daemon", () => {
         const { backend, session } = await open(safe({ allowedDomains: ["example.com"] }));
         const tab = await session.createTab("about:blank");
 
-        const error = await failure(session.send(tab, "Page.navigate", { url: "https://evil.test/" }));
+        const error = await failure(session.send({ targetId: tab, method: "Page.navigate", params: { url: "https://evil.test/" } }));
 
         expect(error?.code).toBe(ErrorCode.forbiddenMethod);
         expect(backend.log.join("\n")).not.toContain("attach");
-        await expect(session.send(tab, "Page.navigate", { url: "https://example.com/" })).resolves.toBeDefined();
+        await expect(session.send({ targetId: tab, method: "Page.navigate", params: { url: "https://example.com/" } })).resolves.toBeDefined();
     });
 
     it("enforces the cookie and file policy with the real tab URL", async () => {
         const { session, backend } = await open(safe({ allowedDomains: ["example.com"], confirmDangerous: true }));
         const tab = await session.createTab("https://example.com/");
 
-        const unconfirmed = await failure(session.send(tab, "Network.setCookie", { name: "a", value: "b", url: "https://example.com/" }));
+        const unconfirmed = await failure(session.send({ targetId: tab, method: "Network.setCookie", params: { name: "a", value: "b", url: "https://example.com/" } }));
 
         expect(unconfirmed?.message).toContain("confirmation");
 
         await expect(
-            session.send(tab, "Network.setCookie", { name: "a", value: "b", url: "https://example.com/" }, undefined, undefined, true),
+            session.send({ targetId: tab, method: "Network.setCookie", params: { name: "a", value: "b", url: "https://example.com/" }, confirmed: true }),
         ).resolves.toBeDefined();
 
         const stranger = await failure(
-            session.send(tab, "Network.setCookie", { name: "a", value: "b", domain: "evil.test" }, undefined, undefined, true),
+            session.send({ targetId: tab, method: "Network.setCookie", params: { name: "a", value: "b", domain: "evil.test" }, confirmed: true }),
         );
 
         expect(stranger?.message).toContain("evil.test");
@@ -154,7 +154,7 @@ describe("session safety in the daemon", () => {
         entry.url = "https://evil.test/";
 
         const moved = await failure(
-            session.send(tab, "DOM.setFileInputFiles", { files: ["/tmp/x"], nodeId: 1 }, undefined, undefined, true),
+            session.send({ targetId: tab, method: "DOM.setFileInputFiles", params: { files: ["/tmp/x"], nodeId: 1 }, confirmed: true }),
         );
 
         expect(moved?.message).toContain("evil.test");
