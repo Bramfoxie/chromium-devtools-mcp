@@ -56,11 +56,11 @@ export async function safetyFrameOf(
 
     if (ref === undefined) return undefined;
 
-    if (!frames.ensured(tab)) await frames.ensure(tab).catch(() => undefined);
+    if (!frames.ensured(tab)) await frames.ensure(tab);
 
     const info = frames.frameOf(tab, ref);
 
-    if (info === undefined) return undefined;
+    if (info === undefined) throw new Error(`Frame ${ref} is not known.`);
 
     const origin = originOf(info.url);
 

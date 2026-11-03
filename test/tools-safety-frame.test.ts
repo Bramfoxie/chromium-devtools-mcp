@@ -78,9 +78,14 @@ describe("safetyFrameOf", () => {
         await expect(
             tools.safetyFrameOf({ target: { selector: "#a" } }, "tab1", elements, frames),
         ).resolves.toBeUndefined();
+    });
+
+    it("rejects a frame that the tab does not have", async () => {
+        const frames = new FrameState({ access: framedAccess().asAccess() });
+
         await expect(
-            tools.safetyFrameOf({ frame: "nope" }, "tab1", elements, frames),
-        ).resolves.toBeUndefined();
+            tools.safetyFrameOf({ frame: "nope" }, "tab1", new ElementRegistry(), frames),
+        ).rejects.toThrow("not known");
     });
 });
 
@@ -106,6 +111,32 @@ describe("runTool safety request", () => {
             tool : "input_click",
             frame: { frameId: "pay", origin: "https://pay.example:8443" },
         });
+    });
+
+    it("refuses under an allowlist when the frame cannot be checked", async () => {
+        const access = framedAccess();
+        const config = {
+            ...managedConfig,
+            safety: { ...managedConfig.safety, allowedDomains: ["a.example"] },
+        };
+        const runtime = new tools.ToolRuntime({ access: access.asAccess(), config });
+        const respond = vi.fn(() => {
+            throw new Error("handler must not run");
+        });
+
+        access.respond = respond;
+        access.listFrames = () => Promise.reject(new Error("timed out"));
+
+        const result = await tools.runTool(
+            tools.inputClick,
+            { tab: "tab1", target: { selector: "#pay", frame: "pay" } },
+            extra(),
+            runtime,
+        );
+
+        expect(result.isError).toBe(true);
+        expect(JSON.stringify(result.content)).toContain("could not be checked");
+        expect(respond).not.toHaveBeenCalled();
     });
 
     it("leaves the frame out when the call names none", async () => {
