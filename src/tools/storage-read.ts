@@ -249,7 +249,7 @@ async function readCookies(
 export const storageRead = defineTool({
     name: "storage_read",
     description:
-        "Read local storage, session storage or cookies of the page origin. Cookie values are secrets and stay hidden unless includeValues is true.",
+        "Read local storage, session storage or cookies of the page origin; the result lists keys and value sizes, and values are hidden unless you pass includeValues: true.",
     access   : "read",
     dangerous: (args) => args.kind === "cookies",
     summarize: (args) =>
@@ -260,7 +260,7 @@ export const storageRead = defineTool({
         keys         : z.array(z.string().min(1).max(STORAGE_MAX_KEY_CHARS)).max(STORAGE_MAX_KEYS).optional().describe("Storage keys to read, for local and session. Defaults to all."),
         maxEntries   : z.number().int().min(1).max(STORAGE_MAX_ENTRIES).optional().describe("Maximum entries to return. Defaults to 100."),
         maxValueChars: z.number().int().min(1).max(STORAGE_MAX_VALUE_CHARS).optional().describe("Maximum characters per value. Defaults to 500."),
-        includeValues: z.boolean().optional().describe("Include values. Defaults to true for storage, false for cookies."),
+        includeValues: z.boolean().optional().describe("Include values. Defaults to false; pass true to read them. Cookie values are secrets."),
     }),
     output : storageOutput,
     handler: async (args, context) => {
@@ -280,7 +280,7 @@ export const storageRead = defineTool({
         const { href, origin } = await pageLocation(context.access, targetId);
         const maxEntries = args.maxEntries ?? STORAGE_DEFAULT_ENTRIES;
         const maxChars = args.maxValueChars ?? STORAGE_DEFAULT_VALUE_CHARS;
-        const withValues = args.includeValues ?? args.kind !== "cookies";
+        const withValues = args.includeValues ?? false;
 
         if (args.kind === "cookies") {
             const read = await readCookies(

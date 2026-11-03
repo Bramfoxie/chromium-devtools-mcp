@@ -345,7 +345,7 @@ describe.skipIf(!present)("real browser", () => {
         expect(cookies.origin).toBe(env.fixture.origin);
         expect((cookies.cookies as Row[]).map((cookie) => cookie.name)).toEqual(["fixture"]);
         await env.ok("storage_write", { kind: "local", action: "set", entries: { key: "value" }, tab });
-        const local = await env.ok("storage_read", { kind: "local", tab });
+        const local = await env.ok("storage_read", { kind: "local", tab, includeValues: true });
 
         expect(local.entries).toMatchObject([{ key: "key", value: "value" }]);
         expect(await evaluate("localStorage.getItem('key')", tab)).toBe("value");
