@@ -100,7 +100,7 @@ const readOnly: Config = {
 };
 
 describe("tool declarations", () => {
-    it("declares forty one tools with unique names, descriptions and access", () => {
+    it("declares forty two tools with unique names, descriptions and access", () => {
         expect(allTools.map((tool) => tool.name)).toEqual([
             "list_tabs",
             "list_sessions",
@@ -126,6 +126,7 @@ describe("tool declarations", () => {
             "page_metrics",
             "perf_trace_start",
             "perf_trace_stop",
+            "heap_snapshot",
             "screenshot",
             "list_devices",
             "emulate_device",
@@ -190,6 +191,7 @@ describe("tool declarations", () => {
 
         expect(dangerous.sort()).toEqual([
             "emulate_geolocation",
+            "heap_snapshot",
             "input_upload",
             "js_evaluate",
             "storage_write",
@@ -350,6 +352,7 @@ describe("open world annotation", () => {
         "emulate_locale",
         "emulate_media",
         "emulate_network",
+        "heap_snapshot",
         "list_devices",
         "list_sessions",
         "list_tabs",
@@ -594,7 +597,7 @@ describe("runTool", () => {
 });
 
 describe("tools/list", () => {
-    it("lists exactly the forty one tools with their schemas", async () => {
+    it("lists exactly the forty two tools with their schemas", async () => {
         const server = createMcpServer("1.0.0");
 
         registerTools({ server, tools: allTools, runtime: runtime() });
@@ -629,6 +632,7 @@ describe("tools/list", () => {
             "page_metrics",
             "perf_trace_start",
             "perf_trace_stop",
+            "heap_snapshot",
             "screenshot",
             "list_devices",
             "emulate_device",

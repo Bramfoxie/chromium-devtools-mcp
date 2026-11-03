@@ -58,7 +58,7 @@ If something does not connect, run `npx chromium-devtools-mcp doctor` (add the s
 | Browsers other than Chrome                                          |          ❌           |         ❌          |
 | Performance traces and insights                                     |          ✅           |         ✅          |
 | Lighthouse audit                                                    |          ❌           |         ✅          |
-| Heap snapshots                                                      |          ❌           |         ✅          |
+| Heap snapshots                                                      |          ✅           |         ✅          |
 | Screencast recording                                                |          ❌           |         ✅          |
 | Extensions, PWA and WebAuthn tools                                  |          ❌           |         ✅          |
 | Geolocation emulation                                               |          ✅           |         ✅          |
@@ -67,7 +67,7 @@ Compared against Chrome DevTools MCP 1.12.0 (2026-10-22, [ChromeDevTools/chrome-
 
 ## Tools
 
-41 tools. Details and parameters are in [docs/tools.md](docs/tools.md).
+42 tools. Details and parameters are in [docs/tools.md](docs/tools.md).
 
 | Category    | Tools                                                                                                                                       |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -75,7 +75,7 @@ Compared against Chrome DevTools MCP 1.12.0 (2026-10-22, [ChromeDevTools/chrome-
 | Pages       | `page_info`, `page_navigate`, `page_wait`, `page_dialogs`, `page_metrics`, `page_pdf`                                                       |
 | Inspection  | `dom_query`, `dom_snapshot`, `css_inspect`, `js_evaluate`, `screenshot`                                                                     |
 | Input       | `click`, `input_click`, `input_hover`, `input_drag`, `input_type`, `input_key`, `input_scroll`, `input_select`, `input_upload`, `fill_form` |
-| Performance | `perf_trace_start`, `perf_trace_stop`                                                                                                       |
+| Performance | `perf_trace_start`, `perf_trace_stop`, `heap_snapshot`                                                                                      |
 | Observation | `console_logs`, `network_requests`, `network_response_body`                                                                                 |
 | Network     | `network_mock`                                                                                                                              |
 | Storage     | `storage_read`, `storage_write`                                                                                                             |

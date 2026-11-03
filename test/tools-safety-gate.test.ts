@@ -83,6 +83,7 @@ const READING: Case[] = [
     ["page_metrics", {}],
     ["perf_trace_start", {}],
     ["perf_trace_stop", {}],
+    ["heap_snapshot", {}],
     ["screenshot", {}],
     ["list_devices", {}],
 ];

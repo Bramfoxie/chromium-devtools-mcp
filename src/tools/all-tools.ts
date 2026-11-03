@@ -21,6 +21,7 @@ import { jsEvaluate } from "./js-evaluate.js";
 import { networkMock } from "./network-mock.js";
 import { networkRequests } from "./network-requests.js";
 import { networkResponseBody } from "./network-response-body.js";
+import { heapSnapshot } from "./perf/heap-snapshot.js";
 import { perfTraceStart, perfTraceStop } from "./perf/perf-trace.js";
 import { pageDialogs } from "./page-dialogs.js";
 import { pagePdf } from "./page-pdf.js";
@@ -58,6 +59,7 @@ export const allTools: AnyTool[] = [
     pageMetrics,
     perfTraceStart,
     perfTraceStop,
+    heapSnapshot,
     screenshot,
     listDevices,
     emulateDevice,
