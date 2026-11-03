@@ -288,6 +288,7 @@ export async function runDaemon(
         helloTimeoutMs: deps.helloTimeoutMs,
         idleTimeoutMs : deps.idleTimeoutMs,
         onIdle        : () => void stop("idle"),
+        onStop        : () => void stop("requested"),
     });
     const instance = await acquireInstance(layout.instance(token), daemon.accept);
 

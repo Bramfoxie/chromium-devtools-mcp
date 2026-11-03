@@ -6,6 +6,7 @@ export type TimeoutClass = "plain" | "cdp-bound" | "multi-step";
 
 const TIMEOUT_CLASSES = {
     "daemon.status"  : "plain",
+    "daemon.stop"    : "plain",
     "session.open"   : "plain",
     "session.list"   : "plain",
     "tab.create"     : "cdp-bound",

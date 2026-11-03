@@ -453,6 +453,39 @@ describe("stopping", () => {
         expect((await second.done).reason).toBe("requested");
     });
 
+    it("stops when a client asks for it and frees the socket", async () => {
+        const layout = await makeLayout(harness);
+        const { connect: connector } = await startFakeBrowser(harness);
+        const running = await start(layout, connector);
+        const client = await connect(layout);
+
+        await ready(client);
+        await expect(client.request("daemon.stop")).resolves.toEqual({});
+
+        expect(await running.done).toEqual({ reason: "requested" });
+        await expect(connectToDaemon({ layout, clientName: "late" })).rejects.toBeInstanceOf(
+            DaemonError,
+        );
+    });
+
+    it("stops on request while the browser is not ready yet", async () => {
+        const layout = await makeLayout(harness);
+        const { connect: connector } = await startFakeBrowser(harness);
+        let release: () => void = () => undefined;
+        const gate = new Promise<void>((resolve) => (release = resolve));
+        const running = await start(layout, async (cfg, hooks, signal) => {
+            await gate;
+
+            return connector(cfg, hooks, signal);
+        });
+        const client = await connect(layout);
+
+        await client.request("daemon.stop");
+
+        expect((await running.done).reason).toBe("requested");
+        release();
+    });
+
     it("stops when the browser connection is lost", async () => {
         const layout = await makeLayout(harness);
         const { browser, connect: connector } = await startFakeBrowser(harness);

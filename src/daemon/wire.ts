@@ -16,6 +16,7 @@ const domainName = z.string().regex(DOMAIN_METHOD).max(MAX_METHOD_NAME_CHARS);
 
 export const requestParamSchemas = {
     "daemon.status": z.strictObject({}),
+    "daemon.stop"  : z.strictObject({}),
     "session.open" : z.strictObject({
         isolated: z.boolean().optional(),
         safety  : z.strictObject({

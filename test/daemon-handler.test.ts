@@ -176,6 +176,7 @@ describe("session handling", () => {
 describe("parameter validation", () => {
     it.each([
         ["daemon.status", {}],
+        ["daemon.stop", {}],
         ["session.open", {}],
         ["session.list", {}],
         ["tab.create", {}],

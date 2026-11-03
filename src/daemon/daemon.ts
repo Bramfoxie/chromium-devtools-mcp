@@ -21,6 +21,7 @@ export interface DaemonOptions {
     helloTimeoutMs?: number;
     idleTimeoutMs? : number;
     onIdle?        : () => void;
+    onStop?        : () => void;
 }
 
 export class Daemon {
@@ -39,6 +40,7 @@ export class Daemon {
         this.handler = createRequestHandler({
             registry: () => this.registry,
             status  : () => this.status(),
+            stop    : () => this.requestStop(),
         });
     }
 
@@ -49,6 +51,16 @@ export class Daemon {
             mode   : this.options.identity.mode,
             ...(this.message === undefined ? {} : { message: this.message }),
         };
+    }
+
+    private requestStop(): void {
+        setImmediate(() => {
+            try {
+                this.options.onStop?.();
+            } catch (error) {
+                logDaemon(`onStop failed: ${describeError(error)}`);
+            }
+        });
     }
 
     setWaiting(message: string): void {

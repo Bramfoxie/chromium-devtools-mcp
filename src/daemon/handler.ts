@@ -19,6 +19,7 @@ export interface DaemonStatus {
 export interface HandlerContext {
     registry(): SessionRegistry<ClientConnection> | undefined;
     status(): DaemonStatus;
+    stop(): void;
 }
 
 type Method = keyof typeof requestParamSchemas;
@@ -60,6 +61,13 @@ export function createRequestHandler(context: HandlerContext): RequestHandler {
             parseParams(method, params);
 
             return context.status();
+        }
+
+        if (method === "daemon.stop") {
+            parseParams(method, params);
+            context.stop();
+
+            return {};
         }
 
         const registry = context.registry();
