@@ -529,7 +529,11 @@ describe("handler failures", () => {
         const client = await connectClient(server);
 
         for (let round = 0; round < 3; round += 1) {
-            await Promise.all(Array.from({ length: 40 }, () => client.request("echo", round)));
+            const replies = await Promise.all(
+                Array.from({ length: 40 }, () => client.request("echo", round)),
+            );
+
+            expect(replies).toEqual(Array.from({ length: 40 }, () => round));
         }
     });
 

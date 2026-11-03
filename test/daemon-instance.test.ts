@@ -591,7 +591,10 @@ describe("acquireInstance with real sockets", () => {
 
         cleanups.push(() => second.release());
         await first.release();
-        await connectTo(opts.socketPath);
+        const socket = await connectTo(opts.socketPath);
+
+        expect(socket.destroyed).toBe(false);
+        expect(existsSync(opts.socketPath)).toBe(true);
     });
 
     it.skipIf(!posix)("takes over a socket file left behind by a killed process", async () => {
@@ -647,7 +650,10 @@ describe("acquireInstance with real sockets", () => {
         const handle = await acquireInstance(opts, () => undefined);
 
         cleanups.push(() => handle.release());
-        await connectTo(opts.socketPath);
+        const socket = await connectTo(opts.socketPath);
+
+        expect(socket.destroyed).toBe(false);
+        expect(existsSync(lock)).toBe(false);
     });
 
     it.skipIf(!posix)("creates the runtime directory and the socket as private", async () => {

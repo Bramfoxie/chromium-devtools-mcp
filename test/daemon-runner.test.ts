@@ -434,6 +434,7 @@ describe("stopping", () => {
 
         await ready(client);
         await second.stop();
+        expect((await second.done).reason).toBe("requested");
     });
 
     it("stops when the browser connection is lost", async () => {
