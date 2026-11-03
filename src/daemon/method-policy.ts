@@ -18,6 +18,7 @@ const ALLOWED_DOMAINS = new Set([
     "Page",
     "Performance",
     "Runtime",
+    "WebAuthn",
 ]);
 const ALLOWED_METHODS = new Set([
     "Browser.getVersion",

@@ -223,3 +223,24 @@ describe("heap snapshots", () => {
         );
     });
 });
+
+describe("web authentication", () => {
+    it("allows the virtual authenticator methods and events of a tab", () => {
+        for (const method of [
+            "WebAuthn.enable",
+            "WebAuthn.addVirtualAuthenticator",
+            "WebAuthn.removeVirtualAuthenticator",
+            "WebAuthn.addCredential",
+            "WebAuthn.getCredentials",
+            "WebAuthn.removeCredential",
+            "WebAuthn.clearCredentials",
+            "WebAuthn.setUserVerified",
+            "WebAuthn.disable",
+        ]) {
+            expect(codeOf(() => checkCall(method, undefined, off))).toBeUndefined();
+        }
+
+        expect(codeOf(() => checkEvent("WebAuthn.credentialAdded"))).toBeUndefined();
+        expect(codeOf(() => checkEvent("WebAuthn.credentialAsserted"))).toBeUndefined();
+    });
+});
