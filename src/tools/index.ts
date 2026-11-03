@@ -130,4 +130,6 @@ export { emulateMedia, hasMediaSelection } from "./emulation/emulate-media.js";
 
 export { checkNetworkInput, conditionsOf, emulateNetwork } from "./emulation/emulate-network.js";
 
+export { emulateGeolocation } from "./emulation/emulate-geolocation.js";
+
 export { checkAcceptLanguage, emulateLocale, hasLocaleSelection } from "./emulation/emulate-locale.js";

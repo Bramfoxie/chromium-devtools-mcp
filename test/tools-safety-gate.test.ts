@@ -50,6 +50,7 @@ const MUTATING: Case[] = [
     ["emulate_media", { reducedMotion: "reduce" }],
     ["emulate_network", { preset: "slow-3g" }],
     ["emulate_locale", { locale: "de-DE" }],
+    ["emulate_geolocation", { latitude: 52.5, longitude: 13.4 }],
     ["click", { target: { selector: "body" } }],
     ["input_click", { target: { selector: "body" } }],
     ["input_hover", { target: { selector: "body" } }],

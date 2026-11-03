@@ -65,6 +65,8 @@ function minimalArgs(name: string): Record<string, unknown> {
             return { preset: "slow-3g" };
         case "emulate_locale":
             return { locale: "de-DE" };
+        case "emulate_geolocation":
+            return { latitude: 52.5, longitude: 13.4 };
         case "click":
         case "input_click":
         case "input_hover":
@@ -98,7 +100,7 @@ const readOnly: Config = {
 };
 
 describe("tool declarations", () => {
-    it("declares thirty eight tools with unique names, descriptions and access", () => {
+    it("declares thirty nine tools with unique names, descriptions and access", () => {
         expect(allTools.map((tool) => tool.name)).toEqual([
             "list_tabs",
             "list_sessions",
@@ -128,6 +130,7 @@ describe("tool declarations", () => {
             "emulate_media",
             "emulate_network",
             "emulate_locale",
+            "emulate_geolocation",
             "click",
             "input_click",
             "input_hover",
@@ -157,6 +160,7 @@ describe("tool declarations", () => {
             "click",
             "close_tab",
             "emulate_device",
+            "emulate_geolocation",
             "emulate_locale",
             "emulate_media",
             "emulate_network",
@@ -182,7 +186,12 @@ describe("tool declarations", () => {
             typeof tool.dangerous === "function" ? tool.dangerous({}) : (tool.dangerous ?? false),
         ).map((tool) => tool.name);
 
-        expect(dangerous.sort()).toEqual(["input_upload", "js_evaluate", "storage_write"]);
+        expect(dangerous.sort()).toEqual([
+            "emulate_geolocation",
+            "input_upload",
+            "js_evaluate",
+            "storage_write",
+        ]);
     });
 
     it("runs every real mutate tool through the safety gate", async () => {
@@ -335,6 +344,7 @@ describe("open world annotation", () => {
         "bring_to_front",
         "close_tab",
         "emulate_device",
+        "emulate_geolocation",
         "emulate_locale",
         "emulate_media",
         "emulate_network",
@@ -580,7 +590,7 @@ describe("runTool", () => {
 });
 
 describe("tools/list", () => {
-    it("lists exactly the thirty eight tools with their schemas", async () => {
+    it("lists exactly the thirty nine tools with their schemas", async () => {
         const server = createMcpServer("1.0.0");
 
         registerTools({ server, tools: allTools, runtime: runtime() });
@@ -619,6 +629,7 @@ describe("tools/list", () => {
             "emulate_media",
             "emulate_network",
             "emulate_locale",
+            "emulate_geolocation",
             "click",
             "input_click",
             "input_hover",

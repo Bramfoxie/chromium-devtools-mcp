@@ -29,6 +29,8 @@ export class FakeAccess {
         frameId?  : string;
         confirmed?: boolean;
     }> = [];
+    readonly permissions : Array<{ name: string; setting: string; origin: string }> = [];
+    failPermission?      : Error;
     readonly order       : string[] = [];
     readonly subscribed  : Array<{ targetId: string; event: string; frameId?: string }> = [];
     readonly unsubscribed: Array<{ targetId: string; event: string; frameId?: string }> = [];
@@ -115,6 +117,18 @@ export class FakeAccess {
 
         tab.owned = true;
         this.claimed.push(targetId);
+    }
+
+    async setPermission(request: {
+        name   : "geolocation";
+        setting: "granted" | "reset";
+        origin : string;
+    }): Promise<void> {
+        this.order.push(`permission ${request.setting}`);
+
+        if (this.failPermission) throw this.failPermission;
+
+        this.permissions.push({ ...request });
     }
 
     async closeTab(targetId: string): Promise<void> {

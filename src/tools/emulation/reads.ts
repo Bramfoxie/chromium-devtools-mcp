@@ -138,3 +138,77 @@ export async function readLocale(
 ): Promise<LocaleRead | undefined> {
     return readValue(access, targetId, LOCALE_READ_EXPRESSION, localeReadSchema, signal);
 }
+
+const GEOLOCATION_WAIT_MS = 2500;
+
+export function geolocationReadExpression(origin: string): string {
+    return `new Promise((resolve) => {
+  if (location.origin !== ${JSON.stringify(origin)}) return resolve(null);
+  if (!navigator.geolocation) return resolve({ ok: false, error: "navigator.geolocation is not available" });
+  const timer = setTimeout(
+    () => resolve({ ok: false, error: "No position arrived within ${GEOLOCATION_WAIT_MS} ms." }),
+    ${GEOLOCATION_WAIT_MS},
+  );
+  const finish = (value) => { clearTimeout(timer); resolve(value); };
+  navigator.geolocation.getCurrentPosition(
+    (position) => finish({
+      ok: true,
+      latitude: position.coords.latitude,
+      longitude: position.coords.longitude,
+      accuracy: position.coords.accuracy,
+    }),
+    (error) => finish({ ok: false, error: error.message }),
+    { timeout: ${GEOLOCATION_WAIT_MS - 500}, maximumAge: 0 },
+  );
+})`;
+}
+
+const geolocationReadSchema = z.strictObject({
+    result: z.strictObject({
+        type : z.string().optional(),
+        value: z.strictObject({
+            ok       : z.boolean(),
+            latitude : z.number().optional(),
+            longitude: z.number().optional(),
+            accuracy : z.number().optional(),
+            error    : z.string().optional(),
+        }).nullable().optional(),
+    }),
+});
+
+export interface GeolocationRead {
+    ok        : boolean;
+    latitude? : number | undefined;
+    longitude?: number | undefined;
+    accuracy? : number | undefined;
+    error?    : string | undefined;
+}
+
+export async function readGeolocation(
+    access  : DaemonAccess,
+    targetId: string,
+    origin  : string,
+    signal? : AbortSignal,
+): Promise<GeolocationRead | undefined> {
+    try {
+        const parsed = geolocationReadSchema.safeParse(
+            await access.send({
+                targetId,
+                method: "Runtime.evaluate",
+                params: {
+                    expression   : geolocationReadExpression(origin),
+                    returnByValue: true,
+                    awaitPromise : true,
+                },
+                timeoutMs: EMULATION_READ_TIMEOUT_MS,
+                ...signal === undefined ? undefined : { signal },
+            }),
+        );
+
+        return parsed.success ? (parsed.data.result.value ?? undefined) : undefined;
+    } catch (error) {
+        if (error instanceof IpcCancelledError || signal?.aborted === true) throw error;
+
+        return undefined;
+    }
+}

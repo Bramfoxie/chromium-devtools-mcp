@@ -1,5 +1,6 @@
 import type {
     DeviceMetrics,
+    GeolocationState,
     LocaleSelection,
     MediaState,
     NetworkConditions,
@@ -23,14 +24,21 @@ interface LocaleEmulation extends LocaleSelection {
 }
 
 export interface TabEmulation {
-    device : DeviceEmulation | undefined;
-    media  : MediaState | undefined;
-    network: NetworkEmulation | undefined;
-    locale : LocaleEmulation | undefined;
+    device     : DeviceEmulation | undefined;
+    media      : MediaState | undefined;
+    network    : NetworkEmulation | undefined;
+    locale     : LocaleEmulation | undefined;
+    geolocation: GeolocationState | undefined;
 }
 
 function emptyTab(): TabEmulation {
-    return { device: undefined, media: undefined, network: undefined, locale: undefined };
+    return {
+        device     : undefined,
+        media      : undefined,
+        network    : undefined,
+        locale     : undefined,
+        geolocation: undefined,
+    };
 }
 
 export class EmulationState {
@@ -45,7 +53,8 @@ export class EmulationState {
             network: state.network === undefined
                 ? undefined
                 : { ...state.network, blockUrls: [...state.network.blockUrls] },
-            locale: state.locale === undefined ? undefined : { ...state.locale },
+            locale     : state.locale === undefined ? undefined : { ...state.locale },
+            geolocation: state.geolocation === undefined ? undefined : { ...state.geolocation },
         };
     }
 
@@ -81,6 +90,26 @@ export class EmulationState {
         return this.update(tab, { locale: undefined });
     }
 
+    applyGeolocation(tab: string, geolocation: GeolocationState): TabEmulation {
+        return this.update(tab, { geolocation: { ...geolocation } });
+    }
+
+    resetGeolocation(tab: string): TabEmulation {
+        return this.update(tab, { geolocation: undefined });
+    }
+
+    geolocationOrigins(except?: string): Set<string> {
+        const origins = new Set<string>();
+
+        for (const [tab, state] of this.tabs) {
+            if (tab !== except && state.geolocation !== undefined) {
+                origins.add(state.geolocation.origin);
+            }
+        }
+
+        return origins;
+    }
+
     forget(tab: string): void {
         this.tabs.delete(tab);
     }
@@ -95,7 +124,8 @@ export class EmulationState {
 
         if (
             next.device === undefined && next.media === undefined &&
-            next.network === undefined && next.locale === undefined
+            next.network === undefined && next.locale === undefined &&
+            next.geolocation === undefined
         ) {
             this.tabs.delete(tab);
         } else {

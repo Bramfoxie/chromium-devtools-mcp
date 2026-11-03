@@ -1347,6 +1347,20 @@ describe("state shared with cross site frame sessions", () => {
         ]);
     });
 
+    it("gives a new child the geolocation override of the tab", async () => {
+        const { a, tab, handle } = await tabWithChild();
+        const position = { latitude: 52.52, longitude: 13.405, accuracy: 10 };
+
+        await a.send({ targetId: tab, method: "Emulation.setGeolocationOverride", params: position });
+        const child = handle?.addChild("cross", true, CROSS);
+
+        await handle?.settled();
+
+        expect(child?.sent).toContainEqual(
+            expect.objectContaining({ method: "Emulation.setGeolocationOverride", params: position }),
+        );
+    });
+
     it("sends the replayed commands to a new child without waiting for each reply", async () => {
         const { a, tab, handle } = await tabWithChild();
 

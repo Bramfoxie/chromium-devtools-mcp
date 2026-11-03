@@ -10,6 +10,7 @@ const REPLICATED = new Set([
     "Emulation.setLocaleOverride",
     "Emulation.setTimezoneOverride",
     "Emulation.setEmulatedMedia",
+    "Emulation.setGeolocationOverride",
 ]);
 
 const REQUEST_ROUTED = new Set([

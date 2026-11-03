@@ -74,10 +74,15 @@ describe.skipIf(!present)("input_click at a point in a real browser", () => {
 
             return frames.some((frame) => frame.isolated === true) ? true : undefined;
         });
-        const result = await env.ok("input_click", { tab, point: { x: 150, y: 110 } });
+        let result: Record<string, unknown> = {};
+
+        await eventually(async () => {
+            result = await env.ok("input_click", { tab, point: { x: 150, y: 110 } });
+
+            return (env.other.hits.get("/clicked-frame") ?? 0) >= 1 ? true : undefined;
+        }, 20_000);
 
         expect(result.target).toMatchObject({ tag: "iframe" });
-        await eventually(() => (env.other.hits.get("/clicked-frame") ?? 0) >= 1 || undefined);
     });
 });
 

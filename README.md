@@ -61,13 +61,13 @@ If something does not connect, run `npx chromium-devtools-mcp doctor` (add the s
 | Heap snapshots                                                      |          ❌           |         ✅          |
 | Screencast recording                                                |          ❌           |         ✅          |
 | Extensions, PWA and WebAuthn tools                                  |          ❌           |         ✅          |
-| Geolocation emulation                                               |          ❌           |         ✅          |
+| Geolocation emulation                                               |          ✅           |         ✅          |
 
 Compared against Chrome DevTools MCP 1.12.0 (2026-10-22, [ChromeDevTools/chrome-devtools-mcp](https://github.com/ChromeDevTools/chrome-devtools-mcp)). A cross on its side means its tool reference lists no tool for that capability. Version 0.1.0 of this project supports Chrome only.
 
 ## Tools
 
-38 tools. Details and parameters are in [docs/tools.md](docs/tools.md).
+39 tools. Details and parameters are in [docs/tools.md](docs/tools.md).
 
 | Category    | Tools                                                                                                                                       |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -78,7 +78,7 @@ Compared against Chrome DevTools MCP 1.12.0 (2026-10-22, [ChromeDevTools/chrome-
 | Observation | `console_logs`, `network_requests`, `network_response_body`                                                                                 |
 | Network     | `network_mock`                                                                                                                              |
 | Storage     | `storage_read`, `storage_write`                                                                                                             |
-| Emulation   | `list_devices`, `emulate_device`, `emulate_media`, `emulate_network`, `emulate_locale`                                                      |
+| Emulation   | `list_devices`, `emulate_device`, `emulate_media`, `emulate_network`, `emulate_locale`, `emulate_geolocation`                               |
 
 ## Safety
 

@@ -124,9 +124,16 @@ export class ToolRuntime {
         this.capture.forget(targetId);
         this.dialogs.forget(targetId);
         const mock = this.mock.forget(targetId);
+        const origin = this.emulation.snapshot(targetId).geolocation?.origin;
 
         this.emulation.forget(targetId);
         await mock;
+
+        if (origin !== undefined && !this.emulation.geolocationOrigins().has(origin)) {
+            await this.access
+                .setPermission({ name: "geolocation", setting: "reset", origin })
+                .catch(() => undefined);
+        }
     }
 
     async resetAll(): Promise<void> {

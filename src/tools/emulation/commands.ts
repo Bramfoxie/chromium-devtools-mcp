@@ -30,6 +30,28 @@ export interface MediaState {
     forcedColors : "active" | "none" | undefined;
 }
 
+export interface GeolocationState {
+    latitude : number;
+    longitude: number;
+    accuracy : number;
+    origin   : string;
+}
+
+export function buildGeolocationCommands(state: GeolocationState): CdpCommand[] {
+    return [{
+        method: "Emulation.setGeolocationOverride",
+        params: {
+            latitude : state.latitude,
+            longitude: state.longitude,
+            accuracy : state.accuracy,
+        },
+    }];
+}
+
+export function buildGeolocationResetCommands(): CdpCommand[] {
+    return [{ method: "Emulation.setGeolocationOverride", params: {} }];
+}
+
 export interface NetworkConditions {
     offline     : boolean;
     latencyMs   : number;
