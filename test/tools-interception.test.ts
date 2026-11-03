@@ -415,6 +415,29 @@ describe("InterceptionManager", () => {
             expect(fake.sent.map((call) => call.method)).not.toContain("Fetch.fulfillRequest");
         });
 
+        it("continues only the requests of a removed rule while other rules stay", async () => {
+            const { fake, manager, handled } = await pausedDelayed();
+            const other = manager.add("tab1", { ...delayedRule, urlPattern: "https://other.example/*" });
+
+            expect(other.id).toBe("mock2");
+            manager.remove("tab1", "mock1");
+            await handled;
+
+            expect(continued(fake)).toEqual([{ requestId: "slow1" }]);
+            expect(fake.sent.map((call) => call.method)).not.toContain("Fetch.fulfillRequest");
+            expect(manager.rulesOf("tab1").map((rule) => rule.id)).toEqual(["mock2"]);
+        });
+
+        it("keeps a request held by a rule that was not removed", async () => {
+            const { fake, manager } = await pausedDelayed();
+
+            manager.add("tab1", { ...delayedRule, urlPattern: "https://other.example/*" });
+            manager.remove("tab1", "mock2");
+            await Promise.resolve();
+
+            expect(continued(fake)).toEqual([]);
+        });
+
         it("continues a delayed request before Fetch.disable", async () => {
             const { fake, manager, handled } = await pausedDelayed();
 

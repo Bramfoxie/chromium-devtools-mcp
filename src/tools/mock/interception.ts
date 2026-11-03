@@ -68,6 +68,7 @@ export interface RuleInput extends MockAction {
 }
 
 interface DeferredRequest {
+    ruleId  : string;
     released: boolean;
     release : () => void;
 }
@@ -242,6 +243,8 @@ export class InterceptionManager {
 
         const [removed] = state.rules.splice(index, 1);
 
+        void this.releaseDeferred(tab, state, id);
+
         return removed === undefined ? undefined : { ...removed };
     }
 
@@ -329,6 +332,7 @@ export class InterceptionManager {
         if (rule.delayMs > 0) {
             let wake: () => void = () => undefined;
             const entry: DeferredRequest = {
+                ruleId  : rule.id,
                 released: false,
                 release : () => {
                     entry.released = true;
@@ -449,10 +453,16 @@ export class InterceptionManager {
         }
     }
 
-    private async releaseDeferred(tab: string, state: TabInterception): Promise<void> {
-        const entries = [...state.deferred.entries()];
+    private async releaseDeferred(
+        tab    : string,
+        state  : TabInterception,
+        ruleId?: string,
+    ): Promise<void> {
+        const entries = [...state.deferred.entries()].filter(
+            ([, entry]) => ruleId === undefined || entry.ruleId === ruleId,
+        );
 
-        state.deferred.clear();
+        for (const [requestId] of entries) state.deferred.delete(requestId);
 
         await Promise.all(entries.map(async ([requestId, entry]) => {
             entry.release();
