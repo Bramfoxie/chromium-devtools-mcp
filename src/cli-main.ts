@@ -1,24 +1,38 @@
 import { type Config, ConfigError, loadConfig } from "./config/index.js";
+import { realFs } from "./install/fs.js";
+import { runInstall } from "./install/install.js";
+import os from "node:os";
 import { AlreadyRunningError } from "./daemon/errors.js";
 import { runDaemon, type RunningDaemon } from "./daemon/runner.js";
 import { runMcpServer, type RunningMcp } from "./mcp/server.js";
 
 const USAGE =
-    "Usage: chromium-devtools-mcp [options]        run the MCP server on stdio\n       chromium-devtools-mcp daemon [options] run the browser daemon\nOptions: --browser chrome, --mode attach|managed, --headless, --profile-dir, --debug-port, --allow-focus, --isolated, --read-only, --allowed-domains, --confirm-dangerous, --help\nBoolean flags also accept a --no- form, for example --no-headless.";
+    "Usage: chromium-devtools-mcp [options]        run the MCP server on stdio\n       chromium-devtools-mcp daemon [options] run the browser daemon\n       chromium-devtools-mcp install --client <name|all> [--dry-run] [--remove] [options]\nOptions: --browser chrome, --mode attach|managed, --headless, --profile-dir, --debug-port, --allow-focus, --isolated, --read-only, --allowed-domains, --confirm-dangerous, --help\nBoolean flags also accept a --no- form, for example --no-headless.";
 
 export interface CliDeps {
     run     : (config: Config) => Promise<RunningDaemon>;
     load    : typeof loadConfig;
     write   : (text: string) => void;
     serve   : (config: Config, flags: string[]) => Promise<RunningMcp>;
+    install : (argv: string[]) => number;
     onSignal: (signal: "SIGINT" | "SIGTERM" | "SIGHUP", handler: () => void) => void;
 }
 
 const defaults: CliDeps = {
-    run     : (config) => runDaemon(config),
-    load    : loadConfig,
-    write   : (text) => void process.stderr.write(text),
-    serve   : (config, flags) => runMcpServer(config, flags),
+    run    : (config) => runDaemon(config),
+    load   : loadConfig,
+    write  : (text) => void process.stderr.write(text),
+    serve  : (config, flags) => runMcpServer(config, flags),
+    install: (argv) =>
+        runInstall(argv, {
+            fs      : realFs,
+            home    : os.homedir(),
+            platform: process.platform,
+            env     : process.env,
+            now     : () => new Date(),
+            out     : (text) => void process.stdout.write(text),
+            err     : (text) => void process.stderr.write(text),
+        }),
     onSignal: (signal, handler) => void process.once(signal, handler),
 };
 
@@ -98,6 +112,7 @@ export async function main(argv: string[], overrides: Partial<CliDeps> = {}): Pr
         return 0;
     }
 
+    if (first === "install") return deps.install(rest);
     if (first === "daemon") return runDaemonCommand(deps, rest);
     if (first === undefined || first.startsWith("-")) return runServe(deps, argv);
 

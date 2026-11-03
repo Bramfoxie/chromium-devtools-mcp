@@ -57,7 +57,7 @@ describe("usage", () => {
     it("fails for an unknown command", async () => {
         const { output, run, served } = harness();
 
-        expect(await run(["install"])).toBe(2);
+        expect(await run(["bogus"])).toBe(2);
         expect(output.join("")).toContain("Usage:");
         expect(served).toEqual([]);
     });
@@ -79,6 +79,25 @@ describe("usage", () => {
         expect(load).not.toHaveBeenCalled();
         expect(served).toEqual([]);
         expect(output.join("")).toContain("--help");
+    });
+});
+
+describe("install command", () => {
+    it("hands the arguments after install to the installer and returns its exit code", async () => {
+        const install = vi.fn(() => 1);
+        const { run, served } = harness({ install });
+
+        expect(await run(["install", "--client", "cursor", "--dry-run"])).toBe(1);
+        expect(install).toHaveBeenCalledWith(["--client", "cursor", "--dry-run"]);
+        expect(served).toEqual([]);
+    });
+
+    it("mentions install in the usage", async () => {
+        const { output, run } = harness();
+
+        await run(["--help"]);
+
+        expect(output.join("")).toContain("install --client");
     });
 });
 
