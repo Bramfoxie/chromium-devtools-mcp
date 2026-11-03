@@ -10,6 +10,7 @@ import { connectBrowser } from "../../src/daemon/runner.js";
 import type { Config } from "../../src/config/index.js";
 import { connectToDaemon, daemonIdentity, type DaemonLayout, runDaemon, type RunningDaemon } from "../../src/daemon/index.js";
 import { createMcpServer, DaemonLink, registerServerTools } from "../../src/mcp/index.js";
+import { DirectoryArtifactStore, nodeArtifactIO } from "../../src/tools/index.js";
 import { createSocketHarness } from "../helpers/daemon-socket.js";
 
 export function chromeAvailable(): boolean {
@@ -104,8 +105,9 @@ function tail(text: string): string {
 }
 
 export interface Env {
-    fixture: Fixture;
-    other  : Fixture;
+    fixture     : Fixture;
+    other       : Fixture;
+    artifactsDir: string;
     tools(): Promise<unknown>;
     call(name: string, args?: Record<string, unknown>): Promise<ToolOutcome>;
     ok(name: string, args?: Record<string, unknown>): Promise<Record<string, unknown>>;
@@ -182,7 +184,14 @@ export async function startEnv(
     );
     const server = createMcpServer("0.0.0");
 
-    registerServerTools(server, config, link);
+    const artifactsDir = path.join(home, "artifacts");
+
+    registerServerTools(server, config, link, {
+        artifacts: new DirectoryArtifactStore({
+            dir: artifactsDir,
+            io : nodeArtifactIO(options.platform, options.uid),
+        }),
+    });
     const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
     const client = new Client({ name: "it", version: "0.0.0" });
 
@@ -221,6 +230,7 @@ export async function startEnv(
     return {
         fixture,
         other,
+        artifactsDir,
         tools: async () => (await client.listTools()).tools,
         call,
         ok,

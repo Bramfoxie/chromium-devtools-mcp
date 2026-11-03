@@ -21,6 +21,7 @@ import { jsEvaluate } from "./js-evaluate.js";
 import { networkMock } from "./network-mock.js";
 import { networkRequests } from "./network-requests.js";
 import { networkResponseBody } from "./network-response-body.js";
+import { perfTraceStart, perfTraceStop } from "./perf/perf-trace.js";
 import { pageDialogs } from "./page-dialogs.js";
 import { pagePdf } from "./page-pdf.js";
 import { storageRead } from "./storage-read.js";
@@ -55,6 +56,8 @@ export const allTools: AnyTool[] = [
     storageWrite,
     pagePdf,
     pageMetrics,
+    perfTraceStart,
+    perfTraceStop,
     screenshot,
     listDevices,
     emulateDevice,

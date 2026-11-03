@@ -8,6 +8,7 @@ import type { DialogState } from "./dialogs.js";
 import type { ElementRegistry } from "./element-target.js";
 import type { InterceptionManager } from "./mock/interception.js";
 import type { EmulationState } from "./emulation/state.js";
+import type { TraceRecorder } from "./perf/trace-recorder.js";
 import type { FocusEmulation } from "./focus-emulation.js";
 import type { FrameState } from "./frames.js";
 import type { UploadEnvironment } from "./upload-environment.js";
@@ -52,6 +53,7 @@ export interface ToolContext {
     mock     : InterceptionManager;
     emulation: EmulationState;
     upload   : UploadEnvironment;
+    trace    : TraceRecorder;
     artifacts: ArtifactStore;
     config   : Config;
     clock    : ToolClock;

@@ -70,6 +70,8 @@ export { bringToFront } from "./bring-to-front.js";
 
 export { fillForm } from "./fill-form.js";
 
+export { perfTraceStart, perfTraceStop } from "./perf/perf-trace.js";
+
 export { inputDrag } from "./input-drag.js";
 
 export { closeTab, listSessions, listTabs, newTab, selectTab } from "./tabs.js";

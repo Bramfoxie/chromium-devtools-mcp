@@ -50,4 +50,29 @@ describe("holdRendering", () => {
 
         await expect(release()).resolves.toBeUndefined();
     });
+
+    it("starts the screencast once for overlapping holds and stops it when the last one lets go", async () => {
+        const fake = setup();
+        const first = await startRendering(fake.asAccess(), "tab1");
+        const second = await startRendering(fake.asAccess(), "tab1");
+        const other = await startRendering(fake.asAccess(), "tab2");
+
+        await first();
+        await first();
+
+        expect(fake.sent.map((call) => `${call.targetId} ${call.method}`)).toEqual([
+            "tab1 Page.startScreencast",
+            "tab2 Page.startScreencast",
+        ]);
+
+        await second();
+        await other();
+
+        expect(fake.sent.map((call) => `${call.targetId} ${call.method}`)).toEqual([
+            "tab1 Page.startScreencast",
+            "tab2 Page.startScreencast",
+            "tab1 Page.stopScreencast",
+            "tab2 Page.stopScreencast",
+        ]);
+    });
 });

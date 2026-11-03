@@ -61,6 +61,7 @@ const MUTATING: Case[] = [
     ["input_upload", { target: { selector: "input" }, files: ["/tmp/a.png"] }],
     ["fill_form", { fields: [{ target: { selector: "input" }, value: "x" }] }],
     ["input_drag", { from: { selector: "body" }, to: { x: 1, y: 1 } }],
+    ["perf_trace_start", { reload: true }],
 ];
 
 const READING: Case[] = [
@@ -80,6 +81,8 @@ const READING: Case[] = [
     ["storage_read", {}],
     ["page_pdf", {}],
     ["page_metrics", {}],
+    ["perf_trace_start", {}],
+    ["perf_trace_stop", {}],
     ["screenshot", {}],
     ["list_devices", {}],
 ];

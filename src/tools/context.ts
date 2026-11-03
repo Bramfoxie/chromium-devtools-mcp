@@ -6,6 +6,7 @@ import type { KnownTab, ToolClock, ToolContext } from "./define-tool.js";
 import { DialogState } from "./dialogs.js";
 import { ElementRegistry } from "./element-target.js";
 import { type ArtifactStore, noArtifacts } from "./artifacts.js";
+import { TraceRecorder } from "./perf/trace-recorder.js";
 import { EmulationState } from "./emulation/state.js";
 import { nodeUploadEnvironment, type UploadEnvironment } from "./upload-environment.js";
 import { FocusEmulation } from "./focus-emulation.js";
@@ -77,6 +78,7 @@ export class ToolRuntime {
     readonly mock     : InterceptionManager;
     readonly emulation: EmulationState;
     readonly upload   : UploadEnvironment;
+    readonly trace    : TraceRecorder;
     readonly artifacts: ArtifactStore;
     readonly confirm  : Confirmer | undefined;
 
@@ -104,6 +106,7 @@ export class ToolRuntime {
         this.emulation = options.emulation ?? new EmulationState();
         this.upload = options.upload ?? nodeUploadEnvironment();
         this.artifacts = options.artifacts ?? noArtifacts;
+        this.trace = new TraceRecorder(options.access, this.clock);
         this.confirm = options.confirm;
     }
 
@@ -117,6 +120,7 @@ export class ToolRuntime {
         this.dialogs.attach();
         this.frames.attach();
         this.mock.attach();
+        this.trace.attach();
         this.access.forgetStaleState(() => void this.resetAll());
     }
 
@@ -128,10 +132,12 @@ export class ToolRuntime {
         this.capture.forget(targetId);
         this.dialogs.forget(targetId);
         const mock = this.mock.forget(targetId);
+        const trace = this.trace.forget(targetId);
         const origin = this.emulation.snapshot(targetId).geolocation?.origin;
 
         this.emulation.forget(targetId);
         await mock;
+        await trace;
 
         if (origin !== undefined && !this.emulation.geolocationOrigins().has(origin)) {
             await this.access
@@ -148,9 +154,11 @@ export class ToolRuntime {
         this.capture.reset();
         this.dialogs.reset();
         const mock = this.mock.reset();
+        const trace = this.trace.reset();
 
         this.emulation.reset();
         await mock;
+        await trace;
     }
 
     context(signal: AbortSignal, confirmed = false): ToolContext {
@@ -167,6 +175,7 @@ export class ToolRuntime {
             mock     : this.mock,
             emulation: this.emulation,
             upload   : this.upload,
+            trace    : this.trace,
             artifacts: this.artifacts,
             config   : this.config,
             clock    : this.clock,
