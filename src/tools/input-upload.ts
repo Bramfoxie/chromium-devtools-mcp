@@ -104,11 +104,15 @@ async function attachedCount(
     element: ResolvedElement,
 ): Promise<number> {
     const parsed = uploadChangeSchema.safeParse(
-        await access.send(tab, "Runtime.callFunctionOn", {
-            functionDeclaration: UPLOAD_COUNT_EXPRESSION,
-            objectId           : element.objectId,
-            arguments          : [{ objectId: element.objectId }],
-            returnByValue      : true,
+        await access.send({
+            targetId: tab,
+            method  : "Runtime.callFunctionOn",
+            params  : {
+                functionDeclaration: UPLOAD_COUNT_EXPRESSION,
+                objectId           : element.objectId,
+                arguments          : [{ objectId: element.objectId }],
+                returnByValue      : true,
+            },
         }),
     );
 
@@ -176,9 +180,13 @@ export const inputUpload = defineTool({
             throwIfCancelled(context.signal);
 
             const acted = await navigationOf(context.access, targetId, async () => {
-                await owner.send(targetId, "DOM.setFileInputFiles", {
-                    backendNodeId: element.backendNodeId,
-                    files        : validated.map((file) => file.path),
+                await owner.send({
+                    targetId,
+                    method: "DOM.setFileInputFiles",
+                    params: {
+                        backendNodeId: element.backendNodeId,
+                        files        : validated.map((file) => file.path),
+                    },
                 });
             });
             const changed = changedUrl(acted.urlBefore, acted.urlAfter);

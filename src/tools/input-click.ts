@@ -82,11 +82,15 @@ export const click = defineTool({
 
             const scroll = args.scrollIntoView ?? true;
             const acted = await navigationOf(context.access, targetId, () =>
-                owner.send(targetId, "Runtime.callFunctionOn", {
-                    functionDeclaration: CLICK_EXPRESSION,
-                    objectId           : element.objectId,
-                    arguments          : [{ objectId: element.objectId }, { value: scroll }],
-                    returnByValue      : true,
+                owner.send({
+                    targetId,
+                    method: "Runtime.callFunctionOn",
+                    params: {
+                        functionDeclaration: CLICK_EXPRESSION,
+                        objectId           : element.objectId,
+                        arguments          : [{ objectId: element.objectId }, { value: scroll }],
+                        returnByValue      : true,
+                    },
                 }));
 
             const parsed = clickResultSchema.safeParse(acted.value);
@@ -157,14 +161,18 @@ export const inputClick = defineTool({
                 target.via === "frame" && route !== undefined ? route.owner : context.access;
 
             const sendMove = async (at: PointerTarget): Promise<void> => {
-                await dispatcher(at).send(targetId, "Input.dispatchMouseEvent", {
-                    type      : "mouseMoved",
-                    x         : at.point.x,
-                    y         : at.point.y,
-                    modifiers,
-                    button,
-                    buttons   : 0,
-                    clickCount: 0,
+                await dispatcher(at).send({
+                    targetId,
+                    method: "Input.dispatchMouseEvent",
+                    params: {
+                        type      : "mouseMoved",
+                        x         : at.point.x,
+                        y         : at.point.y,
+                        modifiers,
+                        button,
+                        buttons   : 0,
+                        clickCount: 0,
+                    },
                 });
             };
 
@@ -177,14 +185,18 @@ export const inputClick = defineTool({
 
                     for (let count = 1; count <= clickCount; count += 1) {
                         const press = async (from: PointerTarget): Promise<void> => {
-                            await dispatcher(from).send(targetId, "Input.dispatchMouseEvent", {
-                                type      : "mousePressed",
-                                x         : from.point.x,
-                                y         : from.point.y,
-                                modifiers,
-                                button,
-                                buttons,
-                                clickCount: count,
+                            await dispatcher(from).send({
+                                targetId,
+                                method: "Input.dispatchMouseEvent",
+                                params: {
+                                    type      : "mousePressed",
+                                    x         : from.point.x,
+                                    y         : from.point.y,
+                                    modifiers,
+                                    button,
+                                    buttons,
+                                    clickCount: count,
+                                },
                             });
                         };
                         const release = async (from: PointerTarget): Promise<void> => {
@@ -199,9 +211,17 @@ export const inputClick = defineTool({
                             };
 
                             try {
-                                await dispatcher(from).send(targetId, "Input.dispatchMouseEvent", event);
+                                await dispatcher(from).send({
+                                    targetId,
+                                    method: "Input.dispatchMouseEvent",
+                                    params: event,
+                                });
                             } catch (error) {
-                                await dispatcher(from).send(targetId, "Input.dispatchMouseEvent", event)
+                                await dispatcher(from).send({
+                                    targetId,
+                                    method: "Input.dispatchMouseEvent",
+                                    params: event,
+                                })
                                     .catch(() => undefined);
 
                                 throw error;
@@ -274,14 +294,18 @@ export const inputHover = defineTool({
             const moveTo = async (via: PointerTarget["via"], x: number, y: number): Promise<void> => {
                 const access = via === "frame" && route !== undefined ? route.owner : context.access;
 
-                await access.send(targetId, "Input.dispatchMouseEvent", {
-                    type      : "mouseMoved",
-                    x,
-                    y,
-                    modifiers : 0,
-                    button    : "none",
-                    buttons   : 0,
-                    clickCount: 0,
+                await access.send({
+                    targetId,
+                    method: "Input.dispatchMouseEvent",
+                    params: {
+                        type      : "mouseMoved",
+                        x,
+                        y,
+                        modifiers : 0,
+                        button    : "none",
+                        buttons   : 0,
+                        clickCount: 0,
+                    },
                 });
             };
 
@@ -300,11 +324,15 @@ export const inputHover = defineTool({
             });
 
             const parsed = hoverSchema.safeParse(
-                await elementAccess(context.access, element).send(targetId, "Runtime.callFunctionOn", {
-                    functionDeclaration: HOVER_EXPRESSION,
-                    objectId           : element.objectId,
-                    arguments          : [{ objectId: element.objectId }],
-                    returnByValue      : true,
+                await elementAccess(context.access, element).send({
+                    targetId,
+                    method: "Runtime.callFunctionOn",
+                    params: {
+                        functionDeclaration: HOVER_EXPRESSION,
+                        objectId           : element.objectId,
+                        arguments          : [{ objectId: element.objectId }],
+                        returnByValue      : true,
+                    },
                 }),
             );
 

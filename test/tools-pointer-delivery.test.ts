@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { DaemonAccess } from "../src/mcp/index.js";
+import type { CdpCommand, DaemonAccess } from "../src/mcp/index.js";
 import { CANCELLED_MESSAGE } from "../src/tools/index.js";
 import {
     FRAME_ATTEMPTS,
@@ -23,7 +23,7 @@ function fakeClock() {
 
 function routeOf(options: { moveSeen: boolean; onWait?: () => void }): PointerRoute {
     const owner = {
-        send: async (_tab: string, _method: string, params?: Record<string, unknown>) => {
+        send: async ({ params }: CdpCommand) => {
             const declaration = String(params?.functionDeclaration);
 
             if (declaration.includes("cdmProbeRead")) {

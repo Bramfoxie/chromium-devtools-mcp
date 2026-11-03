@@ -75,9 +75,13 @@ export async function browserPlatform(
     if (cached !== undefined) return cached;
 
     const parsed = platformSchema.safeParse(
-        await access.send(tab, "Runtime.evaluate", {
-            expression   : PLATFORM_EXPRESSION,
-            returnByValue: true,
+        await access.send({
+            targetId: tab,
+            method  : "Runtime.evaluate",
+            params  : {
+                expression   : PLATFORM_EXPRESSION,
+                returnByValue: true,
+            },
         }),
     );
 
@@ -113,7 +117,11 @@ async function dispatchKeyEvents(
 
             const { type, ...rest } = event;
 
-            await access.send(tab, "Input.dispatchKeyEvent", { type, ...rest });
+            await access.send({
+                targetId: tab,
+                method  : "Input.dispatchKeyEvent",
+                params  : { type, ...rest },
+            });
 
             if (event.type === "rawKeyDown") downs.push(event);
             if (event.type === "keyUp") downs.pop();
@@ -123,13 +131,17 @@ async function dispatchKeyEvents(
     } finally {
         if (!completed) {
             for (const down of [...downs].reverse()) {
-                await access.send(tab, "Input.dispatchKeyEvent", {
-                    type                 : "keyUp",
-                    key                  : down.key,
-                    code                 : down.code,
-                    windowsVirtualKeyCode: down.windowsVirtualKeyCode,
-                    modifiers            : 0,
-                    ...(down.location === undefined ? {} : { location: down.location }),
+                await access.send({
+                    targetId: tab,
+                    method  : "Input.dispatchKeyEvent",
+                    params  : {
+                        type                 : "keyUp",
+                        key                  : down.key,
+                        code                 : down.code,
+                        windowsVirtualKeyCode: down.windowsVirtualKeyCode,
+                        modifiers            : 0,
+                        ...(down.location === undefined ? {} : { location: down.location }),
+                    },
                 }).catch(() => undefined);
             }
         }
@@ -144,11 +156,15 @@ async function readValue(
     let response: unknown;
 
     try {
-        response = await access.send(tab, "Runtime.callFunctionOn", {
-            functionDeclaration: VALUE_EXPRESSION,
-            objectId           : element.objectId,
-            arguments          : [{ objectId: element.objectId }],
-            returnByValue      : true,
+        response = await access.send({
+            targetId: tab,
+            method  : "Runtime.callFunctionOn",
+            params  : {
+                functionDeclaration: VALUE_EXPRESSION,
+                objectId           : element.objectId,
+                arguments          : [{ objectId: element.objectId }],
+                returnByValue      : true,
+            },
         });
     } catch (error) {
         if (error instanceof Error && CONTEXT_GONE.test(error.message)) return undefined;
@@ -174,7 +190,11 @@ async function focusElement(
 ): Promise<void> {
     const backendNodeId = element.backendNodeId;
 
-    await access.send(tab, "DOM.focus", { backendNodeId });
+    await access.send({
+        targetId: tab,
+        method  : "DOM.focus",
+        params  : { backendNodeId },
+    });
 }
 
 export function echoOf(text: string, password: boolean): string | undefined {
@@ -259,7 +279,11 @@ export const inputType = defineTool({
 
                 if (delayMs === 0) {
                     throwIfCancelled(context.signal);
-                    await context.access.send(targetId, "Input.insertText", { text: args.text });
+                    await context.access.send({
+                        targetId,
+                        method: "Input.insertText",
+                        params: { text: args.text },
+                    });
                 } else {
                     await typeSlowly(context, targetId, args.text, delayMs);
                 }
@@ -346,7 +370,11 @@ async function typeSlowly(
         const planned = planTypedChar(char);
 
         if (planned === undefined) {
-            await context.access.send(targetId, "Input.insertText", { text: char });
+            await context.access.send({
+                targetId,
+                method: "Input.insertText",
+                params: { text: char },
+            });
         } else {
             await dispatchKeyEvents(context.access, targetId, planned, context.signal);
         }

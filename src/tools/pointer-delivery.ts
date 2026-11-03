@@ -275,18 +275,26 @@ export class PointerDelivery {
 
         try {
             for (const link of this.route.links) {
-                const resolved = await link.access.send(this.tab, "DOM.resolveNode", {
-                    backendNodeId: link.backendNodeId,
+                const resolved = await link.access.send({
+                    targetId: this.tab,
+                    method  : "DOM.resolveNode",
+                    params  : {
+                        backendNodeId: link.backendNodeId,
+                    },
                 }) as { object?: { objectId?: string } } | null;
                 const objectId = resolved?.object?.objectId;
 
                 if (objectId === undefined) continue;
 
-                await link.access.send(this.tab, "Runtime.callFunctionOn", {
-                    functionDeclaration: INSTALL,
-                    objectId,
-                    arguments          : [],
-                    returnByValue      : true,
+                await link.access.send({
+                    targetId: this.tab,
+                    method  : "Runtime.callFunctionOn",
+                    params  : {
+                        functionDeclaration: INSTALL,
+                        objectId,
+                        arguments          : [],
+                        returnByValue      : true,
+                    },
                 });
                 probes.push({ access: link.access, objectId });
             }
@@ -298,11 +306,15 @@ export class PointerDelivery {
 
             for (const [index, probe] of probes.entries()) {
                 const parsed = readSchema.safeParse(
-                    await probe.access.send(this.tab, "Runtime.callFunctionOn", {
-                        functionDeclaration: READ,
-                        objectId           : probe.objectId,
-                        arguments          : [],
-                        returnByValue      : true,
+                    await probe.access.send({
+                        targetId: this.tab,
+                        method  : "Runtime.callFunctionOn",
+                        params  : {
+                            functionDeclaration: READ,
+                            objectId           : probe.objectId,
+                            arguments          : [],
+                            returnByValue      : true,
+                        },
                     }),
                 );
                 const moves = parsed.success ? parsed.data.result.value?.moves ?? -1 : -1;
@@ -315,11 +327,15 @@ export class PointerDelivery {
             return "unknown";
         } finally {
             for (const probe of probes) {
-                await probe.access.send(this.tab, "Runtime.callFunctionOn", {
-                    functionDeclaration: REMOVE,
-                    objectId           : probe.objectId,
-                    arguments          : [],
-                    returnByValue      : true,
+                await probe.access.send({
+                    targetId: this.tab,
+                    method  : "Runtime.callFunctionOn",
+                    params  : {
+                        functionDeclaration: REMOVE,
+                        objectId           : probe.objectId,
+                        arguments          : [],
+                        returnByValue      : true,
+                    },
                 }).catch(() => undefined);
             }
         }
@@ -389,12 +405,16 @@ export class PointerDelivery {
     }
 
     private call(declaration: string, args: unknown[], awaitPromise = false): Promise<unknown> {
-        return this.route.owner.send(this.tab, "Runtime.callFunctionOn", {
-            functionDeclaration: declaration,
-            objectId           : this.route.objectId,
-            arguments          : args,
-            awaitPromise,
-            returnByValue      : true,
+        return this.route.owner.send({
+            targetId: this.tab,
+            method  : "Runtime.callFunctionOn",
+            params  : {
+                functionDeclaration: declaration,
+                objectId           : this.route.objectId,
+                arguments          : args,
+                awaitPromise,
+                returnByValue      : true,
+            },
         });
     }
 }

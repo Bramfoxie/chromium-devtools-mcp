@@ -151,11 +151,15 @@ async function readSelect(
     element: ResolvedElement,
 ): Promise<{ multiple: boolean; options: SelectOption[] }> {
     const parsed = selectReadSchema.safeParse(
-        await access.send(tab, "Runtime.callFunctionOn", {
-            functionDeclaration: SELECT_READ_EXPRESSION,
-            objectId           : element.objectId,
-            arguments          : [{ objectId: element.objectId }],
-            returnByValue      : true,
+        await access.send({
+            targetId: tab,
+            method  : "Runtime.callFunctionOn",
+            params  : {
+                functionDeclaration: SELECT_READ_EXPRESSION,
+                objectId           : element.objectId,
+                arguments          : [{ objectId: element.objectId }],
+                returnByValue      : true,
+            },
         }),
     );
 
@@ -238,14 +242,18 @@ export const inputSelect = defineTool({
             if ("error" in matched) throw new ToolError(matched.error);
 
             const acted = await navigationOf(context.access, targetId, () =>
-                owner.send(targetId, "Runtime.callFunctionOn", {
-                    functionDeclaration: SELECT_WRITE_EXPRESSION,
-                    objectId           : element.objectId,
-                    arguments          : [
-                        { objectId: element.objectId },
-                        { value: matched.indexes },
-                    ],
-                    returnByValue: true,
+                owner.send({
+                    targetId,
+                    method: "Runtime.callFunctionOn",
+                    params: {
+                        functionDeclaration: SELECT_WRITE_EXPRESSION,
+                        objectId           : element.objectId,
+                        arguments          : [
+                            { objectId: element.objectId },
+                            { value: matched.indexes },
+                        ],
+                        returnByValue: true,
+                    },
                 }));
 
             const parsed = selectWriteSchema.safeParse(acted.value);

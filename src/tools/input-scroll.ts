@@ -66,9 +66,13 @@ const scrollStateSchema = z.object({
 
 async function scrollState(access: DaemonAccess, tab: string): Promise<ScrollPosition> {
     const parsed = scrollStateSchema.safeParse(
-        await access.send(tab, "Runtime.evaluate", {
-            expression   : SCROLL_STATE_EXPRESSION,
-            returnByValue: true,
+        await access.send({
+            targetId: tab,
+            method  : "Runtime.evaluate",
+            params  : {
+                expression   : SCROLL_STATE_EXPRESSION,
+                returnByValue: true,
+            },
         }),
     );
 
@@ -116,7 +120,11 @@ async function wheelScroll(
     deltaX  : number,
     deltaY  : number,
 ): Promise<WheelScrollResult> {
-    await context.access.send(targetId, "Input.dispatchMouseEvent", wheelParams(point, deltaX, deltaY));
+    await context.access.send({
+        targetId,
+        method: "Input.dispatchMouseEvent",
+        params: wheelParams(point, deltaX, deltaY),
+    });
 
     const after = await settleScroll(context, targetId);
 
@@ -281,11 +289,15 @@ async function scrollToElement(
             checkDisabled: false,
         });
 
-        await owner.send(targetId, "Runtime.callFunctionOn", {
-            functionDeclaration: SCROLL_INTO_VIEW_EXPRESSION,
-            objectId           : element.objectId,
-            arguments          : [{ objectId: element.objectId }, { value: block }],
-            returnByValue      : true,
+        await owner.send({
+            targetId,
+            method: "Runtime.callFunctionOn",
+            params: {
+                functionDeclaration: SCROLL_INTO_VIEW_EXPRESSION,
+                objectId           : element.objectId,
+                arguments          : [{ objectId: element.objectId }, { value: block }],
+                returnByValue      : true,
+            },
         });
 
         if (element.isolated === true && element.frameId !== undefined) {

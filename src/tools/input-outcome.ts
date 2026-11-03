@@ -22,9 +22,13 @@ export function summarizeTarget(uid: string | undefined, state: ElementState): T
 
 export async function currentUrl(access: DaemonAccess, targetId: string): Promise<string> {
     try {
-        const result = (await access.send(targetId, "Runtime.evaluate", {
-            expression   : "location.href",
-            returnByValue: true,
+        const result = (await access.send({
+            targetId,
+            method: "Runtime.evaluate",
+            params: {
+                expression   : "location.href",
+                returnByValue: true,
+            },
         })) as { result?: { value?: unknown } } | null;
 
         return typeof result?.result?.value === "string" ? result.result.value : "";
