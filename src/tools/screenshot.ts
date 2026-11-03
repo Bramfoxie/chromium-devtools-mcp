@@ -16,19 +16,19 @@ import { frameChain, mapRect, measureChain, revealChain, settleRendering } from 
 import { type ImageSize, imageSize } from "./image-size.js";
 import { binaryResult, imageBlock } from "./result.js";
 
-export const SCREENSHOT_DEFAULT_QUALITY = 80;
+const SCREENSHOT_DEFAULT_QUALITY = 80;
 
-export const SCREENSHOT_RETRY_QUALITY = 30;
+const SCREENSHOT_RETRY_QUALITY = 30;
 
-export const SCREENSHOT_FIRST_ATTEMPT_MS = 5000;
+const SCREENSHOT_FIRST_ATTEMPT_MS = 5000;
 
-export const SCREENSHOT_DEFAULT_MAX_BYTES = 4 * 1024 * 1024;
+const SCREENSHOT_DEFAULT_MAX_BYTES = 4 * 1024 * 1024;
 
-export const SCREENSHOT_MAX_BYTES_LIMIT = 16 * 1024 * 1024;
+const SCREENSHOT_MAX_BYTES_LIMIT = 16 * 1024 * 1024;
 
-export const SCREENSHOT_DEFAULT_MAX_DIMENSION = 4096;
+const SCREENSHOT_DEFAULT_MAX_DIMENSION = 4096;
 
-export type ScreenshotFormat = "png" | "jpeg" | "webp";
+type ScreenshotFormat = "png" | "jpeg" | "webp";
 
 const MIME_OF: Record<ScreenshotFormat, string> = {
     png : "image/png",
@@ -36,14 +36,14 @@ const MIME_OF: Record<ScreenshotFormat, string> = {
     webp: "image/webp",
 };
 
-export interface ScreenshotClip {
+interface ScreenshotClip {
     x     : number;
     y     : number;
     width : number;
     height: number;
 }
 
-export interface ScreenshotPlan {
+interface ScreenshotPlan {
     clip      : ScreenshotClip | undefined;
     scale     : number | undefined;
     clipped   : boolean;

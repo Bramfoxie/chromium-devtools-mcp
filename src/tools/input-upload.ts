@@ -14,11 +14,11 @@ import { changedUrl, navigationOf, summarizeTarget, targetSummarySchema } from "
 import { throwIfCancelled } from "./registry.js";
 import type { UploadEnvironment } from "./upload-environment.js";
 
-export const UPLOAD_MAX_FILES = 20;
+const UPLOAD_MAX_FILES = 20;
 
 export const UPLOAD_MAX_BYTES = 100 * 1024 * 1024;
 
-export const UPLOAD_COUNT_EXPRESSION = `function (element) {
+const UPLOAD_COUNT_EXPRESSION = `function (element) {
   if (!(element instanceof HTMLInputElement) || element.type !== "file") return { files: -1 };
   return { files: element.files === null ? 0 : element.files.length };
 }`;
@@ -30,7 +30,7 @@ const uploadChangeSchema = z.object({
     }),
 });
 
-export interface ValidatedUpload {
+interface ValidatedUpload {
     path: string;
     name: string;
     size: number;

@@ -15,10 +15,10 @@ import { SessionResetError } from "../mcp/index.js";
 
 export const CANCELLED_MESSAGE = "The request was cancelled. Call the tool again if needed.";
 
-export const CANCELLED_MUTATING_MESSAGE =
+const CANCELLED_MUTATING_MESSAGE =
     "The request was cancelled while the tool was running, so its change may already have been applied. Check the page with page_info or dom_query before calling the tool again.";
 
-export interface RegisterToolsOptions {
+interface RegisterToolsOptions {
     server : McpServer;
     tools  : AnyTool[];
     runtime: ToolRuntime;

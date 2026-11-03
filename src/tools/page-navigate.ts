@@ -12,11 +12,11 @@ export const NAVIGATE_DEFAULT_TIMEOUT_MS = 30_000;
 
 export const NAVIGATE_MAX_TIMEOUT_MS = 120_000;
 
-export const waitUntilSchema = z.enum(["load", "domcontentloaded", "none"]);
+const waitUntilSchema = z.enum(["load", "domcontentloaded", "none"]);
 
-export type WaitUntil = z.infer<typeof waitUntilSchema>;
+type WaitUntil = z.infer<typeof waitUntilSchema>;
 
-export interface NavigationWaitState {
+interface NavigationWaitState {
     loaderId : string | undefined;
     navigated: boolean;
     stopped  : boolean;
@@ -24,7 +24,7 @@ export interface NavigationWaitState {
     done     : boolean;
 }
 
-export type NavigationWaitEvent =
+type NavigationWaitEvent =
     | { type: "navigated"; loaderId: string }
     | { type: "lifecycle"; loaderId: string; name: string }
     | { type: "response"; loaderId: string; status: number }
@@ -155,7 +155,7 @@ function mainFrameId(context: ToolContext, targetId: string): Promise<string | u
         .catch(() => undefined);
 }
 
-export async function currentPage(
+async function currentPage(
     context : ToolContext,
     targetId: string,
 ): Promise<{ url: string; title: string; readyState: string }> {

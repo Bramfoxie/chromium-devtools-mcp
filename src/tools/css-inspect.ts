@@ -6,11 +6,11 @@ import { elementAccess, elementTargetSchema, resolveElement } from "./element-ta
 import { ToolError } from "./errors.js";
 import { frameChain, mapRect, measureChain } from "./frame-geometry.js";
 
-export const CSS_MAX_RULES_DEFAULT = 30;
+const CSS_MAX_RULES_DEFAULT = 30;
 
-export const CSS_MAX_RULES_LIMIT = 100;
+const CSS_MAX_RULES_LIMIT = 100;
 
-export const CSS_VALUE_CLIP = 200;
+const CSS_VALUE_CLIP = 200;
 
 export const DEFAULT_CSS_PROPERTIES = [
     "display",
@@ -117,21 +117,21 @@ const boxModelSchema = z.object({
     }),
 });
 
-export interface CssDeclaration {
+interface CssDeclaration {
     name     : string;
     value    : string;
     important: boolean;
     winning  : boolean;
 }
 
-export interface CssRule {
+interface CssRule {
     selector    : string;
     origin      : string;
     styleSheetId: string | undefined;
     declarations: CssDeclaration[];
 }
 
-export interface InheritedStyle {
+interface InheritedStyle {
     property: string;
     value   : string;
     selector: string;
@@ -255,7 +255,7 @@ export function shapeInherited(
     return shaped.reverse();
 }
 
-export interface CssRect {
+interface CssRect {
     x     : number;
     y     : number;
     width : number;
@@ -425,7 +425,7 @@ export const cssInspect = defineTool({
     },
 });
 
-export interface CssBox {
+interface CssBox {
     content: CssRect;
     padding: CssRect;
     border : CssRect;

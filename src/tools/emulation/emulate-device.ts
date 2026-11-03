@@ -33,7 +33,7 @@ const reportedSchema = z.strictObject({
     maxTouchPoints  : z.number().describe("Touch points the page reports."),
 });
 
-export interface DeviceInput {
+interface DeviceInput {
     device           : string | undefined;
     width            : number | undefined;
     height           : number | undefined;

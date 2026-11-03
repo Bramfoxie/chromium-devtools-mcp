@@ -8,16 +8,16 @@ import { bindAccess, isolatedDocumentNode } from "./frame-scope.js";
 import type { FrameState } from "./frames.js";
 import { assertPageAllowed } from "./page-allowed.js";
 
-export const MAX_SELECTOR_LENGTH = 1024;
+const MAX_SELECTOR_LENGTH = 1024;
 
 export const MAX_UIDS_PER_TAB = 5000;
 
 export const STALE_UID_MESSAGE =
     "This element id is stale. Take a new dom_snapshot or run dom_query again.";
 
-export const PIERCE_CHAIN_SEPARATOR = ">>>";
+const PIERCE_CHAIN_SEPARATOR = ">>>";
 
-export const PIERCE_CHAIN_MAX_SEGMENTS = 10;
+const PIERCE_CHAIN_MAX_SEGMENTS = 10;
 
 export const MAX_FRAME_LENGTH = 1024;
 
@@ -66,7 +66,7 @@ export function splitPierceChain(selector: string): string[] | undefined {
     return segments;
 }
 
-export interface ElementNode {
+interface ElementNode {
     backendNodeId   : number;
     frameId?        : string;
     isolated?       : boolean;
@@ -77,7 +77,7 @@ export interface ResolvedElement extends ElementNode {
     objectId: string;
 }
 
-export type ElementRef = { nodeId: number } | { backendNodeId: number } | { objectId: string };
+type ElementRef = { nodeId: number } | { backendNodeId: number } | { objectId: string };
 
 export interface Rect {
     x     : number;
@@ -86,7 +86,7 @@ export interface Rect {
     height: number;
 }
 
-export interface ElementBox {
+interface ElementBox {
     box    : Rect | null;
     visible: boolean;
 }
@@ -264,7 +264,7 @@ export function rectOfQuad(quad: number[]): Rect {
     };
 }
 
-export interface ResolverFrames {
+interface ResolverFrames {
     resolve(tab: string, frame: string): Promise<{ frameId: string; isolated?: boolean }>;
     refresh?(tab: string): Promise<unknown>;
     generation(tab: string, frameId: string): number;
@@ -749,7 +749,7 @@ async function resolveBySelector(
     };
 }
 
-export interface ResolveElementOptions {
+interface ResolveElementOptions {
     frames?: FrameState;
 }
 
@@ -804,7 +804,7 @@ export async function resolveElement(
     };
 }
 
-export interface ElementScope {
+interface ElementScope {
     config? : Config;
     access  : DaemonAccess;
     elements: ElementRegistry;

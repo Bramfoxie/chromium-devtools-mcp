@@ -15,7 +15,7 @@ import { readLocale } from "./reads.js";
 import { runSteps } from "./steps.js";
 import { emulationSummarySchema, summarizeEmulation } from "./summary.js";
 
-export const ACCEPT_LANGUAGE_MAX_CHARS = 512;
+const ACCEPT_LANGUAGE_MAX_CHARS = 512;
 
 const acceptLanguagePattern = /^[\x20-\x7E]*$/;
 
@@ -27,7 +27,7 @@ export function checkAcceptLanguage(value: string): void {
     }
 }
 
-export function checkLocaleSelection(
+function checkLocaleSelection(
     selection: Partial<LocaleSelection> & { reset: boolean },
 ): void {
     if (selection.reset && hasLocaleSelection({ ...selection, reset: false })) {

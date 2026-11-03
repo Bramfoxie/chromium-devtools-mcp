@@ -5,18 +5,18 @@ import type {
     NetworkConditions,
 } from "./commands.js";
 
-export interface DeviceEmulation extends DeviceMetrics {
+interface DeviceEmulation extends DeviceMetrics {
     name     : string;
     userAgent: string;
     landscape: boolean;
 }
 
-export interface NetworkEmulation extends NetworkConditions {
+interface NetworkEmulation extends NetworkConditions {
     preset   : string | undefined;
     blockUrls: string[];
 }
 
-export interface LocaleEmulation extends LocaleSelection {
+interface LocaleEmulation extends LocaleSelection {
     locale        : string | undefined;
     timezone      : string | undefined;
     acceptLanguage: string | undefined;

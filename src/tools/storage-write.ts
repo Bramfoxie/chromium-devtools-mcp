@@ -7,17 +7,17 @@ import { assertPageAllowed } from "./page-allowed.js";
 import { throwIfCancelled } from "./registry.js";
 import { pageLocation } from "./storage-read.js";
 
-export const WRITE_MAX_ENTRIES = 100;
+const WRITE_MAX_ENTRIES = 100;
 
-export const WRITE_MAX_KEY_CHARS = 200;
+const WRITE_MAX_KEY_CHARS = 200;
 
-export const WRITE_MAX_VALUE_CHARS = 100_000;
+const WRITE_MAX_VALUE_CHARS = 100_000;
 
-export const WRITE_MAX_KEYS = 1000;
+const WRITE_MAX_KEYS = 1000;
 
-export const WRITE_MAX_COOKIES = 100;
+const WRITE_MAX_COOKIES = 100;
 
-export const WRITE_MAX_COOKIE_NAME_CHARS = 4096;
+const WRITE_MAX_COOKIE_NAME_CHARS = 4096;
 
 const setCookieSchema = z.strictObject({
     name    : z.string().min(1).max(WRITE_MAX_COOKIE_NAME_CHARS).describe("Cookie name."),
@@ -55,7 +55,7 @@ export function cookieDomainAllowed(cookieDomain: string | undefined, pageHost: 
     return true;
 }
 
-export function checkCookieDomain(
+function checkCookieDomain(
     cookieDomain: string | undefined,
     pageHost    : string,
 ): void {
@@ -66,7 +66,7 @@ export function checkCookieDomain(
     );
 }
 
-export function pageHostOf(origin: string): string {
+function pageHostOf(origin: string): string {
     return new URL(origin).hostname;
 }
 

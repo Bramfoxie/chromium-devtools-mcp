@@ -3,7 +3,7 @@ import { defineTool } from "./define-tool.js";
 import { ToolError } from "./errors.js";
 import { throwIfCancelled } from "./registry.js";
 
-export const DIALOG_PROMPT_TEXT_MAX_CHARS = 10_000;
+const DIALOG_PROMPT_TEXT_MAX_CHARS = 10_000;
 
 const dialogSchema = z.strictObject({
     type             : z.string().describe("Dialog type: alert, confirm, prompt or beforeunload."),

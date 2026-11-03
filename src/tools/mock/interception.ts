@@ -3,7 +3,7 @@ import type { DaemonAccess } from "../../mcp/index.js";
 import { describeError, logDaemon } from "../../daemon/log.js";
 import type { ToolClock } from "../define-tool.js";
 
-export const FETCH_EVENT = "Fetch.requestPaused";
+const FETCH_EVENT = "Fetch.requestPaused";
 
 export const MOCK_URL_PATTERN_MAX_CHARS = 1024;
 
@@ -44,14 +44,14 @@ export interface MockResponse {
     contentType: string | undefined;
 }
 
-export interface MockAction {
+interface MockAction {
     response: MockResponse | undefined;
     fail    : FailReason | undefined;
     delayMs : number;
     times   : number | undefined;
 }
 
-export interface MockRule extends MockAction {
+interface MockRule extends MockAction {
     id          : string;
     urlPattern  : string;
     method      : string | undefined;
@@ -82,7 +82,7 @@ interface TabInterception {
     deferred  : Map<string, DeferredRequest>;
 }
 
-export interface InterceptionOptions {
+interface InterceptionOptions {
     access: DaemonAccess;
     clock : ToolClock;
 }

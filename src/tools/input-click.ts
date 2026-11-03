@@ -29,7 +29,7 @@ import { ToolError } from "./errors.js";
 import { KEY_MODIFIERS, modifiersMask } from "./keys.js";
 import { throwIfCancelled } from "./registry.js";
 
-export const CLICK_EXPRESSION = `function (element, scroll) {
+const CLICK_EXPRESSION = `function (element, scroll) {
   if (scroll) element.scrollIntoView({ block: "center", inline: "center" });
   element.click();
   return "clicked";
@@ -45,19 +45,19 @@ const clickResultSchema = z.object({
 
 const MOUSE_BUTTONS = ["left", "middle", "right"] as const;
 
-export type MouseButton = (typeof MOUSE_BUTTONS)[number];
+type MouseButton = (typeof MOUSE_BUTTONS)[number];
 
-export const MOUSE_BUTTON_BIT: Record<MouseButton, number> = {
+const MOUSE_BUTTON_BIT: Record<MouseButton, number> = {
     left  : 1,
     middle: 4,
     right : 2,
 };
 
-export const CLICK_COUNT_MAX = 3;
+const CLICK_COUNT_MAX = 3;
 
-export const HOVER_DEFAULT_STEPS = 2;
+const HOVER_DEFAULT_STEPS = 2;
 
-export const positionSchema = z.strictObject({
+const positionSchema = z.strictObject({
     x: z.number().describe("Offset in CSS pixels from the left edge of the element."),
     y: z.number().describe("Offset in CSS pixels from the top edge of the element."),
 });
@@ -69,7 +69,7 @@ export const targetSummarySchema = z.strictObject({
     classes: z.array(z.string()).describe("Class names of the element, at most 10."),
 });
 
-export type TargetSummary = z.infer<typeof targetSummarySchema>;
+type TargetSummary = z.infer<typeof targetSummarySchema>;
 
 export function summarizeTarget(uid: string | undefined, state: ElementState): TargetSummary {
     return {
@@ -443,7 +443,7 @@ export const inputClick = defineTool({
     },
 });
 
-export const HOVER_EXPRESSION = `function (element) { return element.matches(":hover"); }`;
+const HOVER_EXPRESSION = `function (element) { return element.matches(":hover"); }`;
 
 const hoverSchema = z.object({
     result: z.object({

@@ -17,11 +17,11 @@ import {
 } from "./mock/interception.js";
 import { throwIfCancelled } from "./registry.js";
 
-export const MOCK_METHOD_MAX_CHARS = 32;
+const MOCK_METHOD_MAX_CHARS = 32;
 
-export const MOCK_RESOURCE_TYPE_MAX_CHARS = 64;
+const MOCK_RESOURCE_TYPE_MAX_CHARS = 64;
 
-export const MOCK_TIMES_MAX = 1_000_000;
+const MOCK_TIMES_MAX = 1_000_000;
 
 const BASE64_CHARS_MAX = Math.ceil(MOCK_BODY_MAX_BYTES / 3) * 4;
 
@@ -79,7 +79,7 @@ const addSchema = z.strictObject({
     times       : z.number().int().min(1).max(MOCK_TIMES_MAX).optional().describe("Apply this many times, then expire."),
 });
 
-export type MockAddInput = z.infer<typeof addSchema>;
+type MockAddInput = z.infer<typeof addSchema>;
 
 const ruleSchema = z.strictObject({
     id          : z.string().describe("Rule id."),

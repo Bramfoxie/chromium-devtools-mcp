@@ -3,7 +3,7 @@ import { defineTool, type ToolContext } from "./define-tool.js";
 import { ensureNoDialog } from "./dialogs.js";
 import { ToolError } from "./errors.js";
 
-export const METRICS_TIMEOUT_MS = 5000;
+const METRICS_TIMEOUT_MS = 5000;
 
 const KEEP_ZERO = new Set([
     "Documents",

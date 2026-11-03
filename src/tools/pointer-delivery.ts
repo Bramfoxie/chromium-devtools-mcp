@@ -8,21 +8,21 @@ import { throwIfCancelled } from "./registry.js";
 
 export const MOVE_BUDGET_MS = 10000;
 
-export const MOVE_WAIT_MS = 100;
+const MOVE_WAIT_MS = 100;
 
-export const RETRY_PAUSE_MIN_MS = 50;
+const RETRY_PAUSE_MIN_MS = 50;
 
-export const RETRY_PAUSE_MAX_MS = 500;
+const RETRY_PAUSE_MAX_MS = 500;
 
-export const STABLE_ROUNDS = 4;
+const STABLE_ROUNDS = 4;
 
-export const LANDING_WAIT_MS = 300;
+const LANDING_WAIT_MS = 300;
 
-export const PRESS_WAIT_MS = 300;
+const PRESS_WAIT_MS = 300;
 
 export const FRAME_ATTEMPTS = 3;
 
-export type PointerVia = "frame" | "tab";
+type PointerVia = "frame" | "tab";
 
 export interface PointerTarget {
     via  : PointerVia;
@@ -99,7 +99,7 @@ const readSchema = z.object({
     result: z.object({ value: z.object({ moves: z.number(), downs: z.number() }).nullable() }),
 });
 
-export type PointerEnv = Pick<ToolContext, "clock" | "signal">;
+type PointerEnv = Pick<ToolContext, "clock" | "signal">;
 
 export class PointerDelivery {
     private current: Measurement;

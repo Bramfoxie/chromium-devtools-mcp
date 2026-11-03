@@ -5,7 +5,7 @@ import { isRestricted } from "../safety/index.js";
 import { checkSafety, type SafetyAccess, type SafetyDecision, type SafetyFrame } from "./safety.js";
 import { safetyFrameOf } from "./safety-frame.js";
 
-export type Admission =
+type Admission =
     | { admitted: true; confirmed: boolean }
     | { admitted: false; message: string };
 

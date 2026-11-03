@@ -20,7 +20,7 @@ import { emulationSummarySchema, summarizeEmulation } from "./summary.js";
 
 const presetSchema = z.enum(["offline", "slow-3g", "fast-3g", "4g", "wifi", "none"]);
 
-export interface NetworkInput {
+interface NetworkInput {
     preset      : NetworkPresetName | undefined;
     latencyMs   : number | undefined;
     downloadKbps: number | undefined;
@@ -70,7 +70,7 @@ export function conditionsOf(
     };
 }
 
-export async function ensureNetworkForEmulation(
+async function ensureNetworkForEmulation(
     ensure  : (tab: string) => Promise<void>,
     targetId: string,
 ): Promise<void> {

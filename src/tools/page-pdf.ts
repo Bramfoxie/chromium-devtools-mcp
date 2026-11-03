@@ -5,17 +5,17 @@ import { ToolError } from "./errors.js";
 import { binaryResult, resourceBlock } from "./result.js";
 import { formatByteLimit } from "./screenshot.js";
 
-export const PDF_DEFAULT_MAX_BYTES = 8 * 1024 * 1024;
+const PDF_DEFAULT_MAX_BYTES = 8 * 1024 * 1024;
 
-export const PDF_MAX_BYTES_LIMIT = 24 * 1024 * 1024;
+const PDF_MAX_BYTES_LIMIT = 24 * 1024 * 1024;
 
-export const PDF_A4_WIDTH_INCHES = 8.27;
+const PDF_A4_WIDTH_INCHES = 8.27;
 
-export const PDF_A4_HEIGHT_INCHES = 11.69;
+const PDF_A4_HEIGHT_INCHES = 11.69;
 
-export const PDF_DEFAULT_MARGIN_INCHES = 0.4;
+const PDF_DEFAULT_MARGIN_INCHES = 0.4;
 
-export const PDF_PAGE_RANGES_MAX_CHARS = 100;
+const PDF_PAGE_RANGES_MAX_CHARS = 100;
 
 const PAGE_RANGES_PATTERN = /^\d+(-\d+)?(,\d+(-\d+)?)*$/;
 

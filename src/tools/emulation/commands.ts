@@ -56,7 +56,7 @@ export const BLOCK_URLS_MAX = 50;
 
 export const BLOCK_URL_MAX_CHARS = 200;
 
-export interface UserAgentParts {
+interface UserAgentParts {
     userAgent     : string | undefined;
     acceptLanguage: string | undefined;
 }

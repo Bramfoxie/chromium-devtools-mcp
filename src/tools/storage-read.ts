@@ -6,19 +6,19 @@ import { ToolError } from "./errors.js";
 import { throwIfCancelled } from "./registry.js";
 import { truncateText } from "./result.js";
 
-export const STORAGE_MAX_ENTRIES = 1000;
+const STORAGE_MAX_ENTRIES = 1000;
 
-export const STORAGE_DEFAULT_ENTRIES = 100;
+const STORAGE_DEFAULT_ENTRIES = 100;
 
-export const STORAGE_MAX_VALUE_CHARS = 20_000;
+const STORAGE_MAX_VALUE_CHARS = 20_000;
 
-export const STORAGE_DEFAULT_VALUE_CHARS = 500;
+const STORAGE_DEFAULT_VALUE_CHARS = 500;
 
-export const STORAGE_MAX_KEYS = 1000;
+const STORAGE_MAX_KEYS = 1000;
 
-export const STORAGE_MAX_KEY_CHARS = 1024;
+const STORAGE_MAX_KEY_CHARS = 1024;
 
-export const STORAGE_KEY_CLIP_CHARS = 200;
+const STORAGE_KEY_CLIP_CHARS = 200;
 
 const itemsSchema = z.object({ entries: z.array(z.tuple([z.string(), z.string()])) });
 
@@ -44,7 +44,7 @@ const cookieSchema = z.object({
 
 const cookiesSchema = z.object({ cookies: z.array(cookieSchema) });
 
-export type StorageCookie = z.infer<typeof cookieSchema>;
+type StorageCookie = z.infer<typeof cookieSchema>;
 
 const entrySchema = z.strictObject({
     key      : z.string().describe("Storage key, clipped to 200 characters."),

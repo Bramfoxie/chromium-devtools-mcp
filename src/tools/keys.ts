@@ -2,16 +2,16 @@ import { ToolError } from "./errors.js";
 
 export const KEY_MODIFIERS = ["Alt", "Control", "Meta", "Shift"] as const;
 
-export type KeyModifier = (typeof KEY_MODIFIERS)[number];
+type KeyModifier = (typeof KEY_MODIFIERS)[number];
 
-export const MODIFIER_BITS: Record<KeyModifier, number> = {
+const MODIFIER_BITS: Record<KeyModifier, number> = {
     Alt    : 1,
     Control: 2,
     Meta   : 4,
     Shift  : 8,
 };
 
-export interface KeySpec {
+interface KeySpec {
     key        : string;
     code       : string;
     windowsCode: number;
@@ -155,11 +155,11 @@ function buildShiftMaps(): { shiftedOf: Map<string, string>; baseOf: Map<string,
 
 const SHIFT_MAPS = buildShiftMaps();
 
-export function shiftedKey(key: string): string {
+function shiftedKey(key: string): string {
     return SHIFT_MAPS.shiftedOf.get(key) ?? key;
 }
 
-export function unshiftedKey(key: string): string {
+function unshiftedKey(key: string): string {
     return SHIFT_MAPS.baseOf.get(key) ?? key;
 }
 
@@ -171,7 +171,7 @@ export function lookupKey(name: string): KeySpec | undefined {
     return TABLE.get(name);
 }
 
-export interface ParsedKey {
+interface ParsedKey {
     modifiers    : KeyModifier[];
     controlOrMeta: boolean;
     spec         : KeySpec;

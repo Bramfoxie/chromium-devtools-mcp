@@ -16,7 +16,7 @@ export const DEVICE_USER_AGENT_MAX_CHARS = 1024;
 
 export const deviceKindSchema = z.enum(["phone", "tablet", "desktop"]);
 
-export type DeviceKind = z.infer<typeof deviceKindSchema>;
+type DeviceKind = z.infer<typeof deviceKindSchema>;
 
 export interface DeviceSpec {
     name             : string;
@@ -230,7 +230,7 @@ export const DEVICES: DeviceSpec[] = [
     },
 ];
 
-export interface LandscapeSpec extends DeviceSpec {
+interface LandscapeSpec extends DeviceSpec {
     landscapeWidth : number;
     landscapeHeight: number;
 }

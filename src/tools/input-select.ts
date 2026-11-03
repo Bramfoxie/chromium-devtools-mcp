@@ -21,7 +21,7 @@ export interface SelectOption {
     selected: boolean;
 }
 
-export const SELECT_READ_EXPRESSION = `function (element) {
+const SELECT_READ_EXPRESSION = `function (element) {
   if (!(element instanceof HTMLSelectElement)) return { select: false, options: [] };
   return {
     select: true,
@@ -49,7 +49,7 @@ const selectReadSchema = z.object({
     }),
 });
 
-export const SELECT_WRITE_EXPRESSION = `function (element, wanted) {
+const SELECT_WRITE_EXPRESSION = `function (element, wanted) {
   if (!(element instanceof HTMLSelectElement)) return { select: false, selected: [] };
   const indexes = new Set(wanted.map(Number));
   let at = 0;
@@ -78,7 +78,7 @@ const selectWriteSchema = z.object({
     }),
 });
 
-export type SelectBy = { values: string[] } | { labels: string[] } | { indexes: number[] };
+type SelectBy = { values: string[] } | { labels: string[] } | { indexes: number[] };
 
 export function matchSelectOptions(
     options : SelectOption[],

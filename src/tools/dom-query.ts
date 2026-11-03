@@ -8,13 +8,13 @@ import { ToolError } from "./errors.js";
 import { bindAccess, isolatedDocumentNode } from "./frame-scope.js";
 import { elementCollector } from "./walk-script.js";
 
-export const QUERY_DEFAULT_LIMIT = 20;
+const QUERY_DEFAULT_LIMIT = 20;
 
-export const QUERY_MAX_LIMIT = 200;
+const QUERY_MAX_LIMIT = 200;
 
 export const QUERY_MAX_TEXT_CANDIDATES = 2000;
 
-export const QUERY_CLIP_CHARS = 200;
+const QUERY_CLIP_CHARS = 200;
 
 export const DEFAULT_QUERY_ATTRIBUTES = [
     "id",
@@ -103,7 +103,7 @@ const propertiesSchema = z.object({
 const QUERY_OBJECT_GROUP = "chromium-devtools-mcp-query";
 let queryGroupCounter = 0;
 
-export type QueryRow = z.infer<typeof rowSchema>;
+type QueryRow = z.infer<typeof rowSchema>;
 
 export function buildQueryScript(selector: string, count: number): string {
     return `(() => {
@@ -162,7 +162,7 @@ export function roundRect(rect: QueryRow["rect"]): QueryRow["rect"] {
     };
 }
 
-export interface DescribedNode {
+interface DescribedNode {
     backendNodeId: number;
     password     : boolean;
 }

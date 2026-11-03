@@ -24,9 +24,9 @@ interface TabFrames {
     generations: Map<string, number>;
 }
 
-export type FrameNavigatedListener = (tab: string, frameId: string, main: boolean) => void;
+type FrameNavigatedListener = (tab: string, frameId: string, main: boolean) => void;
 
-export interface FrameStateOptions {
+interface FrameStateOptions {
     access: DaemonAccess;
 }
 

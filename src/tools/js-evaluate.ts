@@ -14,19 +14,19 @@ import {
 import { ToolError } from "./errors.js";
 import { truncateText } from "./result.js";
 
-export const EVALUATE_DEFAULT_TIMEOUT_MS = 10_000;
+const EVALUATE_DEFAULT_TIMEOUT_MS = 10_000;
 
 const TERMINATE_TIMEOUT_MS = 2000;
 
-export const EVALUATE_MAX_TIMEOUT_MS = 60_000;
+const EVALUATE_MAX_TIMEOUT_MS = 60_000;
 
-export const EVALUATE_MAX_EXPRESSION_CHARS = 100_000;
+const EVALUATE_MAX_EXPRESSION_CHARS = 100_000;
 
-export const EVALUATE_DEFAULT_RESULT_CHARS = 50_000;
+const EVALUATE_DEFAULT_RESULT_CHARS = 50_000;
 
-export const EVALUATE_MAX_RESULT_CHARS = 200_000;
+const EVALUATE_MAX_RESULT_CHARS = 200_000;
 
-export const EVALUATE_MAX_STACK_CHARS = 2000;
+const EVALUATE_MAX_STACK_CHARS = 2000;
 
 function arrowParametersEnd(text: string, open: number): boolean {
     let depth = 0;
@@ -115,7 +115,7 @@ export function formatExceptionStack(exception: NonNullable<Evaluated["exception
     return truncateText(lines.join("\n"), EVALUATE_MAX_STACK_CHARS).text;
 }
 
-export interface ShapedValue {
+interface ShapedValue {
     type       : string;
     value      : unknown;
     truncated  : boolean;
@@ -372,7 +372,7 @@ function shapeTooLarge(remote: RemoteObject): ShapedValue {
     };
 }
 
-export function shapeJsonValue(type: string, value: unknown, maxChars: number): ShapedValue {
+function shapeJsonValue(type: string, value: unknown, maxChars: number): ShapedValue {
     const text = JSON.stringify(value) ?? "undefined";
     const shaped = truncateText(text, maxChars);
 

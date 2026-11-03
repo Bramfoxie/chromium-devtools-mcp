@@ -2,7 +2,7 @@ import type { DaemonAccess } from "../../mcp/index.js";
 import { throwIfCancelled } from "../registry.js";
 import type { CdpCommand } from "./commands.js";
 
-export interface EmulationStep {
+interface EmulationStep {
     commands : CdpCommand[];
     record   : () => void;
     undo?    : CdpCommand[];

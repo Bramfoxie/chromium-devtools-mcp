@@ -1,13 +1,13 @@
 import { z } from "zod";
 import { redactUrl } from "./network-log.js";
 
-export const CONSOLE_ENTRY_CLIP_CHARS = 2000;
+const CONSOLE_ENTRY_CLIP_CHARS = 2000;
 
-export const CONSOLE_STACK_FRAMES = 20;
+const CONSOLE_STACK_FRAMES = 20;
 
 export type ConsoleLevel = "debug" | "info" | "warning" | "error";
 
-export type ConsoleSource = "console" | "exception" | "browser";
+type ConsoleSource = "console" | "exception" | "browser";
 
 export interface ConsoleEntry {
     time   : string;

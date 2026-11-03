@@ -20,20 +20,20 @@ export interface ElementState {
     multiple  : boolean;
 }
 
-export type EditableKind = "text" | "password" | "none";
+type EditableKind = "text" | "password" | "none";
 
-export interface HitTarget {
+interface HitTarget {
     tag    : string;
     id     : string;
     classes: string[];
 }
 
-export type HitResult =
+type HitResult =
     | { kind: "hit" }
     | { kind: "covered"; by: HitTarget }
     | { kind: "outside" };
 
-export interface ActionableElement {
+interface ActionableElement {
     state: ElementState;
     box  : Rect;
 }
@@ -72,7 +72,7 @@ const hitSchema = z.object({
     }),
 });
 
-export const STATE_EXPRESSION = `function (element) {
+const STATE_EXPRESSION = `function (element) {
   const input = element instanceof HTMLInputElement ? element : null;
   const lowered = input === null ? "" : input.type.toLowerCase();
   const textTypes = new Set(["date", "datetime-local", "email", "month", "number", "search", "tel", "text", "time", "url", "week"]);
@@ -156,7 +156,7 @@ export const HIT_EXPRESSION = `function (element, x, y, local) {
   return { kind: "covered", tag: "?", id: "", classes: [] };
 }`;
 
-export const STACK_EXPRESSION = `(() => {
+const STACK_EXPRESSION = `(() => {
   const point = __POINT__;
   return document.elementsFromPoint(point.x, point.y).slice(0, 12).map((el) => ({
     tag: el.localName,
@@ -165,7 +165,7 @@ export const STACK_EXPRESSION = `(() => {
   }));
 })()`;
 
-export function stackExpression(point: { x: number; y: number }): string {
+function stackExpression(point: { x: number; y: number }): string {
     return STACK_EXPRESSION.replace("__POINT__", JSON.stringify({ x: point.x, y: point.y }));
 }
 
@@ -180,13 +180,13 @@ const stackSchema = z.object({
     }),
 });
 
-export interface HitStackEntry {
+interface HitStackEntry {
     tag    : string;
     id     : string;
     isFrame: boolean;
 }
 
-export function stackEntriesOf(value: unknown): HitStackEntry[] | undefined {
+function stackEntriesOf(value: unknown): HitStackEntry[] | undefined {
     const parsed = stackSchema.safeParse(value);
 
     if (!parsed.success || parsed.data.result.value === undefined) return undefined;
@@ -198,7 +198,7 @@ export function stackEntriesOf(value: unknown): HitStackEntry[] | undefined {
     }));
 }
 
-export function describeClasses(classes: string[]): string {
+function describeClasses(classes: string[]): string {
     return classes.length === 0 ? "" : `.${classes.join(".")}`;
 }
 
@@ -331,7 +331,7 @@ async function isolatedHitTest(
     return { kind: "hit" };
 }
 
-export interface ActionabilityOptions {
+interface ActionabilityOptions {
     checkDisabled: boolean;
     checkVisible?: boolean;
 }

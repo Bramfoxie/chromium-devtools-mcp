@@ -12,7 +12,7 @@ import type { FrameState } from "./frames.js";
 import type { UploadEnvironment } from "./upload-environment.js";
 import type { SafetyAccess, SafetyDecision, SafetyTarget } from "./safety.js";
 
-export type ToolAccess = SafetyAccess | ((args: unknown) => SafetyAccess);
+type ToolAccess = SafetyAccess | ((args: unknown) => SafetyAccess);
 
 export type { SafetyDecision };
 
@@ -21,12 +21,12 @@ export interface ToolClock {
     sleep(ms: number): Promise<void>;
 }
 
-export interface SessionState {
+interface SessionState {
     readonly tabs?    : Array<{ targetId: string }>;
     readonly selected?: string;
 }
 
-export interface KnownTabShape {
+interface KnownTabShape {
     targetId: string;
     url     : string;
     title   : string;
@@ -34,7 +34,7 @@ export interface KnownTabShape {
     created : boolean;
 }
 
-export interface TabSelection {
+interface TabSelection {
     refresh(tabs: KnownTabShape[], selected: string | undefined): void;
     select(targetId: string | undefined): void;
 }

@@ -19,17 +19,17 @@ import {
 } from "./keys.js";
 import { throwIfCancelled } from "./registry.js";
 
-export const TYPE_MAX_CHARS = 20000;
+const TYPE_MAX_CHARS = 20000;
 
-export const TYPE_DELAY_MAX_MS = 200;
+const TYPE_DELAY_MAX_MS = 200;
 
-export const TYPE_BUDGET_MS = 60000;
+const TYPE_BUDGET_MS = 60000;
 
-export const TYPE_ECHO_CHARS = 50;
+const TYPE_ECHO_CHARS = 50;
 
-export const KEY_REPEAT_MAX = 20;
+const KEY_REPEAT_MAX = 20;
 
-export const PLATFORM_EXPRESSION = "navigator.platform ?? ''";
+const PLATFORM_EXPRESSION = "navigator.platform ?? ''";
 
 const platformSchema = z.object({
     result: z.object({
@@ -38,7 +38,7 @@ const platformSchema = z.object({
     }),
 });
 
-export const VALUE_EXPRESSION = `function (element) {
+const VALUE_EXPRESSION = `function (element) {
   if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
     return { length: element.value.length, text: element.value };
   }
@@ -59,7 +59,7 @@ const CONTEXT_GONE = /Cannot find context|Could not find object|Cannot find obje
 
 const editableCache = new Map<string, string>();
 
-export function platformCacheKey(tab: string, generation: number): string {
+function platformCacheKey(tab: string, generation: number): string {
     return `${generation}:${tab}`;
 }
 

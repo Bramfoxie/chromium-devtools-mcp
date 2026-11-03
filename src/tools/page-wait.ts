@@ -10,25 +10,25 @@ import { exceptionText } from "./js-evaluate.js";
 import { throwIfCancelled } from "./registry.js";
 import { elementCollector } from "./walk-script.js";
 
-export const WAIT_DEFAULT_TIMEOUT_MS = 10_000;
+const WAIT_DEFAULT_TIMEOUT_MS = 10_000;
 
-export const WAIT_MAX_TIMEOUT_MS = 120_000;
+const WAIT_MAX_TIMEOUT_MS = 120_000;
 
-export const WAIT_DEFAULT_POLL_MS = 100;
+const WAIT_DEFAULT_POLL_MS = 100;
 
-export const WAIT_MIN_POLL_MS = 50;
+const WAIT_MIN_POLL_MS = 50;
 
-export const WAIT_MAX_SLEEP_MS = 60_000;
+const WAIT_MAX_SLEEP_MS = 60_000;
 
-export const WAIT_NETWORK_IDLE_MS = 500;
+const WAIT_NETWORK_IDLE_MS = 500;
 
-export const WAIT_MAX_URL_CHARS = 2048;
+const WAIT_MAX_URL_CHARS = 2048;
 
-export const WAIT_MAX_SELECTOR_CHARS = 1024;
+const WAIT_MAX_SELECTOR_CHARS = 1024;
 
-export const WAIT_MAX_TEXT_CHARS = 1024;
+const WAIT_MAX_TEXT_CHARS = 1024;
 
-export const WAIT_MAX_EXPRESSION_CHARS = 100_000;
+const WAIT_MAX_EXPRESSION_CHARS = 100_000;
 
 const conditionSchema = z.strictObject({
     selector  : z.string().min(1).max(WAIT_MAX_SELECTOR_CHARS).optional().describe("CSS selector to wait for."),
@@ -41,9 +41,9 @@ const conditionSchema = z.strictObject({
     ms        : z.number().int().min(1).max(WAIT_MAX_SLEEP_MS).optional().describe("Plain sleep in ms, up to 60000."),
 });
 
-export type WaitCondition = z.infer<typeof conditionSchema>;
+type WaitCondition = z.infer<typeof conditionSchema>;
 
-export const WAIT_REGISTRY = "__chromiumDevtoolsMcpWaits";
+const WAIT_REGISTRY = "__chromiumDevtoolsMcpWaits";
 
 function waitPrelude(token: string): string {
     return `const waits = (globalThis[${JSON.stringify(WAIT_REGISTRY)}] ??= new Map());
@@ -64,12 +64,6 @@ function waitPrelude(token: string): string {
 
 export function cancelWaitScript(token: string): string {
     return `(() => { const stop = globalThis[${JSON.stringify(WAIT_REGISTRY)}]?.get(${JSON.stringify(token)}); if (stop) stop(); })()`;
-}
-
-export interface SelectorDetail {
-    matched: number;
-    visible: number;
-    capped : boolean;
 }
 
 export function selectorScript(
@@ -186,7 +180,7 @@ const waitResultSchema = z.object({
     }),
 });
 
-export interface WaitOutcome {
+interface WaitOutcome {
     met   : boolean;
     detail: unknown;
 }

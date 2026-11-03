@@ -2,7 +2,7 @@ import { z } from "zod";
 import { IpcCancelledError } from "../../daemon/index.js";
 import type { DaemonAccess } from "../../mcp/index.js";
 
-export const EMULATION_READ_TIMEOUT_MS = 5000;
+const EMULATION_READ_TIMEOUT_MS = 5000;
 
 export const DEVICE_READ_EXPRESSION = `(() => ({
   innerWidth: window.innerWidth,
@@ -56,7 +56,7 @@ const mediaReadSchema = z.strictObject({
     }),
 });
 
-export interface MediaRead {
+interface MediaRead {
     colorScheme  : string;
     reducedMotion: string;
     contrast     : string;
@@ -81,7 +81,7 @@ const localeReadSchema = z.strictObject({
     }),
 });
 
-export interface LocaleRead {
+interface LocaleRead {
     language : string;
     timezone?: string | undefined;
     formatted: string;

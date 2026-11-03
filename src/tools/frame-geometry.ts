@@ -6,7 +6,7 @@ import { ToolError } from "./errors.js";
 import { bindAccess } from "./frame-scope.js";
 import type { FrameInfo, FrameState } from "./frames.js";
 
-export interface FrameTransform {
+interface FrameTransform {
     x     : number;
     y     : number;
     scaleX: number;
@@ -74,7 +74,7 @@ function boundsOf(quad: number[]): Bounds {
     };
 }
 
-export interface OwnerGeometry {
+interface OwnerGeometry {
     transform   : FrameTransform;
     borderOffset: Point;
 }
@@ -99,7 +99,7 @@ export interface FrameLink {
     backendNodeId: number;
 }
 
-export interface FrameChain {
+interface FrameChain {
     links: FrameLink[];
 }
 
@@ -228,7 +228,7 @@ async function ownerModel(
     };
 }
 
-export interface MeasuredChain {
+interface MeasuredChain {
     steps: FrameTransform[];
     boxes: Rect[];
     toTop: FrameTransform;
@@ -320,7 +320,7 @@ const coverSchema = z.object({
     }),
 });
 
-export type OuterHit =
+type OuterHit =
     | { kind: "hit" }
     | { kind: "outside" }
     | { kind: "covered"; by: { tag: string; id: string; classes: string[] } };

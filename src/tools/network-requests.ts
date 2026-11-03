@@ -3,17 +3,17 @@ import { type NetworkFilter, type UrlPattern, compileUrlPattern } from "./captur
 import { defineTool } from "./define-tool.js";
 import { ToolError } from "./errors.js";
 
-export const NETWORK_REQUESTS_DEFAULT_LIMIT = 50;
+const NETWORK_REQUESTS_DEFAULT_LIMIT = 50;
 
-export const NETWORK_REQUESTS_MAX_LIMIT = 300;
+const NETWORK_REQUESTS_MAX_LIMIT = 300;
 
-export const NETWORK_URL_CONTAINS_MAX_CHARS = 1024;
+const NETWORK_URL_CONTAINS_MAX_CHARS = 1024;
 
-export const NETWORK_URL_REGEX_MAX_CHARS = 200;
+const NETWORK_URL_REGEX_MAX_CHARS = 200;
 
-export const NETWORK_LIST_MAX_ITEMS = 50;
+const NETWORK_LIST_MAX_ITEMS = 50;
 
-export const NETWORK_LIST_ITEM_MAX_CHARS = 64;
+const NETWORK_LIST_ITEM_MAX_CHARS = 64;
 
 const networkEntrySchema = z.strictObject({
     id             : z.number().describe("Monotonic record id for afterId paging and network_response_body."),

@@ -8,7 +8,7 @@ import { ToolError } from "./errors.js";
 import { bindAccess } from "./frame-scope.js";
 import { truncateText } from "./result.js";
 
-export const SNAPSHOT_DEFAULT_CHARS = 50_000;
+const SNAPSHOT_DEFAULT_CHARS = 50_000;
 
 export const SNAPSHOT_MAX_CHARS = 200_000;
 
@@ -18,11 +18,11 @@ export const SNAPSHOT_MAX_AX_DEPTH = 50;
 
 export const SNAPSHOT_MAX_AX_NODES = 20_000;
 
-export const SNAPSHOT_DOM_ATTRS = ["href", "src", "type", "placeholder", "id"];
+const SNAPSHOT_DOM_ATTRS = ["href", "src", "type", "placeholder", "id"];
 
-export const SNAPSHOT_DEFAULT_MAX_FRAMES = 20;
+const SNAPSHOT_DEFAULT_MAX_FRAMES = 20;
 
-export const SNAPSHOT_MAX_FRAMES_LIMIT = 50;
+const SNAPSHOT_MAX_FRAMES_LIMIT = 50;
 
 interface DomNodeShape {
     backendNodeId?  : unknown;
@@ -118,7 +118,7 @@ export function iframeFrameMap(root: unknown): Map<number, string> {
     return map;
 }
 
-export function limitAxNodes(
+function limitAxNodes(
     nodes      : AxNode[],
     detectDepth: boolean,
 ): { nodes: AxNode[]; limited: boolean } {
@@ -135,7 +135,7 @@ export function limitAxNodes(
     return { nodes: kept, limited: cut };
 }
 
-export function domDepthLimited(root: unknown): boolean {
+function domDepthLimited(root: unknown): boolean {
     const parsed = documentSchema.safeParse(root);
 
     if (!parsed.success) return false;

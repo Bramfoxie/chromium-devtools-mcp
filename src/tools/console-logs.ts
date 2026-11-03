@@ -2,9 +2,9 @@ import { z } from "zod";
 import { defineTool } from "./define-tool.js";
 import { ToolError } from "./errors.js";
 
-export const CONSOLE_LOGS_DEFAULT_LIMIT = 100;
+const CONSOLE_LOGS_DEFAULT_LIMIT = 100;
 
-export const CONSOLE_LOGS_MAX_LIMIT = 500;
+const CONSOLE_LOGS_MAX_LIMIT = 500;
 
 const levelSchema = z.enum(["debug", "info", "warning", "error"]);
 

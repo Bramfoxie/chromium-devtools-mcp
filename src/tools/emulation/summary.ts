@@ -34,7 +34,7 @@ export const emulationSummarySchema = z.strictObject({
     }).optional().describe("Locale overrides, when set."),
 });
 
-export type EmulationSummary = z.infer<typeof emulationSummarySchema>;
+type EmulationSummary = z.infer<typeof emulationSummarySchema>;
 
 export function summarizeEmulation(state: TabEmulation): EmulationSummary {
     return {

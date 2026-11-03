@@ -14,7 +14,7 @@ import { readMedia } from "./reads.js";
 import { runSteps } from "./steps.js";
 import { emulationSummarySchema, summarizeEmulation } from "./summary.js";
 
-export function checkMediaSelection(
+function checkMediaSelection(
     selection: Partial<MediaSelection> & { reset: boolean },
 ): void {
     if (selection.reset && hasMediaSelection({ ...selection, reset: false })) {

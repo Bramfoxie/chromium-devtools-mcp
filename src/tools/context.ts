@@ -13,7 +13,7 @@ import { InterceptionManager } from "./mock/interception.js";
 
 export type { ToolClock, ToolContext };
 
-export interface KnownTab {
+interface KnownTab {
     targetId: string;
     url     : string;
     title   : string;
@@ -53,7 +53,7 @@ export class SessionTabs {
     }
 }
 
-export interface ToolRuntimeOptions {
+interface ToolRuntimeOptions {
     access    : DaemonAccess;
     config    : Config;
     clock?    : ToolClock;

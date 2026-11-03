@@ -6,24 +6,24 @@ import { ErrorCode, RpcError } from "../daemon/index.js";
 import type { ToolClock } from "./define-tool.js";
 import { ToolError } from "./errors.js";
 
-export const DIALOG_EVENTS = [
+const DIALOG_EVENTS = [
     "Page.javascriptDialogOpening",
     "Page.javascriptDialogClosed",
 ] as const;
 
-export const DIALOG_MESSAGE_CLIP = 2000;
+const DIALOG_MESSAGE_CLIP = 2000;
 
-export const DIALOG_HISTORY_MESSAGE_CLIP = 200;
+const DIALOG_HISTORY_MESSAGE_CLIP = 200;
 
 export const DIALOG_HISTORY_LIMIT = 50;
 
-export const DIALOG_ENABLE_TIMEOUT_MS = 3000;
+const DIALOG_ENABLE_TIMEOUT_MS = 3000;
 
-export type DialogPolicy = "none" | "accept" | "dismiss";
+type DialogPolicy = "none" | "accept" | "dismiss";
 
-export type DialogResolution = "accept" | "dismiss" | "policy" | "closed";
+type DialogResolution = "accept" | "dismiss" | "policy" | "closed";
 
-export interface OpenDialog {
+interface OpenDialog {
     type             : string;
     message          : string;
     defaultPrompt?   : string;
@@ -31,7 +31,7 @@ export interface OpenDialog {
     hasBrowserHandler: boolean;
 }
 
-export interface DialogHistoryEntry {
+interface DialogHistoryEntry {
     type    : string;
     message : string;
     url     : string;
@@ -49,12 +49,12 @@ interface TabDialogs {
     resolveOutcome: DialogResolution | undefined;
 }
 
-export interface DialogStateOptions {
+interface DialogStateOptions {
     access: DaemonAccess;
     clock : ToolClock;
 }
 
-export interface DialogResolveResult {
+interface DialogResolveResult {
     handled: boolean;
     stale  : boolean;
 }

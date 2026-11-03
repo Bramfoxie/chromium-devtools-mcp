@@ -2,13 +2,13 @@ import vm from "node:vm";
 import { z } from "zod";
 import { ToolError } from "../errors.js";
 
-export const REDACTED = "[redacted]";
+const REDACTED = "[redacted]";
 
-export const NETWORK_REGEX_MAX_CHARS = 200;
+const NETWORK_REGEX_MAX_CHARS = 200;
 
-export const NETWORK_URL_MATCH_CHARS = 2048;
+const NETWORK_URL_MATCH_CHARS = 2048;
 
-export const NETWORK_REGEX_TIMEOUT_MS = 50;
+const NETWORK_REGEX_TIMEOUT_MS = 50;
 
 const SENSITIVE_WORDS = new Set([
     "token",
@@ -259,13 +259,13 @@ function msBetween(start: number | undefined, end: number): number | undefined {
     return Math.max(0, Math.round((end - start) * 1000));
 }
 
-export interface NetworkReduction {
+interface NetworkReduction {
     record    : NetworkRecord;
     created   : boolean;
     redirected: boolean;
 }
 
-export type NetworkLookup = (requestId: string) => NetworkRecord | undefined;
+type NetworkLookup = (requestId: string) => NetworkRecord | undefined;
 
 export function reduceNetworkEvent(
     event : string,

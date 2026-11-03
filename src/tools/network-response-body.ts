@@ -5,9 +5,9 @@ import { defineTool } from "./define-tool.js";
 import { ToolError } from "./errors.js";
 import { truncateText } from "./result.js";
 
-export const RESPONSE_BODY_DEFAULT_CHARS = 50_000;
+const RESPONSE_BODY_DEFAULT_CHARS = 50_000;
 
-export const RESPONSE_BODY_MAX_CHARS = 500_000;
+const RESPONSE_BODY_MAX_CHARS = 500_000;
 
 const TEXT_MIME_PREFIXES = ["text/", "application/json", "application/xml", "image/svg"];
 

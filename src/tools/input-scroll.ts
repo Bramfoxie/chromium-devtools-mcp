@@ -15,21 +15,21 @@ import { frameChain, revealChain } from "./frame-geometry.js";
 import { summarizeTarget, targetSummarySchema } from "./input-click.js";
 import { throwIfCancelled } from "./registry.js";
 
-export const SCROLL_DELTA_MAX = 20000;
+const SCROLL_DELTA_MAX = 20000;
 
-export const WHEEL_SETTLE_MS = 350;
+const WHEEL_SETTLE_MS = 350;
 
-export const EDGE_WHEEL_LIMIT = 50;
+const EDGE_WHEEL_LIMIT = 50;
 
-export const EDGE_STALL_MS = 5000;
+const EDGE_STALL_MS = 5000;
 
-export const SCROLL_BLOCKS = ["start", "center", "end", "nearest"] as const;
+const SCROLL_BLOCKS = ["start", "center", "end", "nearest"] as const;
 
-export type ScrollBlock = (typeof SCROLL_BLOCKS)[number];
+type ScrollBlock = (typeof SCROLL_BLOCKS)[number];
 
-export const SCROLL_EDGES = ["top", "bottom"] as const;
+const SCROLL_EDGES = ["top", "bottom"] as const;
 
-export type ScrollEdge = (typeof SCROLL_EDGES)[number];
+type ScrollEdge = (typeof SCROLL_EDGES)[number];
 
 export interface ScrollPosition {
     x     : number;
@@ -40,7 +40,7 @@ export interface ScrollPosition {
     height: number;
 }
 
-export const SCROLL_STATE_EXPRESSION = `(() => ({
+const SCROLL_STATE_EXPRESSION = `(() => ({
   x: Math.round(window.scrollX),
   y: Math.round(window.scrollY),
   maxX: Math.max(0, document.documentElement.scrollWidth - window.innerWidth),
@@ -98,7 +98,7 @@ export function wheelParams(
     };
 }
 
-export interface WheelScrollResult {
+interface WheelScrollResult {
     position: ScrollPosition;
     method  : "wheel";
 }
@@ -261,7 +261,7 @@ export const inputScroll = defineTool({
     },
 });
 
-export const SCROLL_INTO_VIEW_EXPRESSION = "function (element, block) { element.scrollIntoView({ block: String(block), inline: \"nearest\" }); }";
+const SCROLL_INTO_VIEW_EXPRESSION = "function (element, block) { element.scrollIntoView({ block: String(block), inline: \"nearest\" }); }";
 
 async function scrollToElement(
     context : ToolContext,
