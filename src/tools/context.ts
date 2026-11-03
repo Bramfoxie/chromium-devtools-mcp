@@ -6,6 +6,7 @@ import type { KnownTab, ToolClock, ToolContext } from "./define-tool.js";
 import { DialogState } from "./dialogs.js";
 import { ElementRegistry } from "./element-target.js";
 import { type ArtifactStore, noArtifacts } from "./artifacts.js";
+import { WebAuthnState } from "./webauthn-state.js";
 import { ScreencastRecorder } from "./perf/screencast-recorder.js";
 import { findBrowserExecutable } from "../browser/discovery.js";
 import { TraceRecorder } from "./perf/trace-recorder.js";
@@ -88,6 +89,7 @@ export class ToolRuntime {
     readonly screencast: ScreencastRecorder;
     readonly video     : VideoTools;
     readonly lighthouse: LighthouseTools;
+    readonly webauthn  : WebAuthnState;
     readonly artifacts : ArtifactStore;
     readonly confirm   : Confirmer | undefined;
 
@@ -117,6 +119,7 @@ export class ToolRuntime {
         this.artifacts = options.artifacts ?? noArtifacts;
         this.trace = new TraceRecorder(options.access, this.clock);
         this.screencast = new ScreencastRecorder(options.access, this.clock);
+        this.webauthn = new WebAuthnState();
         this.video = options.video ?? nodeVideoTools(process.env, process.platform);
         this.lighthouse = options.lighthouse ??
             nodeLighthouseTools(process.env, process.platform, () => {
@@ -154,6 +157,8 @@ export class ToolRuntime {
         const mock = this.mock.forget(targetId);
         const trace = this.trace.forget(targetId);
         const screencast = this.screencast.forget(targetId);
+
+        this.webauthn.forget(targetId);
         const origin = this.emulation.snapshot(targetId).geolocation?.origin;
 
         this.emulation.forget(targetId);
@@ -179,6 +184,8 @@ export class ToolRuntime {
         const trace = this.trace.reset();
         const screencast = this.screencast.reset();
 
+        this.webauthn.reset();
+
         this.emulation.reset();
         await mock;
         await trace;
@@ -203,6 +210,7 @@ export class ToolRuntime {
             screencast: this.screencast,
             video     : this.video,
             lighthouse: this.lighthouse,
+            webauthn  : this.webauthn,
             artifacts : this.artifacts,
             config    : this.config,
             clock     : this.clock,

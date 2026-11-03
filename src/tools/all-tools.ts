@@ -29,6 +29,7 @@ import { pageDialogs } from "./page-dialogs.js";
 import { pagePdf } from "./page-pdf.js";
 import { storageRead } from "./storage-read.js";
 import { storageWrite } from "./storage-write.js";
+import { webauthn } from "./webauthn.js";
 import { pageWait } from "./page-wait.js";
 import { screenshot } from "./screenshot.js";
 import { pageInfo } from "./page-info.js";
@@ -65,6 +66,7 @@ export const allTools: AnyTool[] = [
     screencastStart,
     screencastStop,
     lighthouseAudit,
+    webauthn,
     screenshot,
     listDevices,
     emulateDevice,

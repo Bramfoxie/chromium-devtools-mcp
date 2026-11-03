@@ -63,6 +63,7 @@ const MUTATING: Case[] = [
     ["input_drag", { from: { selector: "body" }, to: { x: 1, y: 1 } }],
     ["perf_trace_start", { reload: true }],
     ["lighthouse_audit", { url: "https://example.com/" }],
+    ["webauthn", { action: "add_authenticator" }],
 ];
 
 const READING: Case[] = [
@@ -87,6 +88,7 @@ const READING: Case[] = [
     ["heap_snapshot", {}],
     ["screencast_start", {}],
     ["screencast_stop", {}],
+    ["webauthn", { action: "list_authenticators" }],
     ["screenshot", {}],
     ["list_devices", {}],
 ];

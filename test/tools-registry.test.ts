@@ -81,6 +81,8 @@ function minimalArgs(name: string): Record<string, unknown> {
             return { target: { selector: "select" }, indexes: [0] };
         case "input_upload":
             return { target: { selector: "input" }, files: ["/tmp/a.png"] };
+        case "webauthn":
+            return { action: "add_authenticator" };
         case "fill_form":
             return { fields: [{ target: { selector: "input" }, value: "x" }] };
         case "input_drag":
@@ -100,7 +102,7 @@ const readOnly: Config = {
 };
 
 describe("tool declarations", () => {
-    it("declares forty five tools with unique names, descriptions and access", () => {
+    it("declares forty six tools with unique names, descriptions and access", () => {
         expect(allTools.map((tool) => tool.name)).toEqual([
             "list_tabs",
             "list_sessions",
@@ -130,6 +132,7 @@ describe("tool declarations", () => {
             "screencast_start",
             "screencast_stop",
             "lighthouse_audit",
+            "webauthn",
             "screenshot",
             "list_devices",
             "emulate_device",
@@ -366,6 +369,7 @@ describe("open world annotation", () => {
         "screencast_start",
         "screencast_stop",
         "select_tab",
+        "webauthn",
     ];
 
     it("is true for tools that reach pages and false for session, tab and emulation control", async () => {
@@ -603,7 +607,7 @@ describe("runTool", () => {
 });
 
 describe("tools/list", () => {
-    it("lists exactly the forty five tools with their schemas", async () => {
+    it("lists exactly the forty six tools with their schemas", async () => {
         const server = createMcpServer("1.0.0");
 
         registerTools({ server, tools: allTools, runtime: runtime() });
@@ -642,6 +646,7 @@ describe("tools/list", () => {
             "screencast_start",
             "screencast_stop",
             "lighthouse_audit",
+            "webauthn",
             "screenshot",
             "list_devices",
             "emulate_device",

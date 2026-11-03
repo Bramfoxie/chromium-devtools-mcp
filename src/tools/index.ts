@@ -70,6 +70,10 @@ export { bringToFront } from "./bring-to-front.js";
 
 export { fillForm } from "./fill-form.js";
 
+export { webauthn } from "./webauthn.js";
+
+export { WebAuthnState } from "./webauthn-state.js";
+
 export { heapSnapshot } from "./perf/heap-snapshot.js";
 
 export { lighthouseAudit } from "./perf/lighthouse.js";
