@@ -391,11 +391,14 @@ export class ClientSession {
 
         this.tabs.clear();
 
+        const claimed = new Set<string>();
+
         for (const [targetId, tab] of entries) {
             for (const entry of tab.subscriptions.values()) entry.off();
 
             if (!tab.created && this.contextId === undefined) {
                 this.registry.releaseOwner(targetId, this);
+                claimed.add(targetId);
             }
         }
 
@@ -412,7 +415,9 @@ export class ClientSession {
         try {
             await Promise.all([this.dispose(entries), within(detaches, DETACH_GRACE_MS)]);
         } finally {
-            for (const [targetId] of entries) this.registry.releaseOwner(targetId, this);
+            for (const [targetId] of entries) {
+                if (!claimed.has(targetId)) this.registry.releaseOwner(targetId, this);
+            }
         }
     }
 
