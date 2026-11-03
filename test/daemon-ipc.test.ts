@@ -142,7 +142,9 @@ describe("handshake", () => {
         await raw.closed;
         expect(raw.lines).toEqual([]);
         expect(server.ready).toEqual([]);
-        expect(stderr).toHaveBeenCalled();
+        expect(stderr).toHaveBeenCalledWith(
+            expect.stringContaining("rejected a daemon connection"),
+        );
     });
 
     it("drops a client that never sends a hello", async () => {
@@ -656,7 +658,7 @@ describe("events", () => {
         server.ready[0]?.sendEvent("tick");
         await client.request("echo");
         expect(good).toHaveBeenCalledTimes(1);
-        expect(stderr).toHaveBeenCalled();
+        expect(stderr).toHaveBeenCalledWith(expect.stringContaining('a handler for "tick" threw'));
     });
 
     it("drops an event that cannot be encoded and logs it", async () => {
@@ -673,7 +675,7 @@ describe("events", () => {
         server.ready[0]?.sendEvent("tick", { n: 1 });
         await client.request("echo");
         expect(seen).toEqual([{ n: 1 }]);
-        expect(stderr).toHaveBeenCalled();
+        expect(stderr).toHaveBeenCalledWith(expect.stringContaining('could not encode event "tick"'));
     });
 });
 

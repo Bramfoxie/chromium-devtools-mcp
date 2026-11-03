@@ -91,7 +91,7 @@ describe("FrameState", () => {
 
         emit(fake, "Page.frameNavigated", { frame: { id: "cross", parentId: "main" } });
         expect(frames.generation("tab1", "cross")).toBe(1);
-        expect(frames.frameOf("tab1", "cross")).toBeDefined();
+        expect(frames.frameOf("tab1", "cross")).toMatchObject({ frameId: "cross", parentFrameId: "main" });
 
         emit(fake, "Page.frameDetached", { frameId: "cross" });
         expect(frames.generation("tab1", "cross")).toBe(2);
@@ -159,7 +159,7 @@ describe("FrameState", () => {
 
         await frames.ensure("tab1");
         emit(fake, "Page.frameDetached", { frameId: "cross" }, "tab2");
-        expect(frames.frameOf("tab1", "cross")).toBeDefined();
+        expect(frames.frameOf("tab1", "cross")).toMatchObject({ frameId: "cross", parentFrameId: "main" });
 
         frames.forget("tab1");
         expect(frames.framesOf("tab1")).toEqual([]);

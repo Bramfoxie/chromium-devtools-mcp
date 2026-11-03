@@ -114,7 +114,9 @@ describe("ElementRegistry", () => {
         const uids = elements.assign("tab1", nodes);
 
         expect(uids.every((uid) => uid !== undefined)).toBe(true);
-        expect(elements.lookup("tab1", `0_${MAX_UIDS_PER_TAB + 5}`)).toBeDefined();
+        expect(elements.lookup("tab1", `0_${MAX_UIDS_PER_TAB + 5}`)).toMatchObject({
+            backendNodeId: MAX_UIDS_PER_TAB + 5,
+        });
         expect(elements.lookup("tab1", "0_1")).toBeUndefined();
         elements.reset();
 
@@ -127,7 +129,7 @@ describe("ElementRegistry", () => {
         const [first] = elements.assign("tab1", [{ backendNodeId: 7 }]);
         const [second] = elements.assign("tab1", [{ backendNodeId: 7 }]);
 
-        expect(first).toBeDefined();
+        expect(first).toBe("0_1");
         expect(second).toBe(first);
     });
 });

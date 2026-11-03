@@ -237,7 +237,7 @@ describe("acquireInstance with a fake socket layer", () => {
                     () => undefined,
                     deps,
                 ),
-            ).resolves.toBeDefined();
+            ).resolves.toEqual(expect.objectContaining({ release: expect.any(Function) }));
             await expect(
                 acquireInstance(
                     options({ platform, socketPath: make(tooLong), runtimeDir: undefined }),

@@ -126,7 +126,7 @@ describe("session safety in the daemon", () => {
 
         expect(error?.code).toBe(ErrorCode.forbiddenMethod);
         expect(backend.log.join("\n")).not.toContain("attach");
-        await expect(session.send({ targetId: tab, method: "Page.navigate", params: { url: "https://example.com/" } })).resolves.toBeDefined();
+        await expect(session.send({ targetId: tab, method: "Page.navigate", params: { url: "https://example.com/" } })).resolves.toMatchObject({ echoed: "Page.navigate" });
     });
 
     it("enforces the cookie and file policy with the real tab URL", async () => {
@@ -139,7 +139,7 @@ describe("session safety in the daemon", () => {
 
         await expect(
             session.send({ targetId: tab, method: "Network.setCookie", params: { name: "a", value: "b", url: "https://example.com/" }, confirmed: true }),
-        ).resolves.toBeDefined();
+        ).resolves.toMatchObject({ echoed: "Network.setCookie" });
 
         const stranger = await failure(
             session.send({ targetId: tab, method: "Network.setCookie", params: { name: "a", value: "b", domain: "evil.test" }, confirmed: true }),

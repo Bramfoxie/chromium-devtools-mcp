@@ -92,7 +92,7 @@ describe("session handling", () => {
         expect((await failure(client.request("tab.create", { url: "https://evil.test/" }))).code).toBe(
             ErrorCode.forbiddenMethod,
         );
-        await expect(client.request("tab.create", { url: "https://example.com/" })).resolves.toBeDefined();
+        await expect(client.request("tab.create", { url: "https://example.com/" })).resolves.toEqual({ targetId: expect.stringMatching(/^tab/) });
     });
 
     it("rejects malformed safety options", async () => {
@@ -425,7 +425,7 @@ describe("commands and events", () => {
 
         expect(error.code).toBe(ErrorCode.resultTooLarge);
         expect(error.message).toContain("32 MiB");
-        await expect(client.request("tab.list")).resolves.toBeDefined();
+        await expect(client.request("tab.list")).resolves.toEqual({ tabs: expect.any(Array) });
     });
 
     it("allows Page.bringToFront when the daemon runs with allowFocus", async () => {
@@ -437,7 +437,7 @@ describe("commands and events", () => {
 
         await expect(
             client.request("cdp.send", { targetId, method: "Page.bringToFront" }),
-        ).resolves.toBeDefined();
+        ).resolves.toMatchObject({ echoed: "Page.bringToFront" });
     });
 
     it("delivers subscribed events and tab.closed to the client", async () => {
@@ -486,7 +486,7 @@ describe("client lifetime", () => {
         await vi.waitFor(() => expect(backend.contexts.size).toBe(1));
         await expect(
             staying.request("cdp.send", { targetId, method: "Page.enable" }),
-        ).resolves.toBeDefined();
+        ).resolves.toMatchObject({ echoed: "Page.enable" });
     });
 
     it("closes every session on shutdown", async () => {
@@ -569,6 +569,6 @@ describe("frame addressing through the daemon", () => {
                 stranger.request("cdp.send", { targetId, method: "Page.enable", frameId: "cross" }),
             )).code,
         ).toBe(ErrorCode.notOwned);
-        await expect(client.request("frame.list", { targetId })).resolves.toBeDefined();
+        await expect(client.request("frame.list", { targetId })).resolves.toEqual({ frames: expect.any(Array) });
     });
 });

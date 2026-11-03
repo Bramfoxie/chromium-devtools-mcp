@@ -199,7 +199,7 @@ describe("daemon status across the attach phases", () => {
 
         await vi.waitFor(async () => expect((await status()).state).toBe("ready"), { timeout: 5000 });
         expect((await status()).message).toBeUndefined();
-        await expect(client.request("session.open", {})).resolves.toBeDefined();
+        await expect(client.request("session.open", {})).resolves.toEqual({ isolated: false });
 
         const log = lines.join("");
 

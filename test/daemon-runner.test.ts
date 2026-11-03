@@ -512,7 +512,7 @@ describe("browser failure", () => {
         const client = await connect(layout);
 
         await ready(client);
-        await expect(client.request("session.open", { isolated: false })).resolves.toBeDefined();
+        await expect(client.request("session.open", { isolated: false })).resolves.toEqual({ isolated: false });
         await second.stop();
     });
 

@@ -256,7 +256,7 @@ describe("requests", () => {
 
         expect(failure).toBeInstanceOf(CdpClosedError);
         expect((failure as Error).message).toContain("socket is closed");
-        expect(timers).toHaveBeenCalled();
+        expect(timers).toHaveBeenCalledTimes(1);
     });
 });
 
@@ -842,6 +842,6 @@ describe("onClose", () => {
         client.onClose(good);
         await client.close();
         expect(good).toHaveBeenCalledTimes(1);
-        expect(stderr).toHaveBeenCalled();
+        expect(stderr).toHaveBeenCalledWith(expect.stringContaining("a close handler threw: boom"));
     });
 });

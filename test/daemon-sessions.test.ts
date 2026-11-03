@@ -94,7 +94,7 @@ describe("opening sessions", () => {
 
         backend.failures.createContext = [new Error("denied")];
         expect(await code(open("a", true))).toBe("other");
-        await expect(open("a", true)).resolves.toBeDefined();
+        await expect(open("a", true)).resolves.toMatchObject({ isolated: true });
     });
 });
 
@@ -304,7 +304,7 @@ describe("tab ownership", () => {
 
         backend.failures.closeTarget = [new Error("nope")];
         expect(await code(a.closeTab(tab))).toBe("other");
-        await expect(a.send({ targetId: tab, method: "Page.enable" })).resolves.toBeDefined();
+        await expect(a.send({ targetId: tab, method: "Page.enable" })).resolves.toMatchObject({ echoed: "Page.enable" });
         await expect(a.closeTab(tab)).resolves.toBeUndefined();
     });
 
@@ -578,7 +578,7 @@ describe("sending commands", () => {
 
         backend.failures.attach = [new Error("detached")];
         expect(await code(a.send({ targetId: tab, method: "Page.enable" }))).toBe("other");
-        await expect(a.send({ targetId: tab, method: "Page.enable" })).resolves.toBeDefined();
+        await expect(a.send({ targetId: tab, method: "Page.enable" })).resolves.toMatchObject({ echoed: "Page.enable" });
     });
 
     it.each([
@@ -610,7 +610,7 @@ describe("sending commands", () => {
         const a = await open("a");
         const tab = await a.createTab("about:blank");
 
-        await expect(a.send({ targetId: tab, method })).resolves.toBeDefined();
+        await expect(a.send({ targetId: tab, method })).resolves.toMatchObject({ echoed: method });
     });
 
     it("refuses to bring the window to the front unless allowFocus is on", async () => {
@@ -623,7 +623,7 @@ describe("sending commands", () => {
         const b = await on.open("b");
         const allowed = await b.createTab("about:blank");
 
-        await expect(b.send({ targetId: allowed, method: "Page.bringToFront" })).resolves.toBeDefined();
+        await expect(b.send({ targetId: allowed, method: "Page.bringToFront" })).resolves.toMatchObject({ echoed: "Page.bringToFront" });
     });
 });
 
@@ -1491,6 +1491,6 @@ describe("state shared with cross site frame sessions", () => {
 
         if (child) child.failure = new Error("gone");
 
-        await expect(a.send({ targetId: tab, method: "Network.enable", params: {} })).resolves.toBeDefined();
+        await expect(a.send({ targetId: tab, method: "Network.enable", params: {} })).resolves.toMatchObject({ echoed: "Network.enable" });
     });
 });
