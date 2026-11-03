@@ -59,7 +59,11 @@ async function queryOne(
     let found: unknown;
 
     try {
-        found = await access.send(tab, "DOM.querySelector", { nodeId, selector });
+        found = await access.send({
+            targetId: tab,
+            method  : "DOM.querySelector",
+            params  : { nodeId, selector },
+        });
     } catch (error) {
         if (error instanceof RpcError && error.code === ErrorCode.cdpError) {
             throw new ToolError(`The selector ${JSON.stringify(selector)} is invalid: ${error.message}`);
@@ -93,7 +97,11 @@ async function queryAll(
     let found: unknown;
 
     try {
-        found = await access.send(tab, "DOM.querySelectorAll", { nodeId, selector });
+        found = await access.send({
+            targetId: tab,
+            method  : "DOM.querySelectorAll",
+            params  : { nodeId, selector },
+        });
     } catch (error) {
         if (error instanceof RpcError && error.code === ErrorCode.cdpError) {
             throw new ToolError(`The selector ${JSON.stringify(selector)} is invalid: ${error.message}`);
@@ -123,7 +131,11 @@ export async function ambiguousFrameError(
 
     for (const [index, nodeId] of nodeIds.slice(0, MAX_FRAME_CANDIDATES).entries()) {
         const parsed = candidateSchema.safeParse(
-            await access.send(tab, "DOM.describeNode", { nodeId, depth: 1, pierce: true }),
+            await access.send({
+                targetId: tab,
+                method  : "DOM.describeNode",
+                params  : { nodeId, depth: 1, pierce: true },
+            }),
         );
 
         if (!parsed.success) continue;
@@ -155,7 +167,11 @@ async function resolveNodeId(
     let resolved: unknown;
 
     try {
-        resolved = await access.send(tab, "DOM.resolveNode", { nodeId });
+        resolved = await access.send({
+            targetId: tab,
+            method  : "DOM.resolveNode",
+            params  : { nodeId },
+        });
     } catch (error) {
         if (isCdpError(error)) {
             throw new ToolError(
@@ -177,7 +193,11 @@ async function resolveNodeId(
     const described = parseCdp(
         "DOM.describeNode",
         describedNodeSchema,
-        await access.send(tab, "DOM.describeNode", { nodeId, depth: 0 }),
+        await access.send({
+            targetId: tab,
+            method  : "DOM.describeNode",
+            params  : { nodeId, depth: 0 },
+        }),
     );
     const backendNodeId = described.node.backendNodeId;
 
@@ -235,7 +255,11 @@ async function scopeNode(
     const described = parseCdp(
         "DOM.describeNode",
         describedNodeSchema,
-        await access.send(tab, "DOM.describeNode", { nodeId: owner, depth: 1, pierce: true }),
+        await access.send({
+            targetId: tab,
+            method  : "DOM.describeNode",
+            params  : { nodeId: owner, depth: 1, pierce: true },
+        }),
     );
 
     if (described.node.nodeName !== "IFRAME" && described.node.nodeName !== "FRAME") {
@@ -301,7 +325,11 @@ async function frameContentNode(
     const document = parseCdp(
         "DOM.getDocument",
         piercedDocumentSchema,
-        await access.send(tab, "DOM.getDocument", { depth: -1, pierce: true }),
+        await access.send({
+            targetId: tab,
+            method  : "DOM.getDocument",
+            params  : { depth: -1, pierce: true },
+        }),
     );
 
     return findFrameContent(document.root, rootId, frameId);
@@ -402,7 +430,11 @@ async function resolveChain(
         const described = parseCdp(
             "DOM.describeNode",
             describedNodeSchema,
-            await access.send(tab, "DOM.describeNode", { nodeId: found, depth: 1, pierce: true }),
+            await access.send({
+                targetId: tab,
+                method  : "DOM.describeNode",
+                params  : { nodeId: found, depth: 1, pierce: true },
+            }),
         );
         const root = described.node.shadowRoots?.[0];
 
@@ -425,15 +457,27 @@ async function resolvePierced(
     tab     : string,
     selector: string,
 ): Promise<number> {
-    await access.send(tab, "DOM.enable", {});
-    await access.send(tab, "DOM.getDocument", { depth: -1, pierce: true });
+    await access.send({
+        targetId: tab,
+        method  : "DOM.enable",
+        params  : {},
+    });
+    await access.send({
+        targetId: tab,
+        method  : "DOM.getDocument",
+        params  : { depth: -1, pierce: true },
+    });
 
     const search = parseCdp(
         "DOM.performSearch",
         searchSchema,
-        await access.send(tab, "DOM.performSearch", {
-            query                    : selector,
-            includeUserAgentShadowDOM: true,
+        await access.send({
+            targetId: tab,
+            method  : "DOM.performSearch",
+            params  : {
+                query                    : selector,
+                includeUserAgentShadowDOM: true,
+            },
         }),
     );
 
@@ -447,10 +491,14 @@ async function resolvePierced(
         const results = parseCdp(
             "DOM.getSearchResults",
             searchResultsSchema,
-            await access.send(tab, "DOM.getSearchResults", {
-                searchId : search.searchId,
-                fromIndex: 0,
-                toIndex  : 1,
+            await access.send({
+                targetId: tab,
+                method  : "DOM.getSearchResults",
+                params  : {
+                    searchId : search.searchId,
+                    fromIndex: 0,
+                    toIndex  : 1,
+                },
             }),
         );
         const nodeId = results.nodeIds[0];
@@ -463,7 +511,11 @@ async function resolvePierced(
 
         return nodeId;
     } finally {
-        await access.send(tab, "DOM.discardSearchResults", { searchId: search.searchId }).catch(
+        await access.send({
+            targetId: tab,
+            method  : "DOM.discardSearchResults",
+            params  : { searchId: search.searchId },
+        }).catch(
             () => undefined,
         );
     }
@@ -479,7 +531,11 @@ export async function resolveBySelector(
     const document = parseCdp(
         "DOM.getDocument",
         documentSchema,
-        await access.send(tab, "DOM.getDocument", { depth: 0, pierce: false }),
+        await access.send({
+            targetId: tab,
+            method  : "DOM.getDocument",
+            params  : { depth: 0, pierce: false },
+        }),
     );
     const scope = await scopeNode(access, tab, document.root.nodeId, options.frame, frames);
     const chained = splitPierceChain(selector) !== undefined;

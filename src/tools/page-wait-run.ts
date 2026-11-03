@@ -41,34 +41,38 @@ export async function runScript(
 ): Promise<{ met: boolean; elapsedMs: number; detail: unknown }> {
     const margin = Math.min(WAIT_MARGIN_MAX_MS, Math.floor(timeoutMs / 4) + 1000);
     let result: unknown;
-    const cancelInPage = (): Promise<unknown> => context.access.send(
+    const cancelInPage = (): Promise<unknown> => context.access.send({
         targetId,
-        "Runtime.evaluate",
-        {
+        method: "Runtime.evaluate",
+        params: {
             expression: cancelWaitScript(token),
             ...(contextId === undefined ? {} : { contextId }),
         },
-        WAIT_CANCEL_TIMEOUT_MS,
-    ).catch(() => undefined);
+        timeoutMs: WAIT_CANCEL_TIMEOUT_MS,
+    }).catch(() => undefined);
     const onAbort = (): void => { void cancelInPage(); };
 
     context.signal.addEventListener("abort", onAbort, { once: true });
 
     try {
-        result = await context.access.send(
+        result = await context.access.send({
             targetId,
-            "Runtime.evaluate",
-            {
+            method: "Runtime.evaluate",
+            params: {
                 expression   : script,
                 returnByValue: true,
                 awaitPromise : true,
                 ...(contextId === undefined ? {} : { contextId }),
             },
-            timeoutMs + margin,
-        );
+            timeoutMs: timeoutMs + margin,
+        });
     } catch (error) {
         await cancelInPage();
-        await context.access.send(targetId, "Runtime.terminateExecution", {}).catch(() => undefined);
+        await context.access.send({
+            targetId,
+            method: "Runtime.terminateExecution",
+            params: {},
+        }).catch(() => undefined);
 
         throw error;
     } finally {
@@ -108,12 +112,12 @@ async function evaluateString(
     targetId  : string,
     expression: string,
 ): Promise<string | undefined> {
-    const result = await access.send(
+    const result = await access.send({
         targetId,
-        "Runtime.evaluate",
-        { expression, returnByValue: true },
-        WAIT_READ_TIMEOUT_MS,
-    ).catch(() => undefined);
+        method   : "Runtime.evaluate",
+        params   : { expression, returnByValue: true },
+        timeoutMs: WAIT_READ_TIMEOUT_MS,
+    }).catch(() => undefined);
     const parsed = z.object({
         result: z.object({ value: z.unknown().optional() }),
     }).safeParse(result);
@@ -250,9 +254,13 @@ export async function waitContext(
     }
 
     const world = waitWorldSchema.safeParse(
-        await context.access.send(targetId, "Page.createIsolatedWorld", {
-            frameId  : known.frameId,
-            worldName: "chromium-devtools-mcp-wait",
+        await context.access.send({
+            targetId,
+            method: "Page.createIsolatedWorld",
+            params: {
+                frameId  : known.frameId,
+                worldName: "chromium-devtools-mcp-wait",
+            },
         }),
     );
 

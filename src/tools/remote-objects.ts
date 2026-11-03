@@ -8,7 +8,11 @@ export async function releaseQuietly(
     for (const objectId of objectIds) {
         if (objectId === undefined) continue;
 
-        await access.send(tab, "Runtime.releaseObject", { objectId }).catch(() => undefined);
+        await access.send({
+            targetId: tab,
+            method  : "Runtime.releaseObject",
+            params  : { objectId },
+        }).catch(() => undefined);
     }
 }
 
@@ -17,5 +21,9 @@ export async function releaseGroupQuietly(
     tab        : string,
     objectGroup: string,
 ): Promise<void> {
-    await access.send(tab, "Runtime.releaseObjectGroup", { objectGroup }).catch(() => undefined);
+    await access.send({
+        targetId: tab,
+        method  : "Runtime.releaseObjectGroup",
+        params  : { objectGroup },
+    }).catch(() => undefined);
 }

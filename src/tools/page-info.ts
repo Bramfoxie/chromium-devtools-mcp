@@ -92,12 +92,12 @@ export const pageInfo = defineTool({
         let live: z.infer<typeof pageInfoValue> | undefined;
 
         try {
-            const result = await context.access.send(
+            const result = await context.access.send({
                 targetId,
-                "Runtime.evaluate",
-                { expression: pageInfoExpression, returnByValue: true },
-                PAGE_INFO_TIMEOUT_MS,
-            );
+                method   : "Runtime.evaluate",
+                params   : { expression: pageInfoExpression, returnByValue: true },
+                timeoutMs: PAGE_INFO_TIMEOUT_MS,
+            });
             const evaluated = evaluatedSchema.safeParse(result);
 
             if (evaluated.success && evaluated.data.result.type !== "undefined") {

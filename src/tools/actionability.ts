@@ -217,11 +217,15 @@ export async function elementState(
     tab    : string,
     element: ResolvedElement,
 ): Promise<ElementState> {
-    const result = await access.send(tab, "Runtime.callFunctionOn", {
-        functionDeclaration: STATE_EXPRESSION,
-        objectId           : element.objectId,
-        arguments          : [{ objectId: element.objectId }],
-        returnByValue      : true,
+    const result = await access.send({
+        targetId: tab,
+        method  : "Runtime.callFunctionOn",
+        params  : {
+            functionDeclaration: STATE_EXPRESSION,
+            objectId           : element.objectId,
+            arguments          : [{ objectId: element.objectId }],
+            returnByValue      : true,
+        },
     });
     const parsed = stateSchema.safeParse(result);
 
@@ -256,16 +260,20 @@ export async function hitTest(
     let result: unknown;
 
     try {
-        result = await access.send(tab, "Runtime.callFunctionOn", {
-            functionDeclaration: HIT_EXPRESSION,
-            objectId           : element.objectId,
-            arguments          : [
-                { objectId: element.objectId },
-                { value: point.x },
-                { value: point.y },
-                ...(local ? [{ value: true }] : []),
-            ],
-            returnByValue: true,
+        result = await access.send({
+            targetId: tab,
+            method  : "Runtime.callFunctionOn",
+            params  : {
+                functionDeclaration: HIT_EXPRESSION,
+                objectId           : element.objectId,
+                arguments          : [
+                    { objectId: element.objectId },
+                    { value: point.x },
+                    { value: point.y },
+                    ...(local ? [{ value: true }] : []),
+                ],
+                returnByValue: true,
+            },
         });
     } catch (error) {
         if (!local && isCrossOriginHitTest(error)) {
@@ -310,9 +318,13 @@ async function isolatedHitTest(
     point : { x: number; y: number },
 ): Promise<HitResult> {
     const stack = stackEntriesOf(
-        await access.send(tab, "Runtime.evaluate", {
-            expression   : stackExpression(point),
-            returnByValue: true,
+        await access.send({
+            targetId: tab,
+            method  : "Runtime.evaluate",
+            params  : {
+                expression   : stackExpression(point),
+                returnByValue: true,
+            },
         }),
     );
 

@@ -69,9 +69,17 @@ export async function isolatedDocumentNode(
     tab    : string,
     frameId: string,
 ): Promise<number | undefined> {
-    const tree = frameTreeSchema.safeParse(await bound.send(tab, "Page.getFrameTree", {}));
+    const tree = frameTreeSchema.safeParse(await bound.send({
+        targetId: tab,
+        method  : "Page.getFrameTree",
+        params  : {},
+    }));
     const document = documentSchema.safeParse(
-        await bound.send(tab, "DOM.getDocument", { depth: -1, pierce: true }),
+        await bound.send({
+            targetId: tab,
+            method  : "DOM.getDocument",
+            params  : { depth: -1, pierce: true },
+        }),
     );
 
     if (!document.success) return undefined;

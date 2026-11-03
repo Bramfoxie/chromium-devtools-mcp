@@ -104,18 +104,22 @@ export const pagePdf = defineTool({
         let printed: unknown;
 
         try {
-            printed = await context.access.send(targetId, "Page.printToPDF", {
-                landscape        : args.landscape ?? false,
-                printBackground  : args.printBackground ?? true,
-                scale            : args.scale ?? 1,
-                paperWidth       : args.paperWidth ?? PDF_A4_WIDTH_INCHES,
-                paperHeight      : args.paperHeight ?? PDF_A4_HEIGHT_INCHES,
-                marginTop        : margins.top,
-                marginBottom     : margins.bottom,
-                marginLeft       : margins.left,
-                marginRight      : margins.right,
-                ...(args.pageRanges === undefined ? {} : { pageRanges: args.pageRanges }),
-                preferCSSPageSize: args.preferCSSPageSize ?? false,
+            printed = await context.access.send({
+                targetId,
+                method: "Page.printToPDF",
+                params: {
+                    landscape        : args.landscape ?? false,
+                    printBackground  : args.printBackground ?? true,
+                    scale            : args.scale ?? 1,
+                    paperWidth       : args.paperWidth ?? PDF_A4_WIDTH_INCHES,
+                    paperHeight      : args.paperHeight ?? PDF_A4_HEIGHT_INCHES,
+                    marginTop        : margins.top,
+                    marginBottom     : margins.bottom,
+                    marginLeft       : margins.left,
+                    marginRight      : margins.right,
+                    ...(args.pageRanges === undefined ? {} : { pageRanges: args.pageRanges }),
+                    preferCSSPageSize: args.preferCSSPageSize ?? false,
+                },
             });
         } catch (error) {
             if (!(error instanceof RpcError) || error.code !== ErrorCode.cdpError) throw error;

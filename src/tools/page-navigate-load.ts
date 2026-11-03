@@ -205,14 +205,26 @@ export async function navigateAndWait(
 
         if (keepPage) {
             await context.access
-                .send(targetId, "Page.setLifecycleEventsEnabled", { enabled: false })
+                .send({
+                    targetId,
+                    method: "Page.setLifecycleEventsEnabled",
+                    params: { enabled: false },
+                })
                 .catch(() => undefined);
         } else {
-            await context.access.send(targetId, "Page.disable", {}).catch(() => undefined);
+            await context.access.send({
+                targetId,
+                method: "Page.disable",
+                params: {},
+            }).catch(() => undefined);
         }
 
         if (!keepNetwork) {
-            await context.access.send(targetId, "Network.disable", {}).catch(() => undefined);
+            await context.access.send({
+                targetId,
+                method: "Network.disable",
+                params: {},
+            }).catch(() => undefined);
         }
     }
 }

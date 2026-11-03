@@ -143,7 +143,12 @@ export class DialogState {
         if (state.pageEnabled) return;
 
         try {
-            await this.access.send(tab, "Page.enable", {}, DIALOG_ENABLE_TIMEOUT_MS);
+            await this.access.send({
+                targetId : tab,
+                method   : "Page.enable",
+                params   : {},
+                timeoutMs: DIALOG_ENABLE_TIMEOUT_MS,
+            });
         } catch (error) {
             if (error instanceof RpcError && error.code === ErrorCode.cdpTimeout) {
                 throw new ToolError(
@@ -190,9 +195,13 @@ export class DialogState {
         state.resolveOutcome = accept ? "accept" : "dismiss";
 
         try {
-            await this.access.send(tab, "Page.handleJavaScriptDialog", {
-                accept,
-                ...(promptText === undefined ? {} : { promptText }),
+            await this.access.send({
+                targetId: tab,
+                method  : "Page.handleJavaScriptDialog",
+                params  : {
+                    accept,
+                    ...(promptText === undefined ? {} : { promptText }),
+                },
             });
         } catch (error) {
             if (error instanceof RpcError && error.code === ErrorCode.cdpError) {
@@ -281,7 +290,11 @@ export class DialogState {
         state.resolving = dialog;
         state.resolveOutcome = "policy";
 
-        void this.access.send(tab, "Page.handleJavaScriptDialog", { accept })
+        void this.access.send({
+            targetId: tab,
+            method  : "Page.handleJavaScriptDialog",
+            params  : { accept },
+        })
             .then(() => {
                 if (state.open !== dialog) return;
 

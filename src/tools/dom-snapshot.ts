@@ -196,9 +196,13 @@ async function domInfo(
     access  : DaemonAccess,
     targetId: string,
 ): Promise<{ info: Map<number, AxDomInfo>; root: unknown }> {
-    const root = await access.send(targetId, "DOM.getDocument", {
-        depth : SNAPSHOT_DOM_DEPTH,
-        pierce: true,
+    const root = await access.send({
+        targetId,
+        method: "DOM.getDocument",
+        params: {
+            depth : SNAPSHOT_DOM_DEPTH,
+            pierce: true,
+        },
     });
 
     return { info: domInfoMap(root), root };
@@ -266,12 +270,20 @@ export const domSnapshot = defineTool({
         }
 
         const tree: unknown = backendNodeId === undefined
-            ? await scoped.send(targetId, "Accessibility.getFullAXTree", {
-                depth: SNAPSHOT_MAX_AX_DEPTH,
+            ? await scoped.send({
+                targetId,
+                method: "Accessibility.getFullAXTree",
+                params: {
+                    depth: SNAPSHOT_MAX_AX_DEPTH,
+                },
             })
-            : await scoped.send(targetId, "Accessibility.getPartialAXTree", {
-                backendNodeId,
-                fetchRelatives: true,
+            : await scoped.send({
+                targetId,
+                method: "Accessibility.getPartialAXTree",
+                params: {
+                    backendNodeId,
+                    fetchRelatives: true,
+                },
             });
         const limitedTree = limitAxNodes(toAxNodes(tree), backendNodeId === undefined);
         const nodes = limitedTree.nodes;
@@ -450,9 +462,13 @@ async function frameTreeSection(
 ): Promise<
     { text: string; count: number; limited: boolean; domLimited: boolean } | undefined
 > {
-    const tree: unknown = await access.send(targetId, "Accessibility.getFullAXTree", {
-        depth: SNAPSHOT_MAX_AX_DEPTH,
-        frameId,
+    const tree: unknown = await access.send({
+        targetId,
+        method: "Accessibility.getFullAXTree",
+        params: {
+            depth: SNAPSHOT_MAX_AX_DEPTH,
+            frameId,
+        },
     }).catch(() => undefined);
 
     if (tree === undefined) return undefined;

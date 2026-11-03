@@ -1,5 +1,5 @@
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import type { DaemonAccess } from "../mcp/index.js";
+import { type DaemonAccess, type SendArguments, toCdpCommand } from "../mcp/index.js";
 
 export type ConfirmOutcome = "accepted" | "declined" | "unsupported" | "failed";
 
@@ -33,11 +33,9 @@ export function elicitationConfirmer(server: Server): Confirmer {
     };
 }
 
-type SendArguments = Parameters<DaemonAccess["send"]>;
-
 export function confirmedAccess(access: DaemonAccess): DaemonAccess {
-    const send = (...[tab, method, params, timeoutMs, frame, options]: SendArguments) =>
-        access.send(tab, method, params, timeoutMs, frame, { ...options, confirmed: true });
+    const send = (...args: SendArguments) =>
+        access.send({ ...toCdpCommand(args), confirmed: true });
 
     return new Proxy(access, {
         get(target, property) {

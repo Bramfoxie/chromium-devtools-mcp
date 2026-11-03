@@ -347,9 +347,13 @@ export const cssInspect = defineTool({
         const includeBox = args.includeBox ?? true;
 
         const described = describedSchema.safeParse(
-            await owner.send(targetId, "DOM.describeNode", {
-                backendNodeId: element.backendNodeId,
-                depth        : 0,
+            await owner.send({
+                targetId,
+                method: "DOM.describeNode",
+                params: {
+                    backendNodeId: element.backendNodeId,
+                    depth        : 0,
+                },
             }),
         );
 
@@ -361,12 +365,24 @@ export const cssInspect = defineTool({
 
         const nodeId = described.data.node.nodeId;
 
-        await owner.send(targetId, "DOM.enable", {});
-        await owner.send(targetId, "CSS.enable", {});
+        await owner.send({
+            targetId,
+            method: "DOM.enable",
+            params: {},
+        });
+        await owner.send({
+            targetId,
+            method: "CSS.enable",
+            params: {},
+        });
 
         try {
             const computed = computedSchema.safeParse(
-                await owner.send(targetId, "CSS.getComputedStyleForNode", { nodeId }),
+                await owner.send({
+                    targetId,
+                    method: "CSS.getComputedStyleForNode",
+                    params: { nodeId },
+                }),
             );
 
             if (!computed.success) {
@@ -383,7 +399,11 @@ export const cssInspect = defineTool({
 
             if (includeMatchedRules) {
                 const matched = matchedSchema.safeParse(
-                    await owner.send(targetId, "CSS.getMatchedStylesForNode", { nodeId }),
+                    await owner.send({
+                        targetId,
+                        method: "CSS.getMatchedStylesForNode",
+                        params: { nodeId },
+                    }),
                 );
 
                 if (!matched.success) {
@@ -416,7 +436,11 @@ export const cssInspect = defineTool({
                 droppedWinners: dropped,
             };
         } finally {
-            await owner.send(targetId, "CSS.disable", {}).catch(() => undefined);
+            await owner.send({
+                targetId,
+                method: "CSS.disable",
+                params: {},
+            }).catch(() => undefined);
         }
     },
 });
@@ -453,7 +477,11 @@ async function readBox(
     let result: unknown;
 
     try {
-        result = await access.send(targetId, "DOM.getBoxModel", { nodeId });
+        result = await access.send({
+            targetId,
+            method: "DOM.getBoxModel",
+            params: { nodeId },
+        });
     } catch {
         return null;
     }

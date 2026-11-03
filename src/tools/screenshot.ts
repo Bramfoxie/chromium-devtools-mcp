@@ -157,7 +157,11 @@ export function retryQuality(quality: number): number {
 
 async function layoutOf(access: DaemonAccess, tab: string): Promise<PageLayout> {
     try {
-        const layout = layoutSchema.safeParse(await access.send(tab, "Page.getLayoutMetrics", {}));
+        const layout = layoutSchema.safeParse(await access.send({
+            targetId: tab,
+            method  : "Page.getLayoutMetrics",
+            params  : {},
+        }));
 
         if (!layout.success) return {};
 
@@ -249,11 +253,20 @@ async function sendCapture(
     params: Record<string, unknown>,
 ): Promise<unknown> {
     try {
-        return await access.send(tab, "Page.captureScreenshot", params, SCREENSHOT_FIRST_ATTEMPT_MS);
+        return await access.send({
+            targetId : tab,
+            method   : "Page.captureScreenshot",
+            params,
+            timeoutMs: SCREENSHOT_FIRST_ATTEMPT_MS,
+        });
     } catch (error) {
         if (!(error instanceof RpcError) || error.code !== ErrorCode.cdpTimeout) throw error;
 
-        return access.send(tab, "Page.captureScreenshot", params);
+        return access.send({
+            targetId: tab,
+            method  : "Page.captureScreenshot",
+            params,
+        });
     }
 }
 

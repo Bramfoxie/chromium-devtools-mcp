@@ -99,7 +99,11 @@ async function resolveByUid(
     let result: unknown;
 
     try {
-        result = await access.send(tab, "DOM.resolveNode", { backendNodeId: node.backendNodeId });
+        result = await access.send({
+            targetId: tab,
+            method  : "DOM.resolveNode",
+            params  : { backendNodeId: node.backendNodeId },
+        });
     } catch (error) {
         if (isCdpError(error)) throw new ToolError(STALE_UID_MESSAGE);
 
@@ -185,10 +189,14 @@ async function assertElementDocumentAllowed(
     let href: unknown;
 
     try {
-        const reply = await elementAccess(scope.access, element).send(tab, "Runtime.callFunctionOn", {
-            objectId           : element.objectId,
-            functionDeclaration: "function () { return this.ownerDocument.location.href; }",
-            returnByValue      : true,
+        const reply = await elementAccess(scope.access, element).send({
+            targetId: tab,
+            method  : "Runtime.callFunctionOn",
+            params  : {
+                objectId           : element.objectId,
+                functionDeclaration: "function () { return this.ownerDocument.location.href; }",
+                returnByValue      : true,
+            },
         }) as { result?: { value?: unknown } } | null;
 
         href = reply?.result?.value;
@@ -232,7 +240,11 @@ export async function boxOf(
     let result: unknown;
 
     try {
-        result = await access.send(tab, "DOM.getBoxModel", { ...ref });
+        result = await access.send({
+            targetId: tab,
+            method  : "DOM.getBoxModel",
+            params  : { ...ref },
+        });
     } catch (error) {
         if (isCdpError(error)) return { box: null, visible: false };
 
@@ -250,7 +262,11 @@ export async function revealElement(
     ref   : ElementRef,
 ): Promise<ElementBox> {
     try {
-        await access.send(tab, "DOM.scrollIntoViewIfNeeded", { ...ref });
+        await access.send({
+            targetId: tab,
+            method  : "DOM.scrollIntoViewIfNeeded",
+            params  : { ...ref },
+        });
     } catch (error) {
         if (isCdpError(error)) {
             throw new ToolError("The element is not visible on the page and cannot be scrolled into view.");

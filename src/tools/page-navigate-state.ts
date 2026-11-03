@@ -41,7 +41,11 @@ export const MAIN_FRAME_EVENTS = [
 
 export function mainFrameId(context: ToolContext, targetId: string): Promise<string | undefined> {
     return context.access
-        .send(targetId, "Page.getFrameTree", {})
+        .send({
+            targetId,
+            method: "Page.getFrameTree",
+            params: {},
+        })
         .then(
             (tree) =>
                 (tree as { frameTree?: { frame?: { id?: unknown } } } | null)?.frameTree?.frame
@@ -58,12 +62,12 @@ export async function currentPage(
     const fallback = { url: "", title: "", readyState: "unknown" };
 
     try {
-        const result = await context.access.send(
+        const result = await context.access.send({
             targetId,
-            "Runtime.evaluate",
-            { expression: PAGE_STATE_EXPRESSION, returnByValue: true },
-            PAGE_STATE_TIMEOUT_MS,
-        );
+            method   : "Runtime.evaluate",
+            params   : { expression: PAGE_STATE_EXPRESSION, returnByValue: true },
+            timeoutMs: PAGE_STATE_TIMEOUT_MS,
+        });
         const parsed = pageStateSchema.safeParse(result);
 
         if (parsed.success && parsed.data.result.type !== "undefined") {
@@ -91,7 +95,11 @@ export async function historyEntryId(
     direction: "back" | "forward",
 ): Promise<number> {
     const history = historySchema.safeParse(
-        await context.access.send(targetId, "Page.getNavigationHistory", {}),
+        await context.access.send({
+            targetId,
+            method: "Page.getNavigationHistory",
+            params: {},
+        }),
     );
 
     if (!history.success) {

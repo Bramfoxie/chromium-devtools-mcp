@@ -84,7 +84,11 @@ export const domQuery = defineTool({
         }
 
         const root = documentSchema.safeParse(
-            await context.access.send(targetId, "DOM.getDocument", { depth: 0, pierce: false }),
+            await context.access.send({
+                targetId,
+                method: "DOM.getDocument",
+                params: { depth: 0, pierce: false },
+            }),
         );
 
         if (!root.success) {
@@ -233,17 +237,17 @@ async function queryElements(
         let listed: unknown;
 
         try {
-            listed = await access.send(
+            listed = await access.send({
                 targetId,
-                "Runtime.evaluate",
-                {
+                method: "Runtime.evaluate",
+                params: {
                     expression,
                     objectGroup,
                     returnByValue: false,
                     ...(scope.contextId === undefined ? {} : { contextId: scope.contextId }),
                 },
-                10_000,
-            );
+                timeoutMs: 10_000,
+            });
         } catch (error) {
             if (error instanceof RpcError && error.code === ErrorCode.cdpError) {
                 throw new ToolError(
@@ -262,10 +266,14 @@ async function queryElements(
         }
 
         const rowsReply = rowsSchema.safeParse(
-            await access.send(targetId, "Runtime.callFunctionOn", {
-                objectId           : listId,
-                functionDeclaration: buildRowsFunction(names),
-                returnByValue      : true,
+            await access.send({
+                targetId,
+                method: "Runtime.callFunctionOn",
+                params: {
+                    objectId           : listId,
+                    functionDeclaration: buildRowsFunction(names),
+                    returnByValue      : true,
+                },
             }),
         );
 
@@ -285,9 +293,13 @@ async function queryElements(
         if (chosen.length === 0) return { queried: [], walkCapped, total };
 
         const properties = propertiesSchema.safeParse(
-            await access.send(targetId, "Runtime.getProperties", {
-                objectId     : listId,
-                ownProperties: true,
+            await access.send({
+                targetId,
+                method: "Runtime.getProperties",
+                params: {
+                    objectId     : listId,
+                    ownProperties: true,
+                },
             }),
         );
 
@@ -311,7 +323,11 @@ async function queryElements(
             if (objectId === undefined) continue;
 
             const parsed = describedSchema.safeParse(
-                await access.send(targetId, "DOM.describeNode", { objectId, depth: 0 }),
+                await access.send({
+                    targetId,
+                    method: "DOM.describeNode",
+                    params: { objectId, depth: 0 },
+                }),
             );
 
             if (!parsed.success) throw unexpected("DOM.describeNode");
@@ -361,7 +377,11 @@ async function chainedMatches(
         if (matches.length >= limit) break;
 
         const parsed = describedSchema.safeParse(
-            await context.access.send(targetId, "DOM.describeNode", { nodeId, depth: 0 }),
+            await context.access.send({
+                targetId,
+                method: "DOM.describeNode",
+                params: { nodeId, depth: 0 },
+            }),
         );
 
         if (!parsed.success) {
@@ -385,18 +405,26 @@ async function chainedMatches(
         }
 
         const resolved = resolvedSchema.safeParse(
-            await context.access.send(targetId, "DOM.resolveNode", { nodeId }).catch(() => undefined),
+            await context.access.send({
+                targetId,
+                method: "DOM.resolveNode",
+                params: { nodeId },
+            }).catch(() => undefined),
         );
         let text = "";
 
         if (resolved.success && resolved.data.object.objectId !== undefined) {
             const objectId = resolved.data.object.objectId;
             const read = chainedTextSchema.safeParse(
-                await context.access.send(targetId, "Runtime.callFunctionOn", {
-                    functionDeclaration: CHAINED_TEXT_EXPRESSION,
-                    objectId           : objectId,
-                    arguments          : [{ objectId: objectId }],
-                    returnByValue      : true,
+                await context.access.send({
+                    targetId,
+                    method: "Runtime.callFunctionOn",
+                    params: {
+                        functionDeclaration: CHAINED_TEXT_EXPRESSION,
+                        objectId           : objectId,
+                        arguments          : [{ objectId: objectId }],
+                        returnByValue      : true,
+                    },
                 }).catch(() => undefined),
             );
 
@@ -412,7 +440,11 @@ async function chainedMatches(
 
         if (includeBox) {
             const model = boxSchema.safeParse(
-                await context.access.send(targetId, "DOM.getBoxModel", { nodeId }).catch(() => undefined),
+                await context.access.send({
+                    targetId,
+                    method: "DOM.getBoxModel",
+                    params: { nodeId },
+                }).catch(() => undefined),
             );
 
             if (model.success) {

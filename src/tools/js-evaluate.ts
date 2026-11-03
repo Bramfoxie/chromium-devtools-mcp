@@ -222,7 +222,12 @@ export const jsEvaluate = defineTool({
 
             if (timedOut || (error instanceof RpcError && error.code === ErrorCode.cdpTimeout)) {
                 void scope.access
-                    .send(targetId, "Runtime.terminateExecution", {}, TERMINATE_TIMEOUT_MS)
+                    .send({
+                        targetId,
+                        method   : "Runtime.terminateExecution",
+                        params   : {},
+                        timeoutMs: TERMINATE_TIMEOUT_MS,
+                    })
                     .catch(() => undefined);
 
                 throw new ToolError(
@@ -376,12 +381,12 @@ async function extractStructuredValue(
     }
 
     try {
-        const response = await access.send(
+        const response = await access.send({
             targetId,
-            "Runtime.callFunctionOn",
-            { functionDeclaration: SERIALIZE_DECLARATION, objectId, returnByValue: true },
+            method: "Runtime.callFunctionOn",
+            params: { functionDeclaration: SERIALIZE_DECLARATION, objectId, returnByValue: true },
             timeoutMs,
-        );
+        });
         const parsed = evaluatedSchema.safeParse(response);
 
         if (!parsed.success || parsed.data.exceptionDetails !== undefined) return undefined;
@@ -418,14 +423,13 @@ async function settlePromise(
     if (parsed.data.result.subtype !== "promise" || promiseObjectId === undefined) return response;
 
     try {
-        return await access.send(
+        return await access.send({
             targetId,
-            "Runtime.awaitPromise",
-            { promiseObjectId, returnByValue: false, generatePreview: true },
-            request.deadline.remainingMs(),
-            undefined,
-            { signal: request.deadline.signal },
-        );
+            method   : "Runtime.awaitPromise",
+            params   : { promiseObjectId, returnByValue: false, generatePreview: true },
+            timeoutMs: request.deadline.remainingMs(),
+            signal   : request.deadline.signal,
+        });
     } finally {
         await releaseQuietly(access, targetId, [promiseObjectId]);
     }
@@ -438,10 +442,10 @@ async function evaluate(
     request : EvaluateRequest,
 ): Promise<EvaluateOutcome> {
     if (request.target === undefined) {
-        const response = await access.send(
+        const response = await access.send({
             targetId,
-            "Runtime.evaluate",
-            {
+            method: "Runtime.evaluate",
+            params: {
                 expression     : request.expression,
                 returnByValue  : false,
                 awaitPromise   : request.awaitPromise,
@@ -449,10 +453,9 @@ async function evaluate(
                 replMode       : true,
                 generatePreview: true,
             },
-            request.deadline.remainingMs(),
-            undefined,
-            { signal: request.deadline.signal },
-        );
+            timeoutMs: request.deadline.remainingMs(),
+            signal   : request.deadline.signal,
+        });
 
         const settled = await settlePromise(access, targetId, request, response);
 
@@ -469,10 +472,10 @@ async function evaluate(
     let response: unknown;
 
     try {
-        response = await owner.send(
+        response = await owner.send({
             targetId,
-            "Runtime.callFunctionOn",
-            {
+            method: "Runtime.callFunctionOn",
+            params: {
                 functionDeclaration: elementFunctionDeclaration(request.expression),
                 objectId           : element.objectId,
                 arguments          : [{ objectId: element.objectId }],
@@ -481,10 +484,9 @@ async function evaluate(
                 userGesture        : false,
                 generatePreview    : true,
             },
-            request.deadline.remainingMs(),
-            undefined,
-            { signal: request.deadline.signal },
-        );
+            timeoutMs: request.deadline.remainingMs(),
+            signal   : request.deadline.signal,
+        });
     } catch (error) {
         await releaseQuietly(owner, targetId, [element.objectId]);
 

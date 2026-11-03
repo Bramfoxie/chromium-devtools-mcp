@@ -141,10 +141,18 @@ async function ownerOf(
 ): Promise<{ backendNodeId: number; inProcess: boolean }> {
     try {
         const { backendNodeId } = frameOwnerSchema.parse(
-            await owner.send(tab, "DOM.getFrameOwner", { frameId }),
+            await owner.send({
+                targetId: tab,
+                method  : "DOM.getFrameOwner",
+                params  : { frameId },
+            }),
         );
         const described = ownerNodeSchema.parse(
-            await owner.send(tab, "DOM.describeNode", { backendNodeId, depth: 1, pierce: true }),
+            await owner.send({
+                targetId: tab,
+                method  : "DOM.describeNode",
+                params  : { backendNodeId, depth: 1, pierce: true },
+            }),
         );
 
         return { backendNodeId, inProcess: described.node.contentDocument !== undefined };
@@ -196,7 +204,11 @@ async function ownerModel(
     let result: unknown;
 
     try {
-        result = await link.access.send(tab, "DOM.getBoxModel", { backendNodeId: link.backendNodeId });
+        result = await link.access.send({
+            targetId: tab,
+            method  : "DOM.getBoxModel",
+            params  : { backendNodeId: link.backendNodeId },
+        });
     } catch (error) {
         if (isCdpError(error)) {
             throw new ToolError(
@@ -268,9 +280,13 @@ export async function revealChain(chain: FrameChain, tab: string, rect: Rect): P
         };
 
         try {
-            await link.access.send(tab, "DOM.scrollIntoViewIfNeeded", {
-                backendNodeId: link.backendNodeId,
-                rect         : inBorder,
+            await link.access.send({
+                targetId: tab,
+                method  : "DOM.scrollIntoViewIfNeeded",
+                params  : {
+                    backendNodeId: link.backendNodeId,
+                    rect         : inBorder,
+                },
             });
         } catch (error) {
             if (isCdpError(error)) {
@@ -293,10 +309,14 @@ const SETTLE_EXPRESSION = `new Promise((resolve) => {
 
 export async function settleRendering(accesses: DaemonAccess[], tab: string): Promise<void> {
     for (const access of accesses) {
-        await access.send(tab, "Runtime.evaluate", {
-            expression   : SETTLE_EXPRESSION,
-            awaitPromise : true,
-            returnByValue: true,
+        await access.send({
+            targetId: tab,
+            method  : "Runtime.evaluate",
+            params  : {
+                expression   : SETTLE_EXPRESSION,
+                awaitPromise : true,
+                returnByValue: true,
+            },
         }).catch(() => undefined);
     }
 }
@@ -340,19 +360,27 @@ export async function outerHitTest(
 
         current = mapPoint(step, current);
 
-        const resolved = await link.access.send(tab, "DOM.resolveNode", {
-            backendNodeId: link.backendNodeId,
+        const resolved = await link.access.send({
+            targetId: tab,
+            method  : "DOM.resolveNode",
+            params  : {
+                backendNodeId: link.backendNodeId,
+            },
         }) as { object?: { objectId?: string } } | null;
         const objectId = resolved?.object?.objectId;
 
         if (objectId === undefined) continue;
 
         const parsed = coverSchema.safeParse(
-            await link.access.send(tab, "Runtime.callFunctionOn", {
-                functionDeclaration: COVER_EXPRESSION,
-                objectId,
-                arguments          : [{ value: current.x }, { value: current.y }],
-                returnByValue      : true,
+            await link.access.send({
+                targetId: tab,
+                method  : "Runtime.callFunctionOn",
+                params  : {
+                    functionDeclaration: COVER_EXPRESSION,
+                    objectId,
+                    arguments          : [{ value: current.x }, { value: current.y }],
+                    returnByValue      : true,
+                },
             }),
         );
         const value = parsed.success ? parsed.data.result.value : undefined;

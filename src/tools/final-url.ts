@@ -30,7 +30,12 @@ export async function parkIfForbidden(
 
     const host = url === "" ? "an unknown page" : describeUrlHost(url);
     const parked = await context.access
-        .send(targetId, "Page.navigate", { url: "about:blank" }, PARK_TIMEOUT_MS)
+        .send({
+            targetId,
+            method   : "Page.navigate",
+            params   : { url: "about:blank" },
+            timeoutMs: PARK_TIMEOUT_MS,
+        })
         .then(() => true, () => false);
     const state = parked
         ? "The tab was moved to about:blank."

@@ -34,7 +34,11 @@ export async function matchingNodes(
     try {
         if (!all) {
             const found = nodeIdSchema.safeParse(
-                await access.send(targetId, "DOM.querySelector", { nodeId: rootId, selector }),
+                await access.send({
+                    targetId,
+                    method: "DOM.querySelector",
+                    params: { nodeId: rootId, selector },
+                }),
             );
 
             if (!found.success) {
@@ -47,7 +51,11 @@ export async function matchingNodes(
         }
 
         const found = nodeIdsSchema.safeParse(
-            await access.send(targetId, "DOM.querySelectorAll", { nodeId: rootId, selector }),
+            await access.send({
+                targetId,
+                method: "DOM.querySelectorAll",
+                params: { nodeId: rootId, selector },
+            }),
         );
 
         if (!found.success) {
@@ -93,9 +101,13 @@ export async function queryScope(
 
     if (known !== undefined) {
         const world = worldSchema.safeParse(
-            await context.access.send(targetId, "Page.createIsolatedWorld", {
-                frameId  : known.frameId,
-                worldName: "chromium-devtools-mcp-query",
+            await context.access.send({
+                targetId,
+                method: "Page.createIsolatedWorld",
+                params: {
+                    frameId  : known.frameId,
+                    worldName: "chromium-devtools-mcp-query",
+                },
             }),
         );
 
@@ -134,10 +146,14 @@ export async function queryScope(
     }
 
     const described = frameOwnerSchema.safeParse(
-        await context.access.send(targetId, "DOM.describeNode", {
-            nodeId: first,
-            depth : 1,
-            pierce: true,
+        await context.access.send({
+            targetId,
+            method: "DOM.describeNode",
+            params: {
+                nodeId: first,
+                depth : 1,
+                pierce: true,
+            },
         }),
     );
 
@@ -176,9 +192,13 @@ export async function queryScope(
 
     if (frameId !== undefined) {
         const world = worldSchema.safeParse(
-            await context.access.send(targetId, "Page.createIsolatedWorld", {
-                frameId,
-                worldName: "chromium-devtools-mcp-query",
+            await context.access.send({
+                targetId,
+                method: "Page.createIsolatedWorld",
+                params: {
+                    frameId,
+                    worldName: "chromium-devtools-mcp-query",
+                },
             }),
         );
 
@@ -198,9 +218,13 @@ async function isolatedQueryScope(
 ): Promise<QueryScope> {
     const bound = bindAccess(context.access, frameId);
     const world = worldSchema.safeParse(
-        await bound.send(targetId, "Page.createIsolatedWorld", {
-            frameId,
-            worldName: "chromium-devtools-mcp-query",
+        await bound.send({
+            targetId,
+            method: "Page.createIsolatedWorld",
+            params: {
+                frameId,
+                worldName: "chromium-devtools-mcp-query",
+            },
         }),
     );
     const nodeId = await isolatedDocumentNode(bound, targetId, frameId);
@@ -243,7 +267,11 @@ async function frameContentNode(
     frameId : string,
 ): Promise<number | undefined> {
     const document = z.object({ root: piercedDocSchema }).safeParse(
-        await access.send(targetId, "DOM.getDocument", { depth: -1, pierce: true }),
+        await access.send({
+            targetId,
+            method: "DOM.getDocument",
+            params: { depth: -1, pierce: true },
+        }),
     );
 
     if (!document.success) return undefined;
@@ -305,10 +333,14 @@ export async function chainedNodes(
 
             for (const match of found) {
                 const described = frameOwnerSchema.safeParse(
-                    await access.send(targetId, "DOM.describeNode", {
-                        nodeId: match,
-                        depth : 1,
-                        pierce: true,
+                    await access.send({
+                        targetId,
+                        method: "DOM.describeNode",
+                        params: {
+                            nodeId: match,
+                            depth : 1,
+                            pierce: true,
+                        },
                     }),
                 );
 
@@ -363,10 +395,14 @@ export async function piercedNodes(
     all      : boolean,
     frameRoot: number | undefined,
 ): Promise<{ nodeIds: number[]; total: number }> {
-    await access.send(targetId, "DOM.enable", {});
+    await access.send({ targetId, method: "DOM.enable", params: {} });
 
     const tree = z.object({ root: piercedDocSchema }).safeParse(
-        await access.send(targetId, "DOM.getDocument", { depth: -1, pierce: true }),
+        await access.send({
+            targetId,
+            method: "DOM.getDocument",
+            params: { depth: -1, pierce: true },
+        }),
     );
     const inFrame = frameRoot === undefined
         ? undefined
@@ -375,9 +411,13 @@ export async function piercedNodes(
             : new Set<number>();
 
     const search = searchSchema.safeParse(
-        await access.send(targetId, "DOM.performSearch", {
-            query                    : selector,
-            includeUserAgentShadowDOM: false,
+        await access.send({
+            targetId,
+            method: "DOM.performSearch",
+            params: {
+                query                    : selector,
+                includeUserAgentShadowDOM: false,
+            },
         }),
     );
 
@@ -394,10 +434,14 @@ export async function piercedNodes(
             ? search.data.resultCount
             : all ? Math.min(search.data.resultCount, QUERY_MAX_LIMIT) : 1;
         const results = searchResultsSchema.safeParse(
-            await access.send(targetId, "DOM.getSearchResults", {
-                searchId : search.data.searchId,
-                fromIndex: 0,
-                toIndex,
+            await access.send({
+                targetId,
+                method: "DOM.getSearchResults",
+                params: {
+                    searchId : search.data.searchId,
+                    fromIndex: 0,
+                    toIndex,
+                },
             }),
         );
 
@@ -418,8 +462,12 @@ export async function piercedNodes(
 
         return { nodeIds: elements.slice(0, all ? QUERY_MAX_LIMIT : 1), total: elements.length };
     } finally {
-        await access.send(targetId, "DOM.discardSearchResults", {
-            searchId: search.data.searchId,
+        await access.send({
+            targetId,
+            method: "DOM.discardSearchResults",
+            params: {
+                searchId: search.data.searchId,
+            },
         }).catch(() => undefined);
     }
 }
@@ -433,7 +481,11 @@ async function elementNodeIds(
 
     for (const nodeId of nodeIds) {
         const parsed = nodeTypeSchema.safeParse(
-            await access.send(targetId, "DOM.describeNode", { nodeId, depth: 0 }),
+            await access.send({
+                targetId,
+                method: "DOM.describeNode",
+                params: { nodeId, depth: 0 },
+            }),
         );
 
         if (parsed.success && parsed.data.node.nodeType === ELEMENT_NODE) elements.push(nodeId);

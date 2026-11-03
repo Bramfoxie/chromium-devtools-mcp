@@ -12,10 +12,18 @@ export async function startRendering(
     access: DaemonAccess,
     tab   : string,
 ): Promise<() => Promise<void>> {
-    await access.send(tab, "Page.startScreencast", SCREENCAST).catch(() => undefined);
+    await access.send({
+        targetId: tab,
+        method  : "Page.startScreencast",
+        params  : SCREENCAST,
+    }).catch(() => undefined);
 
     return async () => {
-        await access.send(tab, "Page.stopScreencast", {}).catch(() => undefined);
+        await access.send({
+            targetId: tab,
+            method  : "Page.stopScreencast",
+            params  : {},
+        }).catch(() => undefined);
     };
 }
 
