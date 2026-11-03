@@ -173,7 +173,7 @@ export async function startEnv(safety?: Config["safety"]): Promise<Env> {
             sleep         : (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
             now           : () => Date.now(),
             logFile       : path.join(home, "daemon.log"),
-            startTimeoutMs: 30_000,
+            startTimeoutMs: 50_000,
             pollIntervalMs: 100,
         },
     );
