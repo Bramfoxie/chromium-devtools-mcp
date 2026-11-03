@@ -104,6 +104,28 @@ describe("session handling", () => {
         ).toBe(ErrorCode.badRequest);
     });
 
+    it.each(["*", "http://", "exa mple.com", "https://example.com/path"])(
+        "rejects the malformed allowedDomains entry %s",
+        async (entry) => {
+            const { connect } = await start();
+            const client = await connect();
+
+            expect(
+                (
+                    await failure(
+                        client.request("session.open", {
+                            safety: {
+                                readOnly        : false,
+                                allowedDomains  : [entry],
+                                confirmDangerous: false,
+                            },
+                        }),
+                    )
+                ).code,
+            ).toBe(ErrorCode.badRequest);
+        },
+    );
+
     it("opens a fresh session after the connection closed and reopened", async () => {
         const { backend, connect } = await start();
         const first = await connect();

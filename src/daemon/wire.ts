@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isValidDomainRule } from "../safety/index.js";
 
 const DOMAIN_METHOD = /^[A-Za-z][A-Za-z0-9]*\.[A-Za-z][A-Za-z0-9]*$/;
 
@@ -20,7 +21,7 @@ export const requestParamSchemas = {
         safety  : z.strictObject({
             readOnly      : z.boolean(),
             allowedDomains: z.array(
-                z.string().min(1).max(MAX_DOMAIN_RULE_CHARS),
+                z.string().min(1).max(MAX_DOMAIN_RULE_CHARS).refine(isValidDomainRule),
             ).max(MAX_DOMAIN_RULES),
             confirmDangerous: z.boolean(),
         }).optional(),
