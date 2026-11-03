@@ -4,7 +4,7 @@ import { ToolError } from "../errors.js";
 
 const REDACTED = "[redacted]";
 
-const NETWORK_REGEX_MAX_CHARS = 200;
+export const NETWORK_REGEX_MAX_CHARS = 200;
 
 const NETWORK_URL_MATCH_CHARS = 2048;
 

@@ -2,7 +2,7 @@ import type { Config } from "../config/index.js";
 import type { DaemonAccess, DaemonTab } from "../mcp/index.js";
 import { confirmedAccess, type Confirmer } from "./confirmation.js";
 import { CaptureManager } from "./capture/manager.js";
-import type { ToolClock, ToolContext } from "./define-tool.js";
+import type { KnownTab, ToolClock, ToolContext } from "./define-tool.js";
 import { DialogState } from "./dialogs.js";
 import { ElementRegistry } from "./element-target.js";
 import { EmulationState } from "./emulation/state.js";
@@ -13,14 +13,6 @@ import { InterceptionManager } from "./mock/interception.js";
 import { sleep } from "../util/sleep.js";
 
 export type { ToolClock, ToolContext };
-
-interface KnownTab {
-    targetId: string;
-    url     : string;
-    title   : string;
-    owned   : boolean;
-    created : boolean;
-}
 
 export class SessionTabs {
     private known     : KnownTab[] = [];

@@ -26,7 +26,7 @@ interface SessionState {
     readonly selected?: string;
 }
 
-interface KnownTabShape {
+export interface KnownTab {
     targetId: string;
     url     : string;
     title   : string;
@@ -35,7 +35,7 @@ interface KnownTabShape {
 }
 
 interface TabSelection {
-    refresh(tabs: KnownTabShape[], selected: string | undefined): void;
+    refresh(tabs: KnownTab[], selected: string | undefined): void;
     select(targetId: string | undefined): void;
 }
 

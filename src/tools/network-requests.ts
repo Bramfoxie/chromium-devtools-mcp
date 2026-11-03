@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { type NetworkFilter, type UrlPattern, compileUrlPattern } from "./capture/network-log.js";
+import {
+    NETWORK_REGEX_MAX_CHARS,
+    type NetworkFilter,
+    type UrlPattern,
+    compileUrlPattern,
+} from "./capture/network-log.js";
 import { defineTool } from "./define-tool.js";
 import { ToolError } from "./errors.js";
 import { resolveTab, tabSchema } from "./tab-target.js";
@@ -9,8 +14,6 @@ const NETWORK_REQUESTS_DEFAULT_LIMIT = 50;
 const NETWORK_REQUESTS_MAX_LIMIT = 300;
 
 const NETWORK_URL_CONTAINS_MAX_CHARS = 1024;
-
-const NETWORK_URL_REGEX_MAX_CHARS = 200;
 
 const NETWORK_LIST_MAX_ITEMS = 50;
 
@@ -84,7 +87,7 @@ export const networkRequests = defineTool({
     input : z.strictObject({
         tab           : tabSchema,
         urlContains   : z.string().min(1).max(NETWORK_URL_CONTAINS_MAX_CHARS).optional().describe("Keep only URLs containing this text."),
-        urlRegex      : z.string().min(1).max(NETWORK_URL_REGEX_MAX_CHARS).optional().describe("Keep only URLs matching this regular expression, up to 200 characters. A match that takes longer than 50 ms is stopped and fails the call."),
+        urlRegex      : z.string().min(1).max(NETWORK_REGEX_MAX_CHARS).optional().describe(`Keep only URLs matching this regular expression, up to ${NETWORK_REGEX_MAX_CHARS} characters. A match that takes longer than 50 ms is stopped and fails the call.`),
         methods       : listOf("Keep only these HTTP methods."),
         resourceTypes : listOf("Keep only these CDP resource types."),
         statusMin     : z.number().int().min(100).max(599).optional().describe("Keep only responses with at least this status."),
