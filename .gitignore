@@ -10,3 +10,4 @@ CLAUDE.md
 .claude/
 .idea/
 todo/
+*.tgz
