@@ -12,7 +12,7 @@ import {
 } from "./element-target.js";
 import { ToolError } from "./errors.js";
 import { frameChain, revealChain } from "./frame-geometry.js";
-import { summarizeTarget, targetSummarySchema } from "./input-click.js";
+import { summarizeTarget, targetSummarySchema } from "./input-outcome.js";
 import { throwIfCancelled } from "./registry.js";
 import { resolveTab, tabSchema } from "./tab-target.js";
 

@@ -273,15 +273,14 @@ export {
     resolveControlOrMeta,
 } from "./keys.js";
 
+export { click, inputClick, inputHover } from "./input-click.js";
+
 export {
     changedUrl,
-    click,
-    inputClick,
-    inputHover,
     navigationOf,
     summarizeTarget,
     targetSummarySchema,
-} from "./input-click.js";
+} from "./input-outcome.js";
 
 export {
     browserPlatform,

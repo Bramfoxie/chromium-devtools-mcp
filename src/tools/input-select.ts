@@ -10,7 +10,7 @@ import {
     type ResolvedElement,
 } from "./element-target.js";
 import { ToolError } from "./errors.js";
-import { changedUrl, navigationOf, summarizeTarget, targetSummarySchema } from "./input-click.js";
+import { changedUrl, navigationOf, summarizeTarget, targetSummarySchema } from "./input-outcome.js";
 import { throwIfCancelled } from "./registry.js";
 import { resolveTab, tabSchema } from "./tab-target.js";
 
