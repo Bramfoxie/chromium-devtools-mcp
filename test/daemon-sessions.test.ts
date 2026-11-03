@@ -1308,6 +1308,17 @@ describe("state shared with cross site frame sessions", () => {
         ]);
     });
 
+    it("sends the replayed commands to a new child without waiting for each reply", async () => {
+        const { a, tab, handle } = await tabWithChild();
+
+        await a.send(tab, "Network.enable", {});
+        await a.send(tab, "Network.setBlockedURLs", { urls: ["*.png"] });
+        const child = handle?.addChild("cross", true, CROSS);
+
+        expect(sentMethods(child)).toEqual(["Page.enable", "Network.enable", "Network.setBlockedURLs"]);
+        await handle?.settled();
+    });
+
     it("applies a command to children that already exist and keeps only its latest value", async () => {
         const { a, tab, handle } = await tabWithChild();
         const child = handle?.addChild("cross", true, CROSS);

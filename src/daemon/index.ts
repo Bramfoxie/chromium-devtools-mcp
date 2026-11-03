@@ -75,6 +75,8 @@ export {
 
 export {
     cdpChildTargetsDeps,
+    CHILD_ATTACH_HANDLER_TIMEOUT_MS,
+    CHILD_AUTO_ATTACH_TIMEOUT_MS,
     ChildTargets,
     type ChildTargetsDeps,
 } from "./child-targets.js";

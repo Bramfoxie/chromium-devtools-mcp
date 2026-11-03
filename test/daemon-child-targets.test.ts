@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import type { CdpSession } from "../src/cdp/index.js";
 import {
+    CHILD_ATTACH_HANDLER_TIMEOUT_MS,
+    CHILD_AUTO_ATTACH_TIMEOUT_MS,
     ChildTargets,
     MAX_CHILD_ATTACH_DEPTH,
     MAX_CHILD_SESSIONS_PER_TAB,
@@ -154,6 +156,44 @@ describe("ChildTargets.attach", () => {
         attach("child1", "child-session-1", peer, "iframe", true);
         await vi.waitFor(() =>
             expect(sent.map((call) => call.method)).toContain("Runtime.runIfWaitingForDebugger"));
+    });
+
+    it("resumes a paused child within the bound when the child hangs", async () => {
+        vi.useFakeTimers();
+
+        try {
+            const { sent, peer, deps, attach } = setup();
+            const hanging: ChildTargetsDeps = {
+                ...deps,
+                send: (session, method, params, timeoutMs) => {
+                    if (session === peer || method === "Runtime.runIfWaitingForDebugger") {
+                        return deps.send(session, method, params, timeoutMs);
+                    }
+
+                    return new Promise((_resolve, reject) => {
+                        setTimeout(() => reject(new Error("timed out")), timeoutMs ?? 30_000);
+                    });
+                },
+            };
+
+            vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+            const attaching = ChildTargets.attach(
+                peer,
+                { onDetached: () => undefined, onAttached: () => new Promise(() => undefined) },
+                hanging,
+            );
+
+            await vi.advanceTimersByTimeAsync(0);
+            await attaching;
+            attach("child1", "child-session-1", peer, "iframe", true);
+            await vi.advanceTimersByTimeAsync(
+                CHILD_AUTO_ATTACH_TIMEOUT_MS + CHILD_ATTACH_HANDLER_TIMEOUT_MS,
+            );
+
+            expect(sent.map((call) => call.method)).toContain("Runtime.runIfWaitingForDebugger");
+        } finally {
+            vi.useRealTimers();
+        }
     });
 
     it("does not resume a child that was not paused", async () => {

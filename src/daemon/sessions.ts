@@ -723,12 +723,11 @@ export class ClientSession {
     ): Promise<void> {
         for (const subscription of tab.subscriptions.values()) subscription.mirror?.(child);
 
-        for (const command of tab.sync.replay()) {
-            await child.send(command.method, command.params, CHILD_COMMAND_TIMEOUT_MS).catch(
+        await Promise.all(tab.sync.replay().map((command) =>
+            child.send(command.method, command.params, CHILD_COMMAND_TIMEOUT_MS).catch(
                 (error: unknown) =>
                     logDaemon(`could not apply ${command.method} to an iframe session: ${describeError(error)}`),
-            );
-        }
+            )));
 
         this.assertCurrent(targetId, tab);
     }
