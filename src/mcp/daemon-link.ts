@@ -8,6 +8,7 @@ import {
     IpcTimeoutError,
     RpcError,
 } from "../daemon/index.js";
+import { messageOf } from "../util/message-of.js";
 
 export class DaemonNotReadyError extends DaemonError {
     constructor(detail: string) {
@@ -222,7 +223,7 @@ export class DaemonLink {
             return await this.deps.startDaemon();
         } catch (error) {
             throw new DaemonError(
-                `Could not start the daemon (${error instanceof Error ? error.message : String(error)}). See ${this.deps.logFile} for its messages.`,
+                `Could not start the daemon (${messageOf(error)}). See ${this.deps.logFile} for its messages.`,
             );
         }
     }
@@ -266,7 +267,7 @@ export class DaemonLink {
             } catch (error) {
                 if (!isUnreachable(error)) throw error;
 
-                lastError = error instanceof Error ? error.message : String(error);
+                lastError = messageOf(error);
             }
 
             if (exited && starts < MAX_STARTS) {

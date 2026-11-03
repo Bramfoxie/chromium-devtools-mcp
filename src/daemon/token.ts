@@ -4,6 +4,7 @@ import { pathFor } from "../config/index.js";
 import { DaemonError, errorCode } from "./errors.js";
 import { ensurePrivateDir } from "./private-dir.js";
 import { removeStaleLock } from "./stale-lock.js";
+import { sleep } from "../util/sleep.js";
 
 const LOCK_WAIT_MS = 5000;
 const TOKEN_PATTERN = /^[0-9a-f]{64}$/;
@@ -91,7 +92,7 @@ async function publishToken(
                 );
             }
 
-            await new Promise((resolve) => setTimeout(resolve, 10));
+            await sleep(10);
         }
     }
 

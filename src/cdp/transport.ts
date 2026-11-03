@@ -1,5 +1,6 @@
 import WebSocket from "ws";
 import { CdpClosedError } from "./errors.js";
+import { messageOf } from "../util/message-of.js";
 
 const MAX_PAYLOAD_BYTES = 256 * 1024 * 1024;
 const CLOSE_GRACE_MS = 1000;
@@ -97,7 +98,7 @@ function connectSocket(
                 handshakeTimeout : handshakeTimeoutMs,
             });
         } catch (error) {
-            fail(error instanceof Error ? error.message : String(error));
+            fail(messageOf(error));
 
             return;
         }

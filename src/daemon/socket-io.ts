@@ -4,6 +4,7 @@ import type { InstanceIO, ListeningServer } from "./lock.js";
 import { errorCode } from "./errors.js";
 import { logDaemon } from "./log.js";
 import { removeStaleLock } from "./stale-lock.js";
+import { sleep } from "../util/sleep.js";
 
 const PROBE_TIMEOUT_MS = 1000;
 
@@ -89,5 +90,5 @@ export const realInstanceIO: InstanceIO = {
     probe       : probeSocket,
     removeSocket: (path) => rm(path, { force: true }),
     lockCleanup,
-    sleep       : (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    sleep,
 };

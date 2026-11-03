@@ -5,6 +5,7 @@ import os from "node:os";
 import { AlreadyRunningError } from "./daemon/errors.js";
 import { runDaemon, type RunningDaemon } from "./daemon/runner.js";
 import { runMcpServer, type RunningMcp } from "./mcp/server.js";
+import { messageOf } from "./util/message-of.js";
 
 const USAGE =
     "Usage: chromium-devtools-mcp [options]        run the MCP server on stdio\n       chromium-devtools-mcp daemon [options] run the browser daemon\n       chromium-devtools-mcp install --client <name|all> [--dry-run] [--remove] [options]\nOptions: --browser chrome, --mode attach|managed, --headless, --profile-dir, --debug-port, --allow-focus, --isolated, --read-only, --allowed-domains, --confirm-dangerous, --help\nBoolean flags also accept a --no- form, for example --no-headless.";
@@ -56,7 +57,7 @@ async function runServe(deps: CliDeps, argv: string[]): Promise<number> {
     try {
         running = await deps.serve(config, argv);
     } catch (error) {
-        deps.write(`${error instanceof Error ? error.message : String(error)}\n`);
+        deps.write(`${messageOf(error)}\n`);
 
         return 1;
     }
@@ -86,7 +87,7 @@ async function runDaemonCommand(deps: CliDeps, argv: string[]): Promise<number> 
             return 0;
         }
 
-        deps.write(`${error instanceof Error ? error.message : String(error)}\n`);
+        deps.write(`${messageOf(error)}\n`);
 
         return 1;
     }

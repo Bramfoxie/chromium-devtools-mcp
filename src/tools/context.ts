@@ -10,6 +10,7 @@ import { nodeUploadEnvironment, type UploadEnvironment } from "./upload-environm
 import { FocusEmulation } from "./focus-emulation.js";
 import { FrameState } from "./frames.js";
 import { InterceptionManager } from "./mock/interception.js";
+import { sleep } from "../util/sleep.js";
 
 export type { ToolClock, ToolContext };
 
@@ -88,8 +89,8 @@ export class ToolRuntime {
         this.access = options.access;
         this.config = options.config;
         this.clock = options.clock ?? {
-            now  : () => Date.now(),
-            sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+            now: () => Date.now(),
+            sleep,
         };
         this.tabs = options.tabs ?? new SessionTabs();
         this.elements = options.elements ?? new ElementRegistry();

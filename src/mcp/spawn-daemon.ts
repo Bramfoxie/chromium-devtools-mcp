@@ -4,6 +4,7 @@ import { pathFor } from "../config/index.js";
 import { DaemonError, errorCode } from "../daemon/index.js";
 import { ensurePrivateDir } from "../daemon/private-dir.js";
 import type { StartedDaemon } from "./daemon-link.js";
+import { messageOf } from "../util/message-of.js";
 
 const MAX_LOG_BYTES = 1024 * 1024;
 
@@ -34,7 +35,7 @@ function openLog(logFile: string): number {
 
         if (errorCode(error) !== "ENOENT") {
             throw new DaemonError(
-                `Cannot open the daemon log ${logFile}: ${error instanceof Error ? error.message : String(error)}. Check its permissions.`,
+                `Cannot open the daemon log ${logFile}: ${messageOf(error)}. Check its permissions.`,
             );
         }
     }
@@ -47,7 +48,7 @@ function openLog(logFile: string): number {
         return openSync(logFile, flags, 0o600);
     } catch (error) {
         throw new DaemonError(
-            `Cannot open the daemon log ${logFile}: ${error instanceof Error ? error.message : String(error)}. Check its permissions.`,
+            `Cannot open the daemon log ${logFile}: ${messageOf(error)}. Check its permissions.`,
         );
     }
 }

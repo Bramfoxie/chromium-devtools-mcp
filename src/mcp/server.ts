@@ -19,6 +19,7 @@ import {
 import { describeError, logDaemon } from "../daemon/log.js";
 import { DaemonLink, type LinkDeps } from "./daemon-link.js";
 import { spawnDaemonProcess } from "./spawn-daemon.js";
+import { sleep } from "../util/sleep.js";
 
 const SERVER_NAME = "chromium-devtools-mcp";
 const START_TIMEOUT_MS = 50_000;
@@ -113,8 +114,7 @@ export function createDaemonLink(
               platform: layout.platform,
               uid     : layout.uid,
           })),
-        sleep:
-            options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms))),
+        sleep         : options.sleep ?? sleep,
         now           : options.now ?? (() => Date.now()),
         logFile,
         startTimeoutMs: START_TIMEOUT_MS,

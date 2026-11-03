@@ -1,11 +1,8 @@
 import { SERVER_NAME, type ServerEntry } from "./entry.js";
 import { detectEol, type MergeResult } from "./merge-result.js";
+import { isRecord } from "../util/is-record.js";
 
 type Json = Record<string, unknown>;
-
-function isObject(value: unknown): value is Json {
-    return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function serialize(root: Json, eol: string): string {
     return `${JSON.stringify(root, null, 2)}\n`.replace(/\n/g, eol);
@@ -27,11 +24,11 @@ export function mergeJson(
         }
     }
 
-    if (!isObject(root)) return { status: "invalid", reason: "the top level is not a JSON object" };
+    if (!isRecord(root)) return { status: "invalid", reason: "the top level is not a JSON object" };
 
     const servers = root.mcpServers;
 
-    if (servers !== undefined && !isObject(servers)) {
+    if (servers !== undefined && !isRecord(servers)) {
         return { status: "invalid", reason: "mcpServers is not a JSON object" };
     }
 
@@ -51,7 +48,7 @@ export function mergeJson(
         };
     }
 
-    const next = { ...(isObject(current) ? current : {}), ...extra, ...entry };
+    const next = { ...(isRecord(current) ? current : {}), ...extra, ...entry };
 
     if (current !== undefined && JSON.stringify(current) === JSON.stringify(next)) {
         return { status: "unchanged" };

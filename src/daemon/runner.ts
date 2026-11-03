@@ -1,5 +1,4 @@
 import {
-    abortableSleep,
     type AttachEndpoint,
     attachBrowser,
     runningInProfile,
@@ -16,6 +15,7 @@ import { acquireInstance } from "./lock.js";
 import { describeError, logDaemon } from "./log.js";
 import { realInstanceIO } from "./socket-io.js";
 import { ensureToken, readToken } from "./token.js";
+import { abortableSleep } from "../util/sleep.js";
 
 const DEFAULT_IDLE_TIMEOUT_MS = 30_000;
 const APPROVAL_HANDSHAKE_MS = 120_000;

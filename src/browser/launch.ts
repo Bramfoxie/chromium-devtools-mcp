@@ -2,6 +2,7 @@ import { spawn as nodeSpawn } from "node:child_process";
 import type { Socket } from "node:net";
 import type { Config } from "../config/index.js";
 import { type BrowserName, findBrowserExecutable } from "./discovery.js";
+import { messageOf } from "../util/message-of.js";
 
 const LISTENING_PATTERN = /DevTools listening on (ws:\/\/\S+)\r?\n/;
 const MAX_BUFFERED_STDERR = 64 * 1024;
@@ -97,10 +98,6 @@ const defaultDeps: LaunchDeps = {
     startTimeoutMs: 45_000,
     stopGraceMs   : 5_000,
 };
-
-function messageOf(error: unknown): string {
-    return error instanceof Error ? error.message : String(error);
-}
 
 export async function launchManaged(
     config   : ManagedConfig,

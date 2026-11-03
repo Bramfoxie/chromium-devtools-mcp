@@ -1,9 +1,12 @@
-import { lstat, readFile } from "node:fs/promises";
+import { lstat } from "node:fs/promises";
 import http from "node:http";
 import net from "node:net";
 import os from "node:os";
 import { pathFor, type Config } from "../config/index.js";
 import { BROWSERS, type BrowserName, type DiscoveryContext } from "./browsers.js";
+import { readIfExists } from "../util/read-if-exists.js";
+import { writeLogLine } from "../util/stderr.js";
+import { abortableSleep } from "../util/sleep.js";
 
 const PORT_FILE_NAME = "DevToolsActivePort";
 const BROWSER_PATH_PREFIX = "/devtools/browser/";
@@ -205,16 +208,6 @@ export async function attachBrowser(
     throw new AttachError("Attach was cancelled before the browser allowed remote debugging.");
 }
 
-export async function readIfExists(file: string): Promise<string | undefined> {
-    try {
-        return await readFile(file, "utf8");
-    } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
-
-        throw error;
-    }
-}
-
 export async function fileExists(file: string): Promise<boolean> {
     try {
         await lstat(file);
@@ -328,25 +321,6 @@ export function fetchVersion(
     });
 }
 
-export function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
-    return new Promise((resolve) => {
-        if (signal?.aborted) {
-            resolve();
-
-            return;
-        }
-
-        const done = () => {
-            clearTimeout(timer);
-            signal?.removeEventListener("abort", done);
-            resolve();
-        };
-        const timer = setTimeout(done, ms);
-
-        signal?.addEventListener("abort", done, { once: true });
-    });
-}
-
 function defaultAttachDeps(): AttachDeps {
     return {
         context       : { env: process.env, platform: process.platform, homedir: os.homedir() },
@@ -355,7 +329,7 @@ function defaultAttachDeps(): AttachDeps {
         isPortOpen    : probePort,
         fetchVersion,
         sleep         : abortableSleep,
-        log           : (message) => process.stderr.write(`chromium-devtools-mcp: ${message}\n`),
+        log           : writeLogLine,
         onWaiting     : () => undefined,
         pollIntervalMs: 1000,
     };

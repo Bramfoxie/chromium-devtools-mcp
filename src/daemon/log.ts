@@ -1,9 +1,11 @@
 import type { Writable } from "node:stream";
+import { messageOf } from "../util/message-of.js";
+import { writeLogLine } from "../util/stderr.js";
 
 const MAX_LOGGED_CHARS = 200;
 
 export function logDaemon(message: string): void {
-    process.stderr.write(`chromium-devtools-mcp: ${message}\n`);
+    writeLogLine(message);
 }
 
 export function quoted(text: string): string {
@@ -13,7 +15,7 @@ export function quoted(text: string): string {
 }
 
 export function describeError(error: unknown): string {
-    return quoted(error instanceof Error ? error.message : String(error));
+    return quoted(messageOf(error));
 }
 
 export function ignoreStreamErrors(stream: Pick<Writable, "on"> = process.stderr): void {
