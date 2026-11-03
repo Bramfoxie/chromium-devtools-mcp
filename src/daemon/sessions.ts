@@ -665,9 +665,13 @@ export class ClientSession {
     ): Promise<void> {
         if (sessions === undefined || children === undefined) return;
 
-        for (const child of sessions) {
-            const frames = await child.send("Page.getFrameTree", undefined).catch(() => undefined);
-            const tree = frameSummaries(frames, () => true);
+        const trees = await Promise.all(sessions.map((child) =>
+            child.send("Page.getFrameTree", undefined, CHILD_COMMAND_TIMEOUT_MS).catch(
+                () => undefined,
+            )));
+
+        for (const [index, child] of sessions.entries()) {
+            const tree = frameSummaries(trees[index], () => true);
             const root = tree[0];
 
             if (root === undefined) continue;

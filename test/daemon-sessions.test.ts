@@ -979,6 +979,44 @@ describe("frame targets", () => {
         expect(frames.find((frame) => frame.frameId === "same")).toMatchObject({ isolated: false });
     });
 
+    it("lists frames within one child timeout when several children hang", async () => {
+        vi.useFakeTimers();
+
+        try {
+            const { backend, open } = setup();
+            const a = await open("a");
+            const tab = await a.createTab("https://a.example/");
+
+            await a.send(tab, "Page.enable", undefined);
+            const session = backend.sessions.get(tab);
+
+            if (session) session.reply = mainTree();
+
+            await a.listFrames(tab);
+
+            for (const key of ["h1", "h2", "h3"]) {
+                const child = backend.childHandles[0]?.addChild(key, true, CROSS);
+
+                if (child) {
+                    child.send = (_method, _params, timeoutMs) =>
+                        new Promise((_resolve, reject) => {
+                            setTimeout(() => reject(new Error("timed out")), timeoutMs ?? 30_000);
+                        });
+                }
+            }
+
+            let listed = false;
+            const listing = a.listFrames(tab).then(() => void (listed = true));
+
+            await vi.advanceTimersByTimeAsync(5000);
+            await listing;
+
+            expect(listed).toBe(true);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
     it("routes cdp.send with a frame id to the child session", async () => {
         const { backend, open } = setup();
         const a = await open("a");
