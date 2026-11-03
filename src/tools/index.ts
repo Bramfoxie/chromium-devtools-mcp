@@ -35,17 +35,18 @@ export {
 
 export { safetyFrameOf } from "./safety-frame.js";
 
+export { domQuery } from "./dom-query.js";
+
 export {
     buildPiercedQueryScript,
     buildQueryScript,
     buildRowsFunction,
     clipValue,
     DEFAULT_QUERY_ATTRIBUTES,
-    domQuery,
     isPasswordInput,
     QUERY_MAX_TEXT_CANDIDATES,
     roundRect,
-} from "./dom-query.js";
+} from "./dom-query-rows.js";
 
 export {
     type AxDomInfo,
