@@ -1,9 +1,12 @@
 import { z } from "zod";
+import type { Config } from "../config/index.js";
 import { ErrorCode, RpcError } from "../daemon/index.js";
 import type { DaemonAccess } from "../mcp/index.js";
+import { isRestricted } from "../safety/index.js";
 import { ToolError } from "./errors.js";
 import { bindAccess, isolatedDocumentNode } from "./frame-scope.js";
 import type { FrameState } from "./frames.js";
+import { assertPageAllowed } from "./page-allowed.js";
 
 export const MAX_SELECTOR_LENGTH = 1024;
 
@@ -802,9 +805,40 @@ export async function resolveElement(
 }
 
 export interface ElementScope {
+    config? : Config;
     access  : DaemonAccess;
     elements: ElementRegistry;
     frames  : FrameState;
+}
+
+async function assertElementDocumentAllowed(
+    scope  : ElementScope,
+    tab    : string,
+    element: ResolvedElement,
+): Promise<void> {
+    if (scope.config === undefined || !isRestricted(scope.config.safety.allowedDomains)) return;
+
+    let href: unknown;
+
+    try {
+        const reply = await elementAccess(scope.access, element).send(tab, "Runtime.callFunctionOn", {
+            objectId           : element.objectId,
+            functionDeclaration: "function () { return this.ownerDocument.location.href; }",
+            returnByValue      : true,
+        }) as { result?: { value?: unknown } } | null;
+
+        href = reply?.result?.value;
+    } catch {
+        href = undefined;
+    }
+
+    if (typeof href !== "string") {
+        throw new ToolError(
+            "The document of the element could not be checked against safety.allowedDomains. Call the tool again.",
+        );
+    }
+
+    assertPageAllowed({ config: scope.config }, href, "The element is in a document from");
 }
 
 export async function withElement<T>(
@@ -818,6 +852,8 @@ export async function withElement<T>(
     });
 
     try {
+        if (target.pierce === true) await assertElementDocumentAllowed(scope, tab, element);
+
         return await use(element);
     } finally {
         await elementAccess(scope.access, element).send(tab, "Runtime.releaseObject", {
