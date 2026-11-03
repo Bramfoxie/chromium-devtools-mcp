@@ -349,3 +349,39 @@ describe("daemon subcommands", () => {
         expect(run).toHaveBeenCalledTimes(1);
     });
 });
+
+describe("doctor", () => {
+    it("runs the checks with the loaded config and returns their exit code", async () => {
+        const doctor = vi.fn(async () => 1);
+        const config = cannedConfig({ mode: "managed" });
+        const { run } = harness({ doctor, load: () => config });
+
+        expect(await run(["doctor", "--mode", "managed"])).toBe(1);
+        expect(doctor).toHaveBeenCalledWith(config);
+    });
+
+    it("explains a configuration error and exits with 2 without running the checks", async () => {
+        const doctor = vi.fn(async () => 0);
+        const { run, output } = harness({
+            doctor,
+            load: () => {
+                throw new ConfigError("invalid configuration: mode: bad");
+            },
+        });
+
+        expect(await run(["doctor", "--mode", "bad"])).toBe(2);
+        expect(doctor).not.toHaveBeenCalled();
+        expect(output.join("")).toContain("invalid configuration: mode: bad");
+    });
+
+    it("reports a failure of the checks themselves", async () => {
+        const { run, output } = harness({
+            doctor: async () => {
+                throw new Error("lookup exploded");
+            },
+        });
+
+        expect(await run(["doctor"])).toBe(1);
+        expect(output.join("")).toContain("lookup exploded");
+    });
+});

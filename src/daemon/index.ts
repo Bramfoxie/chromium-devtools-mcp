@@ -15,6 +15,7 @@ export {
     daemonIdentity,
     describeIdentity,
     describeSettings,
+    differingFields,
 } from "./identity.js";
 
 export {

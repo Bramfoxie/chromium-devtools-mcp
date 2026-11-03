@@ -4,6 +4,7 @@ import { runInstall } from "./install/install.js";
 import os from "node:os";
 import { AlreadyRunningError, runDaemon, type RunningDaemon } from "./daemon/index.js";
 import { runMcpServer, type RunningMcp } from "./mcp/server.js";
+import { formatChecks, realDoctorDeps, runDoctor } from "./doctor.js";
 import { messageOf } from "./util/message-of.js";
 import {
     DAEMON_SUBCOMMANDS,
@@ -13,7 +14,7 @@ import {
 } from "./cli-daemon.js";
 
 const USAGE =
-    "Usage: chromium-devtools-mcp [options]        run the MCP server on stdio\n       chromium-devtools-mcp daemon [options] run the browser daemon\n       chromium-devtools-mcp daemon status|stop|logs [--lines <count>]\n       chromium-devtools-mcp install --client <name|all> [--dry-run] [--remove] [options]\nOptions: --browser chrome, --mode attach|managed, --headless, --profile-dir, --debug-port, --ws-endpoint, --allow-focus, --isolated, --read-only, --allowed-domains, --confirm-dangerous, --help\nBoolean flags also accept a --no- form, for example --no-headless.";
+    "Usage: chromium-devtools-mcp [options]        run the MCP server on stdio\n       chromium-devtools-mcp daemon [options] run the browser daemon\n       chromium-devtools-mcp daemon status|stop|logs [--lines <count>]\n       chromium-devtools-mcp doctor [options]  check the setup and print how to fix it\n       chromium-devtools-mcp install --client <name|all> [--dry-run] [--remove] [options]\nOptions: --browser chrome, --mode attach|managed, --headless, --profile-dir, --debug-port, --ws-endpoint, --allow-focus, --isolated, --read-only, --allowed-domains, --confirm-dangerous, --help\nBoolean flags also accept a --no- form, for example --no-headless.";
 
 export interface CliDeps {
     run     : (config: Config) => Promise<RunningDaemon>;
@@ -22,6 +23,7 @@ export interface CliDeps {
     serve   : (config: Config, flags: string[]) => Promise<RunningMcp>;
     install : (argv: string[]) => number;
     control : (subcommand: DaemonSubcommand, argv: string[]) => Promise<number>;
+    doctor  : (config: Config) => Promise<number>;
     onSignal: (signal: "SIGINT" | "SIGTERM" | "SIGHUP", handler: () => void) => void;
 }
 
@@ -40,7 +42,14 @@ const defaults: CliDeps = {
             out     : (text) => void process.stdout.write(text),
             err     : (text) => void process.stderr.write(text),
         }),
-    control : (subcommand, argv) => runDaemonControl(subcommand, argv, realDaemonControlDeps()),
+    control: (subcommand, argv) => runDaemonControl(subcommand, argv, realDaemonControlDeps()),
+    doctor : async (config) => {
+        const checks = await runDoctor(config, realDoctorDeps());
+
+        process.stdout.write(formatChecks(checks));
+
+        return checks.some((check) => check.level === "fail") ? 1 : 0;
+    },
     onSignal: (signal, handler) => void process.once(signal, handler),
 };
 
@@ -76,6 +85,20 @@ async function runServe(deps: CliDeps, argv: string[]): Promise<number> {
     await running.done;
 
     return 0;
+}
+
+async function runDoctorCommand(deps: CliDeps, argv: string[]): Promise<number> {
+    const config = loadOrExplain(deps, argv);
+
+    if (typeof config === "number") return config;
+
+    try {
+        return await deps.doctor(config);
+    } catch (error) {
+        deps.write(`${messageOf(error)}\n`);
+
+        return 1;
+    }
 }
 
 async function runDaemonCommand(deps: CliDeps, argv: string[]): Promise<number> {
@@ -121,6 +144,7 @@ export async function main(argv: string[], overrides: Partial<CliDeps> = {}): Pr
     }
 
     if (first === "install") return deps.install(rest);
+    if (first === "doctor") return runDoctorCommand(deps, rest);
 
     if (first === "daemon") {
         const [subcommand, ...options] = rest;

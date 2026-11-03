@@ -164,6 +164,13 @@ export async function resolveAttachEndpoint(
     return undefined;
 }
 
+export function findAttachEndpoint(
+    config   : AttachConfig,
+    overrides: Partial<AttachDeps> = {},
+): Promise<AttachEndpoint | undefined> {
+    return resolveAttachEndpoint(config, { ...defaultAttachDeps(), ...overrides });
+}
+
 export function explicitEndpoint(webSocketUrl: string): AttachEndpoint {
     return { port: Number(new URL(webSocketUrl).port), webSocketUrl, source: "ws-endpoint" };
 }

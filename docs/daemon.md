@@ -19,7 +19,9 @@ How the per-user daemon, sessions, browser modes and attach setup work.
 - `chromium-devtools-mcp daemon stop` asks the daemon to stop and waits until its socket is gone, for up to 30 seconds. It stops the same way as on a signal, so a managed browser the daemon launched is closed. It exits with 0 also when no daemon runs, and with 1 when the daemon is still there after the wait.
 - `chromium-devtools-mcp daemon logs` prints the last 100 lines of `daemon.log`; `--lines <count>` takes a number from 1 to 10000. The file exists only when an MCP client started the daemon; a daemon started by hand with `chromium-devtools-mcp daemon` writes to its own terminal.
 
-These commands talk to the daemon of the current user and take no browser settings. `chromium-devtools-mcp daemon` with options still runs the daemon.
+- `chromium-devtools-mcp doctor` checks the setup for the settings you pass (the same flags, environment variables and config file as the server) and prints one line per check: `[ok]`, `[warn]` or `[fail]`, with the steps to fix a problem under it. It checks the Node.js version, then in attach mode that a browser with remote debugging is reachable (or, with `wsEndpoint`, that its port accepts connections), in managed mode that the browser is installed and the profile directory can be written, and finally whether the daemon runs with the same settings. It exits with 1 when a check fails and with 0 otherwise, also with warnings. It changes nothing and never starts a browser or a daemon.
+
+`daemon status`, `daemon stop` and `daemon logs` talk to the daemon of the current user and take no browser settings. `chromium-devtools-mcp daemon` with options still runs the daemon.
 
 ## Attach mode setup
 
