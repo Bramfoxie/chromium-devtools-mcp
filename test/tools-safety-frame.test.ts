@@ -44,19 +44,21 @@ function framedAccess(): InstanceType<typeof FakeAccess> {
     });
 }
 
-describe("safetyFrameOf", () => {
+describe("safetyFramesOf", () => {
     it("reports the url and origin of a frame given by id", async () => {
         const access = framedAccess();
         const frames = new FrameState({ access: access.asAccess() });
         const elements = new ElementRegistry();
 
         await expect(
-            tools.safetyFrameOf({ target: { selector: "#a", frame: "pay" } }, "tab1", elements, frames),
-        ).resolves.toEqual({
-            frameId: "pay",
-            url    : "https://pay.example:8443/checkout?x=1",
-            origin : "https://pay.example:8443",
-        });
+            tools.safetyFramesOf({ target: { selector: "#a", frame: "pay" } }, "tab1", elements, frames),
+        ).resolves.toEqual([
+            {
+                frameId: "pay",
+                url    : "https://pay.example:8443/checkout?x=1",
+                origin : "https://pay.example:8443",
+            },
+        ]);
     });
 
     it("finds the frame of a uid and omits the origin of about:blank", async () => {
@@ -66,8 +68,8 @@ describe("safetyFrameOf", () => {
         const [uid] = elements.assign("tab1", [{ backendNodeId: 5, frameId: "blank" }]);
 
         await expect(
-            tools.safetyFrameOf({ target: { uid } }, "tab1", elements, frames),
-        ).resolves.toEqual({ frameId: "blank", url: "about:blank" });
+            tools.safetyFramesOf({ target: { uid } }, "tab1", elements, frames),
+        ).resolves.toEqual([{ frameId: "blank", url: "about:blank" }]);
     });
 
     it("returns nothing without a frame reference or for an unknown frame", async () => {
@@ -76,16 +78,39 @@ describe("safetyFrameOf", () => {
         const elements = new ElementRegistry();
 
         await expect(
-            tools.safetyFrameOf({ target: { selector: "#a" } }, "tab1", elements, frames),
-        ).resolves.toBeUndefined();
+            tools.safetyFramesOf({ target: { selector: "#a" } }, "tab1", elements, frames),
+        ).resolves.toEqual([]);
     });
 
     it("rejects a frame that the tab does not have", async () => {
         const frames = new FrameState({ access: framedAccess().asAccess() });
 
         await expect(
-            tools.safetyFrameOf({ frame: "nope" }, "tab1", new ElementRegistry(), frames),
+            tools.safetyFramesOf({ frame: "nope" }, "tab1", new ElementRegistry(), frames),
         ).rejects.toThrow("not known");
+    });
+
+    it("collects the frames of every target of a call once", async () => {
+        const frames = new FrameState({ access: framedAccess().asAccess() });
+        const elements = new ElementRegistry();
+        const [uid] = elements.assign("tab1", [{ backendNodeId: 5, frameId: "blank" }]);
+        const collected = await tools.safetyFramesOf(
+            {
+                root  : { selector: "#r", frame: "pay" },
+                from  : { uid },
+                to    : { selector: "#t", frame: "pay" },
+                fields: [
+                    { target: { selector: "#a", frame: "pay" }, value: "x" },
+                    { target: { selector: "#b" }, value: "y" },
+                    "not a field",
+                ],
+            },
+            "tab1",
+            elements,
+            frames,
+        );
+
+        expect(collected.map((frame) => frame.frameId).sort()).toEqual(["blank", "pay"]);
     });
 });
 
@@ -107,7 +132,7 @@ describe("runTool safety request", () => {
             runtime,
         );
 
-        expect(seen[0]).toMatchObject({
+        expect(seen.find((request) => request.frame !== undefined)).toMatchObject({
             tool : "input_click",
             frame: { frameId: "pay", origin: "https://pay.example:8443" },
         });
@@ -157,5 +182,48 @@ describe("runTool safety request", () => {
         );
 
         expect(seen[0]?.frame).toBeUndefined();
+    });
+
+    it("refuses when any of several targets is in a frame outside the allowlist", async () => {
+        const { defineTool } = tools;
+        const { z } = await import("zod");
+        const twoTargets = defineTool({
+            name       : "two_targets",
+            description: "Test tool with a source and a destination.",
+            access     : "mutate",
+            input      : z.strictObject({
+                from: z.strictObject({ selector: z.string(), frame: z.string().optional() }),
+                to  : z.strictObject({ selector: z.string(), frame: z.string().optional() }),
+            }),
+            output : z.strictObject({}),
+            handler: async () => ({}),
+        });
+        const access = framedAccess();
+        const config = {
+            ...managedConfig,
+            safety: { ...managedConfig.safety, allowedDomains: ["a.example"] },
+        };
+        const runtime = new tools.ToolRuntime({ access: access.asAccess(), config });
+
+        runtime.tabs.select("tab1");
+
+        const allowed = await tools.runTool(
+            twoTargets,
+            { from: { selector: "#a" }, to: { selector: "#b", frame: "blank" } },
+            extra(),
+            runtime,
+        );
+
+        expect(allowed.isError).not.toBe(true);
+
+        const refused = await tools.runTool(
+            twoTargets,
+            { from: { selector: "#a" }, to: { selector: "#b", frame: "pay" } },
+            extra(),
+            runtime,
+        );
+
+        expect(refused.isError).toBe(true);
+        expect(JSON.stringify(refused.content)).toContain("pay.example");
     });
 });

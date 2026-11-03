@@ -12,7 +12,7 @@ export { binaryResult, errorResult, imageBlock, jsonResult, resourceBlock, textB
 
 export { checkSafety, type SafetyRequest } from "./safety.js";
 
-export { safetyFrameOf } from "./safety-frame.js";
+export { safetyFramesOf } from "./safety-frame.js";
 
 export { domQuery } from "./dom-query.js";
 

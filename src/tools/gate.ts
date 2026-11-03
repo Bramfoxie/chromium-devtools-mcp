@@ -3,7 +3,7 @@ import type { ToolRuntime } from "./context.js";
 import type { AnyTool } from "./define-tool.js";
 import { isRestricted } from "../safety/index.js";
 import { checkSafety, type SafetyAccess, type SafetyDecision, type SafetyFrame } from "./safety.js";
-import { safetyFrameOf } from "./safety-frame.js";
+import { safetyFramesOf } from "./safety-frame.js";
 import { accessFor, dangerousFor, tabUrlExemptFor } from "./tool-traits.js";
 
 type Admission =
@@ -79,11 +79,11 @@ async function admitWithChecks(
     }
 
     const tab = access === "mutate" ? selectedTab(args, runtime) : undefined;
-    let frame: SafetyFrame | undefined;
+    let frames: SafetyFrame[] = [];
 
     if (tab !== undefined) {
         try {
-            frame = await safetyFrameOf(args, tab, runtime.elements, runtime.frames);
+            frames = await safetyFramesOf(args, tab, runtime.elements, runtime.frames);
         } catch {
             if (isRestricted(runtime.config.safety.allowedDomains)) {
                 return {
@@ -94,15 +94,21 @@ async function admitWithChecks(
         }
     }
 
-    const decision = checkSafety({
+    const base = {
         tool  : tool.name,
         access,
         config: runtime.config,
         target: tool.target?.(args),
         tabUrl,
-        ...(frame === undefined ? {} : { frame }),
         dangerous,
-    });
+    };
+    let decision = checkSafety(base);
+
+    for (const frame of frames) {
+        if (!decision.allowed) break;
+
+        decision = checkSafety({ ...base, frame });
+    }
 
     if (!decision.allowed) return refusal(decision);
 
