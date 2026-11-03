@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { flushMicrotasks } from "./helpers/fake-clock.js";
 import { main } from "../src/cli-main.js";
 import { type Config, ConfigError, loadConfig } from "../src/config/index.js";
 import { AlreadyRunningError, type RunningDaemon } from "../src/daemon/index.js";
@@ -147,7 +148,7 @@ describe("MCP server mode", () => {
             return code;
         });
 
-        await new Promise((resolve) => setTimeout(resolve, 20));
+        await flushMicrotasks();
         expect(returned).toBe(false);
         finish();
         expect(await pending).toBe(0);

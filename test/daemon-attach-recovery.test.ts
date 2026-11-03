@@ -134,13 +134,14 @@ describe("attach connector phases", () => {
     it("ends the waiting phase on abort without leaving sockets", async () => {
         const chrome = await newChrome();
         const controller = new AbortController();
+        const onWaiting = vi.fn();
         const pending = connectorFor(chrome, 2000)(
             attachConfig(chrome.port),
-            { onWaiting: () => undefined },
+            { onWaiting },
             controller.signal,
         );
 
-        await new Promise((resolve) => setTimeout(resolve, 80));
+        await vi.waitFor(() => expect(onWaiting).toHaveBeenCalledTimes(1));
         controller.abort();
         await expect(pending).rejects.toThrow();
         expect(chrome.sockets.size).toBe(0);

@@ -2,6 +2,7 @@ import { mkdir } from "node:fs/promises";
 import net from "node:net";
 import { Duplex } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { useFakeClock } from "./helpers/fake-clock.js";
 import { ErrorCode, IpcClient, IpcClosedError, IpcTimeoutError, MAX_RESPONSE_BYTES, RpcError } from "../src/daemon/index.js";
 import { type AcceptOptions, acceptConnection, type ClientConnection, MAX_PENDING_CONNECTIONS, PendingConnections, type RequestHandler } from "../src/daemon/server.js";
 import { acquireInstance } from "../src/daemon/lock.js";
@@ -159,9 +160,14 @@ describe("handshake", () => {
     it("keeps an authenticated connection open past the hello timeout", async () => {
         const server = await startServer({ helloTimeoutMs: 50 });
         const client = await connectClient(server);
+        const clock = useFakeClock();
 
-        await new Promise((resolve) => setTimeout(resolve, 150));
-        await expect(client.request("echo", "still here")).resolves.toBe("still here");
+        try {
+            await clock.advance(150);
+            await expect(client.request("echo", "still here")).resolves.toBe("still here");
+        } finally {
+            clock.restore();
+        }
     });
 
     it("closes a connection beyond the limit of connections waiting for a hello", async () => {

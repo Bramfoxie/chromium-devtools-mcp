@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { useFakeClock } from "./helpers/fake-clock.js";
 import type { Config } from "../src/config/index.js";
 import { AlreadyRunningError, connectToDaemon, DaemonConfigMismatchError, DaemonError, type DaemonIdentity, daemonIdentity, DaemonNotRunningError, type DaemonLayout, ErrorCode, IpcClient, RpcError, runDaemon, type RunningDaemon } from "../src/daemon/index.js";
 import { type BrowserConnector, createConnector, type DaemonOutcome, approvalMessage } from "../src/daemon/runner.js";
@@ -63,10 +64,16 @@ async function ready(client: IpcClient): Promise<void> {
     });
 }
 
+async function turns(count: number): Promise<void> {
+    for (let turn = 0; turn < count; turn += 1) {
+        await new Promise((resolve) => setImmediate(resolve));
+    }
+}
+
 async function settled(running: RunningDaemon): Promise<DaemonOutcome | "pending"> {
     return Promise.race([
         running.done,
-        new Promise<"pending">((resolve) => setTimeout(() => resolve("pending"), 50)),
+        turns(10).then((): "pending" => "pending"),
     ]);
 }
 
@@ -284,11 +291,20 @@ describe("waiting for the browser", () => {
         const client = await connect(layout);
 
         gate.announce("Open chrome://inspect and turn on remote debugging.");
-        await new Promise((resolve) => setTimeout(resolve, 300));
-        expect(await settled(running)).toBe("pending");
-        gate.release();
-        await ready(client);
-        await client.close();
+        const clock = useFakeClock();
+
+        try {
+            await clock.advance(300);
+            expect(await settled(running)).toBe("pending");
+            gate.release();
+            await ready(client);
+            await client.close();
+            await turns(10);
+            await clock.advance(80);
+        } finally {
+            clock.restore();
+        }
+
         expect((await running.done).reason).toBe("idle");
     });
 
@@ -582,9 +598,18 @@ describe("idle shutdown", () => {
 
         await ready(client);
         expect(await settled(running)).toBe("pending");
-        await new Promise((resolve) => setTimeout(resolve, 200));
-        expect(await settled(running)).toBe("pending");
-        await client.close();
+        const clock = useFakeClock();
+
+        try {
+            await clock.advance(200);
+            expect(await settled(running)).toBe("pending");
+            await client.close();
+            await turns(10);
+            await clock.advance(80);
+        } finally {
+            clock.restore();
+        }
+
         expect((await running.done).reason).toBe("idle");
         expect(recorded.count).toBe(1);
     });
@@ -597,15 +622,24 @@ describe("idle shutdown", () => {
         const second = await connect(layout, "second");
 
         await ready(first);
-        await first.close();
-        await new Promise((resolve) => setTimeout(resolve, 250));
-        expect(await settled(running)).toBe("pending");
-        const third = await connect(layout, "third");
+        const clock = useFakeClock();
 
-        await second.close();
-        await new Promise((resolve) => setTimeout(resolve, 250));
-        expect(await settled(running)).toBe("pending");
-        await third.close();
+        try {
+            await first.close();
+            await clock.advance(250);
+            expect(await settled(running)).toBe("pending");
+            const third = await connect(layout, "third");
+
+            await second.close();
+            await clock.advance(250);
+            expect(await settled(running)).toBe("pending");
+            await third.close();
+            await turns(10);
+            await clock.advance(100);
+        } finally {
+            clock.restore();
+        }
+
         expect((await running.done).reason).toBe("idle");
     });
 
