@@ -152,7 +152,7 @@ export function ruleMatches(
     }
 
     if (rule.resourceType !== undefined && rule.resourceType !== resourceType) return false;
-    if (rule.times !== undefined && rule.applications >= rule.times) return false;
+    if (rule.times !== undefined && rule.applications - rule.errors >= rule.times) return false;
 
     return true;
 }
@@ -173,6 +173,7 @@ export class InterceptionManager {
     private readonly access: DaemonAccess;
     private readonly clock : ToolClock;
     private readonly tabs = new Map<string, TabInterception>();
+    private readonly pending = new Map<MockRule, number>();
     private attached = false;
 
     constructor(options: InterceptionOptions) {
@@ -288,9 +289,43 @@ export class InterceptionManager {
         }
 
         rule.applications += 1;
+        this.pending.set(rule, (this.pending.get(rule) ?? 0) + 1);
 
-        const expired = rule.times !== undefined && rule.applications >= rule.times;
+        try {
+            await this.applyRule(tab, state, rule, paused, resolve);
+        } finally {
+            await this.settle(tab, state, rule);
+        }
+    }
 
+    private async settle(tab: string, state: TabInterception, rule: MockRule): Promise<void> {
+        const remaining = (this.pending.get(rule) ?? 1) - 1;
+
+        if (remaining > 0) {
+            this.pending.set(rule, remaining);
+
+            return;
+        }
+
+        this.pending.delete(rule);
+
+        const exhausted = rule.times !== undefined && rule.applications - rule.errors >= rule.times;
+
+        if (!exhausted || !state.rules.includes(rule)) return;
+
+        state.rules = state.rules.filter((candidate) => candidate !== rule);
+        await this.sync(tab).catch((error: unknown) => {
+            logDaemon(`could not sync interception: ${describeError(error)}`);
+        });
+    }
+
+    private async applyRule(
+        tab    : string,
+        state  : TabInterception,
+        rule   : MockRule,
+        paused : PausedRequest,
+        resolve: (command: () => Promise<unknown>) => Promise<boolean>,
+    ): Promise<void> {
         if (rule.delayMs > 0) {
             let wake: () => void = () => undefined;
             const entry: DeferredRequest = {
@@ -335,13 +370,6 @@ export class InterceptionManager {
         }
 
         if (!resolved) rule.errors += 1;
-
-        if (expired) {
-            state.rules = state.rules.filter((candidate) => candidate !== rule);
-            await this.sync(tab).catch((error: unknown) => {
-                logDaemon(`could not sync interception: ${describeError(error)}`);
-            });
-        }
     }
 
     async forget(tab: string): Promise<void> {

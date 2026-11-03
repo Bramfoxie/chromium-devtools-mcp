@@ -68,6 +68,10 @@ describe("ruleMatches", () => {
         expect(ruleMatches(rule({ times: 1, applications: 0 }), "u", "GET", "XHR")).toBe(true);
         expect(ruleMatches(rule({ times: 1, applications: 1 }), "u", "GET", "XHR")).toBe(false);
     });
+
+    it("gives the budget back for an application that failed", () => {
+        expect(ruleMatches(rule({ times: 1, applications: 1, errors: 1 }), "u", "GET", "XHR")).toBe(true);
+    });
 });
 
 describe("headersForCdp", () => {
@@ -421,6 +425,79 @@ describe("InterceptionManager", () => {
             const methods = fake.sent.map((call) => call.method);
 
             expect(methods.indexOf("Fetch.continueRequest")).toBeLessThan(methods.indexOf("Fetch.disable"));
+        });
+    });
+
+    describe("times budget", () => {
+        const ruleOf = (times: number, delayMs = 0) => ({
+            urlPattern  : "*",
+            method      : undefined,
+            resourceType: undefined,
+            response    : {
+                status     : 200,
+                headers    : [],
+                bodyBase64 : undefined,
+                contentType: undefined,
+            },
+            fail: undefined,
+            delayMs,
+            times,
+        });
+        const paused = (requestId: string) => ({
+            targetId: "tab1",
+            event   : "Fetch.requestPaused",
+            params  : {
+                requestId,
+                request     : { url: "https://a.example/x", method: "GET" },
+                resourceType: "XHR",
+            },
+        });
+
+        it("keeps a rule whose application failed and removes it after a good one", async () => {
+            const { fake, manager } = interception();
+
+            manager.add("tab1", ruleOf(1));
+            await manager.sync("tab1");
+            fake.failSend = (_tab, method) =>
+                method === "Fetch.fulfillRequest" ? new Error("boom") : undefined as never;
+
+            await manager.handleCdpEvent(paused("r1"));
+            expect(manager.rulesOf("tab1")).toHaveLength(1);
+
+            fake.failSend = undefined;
+            await manager.handleCdpEvent(paused("r2"));
+
+            expect(manager.rulesOf("tab1")).toEqual([]);
+            expect(fake.sent.filter((call) => call.method === "Fetch.fulfillRequest")).toHaveLength(2);
+        });
+
+        it("removes an exhausted rule once its delayed request is answered", async () => {
+            const fake = new FakeAccess();
+            let wake: () => void = () => undefined;
+            const manager = new InterceptionManager({
+                access: fake.asAccess(),
+                clock : {
+                    now  : () => 1_700_000_000_000,
+                    sleep: () => new Promise<void>((resolve) => void (wake = resolve)),
+                },
+            });
+
+            manager.attach();
+            manager.add("tab1", ruleOf(1, 1000));
+            await manager.sync("tab1");
+
+            const first = manager.handleCdpEvent(paused("slow1"));
+
+            await Promise.resolve();
+            await manager.handleCdpEvent(paused("other"));
+            expect(fake.sent.filter((call) => call.method === "Fetch.continueRequest")).toHaveLength(1);
+            expect(manager.rulesOf("tab1")).toHaveLength(1);
+
+            wake();
+            await first;
+
+            expect(manager.rulesOf("tab1")).toEqual([]);
+            expect(fake.sent.some((call) => call.method === "Fetch.fulfillRequest")).toBe(true);
         });
     });
 
