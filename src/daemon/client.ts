@@ -119,33 +119,29 @@ export class IpcClient {
         }
 
         return new Promise<unknown>((resolve, reject) => {
+            const detach = (): void => options.signal?.removeEventListener("abort", onAbort);
+            const settle = {
+                resolve: (value: unknown): void => {
+                    detach();
+                    resolve(value);
+                },
+                reject: (error: Error): void => {
+                    detach();
+                    reject(error);
+                },
+            };
             const timer = setTimeout(() => {
                 this.pending.delete(id);
-                options.signal?.removeEventListener("abort", onAbort);
-                reject(new IpcTimeoutError(method, timeoutMs));
+                settle.reject(new IpcTimeoutError(method, timeoutMs));
             }, timeoutMs);
-            const onAbort = () => {
+            const onAbort = (): void => {
                 clearTimeout(timer);
                 this.pending.delete(id);
-                reject(new IpcCancelledError(method));
+                settle.reject(new IpcCancelledError(method));
             };
 
             options.signal?.addEventListener("abort", onAbort, { once: true });
-            const pending = { method, resolve, reject, timer };
-            const originalResolve = pending.resolve;
-            const originalReject = pending.reject;
-
-            pending.resolve = (value) => {
-                options.signal?.removeEventListener("abort", onAbort);
-                originalResolve(value);
-            };
-
-            pending.reject = (error: Error) => {
-                options.signal?.removeEventListener("abort", onAbort);
-                originalReject(error);
-            };
-
-            this.pending.set(id, pending);
+            this.pending.set(id, { method, ...settle, timer });
             this.socket.write(line);
         });
     }
