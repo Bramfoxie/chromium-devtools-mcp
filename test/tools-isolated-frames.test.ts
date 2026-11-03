@@ -71,6 +71,16 @@ describe("bindAccess", () => {
 
         expect(fake.sent.map((call) => call.frameId)).toEqual(["cross", "other"]);
     });
+
+    it("binds the frame of a command object the same way", async () => {
+        const fake = crossFake();
+        const bound = bindAccess(fake.asAccess(), "cross");
+
+        await bound.send({ targetId: "tab1", method: "Page.getFrameTree" });
+        await bound.send({ targetId: "tab1", method: "Page.getFrameTree", frameId: "other" });
+
+        expect(fake.sent.map((call) => call.frameId)).toEqual(["cross", "other"]);
+    });
 });
 
 describe("isolatedDocumentNode", () => {

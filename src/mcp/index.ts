@@ -1,11 +1,15 @@
 export {
+    type CdpCommand,
     DaemonAccess,
     type DaemonAccessOptions,
     type DaemonEventHandler,
     type DaemonFrame,
     type DaemonTab,
     SessionResetError,
+    type PositionalSend,
+    type SendArguments,
     type SessionSummary,
+    toCdpCommand,
 } from "./daemon-access.js";
 
 export {

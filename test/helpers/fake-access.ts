@@ -1,5 +1,14 @@
 import { ErrorCode, IpcCancelledError, RpcError } from "../../src/daemon/index.js";
-import type { DaemonAccess, DaemonFrame, DaemonTab, SessionSummary } from "../../src/mcp/index.js";
+import {
+    type CdpCommand,
+    type DaemonAccess,
+    type DaemonFrame,
+    type DaemonTab,
+    type PositionalSend,
+    type SendArguments,
+    type SessionSummary,
+    toCdpCommand,
+} from "../../src/mcp/index.js";
 
 export interface FakeAccessOptions {
     tabs?    : DaemonTab[];
@@ -139,21 +148,19 @@ export class FakeAccess {
         return this.frames.map((frame) => ({ ...frame }));
     }
 
-    async send(
-        targetId  : string,
-        method    : string,
-        params?   : Record<string, unknown>,
-        timeoutMs?: number,
-        frameId?  : string,
-        options?  : { signal?: AbortSignal; confirmed?: boolean },
-    ): Promise<unknown> {
+    send(command: CdpCommand): Promise<unknown>;
+    send(...args: PositionalSend): Promise<unknown>;
+    async send(...args: SendArguments): Promise<unknown> {
+        const command = toCdpCommand(args);
+        const { targetId, method, params, timeoutMs, frameId, signal, confirmed } = command;
+
         this.sent.push({
             targetId,
             method,
             params,
             timeoutMs,
             frameId,
-            ...(options?.confirmed === true ? { confirmed: true } : {}),
+            ...(confirmed === true ? { confirmed: true } : {}),
         });
         this.order.push(`send ${method}`);
         const failure = this.failSend?.(targetId, method);
@@ -166,9 +173,9 @@ export class FakeAccess {
             result: { type: "undefined" },
         };
 
-        if (options?.signal === undefined) return answer;
+        if (signal === undefined) return answer;
 
-        return abortable(Promise.resolve(answer), options.signal);
+        return abortable(Promise.resolve(answer), signal);
     }
 
     async subscribe(targetId: string, event: string, frameId?: string): Promise<void> {

@@ -39,6 +39,27 @@ describe("DaemonAccess requests", () => {
         await expect(access.listTabs("owned")).rejects.toThrow(/unexpected result/);
     });
 
+    it("sends the same cdp.send request for a command object and positional arguments", async () => {
+        const link = new FakeLink(() => ({ ok: true }));
+        const access = new DaemonAccess({ link: link.asLink() });
+
+        await access.send("t1", "Page.enable", { flag: true }, 500, "f1", { confirmed: true });
+        await access.send({
+            targetId : "t1",
+            method   : "Page.enable",
+            params   : { flag: true },
+            timeoutMs: 500,
+            frameId  : "f1",
+            confirmed: true,
+        });
+        await access.send({ targetId: "t1", method: "Page.enable" });
+
+        const [positional, object, minimal] = link.clients[0]?.calls ?? [];
+
+        expect(object).toEqual(positional);
+        expect(minimal?.params).toEqual({ targetId: "t1", method: "Page.enable" });
+    });
+
     it("forwards CDP calls and subscriptions", async () => {
         const link = new FakeLink((method) => (method === "cdp.send" ? { ok: true } : {}));
         const access = new DaemonAccess({ link: link.asLink() });

@@ -32,6 +32,45 @@ function parse<T>(label: string, schema: z.ZodType<T>, value: unknown): T {
     throw new Error(`The daemon answered ${label} with an unexpected result. Update both sides to the same version.`);
 }
 
+export interface CdpCommand {
+    targetId  : string;
+    method    : string;
+    params?   : Record<string, unknown>;
+    timeoutMs?: number;
+    frameId?  : string;
+    signal?   : AbortSignal;
+    confirmed?: boolean;
+}
+
+export type PositionalSend = [
+    targetId  : string,
+    method    : string,
+    params?   : Record<string, unknown>,
+    timeoutMs?: number,
+    frameId?  : string,
+    options?  : { signal?: AbortSignal; confirmed?: boolean },
+];
+
+export type SendArguments = [command: CdpCommand] | PositionalSend;
+
+export function toCdpCommand(args: SendArguments): CdpCommand {
+    const [first] = args;
+
+    if (typeof first === "object") return first;
+
+    const [targetId, method, params, timeoutMs, frameId, options] = args as PositionalSend;
+
+    return {
+        targetId,
+        method,
+        ...(params === undefined ? {} : { params }),
+        ...(timeoutMs === undefined ? {} : { timeoutMs }),
+        ...(frameId === undefined ? {} : { frameId }),
+        ...(options?.signal === undefined ? {} : { signal: options.signal }),
+        ...(options?.confirmed === true ? { confirmed: true } : {}),
+    };
+}
+
 export type DaemonEventHandler = (params: unknown) => void;
 
 interface EventRegistration {
@@ -121,25 +160,23 @@ export class DaemonAccess {
         return parse("frame.list", frameListSchema, result).frames;
     }
 
-    async send(
-        targetId  : string,
-        method    : string,
-        params?   : Record<string, unknown>,
-        timeoutMs?: number,
-        frameId?  : string,
-        options?  : { signal?: AbortSignal; confirmed?: boolean },
-    ): Promise<unknown> {
+    send(command: CdpCommand): Promise<unknown>;
+    send(...args: PositionalSend): Promise<unknown>;
+    async send(...args: SendArguments): Promise<unknown> {
+        const command = toCdpCommand(args);
+        const { targetId, method, params, timeoutMs, frameId, signal, confirmed } = command;
+
         return this.request(
             "cdp.send",
             {
                 targetId,
                 method,
-                ...(options?.confirmed === true ? { confirmed: true } : {}),
+                ...(confirmed === true ? { confirmed: true } : {}),
                 ...(params === undefined ? {} : { params }),
                 ...(timeoutMs === undefined ? {} : { timeoutMs }),
                 ...(frameId === undefined ? {} : { frameId }),
             },
-            options?.signal === undefined ? undefined : { signal: options.signal },
+            signal === undefined ? undefined : { signal },
         );
     }
 
