@@ -14,6 +14,8 @@ const BROWSER_PATH_PREFIX = "/devtools/browser/";
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
 const MAX_VERSION_BYTES = 64 * 1024;
 const VERSION_TIMEOUT_MS = 1000;
+const PORT_PROBE_TIMEOUT_MS = 500;
+const DEFAULT_POLL_INTERVAL_MS = 1000;
 
 export type EndpointSource = "port-file" | "debug-port";
 
@@ -241,7 +243,7 @@ export function probePort(port: number, signal?: AbortSignal): Promise<boolean> 
         const onAbort = () => finish(false);
 
         signal?.addEventListener("abort", onAbort, { once: true });
-        socket.setTimeout(500, () => finish(false));
+        socket.setTimeout(PORT_PROBE_TIMEOUT_MS, () => finish(false));
         socket.once("connect", () => finish(true));
         socket.once("error", () => finish(false));
     });
@@ -327,6 +329,6 @@ function defaultAttachDeps(): AttachDeps {
         sleep         : abortableSleep,
         log           : writeLogLine,
         onWaiting     : () => undefined,
-        pollIntervalMs: 1000,
+        pollIntervalMs: DEFAULT_POLL_INTERVAL_MS,
     };
 }

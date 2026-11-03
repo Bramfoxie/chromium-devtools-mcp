@@ -7,6 +7,8 @@ import { AppError } from "../util/app-error.js";
 
 const LISTENING_PATTERN = /DevTools listening on (ws:\/\/\S+)\r?\n/;
 const MAX_BUFFERED_STDERR = 64 * 1024;
+const DEFAULT_START_TIMEOUT_MS = 45_000;
+const DEFAULT_STOP_GRACE_MS = 5_000;
 const CANCELLED_LAUNCH = "The browser launch was cancelled before remote debugging was ready.";
 
 export type ManagedConfig = Pick<Config, "browser" | "headless" | "profileDir" | "debugPort">;
@@ -91,8 +93,8 @@ export function spawnProcess(command: string, args: string[]): ChildHandle {
 const defaultDeps: LaunchDeps = {
     findExecutable: (browser) => findBrowserExecutable(browser),
     spawn         : spawnProcess,
-    startTimeoutMs: 45_000,
-    stopGraceMs   : 5_000,
+    startTimeoutMs: DEFAULT_START_TIMEOUT_MS,
+    stopGraceMs   : DEFAULT_STOP_GRACE_MS,
 };
 
 export async function launchManaged(
