@@ -10,12 +10,7 @@ import {
 } from "../daemon/index.js";
 import { messageOf } from "../util/message-of.js";
 
-export class DaemonNotReadyError extends DaemonError {
-    constructor(detail: string) {
-        super(detail);
-        this.name = "DaemonNotReadyError";
-    }
-}
+export class DaemonNotReadyError extends DaemonError {}
 
 export interface StartedDaemon {
     exited: Promise<void>;

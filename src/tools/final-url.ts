@@ -4,12 +4,7 @@ import { ToolError } from "./errors.js";
 
 const PARK_TIMEOUT_MS = 5000;
 
-export class DomainRefusal extends ToolError {
-    constructor(message: string) {
-        super(message);
-        this.name = "DomainRefusal";
-    }
-}
+export class DomainRefusal extends ToolError {}
 
 async function committedUrl(context: ToolContext, targetId: string, reported: string) {
     if (reported !== "") return reported;

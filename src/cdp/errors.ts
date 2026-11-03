@@ -1,9 +1,6 @@
-export class CdpError extends Error {
-    constructor(message: string, options?: { cause?: unknown }) {
-        super(message, options);
-        this.name = "CdpError";
-    }
-}
+import { AppError } from "../util/app-error.js";
+
+export class CdpError extends AppError {}
 
 export class CdpProtocolError extends CdpError {
     constructor(
@@ -15,7 +12,6 @@ export class CdpProtocolError extends CdpError {
             `CDP method ${method} failed${code === undefined ? "" : ` with code ${code}`}: ${detail}. ` +
         "Check the method name, its parameters and that the target is still open.",
         );
-        this.name = "CdpProtocolError";
     }
 }
 
@@ -28,7 +24,6 @@ export class CdpSessionDetachedError extends CdpError {
             `CDP method ${method} failed: the session ${sessionId} was detached. ` +
         "Check the method name, its parameters and that the target is still open.",
         );
-        this.name = "CdpSessionDetachedError";
     }
 }
 
@@ -41,7 +36,6 @@ export class CdpTimeoutError extends CdpError {
             `CDP request ${method} timed out after ${timeoutMs} ms. ` +
         "Check that the tab is responsive or raise the timeout.",
         );
-        this.name = "CdpTimeoutError";
     }
 }
 
@@ -51,6 +45,5 @@ export class CdpClosedError extends CdpError {
             `CDP connection is closed: ${detail}. Reconnect to the browser and retry.`,
             options,
         );
-        this.name = "CdpClosedError";
     }
 }

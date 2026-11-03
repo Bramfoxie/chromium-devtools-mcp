@@ -3,6 +3,7 @@ import type { Socket } from "node:net";
 import type { Config } from "../config/index.js";
 import { type BrowserName, findBrowserExecutable } from "./discovery.js";
 import { messageOf } from "../util/message-of.js";
+import { AppError } from "../util/app-error.js";
 
 const LISTENING_PATTERN = /DevTools listening on (ws:\/\/\S+)\r?\n/;
 const MAX_BUFFERED_STDERR = 64 * 1024;
@@ -32,12 +33,7 @@ export interface ManagedBrowser {
     release(): void;
 }
 
-export class BrowserLaunchError extends Error {
-    constructor(message: string) {
-        super(message);
-        this.name = "BrowserLaunchError";
-    }
-}
+export class BrowserLaunchError extends AppError {}
 
 export function buildLaunchArgs(config: ManagedConfig): string[] {
     const args = [

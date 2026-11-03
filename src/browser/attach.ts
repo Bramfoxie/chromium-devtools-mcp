@@ -7,6 +7,7 @@ import { BROWSERS, type BrowserName, type DiscoveryContext } from "./browsers.js
 import { readIfExists } from "../util/read-if-exists.js";
 import { writeLogLine } from "../util/stderr.js";
 import { abortableSleep } from "../util/sleep.js";
+import { AppError } from "../util/app-error.js";
 
 const PORT_FILE_NAME = "DevToolsActivePort";
 const BROWSER_PATH_PREFIX = "/devtools/browser/";
@@ -36,12 +37,7 @@ export interface AttachDeps {
     pollIntervalMs: number;
 }
 
-export class AttachError extends Error {
-    constructor(message: string) {
-        super(message);
-        this.name = "AttachError";
-    }
-}
+export class AttachError extends AppError {}
 
 export function browserUserDataDir(browser: BrowserName, context: DiscoveryContext): string {
     return BROWSERS[browser].userDataDir(context);

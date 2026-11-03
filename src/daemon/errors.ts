@@ -1,9 +1,6 @@
-export class DaemonError extends Error {
-    constructor(message: string) {
-        super(message);
-        this.name = "DaemonError";
-    }
-}
+import { AppError } from "../util/app-error.js";
+
+export class DaemonError extends AppError {}
 
 export function errorCode(error: unknown): string | undefined {
     if (typeof error !== "object" || error === null) return undefined;
@@ -19,14 +16,12 @@ export class AlreadyRunningError extends DaemonError {
             `Another chromium-devtools-mcp daemon is already running on ${socketPath}. ` +
         "Connect to it instead of starting a new one.",
         );
-        this.name = "AlreadyRunningError";
     }
 }
 
 export class ProtocolViolationError extends DaemonError {
     constructor(detail: string) {
         super(`Invalid daemon message: ${detail}.`);
-        this.name = "ProtocolViolationError";
     }
 }
 
@@ -36,7 +31,6 @@ export class RpcError extends DaemonError {
         message      : string,
     ) {
         super(message);
-        this.name = "RpcError";
     }
 }
 
@@ -48,7 +42,6 @@ export class IpcTimeoutError extends DaemonError {
         super(
             `Daemon request ${method} timed out after ${timeoutMs} ms. Check that the daemon is responsive or raise the timeout.`,
         );
-        this.name = "IpcTimeoutError";
     }
 }
 
@@ -57,14 +50,12 @@ export class IpcCancelledError extends DaemonError {
         super(
             `Daemon request ${method} was cancelled before it completed. The daemon may still run the command.`,
         );
-        this.name = "IpcCancelledError";
     }
 }
 
 export class IpcClosedError extends DaemonError {
     constructor(detail: string) {
         super(`Daemon connection is closed: ${detail}. Reconnect to the daemon and retry.`);
-        this.name = "IpcClosedError";
     }
 }
 
@@ -73,7 +64,6 @@ export class DaemonNotRunningError extends DaemonError {
         super(
             "No chromium-devtools-mcp daemon is running for this user. Start it with the daemon command and try again.",
         );
-        this.name = "DaemonNotRunningError";
     }
 }
 
@@ -82,6 +72,5 @@ export class DaemonConfigMismatchError extends DaemonError {
         super(
             `The running daemon uses ${running}, but this client expects ${expected}. Stop the daemon or make both use the same configuration.`,
         );
-        this.name = "DaemonConfigMismatchError";
     }
 }

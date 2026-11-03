@@ -1,11 +1,11 @@
 import { z } from "zod";
 import { describeError, logDaemon, quoted } from "../daemon/log.js";
 import type { DaemonLink } from "./daemon-link.js";
+import { AppError } from "../util/app-error.js";
 
-export class SessionResetError extends Error {
+export class SessionResetError extends AppError {
     constructor() {
         super("The browser session was restarted and its tabs are gone. Open a new tab with new_tab.");
-        this.name = "SessionResetError";
     }
 }
 

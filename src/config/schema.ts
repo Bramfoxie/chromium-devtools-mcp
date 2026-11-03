@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { DOMAIN_RULE_FORMS, isValidDomainRule } from "../safety/index.js";
+import { AppError } from "../util/app-error.js";
 
 export const browsers = ["chrome"] as const;
 
@@ -27,9 +28,4 @@ export const configSchema = z.strictObject({
 
 export type Config = z.infer<typeof configSchema>;
 
-export class ConfigError extends Error {
-    constructor(message: string) {
-        super(message);
-        this.name = "ConfigError";
-    }
-}
+export class ConfigError extends AppError {}
