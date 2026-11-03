@@ -20,6 +20,20 @@ import { ensureToken, readToken } from "./token.js";
 const DEFAULT_IDLE_TIMEOUT_MS = 30_000;
 const APPROVAL_HANDSHAKE_MS = 120_000;
 const RETRY_MS = 1000;
+const CONNECT_SETTLE_MS = 15_000;
+
+async function settlesWithin(promise: Promise<void>, ms: number): Promise<void> {
+    let timer: NodeJS.Timeout | undefined;
+    const timedOut = new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, ms);
+    });
+
+    try {
+        await Promise.race([promise, timedOut]);
+    } finally {
+        clearTimeout(timer);
+    }
+}
 
 export type StopReason = "requested" | "idle" | "browser_disconnected" | "failed";
 
@@ -50,11 +64,12 @@ export type BrowserConnector = (
 ) => Promise<BrowserHandle>;
 
 export interface RunDeps {
-    layout         : DaemonLayout;
-    connectBrowser : BrowserConnector;
-    idleTimeoutMs  : number;
-    helloTimeoutMs?: number;
-    probe?         : (path: string) => Promise<"alive" | "stale">;
+    layout          : DaemonLayout;
+    connectBrowser  : BrowserConnector;
+    idleTimeoutMs   : number;
+    helloTimeoutMs? : number;
+    connectSettleMs?: number;
+    probe?          : (path: string) => Promise<"alive" | "stale">;
 }
 
 export function approvalMessage(): string {
@@ -114,6 +129,7 @@ async function closeLeftoverPages(client: CdpClient): Promise<void> {
 async function adoptManaged(
     config: Config,
     deps  : ConnectorDeps,
+    signal: AbortSignal,
 ): Promise<BrowserHandle | undefined> {
     const running = await deps
         .findRunning(config.profileDir, config.debugPort)
@@ -121,7 +137,9 @@ async function adoptManaged(
 
     if (!running) return undefined;
 
-    const client = await deps.connect(running.webSocketUrl).catch(() => undefined);
+    const client = await deps
+        .connect(running.webSocketUrl, undefined, signal)
+        .catch(() => undefined);
 
     if (!client) return undefined;
 
@@ -144,16 +162,20 @@ async function adoptManaged(
     );
 }
 
-async function connectManaged(config: Config, deps: ConnectorDeps): Promise<BrowserHandle> {
-    const adopted = await adoptManaged(config, deps);
+async function connectManaged(
+    config: Config,
+    deps  : ConnectorDeps,
+    signal: AbortSignal,
+): Promise<BrowserHandle> {
+    const adopted = await adoptManaged(config, deps, signal);
 
     if (adopted) return adopted;
 
     logDaemon(`Starting a managed browser on ${config.profileDir}.`);
-    const launched = await deps.launch(config);
+    const launched = await deps.launch(config, {}, signal);
 
     try {
-        const client = await deps.connect(launched.webSocketUrl);
+        const client = await deps.connect(launched.webSocketUrl, undefined, signal);
 
         return {
             client,
@@ -181,7 +203,7 @@ export function createConnector(overrides: Partial<ConnectorDeps> = {}): Browser
     const deps: ConnectorDeps = { ...defaultConnectorDeps, ...overrides };
 
     return async (config, hooks, signal) => {
-        if (config.mode === "managed") return connectManaged(config, deps);
+        if (config.mode === "managed") return connectManaged(config, deps, signal);
 
         for (;;) {
             const endpoint = await deps.attach(config, { onWaiting: hooks.onWaiting }, signal);
@@ -242,6 +264,7 @@ export async function runDaemon(
     const controller = new AbortController();
     let stopping: Promise<DaemonOutcome> | undefined;
     let browser: BrowserHandle | undefined;
+    let connecting: Promise<void> = Promise.resolve();
     let finish: (outcome: DaemonOutcome) => void = () => undefined;
     const done = new Promise<DaemonOutcome>((resolve) => {
         finish = resolve;
@@ -263,6 +286,8 @@ export async function runDaemon(
             if (reason === "failed" && error) await daemon.announceFailure(error.message);
 
             await quietly("close the sessions", () => daemon.shutdown());
+            await quietly("wait for the browser connection", () =>
+                settlesWithin(connecting, deps.connectSettleMs ?? CONNECT_SETTLE_MS));
             await quietly("stop the browser", () =>
                 reason === "idle" && browser?.release ? browser.release() : browser?.stop(),
             );
@@ -279,7 +304,7 @@ export async function runDaemon(
 
     daemon.armIdle();
 
-    void (async () => {
+    connecting = (async () => {
         try {
             const handle = await deps.connectBrowser(
                 config,
@@ -308,7 +333,7 @@ export async function runDaemon(
         } catch (error) {
             if (stopping) return;
 
-            await stop("failed", error instanceof Error ? error : new Error(String(error)));
+            void stop("failed", error instanceof Error ? error : new Error(String(error)));
         }
     })();
 

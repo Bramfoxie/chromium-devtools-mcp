@@ -5,6 +5,7 @@ import { type BrowserName, findBrowserExecutable } from "./discovery.js";
 
 const LISTENING_PATTERN = /DevTools listening on (ws:\/\/\S+)\r?\n/;
 const MAX_BUFFERED_STDERR = 64 * 1024;
+const CANCELLED_LAUNCH = "The browser launch was cancelled before remote debugging was ready.";
 
 export type ManagedConfig = Pick<Config, "browser" | "headless" | "profileDir" | "debugPort">;
 
@@ -104,8 +105,12 @@ function messageOf(error: unknown): string {
 export async function launchManaged(
     config   : ManagedConfig,
     overrides: Partial<LaunchDeps> = {},
+    signal?  : AbortSignal,
 ): Promise<ManagedBrowser> {
     const deps: LaunchDeps = { ...defaultDeps, ...overrides };
+
+    if (signal?.aborted) throw new BrowserLaunchError(CANCELLED_LAUNCH);
+
     const executable = deps.findExecutable(config.browser);
     const startFailure = (detail: string) =>
         new BrowserLaunchError(
@@ -143,6 +148,21 @@ export async function launchManaged(
                 ),
             );
         }, deps.startTimeoutMs);
+
+        signal?.addEventListener(
+            "abort",
+            () => {
+                if (settled) return;
+
+                settled = true;
+                clearTimeout(timer);
+                child.kill("SIGTERM");
+                void terminate(child, exited, deps.stopGraceMs).then(() =>
+                    reject(new BrowserLaunchError(CANCELLED_LAUNCH)),
+                );
+            },
+            { once: true },
+        );
 
         const stop = () =>
             (stopping ??= (async () => {

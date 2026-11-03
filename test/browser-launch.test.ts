@@ -143,6 +143,31 @@ describe("launchManaged", () => {
         ]);
     });
 
+    it("kills the child and rejects when the launch is aborted before the browser is ready", async () => {
+        const { deps, child } = harness();
+        const controller = new AbortController();
+        const pending = launchManaged(config, deps, controller.signal);
+        const outcome = pending.catch((error: unknown) => error);
+
+        controller.abort();
+
+        expect(await outcome).toBeInstanceOf(BrowserLaunchError);
+        expect(((await outcome) as Error).message).toContain("cancelled");
+        expect(child.signals).toEqual(["SIGTERM"]);
+    });
+
+    it("does not spawn when the signal is already aborted", async () => {
+        const { deps, spawned } = harness();
+        const controller = new AbortController();
+
+        controller.abort();
+
+        await expect(launchManaged(config, deps, controller.signal)).rejects.toBeInstanceOf(
+            BrowserLaunchError,
+        );
+        expect(spawned).toEqual([]);
+    });
+
     it("assembles the endpoint from split output chunks", async () => {
         const { deps, child } = harness();
         const pending = launchManaged(config, deps);

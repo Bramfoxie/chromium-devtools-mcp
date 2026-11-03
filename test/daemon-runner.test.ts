@@ -6,6 +6,7 @@ import {
     AlreadyRunningError,
     type BrowserConnector,
     connectToDaemon,
+    createConnector,
     DaemonConfigMismatchError,
     DaemonError,
     type DaemonIdentity,
@@ -50,7 +51,8 @@ async function start(
     const running = await runDaemon(overrides.cfg ?? config, {
         layout,
         connectBrowser,
-        idleTimeoutMs: overrides.idleTimeoutMs ?? 60_000,
+        idleTimeoutMs  : overrides.idleTimeoutMs ?? 60_000,
+        connectSettleMs: 500,
     });
 
     harness.track(async () => void (await running.stop()));
@@ -321,6 +323,31 @@ describe("waiting for the browser", () => {
 
         expect(await running.stop()).toEqual({ reason: "requested" });
         expect(aborted).toBe(true);
+    });
+
+    it("waits for a managed launch to settle before stop resolves", async () => {
+        const layout = await makeLayout(harness);
+        const events: string[] = [];
+        const connector = createConnector({
+            findRunning: async () => undefined,
+            launch     : (_config, _overrides, signal) =>
+                new Promise((_resolve, reject) => {
+                    events.push("launch started");
+                    signal?.addEventListener("abort", () => {
+                        setTimeout(() => {
+                            events.push("launch killed");
+                            reject(new Error("launch cancelled"));
+                        }, 20);
+                    });
+                }),
+        });
+        const running = await start(layout, connector);
+
+        await vi.waitFor(() => expect(events).toEqual(["launch started"]));
+        await running.stop();
+        events.push("stop resolved");
+
+        expect(events).toEqual(["launch started", "launch killed", "stop resolved"]);
     });
 
     it("stops a browser that finished starting after the daemon was stopped", async () => {
