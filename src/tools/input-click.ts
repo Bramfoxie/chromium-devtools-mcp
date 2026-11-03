@@ -2,9 +2,10 @@ import { z } from "zod";
 import { changedUrl, navigationOf, summarizeTarget, targetSummarySchema } from "./input-outcome.js";
 import { mousePoint } from "./input-point.js";
 import { ensureActionable } from "./actionability.js";
-import { defineTool } from "./define-tool.js";
+import { defineTool, type ToolContext } from "./define-tool.js";
 import { ensureNoDialog } from "./dialogs.js";
-import { type PointerTarget, withPointerDelivery } from "./pointer-delivery.js";
+import { type PointerRoute, type PointerTarget, withPointerDelivery } from "./pointer-delivery.js";
+import type { ClickPoint } from "./coordinates.js";
 import { elementTargetSchema, elementAccess, withElement } from "./element-target.js";
 import { ToolError } from "./errors.js";
 import { KEY_MODIFIERS, modifiersMask } from "./keys.js";
@@ -113,6 +114,104 @@ export const click = defineTool({
     },
 });
 
+interface ClickPlan {
+    button    : MouseButton;
+    clickCount: number;
+    modifiers : Array<(typeof KEY_MODIFIERS)[number]>;
+}
+
+function dispatchClick(
+    context : ToolContext,
+    targetId: string,
+    route   : PointerRoute | undefined,
+    point   : ClickPoint,
+    plan    : ClickPlan,
+) {
+    const { button, clickCount } = plan;
+    const modifiers = modifiersMask(plan.modifiers);
+    const buttons = MOUSE_BUTTON_BIT[button];
+
+    const dispatcher = (target: PointerTarget) =>
+        target.via === "frame" && route !== undefined ? route.owner : context.access;
+
+    const sendMove = async (at: PointerTarget): Promise<void> => {
+        await dispatcher(at).send({
+            targetId,
+            method: "Input.dispatchMouseEvent",
+            params: {
+                type      : "mouseMoved",
+                x         : at.point.x,
+                y         : at.point.y,
+                modifiers,
+                button,
+                buttons   : 0,
+                clickCount: 0,
+            },
+        });
+    };
+
+    return withPointerDelivery(route, targetId, context, (delivery) =>
+        navigationOf(context.access, targetId, async () => {
+            throwIfCancelled(context.signal);
+
+            if (delivery === undefined) await sendMove({ via: "tab", point });
+            else await delivery.prepareMove(sendMove);
+
+            for (let count = 1; count <= clickCount; count += 1) {
+                const press = async (from: PointerTarget): Promise<void> => {
+                    await dispatcher(from).send({
+                        targetId,
+                        method: "Input.dispatchMouseEvent",
+                        params: {
+                            type      : "mousePressed",
+                            x         : from.point.x,
+                            y         : from.point.y,
+                            modifiers,
+                            button,
+                            buttons,
+                            clickCount: count,
+                        },
+                    });
+                };
+                const release = async (from: PointerTarget): Promise<void> => {
+                    const event = {
+                        type      : "mouseReleased",
+                        x         : from.point.x,
+                        y         : from.point.y,
+                        modifiers,
+                        button,
+                        buttons,
+                        clickCount: count,
+                    };
+
+                    try {
+                        await dispatcher(from).send({
+                            targetId,
+                            method: "Input.dispatchMouseEvent",
+                            params: event,
+                        });
+                    } catch (error) {
+                        await dispatcher(from).send({
+                            targetId,
+                            method: "Input.dispatchMouseEvent",
+                            params: event,
+                        })
+                            .catch(() => undefined);
+
+                        throw error;
+                    }
+                };
+
+                if (delivery === undefined) {
+                    await press({ via: "tab", point });
+                    await release({ via: "tab", point });
+                } else {
+                    await delivery.press(press, release);
+                }
+            }
+        }));
+}
+
 export const inputClick = defineTool({
     name: "input_click",
     description:
@@ -153,89 +252,11 @@ export const inputClick = defineTool({
 
             const button = args.button ?? "left";
             const clickCount = args.clickCount ?? 1;
-            const held = [...new Set(args.modifiers ?? [])];
-            const modifiers = modifiersMask(held);
-            const buttons = MOUSE_BUTTON_BIT[button];
-
-            const dispatcher = (target: PointerTarget) =>
-                target.via === "frame" && route !== undefined ? route.owner : context.access;
-
-            const sendMove = async (at: PointerTarget): Promise<void> => {
-                await dispatcher(at).send({
-                    targetId,
-                    method: "Input.dispatchMouseEvent",
-                    params: {
-                        type      : "mouseMoved",
-                        x         : at.point.x,
-                        y         : at.point.y,
-                        modifiers,
-                        button,
-                        buttons   : 0,
-                        clickCount: 0,
-                    },
-                });
-            };
-
-            const acted = await withPointerDelivery(route, targetId, context, (delivery) =>
-                navigationOf(context.access, targetId, async () => {
-                    throwIfCancelled(context.signal);
-
-                    if (delivery === undefined) await sendMove({ via: "tab", point });
-                    else await delivery.prepareMove(sendMove);
-
-                    for (let count = 1; count <= clickCount; count += 1) {
-                        const press = async (from: PointerTarget): Promise<void> => {
-                            await dispatcher(from).send({
-                                targetId,
-                                method: "Input.dispatchMouseEvent",
-                                params: {
-                                    type      : "mousePressed",
-                                    x         : from.point.x,
-                                    y         : from.point.y,
-                                    modifiers,
-                                    button,
-                                    buttons,
-                                    clickCount: count,
-                                },
-                            });
-                        };
-                        const release = async (from: PointerTarget): Promise<void> => {
-                            const event = {
-                                type      : "mouseReleased",
-                                x         : from.point.x,
-                                y         : from.point.y,
-                                modifiers,
-                                button,
-                                buttons,
-                                clickCount: count,
-                            };
-
-                            try {
-                                await dispatcher(from).send({
-                                    targetId,
-                                    method: "Input.dispatchMouseEvent",
-                                    params: event,
-                                });
-                            } catch (error) {
-                                await dispatcher(from).send({
-                                    targetId,
-                                    method: "Input.dispatchMouseEvent",
-                                    params: event,
-                                })
-                                    .catch(() => undefined);
-
-                                throw error;
-                            }
-                        };
-
-                        if (delivery === undefined) {
-                            await press({ via: "tab", point });
-                            await release({ via: "tab", point });
-                        } else {
-                            await delivery.press(press, release);
-                        }
-                    }
-                }));
+            const acted = await dispatchClick(context, targetId, route, point, {
+                button,
+                clickCount,
+                modifiers: [...new Set(args.modifiers ?? [])],
+            });
 
             return {
                 ok    : true,
