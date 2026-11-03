@@ -119,7 +119,7 @@ export interface Env {
     stop(): Promise<void>;
 }
 
-export async function startEnv(): Promise<Env> {
+export async function startEnv(safety?: Config["safety"]): Promise<Env> {
     const harness = createSocketHarness();
     const home = await mkdtemp(path.join(os.tmpdir(), "cdm-it-home-"));
     const profile = await mkdtemp(path.join(os.tmpdir(), "cdm-it-profile-"));
@@ -134,7 +134,7 @@ export async function startEnv(): Promise<Env> {
         debugPort : port,
         allowFocus: false,
         isolated  : true,
-        safety    : { readOnly: false, allowedDomains: [], confirmDangerous: false },
+        safety    : safety ?? { readOnly: false, allowedDomains: [], confirmDangerous: false },
     };
     const options = await harness.options();
     const tokenDir = await mkdtemp(path.join(home, "token-"));
@@ -158,7 +158,7 @@ export async function startEnv(): Promise<Env> {
     const diagnostics = () =>
         `\n--- daemon outcome ---\n${daemonOutcome}\n--- daemon and browser messages (last ${LOG_TAIL_CHARS} chars) ---\n${tail(stderrLog)}`;
     const link = new DaemonLink(
-        { identity: daemonIdentity(config), isolated: true },
+        { identity: daemonIdentity(config), isolated: true, safety: config.safety },
         {
             connect    : (expect) => connectToDaemon({ clientName: "it", expect, layout }),
             startDaemon: async () => {
