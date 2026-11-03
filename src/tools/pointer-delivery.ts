@@ -92,6 +92,7 @@ const REMOVE = `function cdmProbeRemove() {
 }`;
 
 const countSchema = z.object({ result: z.object({ value: z.number() }) });
+const locationSchema = z.object({ frameId: z.string().optional() });
 const readSchema = z.object({
     result: z.object({ value: z.object({ moves: z.number(), downs: z.number() }).nullable() }),
 });
@@ -126,6 +127,7 @@ export class PointerDelivery {
         let tabStarted = begun;
         let pauseMs = RETRY_PAUSE_MIN_MS;
         let attempts = 0;
+        const hits: boolean[] = [];
 
         for (;;) {
             attempts += 1;
@@ -140,7 +142,11 @@ export class PointerDelivery {
 
             if (await this.wait("moves", base, MOVE_WAIT_MS) > base) return target;
 
-            if (via === "tab" && Date.now() - tabStarted >= MOVE_BUDGET_MS) break;
+            if (via === "tab") {
+                hits.push(await this.frameAt(target.point));
+
+                if (Date.now() - tabStarted >= MOVE_BUDGET_MS) break;
+            }
 
             await settleRendering(this.route.relays, this.tab);
             await pause(pauseMs);
@@ -150,7 +156,7 @@ export class PointerDelivery {
 
         throw new ToolError(
             `The frame did not receive pointer input from the browser. Make sure the page is visible and not busy, then try again.\n${
-                await this.diagnostics(attempts, Date.now() - begun, sendMove)}`,
+                await this.diagnostics(attempts, Date.now() - begun, sendMove, hits)}`,
         );
     }
 
@@ -201,6 +207,21 @@ export class PointerDelivery {
         return { via, point: via === "frame" ? this.current.local : this.current.point };
     }
 
+    private async frameAt(point: Point): Promise<boolean> {
+        try {
+            const parsed = locationSchema.safeParse(
+                await this.route.relays[0]?.send(this.tab, "DOM.getNodeForLocation", {
+                    x: Math.round(point.x),
+                    y: Math.round(point.y),
+                }),
+            );
+
+            return parsed.success && parsed.data.frameId === this.route.frameId;
+        } catch {
+            return false;
+        }
+    }
+
     private async remeasure(): Promise<void> {
         try {
             let latest = await this.route.measure();
@@ -226,6 +247,7 @@ export class PointerDelivery {
         attempts: number,
         elapsed : number,
         sendMove: (target: PointerTarget) => Promise<void>,
+        hits    : boolean[],
     ): Promise<string> {
         const { point, boxes } = this.current;
         const landed = await this.landing(point, sendMove);
@@ -233,7 +255,7 @@ export class PointerDelivery {
         const visibility = await this.visibility();
         const frames = boxes.map((box) => `(${box.x},${box.y},${box.width},${box.height})`).join(" ");
 
-        return `Diagnostics: attempts=${attempts} elapsedMs=${elapsed} point=(${point.x},${point.y}) depth=${boxes.length} frames=${frames} dpr=${dpr} landed=${landed} visibility=${visibility}`;
+        return `Diagnostics: attempts=${attempts} elapsedMs=${elapsed} point=(${point.x},${point.y}) depth=${boxes.length} frames=${frames} dpr=${dpr} landed=${landed} visibility=${visibility} route=${this.via} hit=${hits.at(-1) ?? false} hits=${hits.filter(Boolean).length}/${hits.length}`;
     }
 
     private async landing(

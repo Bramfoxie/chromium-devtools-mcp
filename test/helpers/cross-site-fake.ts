@@ -45,6 +45,7 @@ export interface CrossSiteWorld {
     renderGated?     : boolean;
     frameDown?       : boolean;
     frameDropDowns?  : number;
+    nodeAtPoint?     : "frame" | "parent";
 }
 
 export interface PointerCounters {
@@ -149,6 +150,11 @@ export function crossSiteFake(world: CrossSiteWorld = {}): FakeAccess {
 
                 return {};
             }
+
+            case "DOM.getNodeForLocation":
+                if (world.nodeAtPoint === undefined) throw new Error("No node found at given location");
+
+                return { backendNodeId: 6, frameId: world.nodeAtPoint === "frame" ? MID_FRAME : "main" };
 
             case "Page.startScreencast":
                 screencast = true;

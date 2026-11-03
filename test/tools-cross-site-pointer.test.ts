@@ -212,8 +212,22 @@ describe("input_click in a cross-site frame", () => {
 
         expect(result.isError).toBe(true);
         expect(text).toContain("Make sure the page is visible and not busy, then try again.\\nDiagnostics: ");
-        expect(text).toMatch(/attempts=\d+ elapsedMs=\d+ point=\(122,182\) depth=1 frames=\(50,120,324,224\) dpr=2 landed=top:1 visibility=\w+/);
+        expect(text).toMatch(/attempts=\d+ elapsedMs=\d+ point=\(122,182\) depth=1 frames=\(50,120,324,224\) dpr=2 landed=top:1 visibility=\w+ route=tab hit=false hits=0\/\d+/);
         expect(pointerCounters.get(fake)).toMatchObject({ installs: 1, removes: 1 });
+    });
+
+    it("reports whether the browser resolves the point to the frame in the diagnostics", async () => {
+        const reported = async (world: CrossSiteWorld): Promise<string> => {
+            const { runtime } = setup({ ...world, dropMoves: 1000, frameDown: true });
+            const result = await withFakeTime(() =>
+                runTool(inputClick, { target: { uid: "1_1" } }, extra(), runtime));
+
+            return JSON.stringify(result.content);
+        };
+
+        expect(await reported({ nodeAtPoint: "frame" })).toMatch(/route=tab hit=true hits=(\d+)\/\1/);
+        expect(await reported({ nodeAtPoint: "parent" })).toMatch(/route=tab hit=false hits=0\/\d+/);
+        expect(await reported({})).toMatch(/route=tab hit=false hits=0\/\d+/);
     });
 
     it("releases and presses again once when the first press is dropped", async () => {
