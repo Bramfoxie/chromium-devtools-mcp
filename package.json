@@ -35,6 +35,7 @@
     "lint": "eslint . && prettier --check .",
     "format": "eslint . --fix && prettier --write .",
     "test": "vitest run --passWithNoTests",
+    "smoke:pack": "npm run build && node scripts/pack-smoke.mjs",
     "prepare": "git config core.hooksPath .githooks || exit 0",
     "prepack": "npm run build",
     "prepublishOnly": "npm run build"

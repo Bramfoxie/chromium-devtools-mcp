@@ -69,7 +69,7 @@ export default tseslint.config(
     ...tseslint.configs.recommended,
     {
         languageOptions: {
-            parserOptions: { projectService: { allowDefaultProject: ["eslint.config.js"] }, tsconfigRootDir: import.meta.dirname },
+            parserOptions: { projectService: { allowDefaultProject: ["eslint.config.js", "scripts/*.mjs"] }, tsconfigRootDir: import.meta.dirname },
         },
         rules: {
             "@typescript-eslint/no-floating-promises"         : "error",

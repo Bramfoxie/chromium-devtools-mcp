@@ -29,3 +29,5 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+      - if: matrix.node == 24
+        run: npm run smoke:pack
