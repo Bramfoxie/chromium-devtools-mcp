@@ -1,8 +1,10 @@
 import { z } from "zod";
 import type { DaemonAccess } from "../mcp/index.js";
+import type { ToolContext } from "./define-tool.js";
 import { ToolError } from "./errors.js";
 import type { Rect } from "./element-target.js";
 import { type FrameLink, type Point, settleRendering } from "./frame-geometry.js";
+import { throwIfCancelled } from "./registry.js";
 
 export const MOVE_BUDGET_MS = 10000;
 
@@ -97,9 +99,7 @@ const readSchema = z.object({
     result: z.object({ value: z.object({ moves: z.number(), downs: z.number() }).nullable() }),
 });
 
-function pause(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-}
+export type PointerEnv = Pick<ToolContext, "clock" | "signal">;
 
 export class PointerDelivery {
     private current: Measurement;
@@ -109,6 +109,7 @@ export class PointerDelivery {
     constructor(
         private readonly route: PointerRoute,
         private readonly tab  : string,
+        private readonly env  : PointerEnv,
     ) {
         this.current = route.initial;
     }
@@ -123,17 +124,18 @@ export class PointerDelivery {
 
     async prepareMove(sendMove: (target: PointerTarget) => Promise<void>): Promise<PointerTarget> {
         const base = (await this.read()).moves;
-        const begun = Date.now();
+        const begun = this.env.clock.now();
         let tabStarted = begun;
         let pauseMs = RETRY_PAUSE_MIN_MS;
         let attempts = 0;
         const hits: boolean[] = [];
 
         for (;;) {
+            throwIfCancelled(this.env.signal);
             attempts += 1;
             const via: PointerVia = attempts <= FRAME_ATTEMPTS ? "frame" : "tab";
 
-            if (attempts === FRAME_ATTEMPTS + 1) tabStarted = Date.now();
+            if (attempts === FRAME_ATTEMPTS + 1) tabStarted = this.env.clock.now();
 
             this.via = via;
             const target = this.targetFor(via);
@@ -145,18 +147,18 @@ export class PointerDelivery {
             if (via === "tab") {
                 hits.push(await this.frameAt(target.point));
 
-                if (Date.now() - tabStarted >= MOVE_BUDGET_MS) break;
+                if (this.env.clock.now() - tabStarted >= MOVE_BUDGET_MS) break;
             }
 
             await settleRendering(this.route.relays, this.tab);
-            await pause(pauseMs);
+            await this.pause(pauseMs);
             pauseMs = Math.min(Math.round(pauseMs * 1.5), RETRY_PAUSE_MAX_MS);
             await this.remeasure();
         }
 
         throw new ToolError(
             `The frame did not receive pointer input from the browser. Make sure the page is visible and not busy, then try again.\n${
-                await this.diagnostics(attempts, Date.now() - begun, sendMove, hits)}`,
+                await this.diagnostics(attempts, this.env.clock.now() - begun, sendMove, hits)}`,
         );
     }
 
@@ -167,6 +169,8 @@ export class PointerDelivery {
         const first = (await this.read()).downs;
 
         for (let attempt = 1; attempt <= 2; attempt += 1) {
+            throwIfCancelled(this.env.signal);
+
             if (attempt > 1) await this.remeasure();
 
             const base = (await this.read()).downs;
@@ -201,6 +205,11 @@ export class PointerDelivery {
         throw new ToolError(
             "The frame did not receive the mouse press from the browser. Make sure the page is visible and not busy, then try again.",
         );
+    }
+
+    private async pause(ms: number): Promise<void> {
+        await this.env.clock.sleep(ms);
+        throwIfCancelled(this.env.signal);
     }
 
     private targetFor(via: PointerVia): PointerTarget {
@@ -283,7 +292,7 @@ export class PointerDelivery {
             }
 
             await sendMove({ via: "tab", point });
-            await pause(LANDING_WAIT_MS);
+            await this.pause(LANDING_WAIT_MS);
 
             const seen: string[] = [];
 
@@ -393,11 +402,12 @@ export class PointerDelivery {
 export async function withPointerDelivery<T>(
     route: PointerRoute | undefined,
     tab  : string,
+    env  : PointerEnv,
     run  : (delivery: PointerDelivery | undefined) => Promise<T>,
 ): Promise<T> {
     if (route === undefined) return run(undefined);
 
-    const delivery = new PointerDelivery(route, tab);
+    const delivery = new PointerDelivery(route, tab, env);
 
     try {
         await delivery.install();

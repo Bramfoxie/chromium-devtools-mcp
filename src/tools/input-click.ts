@@ -384,7 +384,7 @@ export const inputClick = defineTool({
                 });
             };
 
-            const acted = await withPointerDelivery(route, targetId, (delivery) =>
+            const acted = await withPointerDelivery(route, targetId, context, (delivery) =>
                 navigationOf(context.access, targetId, async () => {
                     throwIfCancelled(context.signal);
 
@@ -505,7 +505,7 @@ export const inputHover = defineTool({
                 });
             };
 
-            await withPointerDelivery(route, targetId, async (delivery) => {
+            await withPointerDelivery(route, targetId, context, async (delivery) => {
                 throwIfCancelled(context.signal);
 
                 const moved = await delivery?.prepareMove((target) =>
