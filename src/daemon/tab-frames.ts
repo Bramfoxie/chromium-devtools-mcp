@@ -12,6 +12,7 @@ import { ErrorCode } from "./protocol.js";
 import type { Emit } from "./client-session.js";
 
 const CHILD_COMMAND_TIMEOUT_MS = 5000;
+const FRAME_TREE_TIMEOUT_MS = 10_000;
 
 export interface FrameEntry {
     summary : FrameSummary;
@@ -51,7 +52,7 @@ export class TabFrames {
         const session = await this.attached(targetId, tab);
 
         this.assertCurrent(targetId, tab);
-        const tree = await session.send("Page.getFrameTree", undefined);
+        const tree = await session.send("Page.getFrameTree", undefined, FRAME_TREE_TIMEOUT_MS);
         const children = await this.childrenOf(targetId, tab).catch(() => undefined);
 
         this.assertCurrent(targetId, tab);

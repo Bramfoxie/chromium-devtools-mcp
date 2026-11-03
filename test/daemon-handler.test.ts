@@ -546,6 +546,17 @@ describe("frame addressing through the daemon", () => {
         return { ...started, client, targetId };
     }
 
+    it("bounds the frame tree request of frame.list", async () => {
+        const { client, targetId, backend } = await frameTab();
+        const session = backend.sessions.get(targetId);
+
+        if (session) session.sent.length = 0;
+
+        await client.request("frame.list", { targetId });
+
+        expect(session?.sent.find((call) => call.method === "Page.getFrameTree")?.timeoutMs).toBe(10_000);
+    });
+
     it("lists frames and rejects unknown fields", async () => {
         const { client, targetId } = await frameTab();
         const listed = (await client.request("frame.list", { targetId })) as { frames: unknown[] };
