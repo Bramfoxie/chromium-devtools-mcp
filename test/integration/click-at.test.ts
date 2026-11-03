@@ -45,7 +45,7 @@ describe.skipIf(!present)("input_click at a point in a real browser", () => {
         await eventually(() => (env.fixture.hits.get("/clicked-main") ?? 0) >= 1 || undefined);
     });
 
-    it("uses the coordinates of a viewport screenshot at scale 1", async () => {
+    it("lets a point be read from a screenshot through its pixel ratio", async () => {
         const tab = await env.open("/button");
         const shot = await env.ok("screenshot", { tab, format: "png" });
         const size = (await env.ok("js_evaluate", {
@@ -53,7 +53,13 @@ describe.skipIf(!present)("input_click at a point in a real browser", () => {
             expression: "({ w: innerWidth, h: innerHeight })",
         })) as { value?: { w: number; h: number } };
 
-        expect(size.value).toEqual({ w: shot.width, h: shot.height });
+        const ratio = Number(shot.pixelRatio);
+
+        expect(ratio).toBeGreaterThan(0);
+        expect(size.value).toEqual({
+            w: Math.round(Number(shot.width) / ratio),
+            h: Math.round(Number(shot.height) / ratio),
+        });
     });
 
     it("refuses a point outside the viewport", async () => {

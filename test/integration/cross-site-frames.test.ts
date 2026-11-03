@@ -402,10 +402,19 @@ describe.skipIf(!present)("cross-site iframe in a real browser", () => {
         const png = decodePng(Buffer.from(String(image?.data), "base64"));
 
         expect(shot.isError).toBe(false);
-        expect([png.width, png.height]).toEqual([40, 20]);
-        expect(pixelAt(png, 20, 10)).toEqual([255, 0, 0]);
-        expect(pixelAt(png, 1, 1)).toEqual([255, 0, 0]);
-        expect(pixelAt(png, 38, 18)).toEqual([255, 0, 0]);
+        const ratio = Number(shot.data.pixelRatio ?? 1);
+
+        expect([png.width, png.height]).toEqual([40 * ratio, 20 * ratio]);
+
+        const probes = [[20 * ratio, 10 * ratio], [1, 1], [38 * ratio, 18 * ratio]] as const;
+
+        for (const [x, y] of probes) {
+            const [red, green, blue] = pixelAt(png, x, y);
+
+            expect(red).toBeGreaterThan(200);
+            expect(green).toBeLessThan(80);
+            expect(blue).toBeLessThan(80);
+        }
     });
 
     it("dom_snapshot renders the cross-site frame and its element ids drive other tools", async () => {

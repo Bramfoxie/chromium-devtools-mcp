@@ -286,6 +286,7 @@ function oversizeError(maxBytes: number): ToolError {
 const screenshotSmall = z.strictObject({
     width     : z.number().describe("Image width in pixels."),
     height    : z.number().describe("Image height in pixels."),
+    pixelRatio: z.number().optional().describe("Pixels of the image per CSS pixel of the page. A pixel of a viewport shot is (x, y) divided by this in the CSS pixels that input_click takes. Absent when the size of the page is unknown."),
     bytes     : z.number().describe("Image size in bytes."),
     format    : z.enum(["png", "jpeg", "webp"]).describe("Image format."),
     clipped   : z.boolean().describe("Whether the shot is clipped to an element or a rectangle."),
@@ -371,9 +372,18 @@ export const screenshot = defineTool({
             const bytes = Buffer.from(shot, "base64");
             const size = imageSize(format, bytes);
 
+            const wholePage = args.fullPage === true
+                ? layout.content?.width
+                : layout.viewport?.width;
+            const cssWidth = plan.clip?.width ?? wholePage;
+            const pixelRatio = size === undefined || cssWidth === undefined || cssWidth <= 0
+                ? undefined
+                : Math.round((size.width / (cssWidth * (plan.scale ?? 1))) * 1000) / 1000;
+
             return {
                 width     : size?.width ?? 0,
                 height    : size?.height ?? 0,
+                ...(pixelRatio === undefined ? {} : { pixelRatio }),
                 bytes     : bytes.byteLength,
                 format,
                 clipped   : plan.clipped,

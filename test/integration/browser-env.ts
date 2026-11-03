@@ -140,7 +140,7 @@ export async function startEnv(
     const config: Config = {
         browser   : "chrome",
         mode      : "managed",
-        headless  : true,
+        headless  : process.env.CDM_IT_HEADED !== "1",
         profileDir: profile,
         debugPort : port,
         allowFocus,

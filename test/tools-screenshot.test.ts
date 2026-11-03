@@ -121,7 +121,11 @@ describe("planScreenshot", () => {
 });
 
 describe("screenshot", () => {
-    function shotFake(data: string, onCapture?: (params: Record<string, unknown>) => void) {
+    function shotFake(
+        data      : string,
+        onCapture?: (params: Record<string, unknown>) => void,
+        viewport  = { clientWidth: 1280, clientHeight: 720 },
+    ) {
         const fake = new FakeAccess();
 
         fake.respond = (_targetId, method, params) => {
@@ -132,7 +136,7 @@ describe("screenshot", () => {
             }
 
             if (method === "Page.getLayoutMetrics") {
-                return { layoutViewport: { clientWidth: 1280, clientHeight: 720 } };
+                return { layoutViewport: viewport };
             }
 
             return {};
@@ -204,6 +208,7 @@ describe("screenshot", () => {
         expect(result.structuredContent).toEqual({
             width     : 5,
             height    : 7,
+            pixelRatio: 0.004,
             bytes     : JPEG_5X7.byteLength,
             format    : "jpeg",
             clipped   : false,
@@ -302,6 +307,50 @@ describe("screenshot", () => {
         expect(result.structuredContent).toMatchObject({ clipped: true });
         expect(shot?.params).toMatchObject({ clip: { x: 1, y: 2, width: 10, height: 6 } });
         expect(calls).toContain("DOM.scrollIntoViewIfNeeded");
+    });
+
+    it("reports how many image pixels make one CSS pixel, so a point can be read from the image", async () => {
+        const data = JPEG_5X7.toString("base64");
+
+        type Viewport = { clientWidth: number; clientHeight: number };
+
+        const ratioOf = async (viewport: Viewport, args = {}) => {
+            const { runtime } = setup(shotFake(data, undefined, viewport));
+
+            await runTool(newTab, {}, extra(), runtime);
+
+            return (await runTool(screenshot, args, extra(), runtime)).structuredContent as {
+                pixelRatio?: number;
+            };
+        };
+
+        expect((await ratioOf({ clientWidth: 5, clientHeight: 7 })).pixelRatio).toBe(1);
+        expect((await ratioOf({ clientWidth: 2.5, clientHeight: 3.5 })).pixelRatio).toBe(2);
+        expect((await ratioOf({ clientWidth: 10, clientHeight: 14 })).pixelRatio).toBe(0.5);
+    });
+
+    it("counts the scale in the ratio and reports none when the page size is unknown", async () => {
+        const data = JPEG_5X7.toString("base64");
+        const scaled = setup(shotFake(data, undefined, { clientWidth: 10, clientHeight: 14 }));
+
+        await runTool(newTab, {}, extra(), scaled.runtime);
+
+        const half = (await runTool(screenshot, { scale: 0.5 }, extra(), scaled.runtime))
+            .structuredContent as { pixelRatio?: number };
+
+        expect(half.pixelRatio).toBe(1);
+
+        const unknown = setup(shotFake(data));
+
+        unknown.fake.respond = (_tab, method) =>
+            method === "Page.captureScreenshot" ? { data } : {};
+
+        await runTool(newTab, {}, extra(), unknown.runtime);
+
+        const none = (await runTool(screenshot, {}, extra(), unknown.runtime))
+            .structuredContent as Record<string, unknown>;
+
+        expect(none).not.toHaveProperty("pixelRatio");
     });
 
     function scrolledFake(onCapture: (params: Record<string, unknown>) => void) {

@@ -216,7 +216,7 @@ function dispatchClick(
 export const inputClick = defineTool({
     name: "input_click",
     description:
-        "Click an element, or a point of the viewport given in CSS pixels (the coordinates of a screenshot at scale 1), with trusted CDP mouse events, like a real user, without focusing the window.",
+        "Click an element, or a point of the viewport given in CSS pixels (a pixel of a screenshot divided by its pixelRatio), with trusted CDP mouse events, like a real user, without focusing the window.",
     access: "mutate",
     input : z.strictObject({
         tab       : tabSchema,
