@@ -7,6 +7,7 @@ import { ambiguousFrameError, MAX_FRAME_LENGTH, splitPierceChain } from "./eleme
 import { ToolError } from "./errors.js";
 import { bindAccess, isolatedDocumentNode } from "./frame-scope.js";
 import { elementCollector } from "./walk-script.js";
+import { documentSchema, nodeIdSchema, resolvedSchema } from "./cdp-schemas.js";
 
 const QUERY_DEFAULT_LIMIT = 20;
 
@@ -30,8 +31,6 @@ export const DEFAULT_QUERY_ATTRIBUTES = [
     "data-testid",
 ];
 
-const documentSchema = z.object({ root: z.object({ nodeId: z.number() }) });
-const nodeIdSchema = z.object({ nodeId: z.number() });
 const nodeIdsSchema = z.object({ nodeIds: z.array(z.number()) });
 const worldSchema = z.object({ executionContextId: z.number() });
 const frameOwnerSchema = z.object({
@@ -1034,5 +1033,3 @@ async function chainedMatches(
 
     return { matches, returned: matches.length };
 }
-
-const resolvedSchema = z.object({ object: z.object({ objectId: z.string().optional() }) });

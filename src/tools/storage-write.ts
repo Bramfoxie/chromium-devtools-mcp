@@ -5,7 +5,7 @@ import { ensureNoDialog } from "./dialogs.js";
 import { ToolError } from "./errors.js";
 import { assertPageAllowed } from "./page-allowed.js";
 import { throwIfCancelled } from "./registry.js";
-import { pageLocation } from "./storage-read.js";
+import { itemsSchema, pageLocation } from "./storage-read.js";
 
 const WRITE_MAX_ENTRIES = 100;
 
@@ -88,7 +88,7 @@ async function storageCount(
     origin  : string,
     local   : boolean,
 ): Promise<number> {
-    const parsed = z.object({ entries: z.array(z.tuple([z.string(), z.string()])) }).safeParse(
+    const parsed = itemsSchema.safeParse(
         await access.send(targetId, "DOMStorage.getDOMStorageItems", {
             storageId: { securityOrigin: origin, isLocalStorage: local },
         }),

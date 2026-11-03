@@ -7,6 +7,7 @@ import { ToolError } from "./errors.js";
 import { bindAccess, isolatedDocumentNode } from "./frame-scope.js";
 import type { FrameState } from "./frames.js";
 import { assertPageAllowed } from "./page-allowed.js";
+import { documentSchema, nodeIdSchema, quadSchema, resolvedSchema } from "./cdp-schemas.js";
 
 const MAX_SELECTOR_LENGTH = 1024;
 
@@ -211,9 +212,6 @@ export class ElementRegistry {
     }
 }
 
-const documentSchema = z.object({ root: z.object({ nodeId: z.number() }) });
-const nodeIdSchema = z.object({ nodeId: z.number() });
-const resolvedSchema = z.object({ object: z.object({ objectId: z.string().optional() }) });
 const describedNodeSchema = z.object({
     node: z.object({
         nodeName       : z.string().optional(),
@@ -225,10 +223,6 @@ const describedNodeSchema = z.object({
 });
 const searchSchema = z.object({ searchId: z.string(), resultCount: z.number() });
 const searchResultsSchema = z.object({ nodeIds: z.array(z.number()) });
-const quadSchema = z
-    .array(z.number())
-    .length(8)
-    .refine((quad) => quad.every((value) => Number.isFinite(value)));
 const boxModelSchema = z.object({
     model: z.object({
         content: quadSchema,

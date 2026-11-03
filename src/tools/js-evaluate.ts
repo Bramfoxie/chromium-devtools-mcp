@@ -13,6 +13,7 @@ import {
 } from "./element-target.js";
 import { ToolError } from "./errors.js";
 import { truncateText } from "./result.js";
+import { stackTraceSchema } from "./cdp-schemas.js";
 
 const EVALUATE_DEFAULT_TIMEOUT_MS = 10_000;
 
@@ -83,18 +84,7 @@ const evaluatedSchema = z.object({
             lineNumber  : z.number().optional(),
             columnNumber: z.number().optional(),
             exception   : remoteSchema.optional(),
-            stackTrace  : z
-                .object({
-                    callFrames: z.array(
-                        z.object({
-                            functionName: z.string(),
-                            url         : z.string(),
-                            lineNumber  : z.number(),
-                            columnNumber: z.number(),
-                        }),
-                    ),
-                })
-                .optional(),
+            stackTrace  : stackTraceSchema,
         })
         .optional(),
 });

@@ -5,6 +5,7 @@ import type { Rect } from "./element-target.js";
 import { ToolError } from "./errors.js";
 import { bindAccess } from "./frame-scope.js";
 import type { FrameInfo, FrameState } from "./frames.js";
+import { quadSchema } from "./cdp-schemas.js";
 
 interface FrameTransform {
     x     : number;
@@ -45,7 +46,6 @@ export function mapRect(transform: FrameTransform, rect: Rect): Rect {
     };
 }
 
-const quadSchema = z.array(z.number()).length(8).refine((quad) => quad.every(Number.isFinite));
 const ownerModelSchema = z.object({
     model: z.object({
         content: quadSchema,

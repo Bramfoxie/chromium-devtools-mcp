@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { redactUrl } from "./network-log.js";
+import { stackTraceSchema } from "../cdp-schemas.js";
 
 const CONSOLE_ENTRY_CLIP_CHARS = 2000;
 
@@ -42,18 +43,7 @@ const remoteObject = z.object({
 const consoleApiCalled = z.object({
     type      : z.string(),
     args      : z.array(remoteObject),
-    stackTrace: z
-        .object({
-            callFrames: z.array(
-                z.object({
-                    functionName: z.string(),
-                    url         : z.string(),
-                    lineNumber  : z.number(),
-                    columnNumber: z.number(),
-                }),
-            ),
-        })
-        .optional(),
+    stackTrace: stackTraceSchema,
 });
 
 const exceptionThrown = z.object({
@@ -63,18 +53,7 @@ const exceptionThrown = z.object({
         columnNumber: z.number().optional(),
         url         : z.string().optional(),
         exception   : remoteObject.optional(),
-        stackTrace  : z
-            .object({
-                callFrames: z.array(
-                    z.object({
-                        functionName: z.string(),
-                        url         : z.string(),
-                        lineNumber  : z.number(),
-                        columnNumber: z.number(),
-                    }),
-                ),
-            })
-            .optional(),
+        stackTrace  : stackTraceSchema,
     }),
 });
 

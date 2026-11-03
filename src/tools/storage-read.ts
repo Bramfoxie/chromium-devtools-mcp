@@ -20,7 +20,7 @@ const STORAGE_MAX_KEY_CHARS = 1024;
 
 const STORAGE_KEY_CLIP_CHARS = 200;
 
-const itemsSchema = z.object({ entries: z.array(z.tuple([z.string(), z.string()])) });
+export const itemsSchema = z.object({ entries: z.array(z.tuple([z.string(), z.string()])) });
 
 const evaluatedSchema = z.object({
     result: z.object({
