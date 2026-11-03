@@ -1,14 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { attachBrowser } from "../src/browser/attach.js";
 import type { Config } from "../src/config/index.js";
-import {
-    approvalMessage,
-    type BrowserConnector,
-    connectToDaemon,
-    createConnector,
-    runDaemon,
-    type RunningDaemon,
-} from "../src/daemon/index.js";
+import { connectToDaemon, runDaemon, type RunningDaemon } from "../src/daemon/index.js";
+import { approvalMessage, type BrowserConnector, createConnector } from "../src/daemon/runner.js";
 import { makeLayout } from "./helpers/daemon-env.js";
 import { createSocketHarness } from "./helpers/daemon-socket.js";
 import { FakeChrome } from "./helpers/fake-chrome.js";

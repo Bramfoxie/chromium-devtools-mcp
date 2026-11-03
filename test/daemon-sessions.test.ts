@@ -5,7 +5,8 @@ import {
     CdpSessionDetachedError,
     CdpTimeoutError,
 } from "../src/cdp/index.js";
-import { ErrorCode, RpcError, SessionRegistry } from "../src/daemon/index.js";
+import { ErrorCode, RpcError } from "../src/daemon/index.js";
+import { SessionRegistry } from "../src/daemon/sessions.js";
 import { FakeBackend } from "./helpers/fake-backend.js";
 
 interface Emitted {

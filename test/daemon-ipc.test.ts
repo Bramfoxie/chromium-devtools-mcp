@@ -2,24 +2,11 @@ import { mkdir } from "node:fs/promises";
 import net from "node:net";
 import { Duplex } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-    type AcceptOptions,
-    acceptConnection,
-    acquireInstance,
-    type ClientConnection,
-    ErrorCode,
-    generateToken,
-    IpcClient,
-    IpcClosedError,
-    IpcTimeoutError,
-    LineDecoder,
-    MAX_PENDING_CONNECTIONS,
-    MAX_REQUEST_BYTES,
-    MAX_RESPONSE_BYTES,
-    PendingConnections,
-    type RequestHandler,
-    RpcError,
-} from "../src/daemon/index.js";
+import { ErrorCode, IpcClient, IpcClosedError, IpcTimeoutError, MAX_RESPONSE_BYTES, RpcError } from "../src/daemon/index.js";
+import { type AcceptOptions, acceptConnection, type ClientConnection, MAX_PENDING_CONNECTIONS, PendingConnections, type RequestHandler } from "../src/daemon/server.js";
+import { acquireInstance } from "../src/daemon/lock.js";
+import { generateToken } from "../src/daemon/token.js";
+import { LineDecoder, MAX_REQUEST_BYTES } from "../src/daemon/protocol.js";
 import { createSocketHarness } from "./helpers/daemon-socket.js";
 
 const harness = createSocketHarness();

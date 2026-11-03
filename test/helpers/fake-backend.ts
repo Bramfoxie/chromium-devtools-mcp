@@ -1,11 +1,4 @@
-import type {
-    BackendSession,
-    BrowserBackend,
-    ChildSessionHandle,
-    ChildSessionOptions,
-    FrameChildSession,
-    TargetInfo,
-} from "../../src/daemon/index.js";
+import type { BackendSession, BrowserBackend, ChildSessionHandle, ChildSessionOptions, FrameChildSession, TargetInfo } from "../../src/daemon/browser-backend.js";
 
 interface SentCommand {
     method   : string;

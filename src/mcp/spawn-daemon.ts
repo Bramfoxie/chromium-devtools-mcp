@@ -1,8 +1,7 @@
 import { spawn as nodeSpawn } from "node:child_process";
 import { closeSync, constants, lstatSync, openSync, truncateSync } from "node:fs";
 import { pathFor } from "../config/index.js";
-import { DaemonError, errorCode } from "../daemon/index.js";
-import { ensurePrivateDir } from "../daemon/private-dir.js";
+import { DaemonError, ensurePrivateDir, errorCode } from "../daemon/index.js";
 import type { StartedDaemon } from "./daemon-link.js";
 import { messageOf } from "../util/message-of.js";
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { checkCall, checkEvent, ErrorCode, normalizeUrl, RpcError } from "../src/daemon/index.js";
+import { ErrorCode, normalizeUrl, RpcError } from "../src/daemon/index.js";
+import { checkCall, checkEvent } from "../src/daemon/method-policy.js";
 
 const off = { allowFocus: false };
 

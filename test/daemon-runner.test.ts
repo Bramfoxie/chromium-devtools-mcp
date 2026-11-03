@@ -2,25 +2,8 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Config } from "../src/config/index.js";
-import {
-    AlreadyRunningError,
-    type BrowserConnector,
-    connectToDaemon,
-    createConnector,
-    DaemonConfigMismatchError,
-    DaemonError,
-    type DaemonIdentity,
-    daemonIdentity,
-    DaemonNotRunningError,
-    type DaemonLayout,
-    type DaemonOutcome,
-    ErrorCode,
-    IpcClient,
-    RpcError,
-    approvalMessage,
-    runDaemon,
-    type RunningDaemon,
-} from "../src/daemon/index.js";
+import { AlreadyRunningError, connectToDaemon, DaemonConfigMismatchError, DaemonError, type DaemonIdentity, daemonIdentity, DaemonNotRunningError, type DaemonLayout, ErrorCode, IpcClient, RpcError, runDaemon, type RunningDaemon } from "../src/daemon/index.js";
+import { type BrowserConnector, createConnector, type DaemonOutcome, approvalMessage } from "../src/daemon/runner.js";
 import { makeLayout, startFakeBrowser } from "./helpers/daemon-env.js";
 import { createSocketHarness } from "./helpers/daemon-socket.js";
 
@@ -163,7 +146,7 @@ describe("starting and serving", () => {
     });
 
     it("does not start the idle timer when a daemon is only constructed", async () => {
-        const { Daemon } = await import("../src/daemon/index.js");
+        const { Daemon } = await import("../src/daemon/daemon.js");
 
         vi.useFakeTimers();
 
@@ -648,7 +631,7 @@ describe("idle shutdown", () => {
 
 describe("daemon status", () => {
     it("survives a throwing onIdle without crashing the daemon", async () => {
-        const { Daemon } = await import("../src/daemon/index.js");
+        const { Daemon } = await import("../src/daemon/daemon.js");
         const { FakeBackend } = await import("./helpers/fake-backend.js");
         const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
         const daemon = new Daemon({
@@ -670,7 +653,7 @@ describe("daemon status", () => {
     });
 
     it("does not fall back to waiting once the backend is attached", async () => {
-        const { Daemon } = await import("../src/daemon/index.js");
+        const { Daemon } = await import("../src/daemon/daemon.js");
         const { FakeBackend } = await import("./helpers/fake-backend.js");
         const daemon = new Daemon({
             token     : "t",

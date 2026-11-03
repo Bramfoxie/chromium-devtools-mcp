@@ -7,7 +7,7 @@ import {
     type FrameSummary,
     type SessionSummary,
     type TabInfo,
-} from "../daemon/wire.js";
+} from "../daemon/index.js";
 import { describeError, logDaemon, quoted } from "../util/log.js";
 import type { DaemonLink } from "./daemon-link.js";
 import { AppError } from "../util/app-error.js";

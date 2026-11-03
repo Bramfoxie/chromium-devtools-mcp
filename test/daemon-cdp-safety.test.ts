@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { ErrorCode, RpcError, SessionRegistry } from "../src/daemon/index.js";
+import { ErrorCode, RpcError } from "../src/daemon/index.js";
+import { SessionRegistry } from "../src/daemon/sessions.js";
 import { checkGuardedCall, NO_SAFETY, type SessionSafety } from "../src/daemon/cdp-safety.js";
 import { FakeBackend } from "./helpers/fake-backend.js";
 

@@ -1,11 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { main } from "../src/cli-main.js";
 import { type Config, ConfigError, loadConfig } from "../src/config/index.js";
-import {
-    AlreadyRunningError,
-    type DaemonOutcome,
-    type RunningDaemon,
-} from "../src/daemon/index.js";
+import { AlreadyRunningError, type RunningDaemon } from "../src/daemon/index.js";
+import { type DaemonOutcome } from "../src/daemon/runner.js";
 
 function cannedConfig(patch: Partial<Config> = {}): Config {
     return {

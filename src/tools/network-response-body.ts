@@ -1,6 +1,10 @@
 import { z } from "zod";
-import { ErrorCode, RpcError } from "../daemon/index.js";
-import { MAX_RESPONSE_BYTES, RESULT_TOO_LARGE_MESSAGE } from "../daemon/protocol.js";
+import {
+    ErrorCode,
+    MAX_RESPONSE_BYTES,
+    RESULT_TOO_LARGE_MESSAGE,
+    RpcError,
+} from "../daemon/index.js";
 import { defineTool } from "./define-tool.js";
 import { ToolError } from "./errors.js";
 import { truncateText } from "./result.js";

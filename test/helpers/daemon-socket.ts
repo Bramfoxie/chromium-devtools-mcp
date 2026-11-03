@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import type { InstanceOptions } from "../../src/daemon/index.js";
+import type { InstanceOptions } from "../../src/daemon/lock.js";
 
 export function createSocketHarness() {
     const cleanups: Array<() => Promise<void>> = [];

@@ -16,20 +16,10 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-    AlreadyRunningError,
-    acquireInstance,
-    DaemonError,
-    type DirIO,
-    type DirStat,
-    ensurePrivateDir,
-    generateToken,
-    type InstanceIO,
-    type InstanceOptions,
-    ensureToken,
-    readToken,
-    tokensMatch,
-} from "../src/daemon/index.js";
+import { AlreadyRunningError, DaemonError, ensurePrivateDir } from "../src/daemon/index.js";
+import { acquireInstance, type InstanceIO, type InstanceOptions } from "../src/daemon/lock.js";
+import { type DirIO, type DirStat } from "../src/daemon/private-dir.js";
+import { generateToken, ensureToken, readToken, tokensMatch } from "../src/daemon/token.js";
 
 const posix = process.platform !== "win32";
 const uid = process.getuid?.();

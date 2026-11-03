@@ -1,13 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-    currentPathContext,
-    currentUsername,
-    type DaemonPathContext,
-    maxSocketPathBytes,
-    runtimeDir,
-    socketPath,
-    tokenPath,
-} from "../src/daemon/index.js";
+import { currentPathContext, currentUsername, type DaemonPathContext, maxSocketPathBytes, runtimeDir, socketPath, tokenPath } from "../src/daemon/paths.js";
 
 const token = "a".repeat(64);
 const linux: DaemonPathContext = {

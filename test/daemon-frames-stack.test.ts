@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CdpClient } from "../src/cdp/index.js";
-import { CdpBackend, SessionRegistry } from "../src/daemon/index.js";
+import { CdpBackend } from "../src/daemon/cdp-backend.js";
+import { SessionRegistry } from "../src/daemon/sessions.js";
 import { FakeBrowser } from "./helpers/fake-browser.js";
 
 const stops: Array<() => Promise<void>> = [];

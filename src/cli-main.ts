@@ -2,8 +2,7 @@ import { type Config, ConfigError, loadConfig } from "./config/index.js";
 import { realFs } from "./install/fs.js";
 import { runInstall } from "./install/install.js";
 import os from "node:os";
-import { AlreadyRunningError } from "./daemon/errors.js";
-import { runDaemon, type RunningDaemon } from "./daemon/runner.js";
+import { AlreadyRunningError, runDaemon, type RunningDaemon } from "./daemon/index.js";
 import { runMcpServer, type RunningMcp } from "./mcp/server.js";
 import { messageOf } from "./util/message-of.js";
 

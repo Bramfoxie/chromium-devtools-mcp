@@ -1,13 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { CdpSession } from "../src/cdp/index.js";
-import {
-    CHILD_ATTACH_HANDLER_TIMEOUT_MS,
-    CHILD_AUTO_ATTACH_TIMEOUT_MS,
-    ChildTargets,
-    MAX_CHILD_ATTACH_DEPTH,
-    MAX_CHILD_SESSIONS_PER_TAB,
-    type ChildTargetsDeps,
-} from "../src/daemon/index.js";
+import { CHILD_ATTACH_HANDLER_TIMEOUT_MS, CHILD_AUTO_ATTACH_TIMEOUT_MS, ChildTargets, type ChildTargetsDeps } from "../src/daemon/child-targets.js";
+import { MAX_CHILD_ATTACH_DEPTH, MAX_CHILD_SESSIONS_PER_TAB } from "../src/daemon/browser-backend.js";
 
 interface SentCall {
     session: string;

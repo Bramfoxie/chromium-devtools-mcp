@@ -8,13 +8,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { findBrowserExecutable } from "../../src/browser/discovery.js";
 import { connectBrowser } from "../../src/daemon/runner.js";
 import type { Config } from "../../src/config/index.js";
-import {
-    connectToDaemon,
-    daemonIdentity,
-    type DaemonLayout,
-    runDaemon,
-    type RunningDaemon,
-} from "../../src/daemon/index.js";
+import { connectToDaemon, daemonIdentity, type DaemonLayout, runDaemon, type RunningDaemon } from "../../src/daemon/index.js";
 import { createMcpServer, DaemonLink, registerServerTools } from "../../src/mcp/index.js";
 import { createSocketHarness } from "../helpers/daemon-socket.js";
 

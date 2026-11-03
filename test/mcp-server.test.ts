@@ -6,11 +6,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { PassThrough } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-    DaemonNotRunningError,
-    daemonIdentity,
-    type DaemonLayout,
-} from "../src/daemon/index.js";
+import { DaemonNotRunningError, daemonIdentity, type DaemonLayout } from "../src/daemon/index.js";
 import {
     clientLabel,
     connectedClientName,

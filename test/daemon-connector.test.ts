@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AttachEndpoint, ManagedBrowser } from "../src/browser/index.js";
 import type { CdpClient } from "../src/cdp/index.js";
 import type { Config } from "../src/config/index.js";
-import { approvalMessage, type ConnectorDeps, createConnector } from "../src/daemon/index.js";
+import { approvalMessage, type ConnectorDeps, createConnector } from "../src/daemon/runner.js";
 
 const config: Config = {
     browser   : "chrome",

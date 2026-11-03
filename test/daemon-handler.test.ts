@@ -1,14 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-    acquireInstance,
-    Daemon,
-    ErrorCode,
-    generateToken,
-    IpcClient,
-    MAX_REQUEST_BYTES,
-    MAX_RESPONSE_BYTES,
-    RpcError,
-} from "../src/daemon/index.js";
+import { ErrorCode, IpcClient, MAX_RESPONSE_BYTES, RpcError } from "../src/daemon/index.js";
+import { acquireInstance } from "../src/daemon/lock.js";
+import { Daemon } from "../src/daemon/daemon.js";
+import { generateToken } from "../src/daemon/token.js";
+import { MAX_REQUEST_BYTES } from "../src/daemon/protocol.js";
 import { CdpProtocolError } from "../src/cdp/index.js";
 import { FakeBackend } from "./helpers/fake-backend.js";
 import { createSocketHarness } from "./helpers/daemon-socket.js";
