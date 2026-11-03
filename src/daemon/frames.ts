@@ -1,13 +1,7 @@
 import { z } from "zod";
+import type { FrameSummary } from "./wire.js";
 
-export interface FrameSummary {
-    frameId      : string;
-    parentFrameId: string | undefined;
-    url          : string;
-    name         : string;
-    isolated     : boolean;
-    truncated    : boolean;
-}
+export type { FrameSummary };
 
 interface FrameNode {
     frame      : { id: string; parentId?: string; url?: string; name?: string };

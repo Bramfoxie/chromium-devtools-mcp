@@ -1,12 +1,9 @@
+import type { Config } from "../config/index.js";
 import { describeUrlHost, isHostAllowed, isRestricted, isUrlAllowed } from "../safety/index.js";
 import { RpcError } from "./errors.js";
 import { ErrorCode } from "./protocol.js";
 
-export interface SessionSafety {
-    readOnly        : boolean;
-    allowedDomains  : string[];
-    confirmDangerous: boolean;
-}
+export type SessionSafety = Config["safety"];
 
 export const NO_SAFETY: SessionSafety = {
     readOnly        : false,

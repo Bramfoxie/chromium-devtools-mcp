@@ -1,52 +1,28 @@
 import { z } from "zod";
+import {
+    createdSchema,
+    frameListSchema,
+    sessionListSchema,
+    tabListSchema,
+    type FrameSummary,
+    type SessionSummary,
+    type TabInfo,
+} from "../daemon/wire.js";
 import { describeError, logDaemon, quoted } from "../daemon/log.js";
 import type { DaemonLink } from "./daemon-link.js";
 import { AppError } from "../util/app-error.js";
+
+export type DaemonTab = TabInfo;
+
+export type DaemonFrame = FrameSummary;
+
+export type { SessionSummary };
 
 export class SessionResetError extends AppError {
     constructor() {
         super("The browser session was restarted and its tabs are gone. Open a new tab with new_tab.");
     }
 }
-
-const tabSchema = z.strictObject({
-    targetId: z.string(),
-    url     : z.string(),
-    title   : z.string(),
-    owned   : z.boolean(),
-    created : z.boolean(),
-});
-
-export type DaemonTab = z.infer<typeof tabSchema>;
-
-const tabListSchema = z.strictObject({ tabs: z.array(tabSchema) });
-
-const createdSchema = z.strictObject({ targetId: z.string() });
-
-const frameSchema = z.strictObject({
-    frameId      : z.string(),
-    parentFrameId: z.string().optional(),
-    url          : z.string(),
-    name         : z.string(),
-    isolated     : z.boolean(),
-    truncated    : z.boolean().optional(),
-});
-
-export type DaemonFrame = z.infer<typeof frameSchema>;
-
-const frameListSchema = z.strictObject({ frames: z.array(frameSchema) });
-
-const sessionSummarySchema = z.strictObject({
-    sessionId : z.string(),
-    clientName: z.string(),
-    isolated  : z.boolean(),
-    tabs      : z.number(),
-    own       : z.boolean(),
-});
-
-export type SessionSummary = z.infer<typeof sessionSummarySchema>;
-
-const sessionListSchema = z.strictObject({ sessions: z.array(sessionSummarySchema) });
 
 function parse<T>(label: string, schema: z.ZodType<T>, value: unknown): T {
     const result = schema.safeParse(value);

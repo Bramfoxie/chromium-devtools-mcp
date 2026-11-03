@@ -13,20 +13,13 @@ import {
 import { checkCall, checkEvent } from "./method-policy.js";
 import { ErrorCode } from "./protocol.js";
 import { closedError, tabGone, translate } from "./rpc-errors.js";
+import type { TabInfo } from "./wire.js";
 import { type OwnedTab, type Subscription, TabFrames } from "./tab-frames.js";
 
 const DETACH_GRACE_MS = 2000;
 
 export interface SessionOptions {
     allowFocus: boolean;
-}
-
-export interface TabInfo {
-    targetId: string;
-    url     : string;
-    title   : string;
-    owned   : boolean;
-    created : boolean;
 }
 
 export type TabScope = "owned" | "available";

@@ -1,3 +1,4 @@
+import type { Config } from "../config/index.js";
 import {
     type DaemonIdentity,
     DaemonError,
@@ -29,11 +30,7 @@ export interface LinkDeps {
 export interface LinkConfig {
     identity : DaemonIdentity;
     isolated?: boolean;
-    safety?  : {
-        readOnly        : boolean;
-        allowedDomains  : string[];
-        confirmDangerous: boolean;
-    };
+    safety?  : Config["safety"];
 }
 
 export type SessionResetHandler = () => void;

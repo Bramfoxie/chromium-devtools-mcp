@@ -4,12 +4,12 @@ export {
     ClientSession,
     type Emit,
     type SessionOptions,
-    type TabInfo,
     type TabScope,
 } from "./client-session.js";
 
 export {
     SessionRegistry,
     type SessionOpenOptions,
-    type SessionSummary,
 } from "./session-registry.js";
+
+export type { SessionSummary, TabInfo } from "./wire.js";

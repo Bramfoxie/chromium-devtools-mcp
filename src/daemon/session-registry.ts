@@ -8,17 +8,10 @@ import {
 import type { SessionSafety } from "./cdp-safety.js";
 import { RpcError } from "./errors.js";
 import { ErrorCode } from "./protocol.js";
+import type { SessionSummary } from "./wire.js";
 import { closedError, translate } from "./rpc-errors.js";
 
 const MAX_REMEMBERED_DESTROYED = 512;
-
-export interface SessionSummary {
-    sessionId : string;
-    clientName: string;
-    isolated  : boolean;
-    tabs      : number;
-    own       : boolean;
-}
 
 export interface SessionOpenOptions {
     isolated  : boolean;
