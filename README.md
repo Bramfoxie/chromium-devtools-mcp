@@ -2,7 +2,7 @@
 
 MCP server that lets AI agents drive your real Chromium browser through the DevTools Protocol.
 
-Status: early development. The core (config, browser connection, daemon, MCP entrypoint) and all planned browser tools work. The safety options (read-only mode, domain allowlist, confirmation of dangerous actions) work; the client installer is not implemented yet.
+Status: early development. The core (config, browser connection, daemon, MCP entrypoint) and all planned browser tools work. The safety options (read-only mode, domain allowlist, confirmation of dangerous actions) work; the client installer works for Claude Code, Cursor and Codex and prints ready settings for Cherry Studio.
 
 ## Features
 
@@ -10,7 +10,7 @@ Status: early development. The core (config, browser connection, daemon, MCP ent
 - Tabs open in the background. Bringing a window to the front is refused unless `allowFocus` is on.
 - Headless and interactive modes for the managed profile.
 - Several MCP clients share one browser through a per-user daemon, each in its own session.
-- Planned: one-command install into your MCP client, domain allowlist and confirmation of dangerous actions.
+- One-command install into your MCP client.
 
 ## Usage
 
@@ -20,7 +20,7 @@ npx -y chromium-devtools-mcp daemon [options]   # browser daemon in the foregrou
 npx -y chromium-devtools-mcp --help
 ```
 
-Until the installer exists, add the server to your client by hand. Most clients accept this entry:
+To add the server to a client, use the installer below. Any other client that accepts a JSON `mcpServers` entry can use this one:
 
 ```json
 {
@@ -30,13 +30,38 @@ Until the installer exists, add the server to your client by hand. Most clients 
 }
 ```
 
-Planned installer:
+## Install
 
 ```sh
 npx chromium-devtools-mcp install --client claude-code
+npx chromium-devtools-mcp install --client all --dry-run
+npx chromium-devtools-mcp install --client cursor --read-only --allowed-domains example.com
+npx chromium-devtools-mcp install --client codex --remove
 ```
 
-Clients: Claude Code, Cherry Studio, Cursor, Codex.
+`--client` takes `claude-code`, `cursor`, `codex`, `cherry-studio` or `all`, and may be repeated. Each client is handled on its own: one failure does not stop the others and makes the exit code 1. A usage error exits with 2.
+
+| Client        | What the installer changes                                                                                  |
+| ------------- | ----------------------------------------------------------------------------------------------------------- |
+| Claude Code   | `mcpServers` in `~/.claude.json` (user scope), or `$CLAUDE_CONFIG_DIR/.claude.json` when that is set        |
+| Cursor        | `mcpServers` in `~/.cursor/mcp.json` (global)                                                               |
+| Codex         | table `[mcp_servers.chromium-devtools]` in `~/.codex/config.toml`, or under `$CODEX_HOME` when that is set  |
+| Cherry Studio | nothing: it has no config file to edit, so the installer prints the JSON and the steps for Import from JSON |
+
+Cherry Studio: open Settings, MCP Servers, Add, Import from JSON, paste the printed JSON and save.
+
+The entry is `npx -y chromium-devtools-mcp`, followed by any server flags you pass to the installer (`--mode`, `--headless`, `--read-only`, `--allowed-domains`, `--confirm-dangerous` and the other flags from Configuration). The flags are checked like at server start, so a typo is an error. On Windows the entry runs `cmd /c npx ...`.
+
+Edits are conservative:
+
+- Everything else in the file is kept, including other servers. The Codex file is edited as text, so it stays byte-identical outside the chromium-devtools table. Claude Code and Cursor files are rewritten as JSON with two-space indentation.
+- A timestamped copy `<file>.bak-<time>` is made before an existing file is changed, and the new content is written through a temporary file and a rename.
+- A file that is not valid JSON, or a Codex file with a duplicated chromium-devtools table, is refused and left untouched.
+- Running the same command again changes nothing and says so. Running it with different flags updates the existing entry in place and keeps extra keys you added to it.
+- `--dry-run` prints what would change and the entry, and writes nothing, not even a backup.
+- `--remove` deletes only the chromium-devtools entry.
+
+Restart the client afterwards so it reads the new entry. If Claude Code is running while the installer edits `~/.claude.json`, it may rewrite the file and drop the entry, so install while it is closed.
 
 ## Attach mode setup
 
