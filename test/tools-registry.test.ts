@@ -102,7 +102,7 @@ const readOnly: Config = {
 };
 
 describe("tool declarations", () => {
-    it("declares forty six tools with unique names, descriptions and access", () => {
+    it("declares forty seven tools with unique names, descriptions and access", () => {
         expect(allTools.map((tool) => tool.name)).toEqual([
             "list_tabs",
             "list_sessions",
@@ -133,6 +133,7 @@ describe("tool declarations", () => {
             "screencast_stop",
             "lighthouse_audit",
             "webauthn",
+            "pwa_info",
             "screenshot",
             "list_devices",
             "emulate_device",
@@ -366,6 +367,7 @@ describe("open world annotation", () => {
         "page_dialogs",
         "perf_trace_start",
         "perf_trace_stop",
+        "pwa_info",
         "screencast_start",
         "screencast_stop",
         "select_tab",
@@ -607,7 +609,7 @@ describe("runTool", () => {
 });
 
 describe("tools/list", () => {
-    it("lists exactly the forty six tools with their schemas", async () => {
+    it("lists exactly the forty seven tools with their schemas", async () => {
         const server = createMcpServer("1.0.0");
 
         registerTools({ server, tools: allTools, runtime: runtime() });
@@ -647,6 +649,7 @@ describe("tools/list", () => {
             "screencast_stop",
             "lighthouse_audit",
             "webauthn",
+            "pwa_info",
             "screenshot",
             "list_devices",
             "emulate_device",

@@ -61,14 +61,15 @@ If something does not connect, run `npx chromium-devtools-mcp doctor` (add the s
 | Heap snapshots                                                      |          ✅           |         ✅          |
 | Screencast recording                                                |          ✅           |         ✅          |
 | WebAuthn virtual authenticators                                     |          ✅           |         ✅          |
-| Extensions and PWA tools                                            |          ❌           |         ✅          |
+| PWA inspection (manifest, installability, service workers)          |          ✅           |         ✅          |
+| PWA install and extension management                                |          ❌           |         ✅          |
 | Geolocation emulation                                               |          ✅           |         ✅          |
 
 Compared against Chrome DevTools MCP 1.12.0 (2026-10-22, [ChromeDevTools/chrome-devtools-mcp](https://github.com/ChromeDevTools/chrome-devtools-mcp)). A cross on its side means its tool reference lists no tool for that capability. Version 0.1.0 of this project supports Chrome only.
 
 ## Tools
 
-46 tools. Details and parameters are in [docs/tools.md](docs/tools.md).
+47 tools. Details and parameters are in [docs/tools.md](docs/tools.md).
 
 | Category    | Tools                                                                                                                                       |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -81,6 +82,7 @@ Compared against Chrome DevTools MCP 1.12.0 (2026-10-22, [ChromeDevTools/chrome-
 | Network     | `network_mock`                                                                                                                              |
 | Storage     | `storage_read`, `storage_write`                                                                                                             |
 | Web auth    | `webauthn`                                                                                                                                  |
+| Web apps    | `pwa_info`                                                                                                                                  |
 | Emulation   | `list_devices`, `emulate_device`, `emulate_media`, `emulate_network`, `emulate_locale`, `emulate_geolocation`                               |
 
 ## Safety

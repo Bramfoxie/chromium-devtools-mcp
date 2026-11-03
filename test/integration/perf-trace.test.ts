@@ -23,7 +23,7 @@ beforeAll(async () => {
 
     env = await startEnv();
     env.fixture.pages.set("/mine", { body: PAGE, status: 200, type: "text/html" });
-    env.fixture.pages.set("/pixel.png", { body: PIXEL.toString("latin1"), status: 200, type: "image/png" });
+    env.fixture.pages.set("/pixel.png", { body: PIXEL, status: 200, type: "image/png" });
     env.fixture.pages.set("/OTHER-TAB-PRIVATE-URL", {
         body  : "<!doctype html><title>private-title-xyz</title><h1>private</h1>",
         status: 200,

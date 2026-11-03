@@ -34,7 +34,12 @@ export interface Fixture {
     origin: string;
     pages : Map<
         string,
-        { body: string; status: number; type: string; headers?: Record<string, string> }
+        {
+            body    : string | Uint8Array;
+            status  : number;
+            type    : string;
+            headers?: Record<string, string>;
+        }
     >;
     hits: Map<string, number>;
     close(): Promise<void>;

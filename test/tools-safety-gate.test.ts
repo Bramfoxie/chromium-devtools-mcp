@@ -89,6 +89,7 @@ const READING: Case[] = [
     ["screencast_start", {}],
     ["screencast_stop", {}],
     ["webauthn", { action: "list_authenticators" }],
+    ["pwa_info", {}],
     ["screenshot", {}],
     ["list_devices", {}],
 ];

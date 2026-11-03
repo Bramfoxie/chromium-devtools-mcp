@@ -70,6 +70,8 @@ export { bringToFront } from "./bring-to-front.js";
 
 export { fillForm } from "./fill-form.js";
 
+export { pwaInfo } from "./pwa-info.js";
+
 export { webauthn } from "./webauthn.js";
 
 export { WebAuthnState } from "./webauthn-state.js";
