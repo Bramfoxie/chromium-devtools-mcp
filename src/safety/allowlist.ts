@@ -57,16 +57,6 @@ export function isHostAllowed(
     });
 }
 
-export function hostOfUrl(url: string): string | undefined {
-    try {
-        const parsed = new URL(url);
-
-        return WEB_PROTOCOLS.has(parsed.protocol) ? parsed.hostname : undefined;
-    } catch {
-        return undefined;
-    }
-}
-
 export function isUrlAllowed(url: string, patterns: readonly string[]): boolean {
     if (!isRestricted(patterns)) return true;
 

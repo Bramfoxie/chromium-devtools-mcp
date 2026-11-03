@@ -44,7 +44,7 @@ describe("checkCall", () => {
         );
     });
 
-    it.each(["Target.getTargets", "Browser.close", "Storage.getCookies", "SystemInfo.getInfo"])(
+    it.each(["Target.getTargets", "Browser.close", "Storage.getCookies", "Storage.setCookies", "Storage.clearCookies", "SystemInfo.getInfo"])(
         "refuses the domain of %s",
         (method) => {
             expect(codeOf(() => checkCall(method, undefined, off))).toBe(ErrorCode.forbiddenMethod);

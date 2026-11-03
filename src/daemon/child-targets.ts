@@ -119,10 +119,6 @@ export class ChildTargets implements ChildSessionHandle {
         return [...this.known.values()].map((known) => wrap(known.session, known.child));
     }
 
-    childCount(): number {
-        return this.known.size;
-    }
-
     droppedCount(): number {
         return this.dropped;
     }
@@ -162,8 +158,8 @@ export class ChildTargets implements ChildSessionHandle {
 
     private listen(session: CdpSession, depth: number): void {
         const stop = [
-            this.deps.on(session, "Target.attachedToTarget", (params, envelope) =>
-                this.attached(session, depth, params, envelope)),
+            this.deps.on(session, "Target.attachedToTarget", (params) =>
+                this.attached(session, depth, params)),
             this.deps.on(session, "Target.detachedFromTarget", (params) =>
                 this.detached(params)),
         ];
@@ -185,19 +181,12 @@ export class ChildTargets implements ChildSessionHandle {
         }
     }
 
-    private attached(
-        session : CdpSession,
-        depth   : number,
-        params  : unknown,
-        envelope: string | undefined,
-    ): void {
+    private attached(session: CdpSession, depth: number, params: unknown): void {
         if (this.closed) return;
 
         const parsed = attachedSchema.safeParse(params);
 
         if (!parsed.success || parsed.data.targetInfo.type !== "iframe") return;
-
-        if (envelope !== undefined && envelope !== session.sessionId) return;
 
         this.adopt(
             session,

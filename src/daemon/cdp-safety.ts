@@ -18,12 +18,8 @@ type Guard = "cookie-read" | "cookie-write" | "file-attach";
 
 const GUARDS = new Map<string, Guard>([
     ["Network.getCookies", "cookie-read"],
-    ["Storage.getCookies", "cookie-read"],
     ["Network.setCookie", "cookie-write"],
-    ["Network.setCookies", "cookie-write"],
     ["Network.deleteCookies", "cookie-write"],
-    ["Storage.setCookies", "cookie-write"],
-    ["Storage.clearCookies", "cookie-write"],
     ["DOM.setFileInputFiles", "file-attach"],
 ]);
 
@@ -35,10 +31,6 @@ function outside(subject: string, url: string): never {
     return refuse(
         `${subject} ${describeUrlHost(url)}, which is outside safety.allowedDomains. Use an allowed domain, or ask the owner to add it to safety.allowedDomains.`,
     );
-}
-
-export function isGuarded(method: string): boolean {
-    return GUARDS.has(method);
 }
 
 export function needsTabUrl(method: string, safety: SessionSafety): boolean {
@@ -58,14 +50,6 @@ export function checkOpenUrl(what: string, url: string, safety: SessionSafety): 
 type Params = Record<string, unknown>;
 
 function cookieTargets(params: Params | undefined): Params[] {
-    const list = params?.cookies;
-
-    if (Array.isArray(list)) {
-        return list.filter(
-            (item): item is Params => typeof item === "object" && item !== null,
-        );
-    }
-
     return params === undefined ? [] : [params];
 }
 

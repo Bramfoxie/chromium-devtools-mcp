@@ -135,7 +135,7 @@ describe("ChildTargets.attach", () => {
         expect(order).toEqual(["attached child-session-1"]);
         expect(sent.filter((call) => call.session === "child-session-1").map((call) => call.method))
             .toEqual(["Target.setAutoAttach", "Runtime.runIfWaitingForDebugger"]);
-        expect(handle.childCount()).toBe(1);
+        expect(handle.children().length).toBe(1);
     });
 
     it("resumes a paused child even when the attach handler fails", async () => {
@@ -219,7 +219,7 @@ describe("ChildTargets.attach", () => {
         attach("stranger", "stranger-session", childSession("other-session"));
         attach("page", "page-session", peer, "page");
 
-        expect(handle.childCount()).toBe(1);
+        expect(handle.children().length).toBe(1);
         expect(handle.children().map((child) => child.child)).toEqual([
             {
                 targetId : "child1",
@@ -241,7 +241,7 @@ describe("ChildTargets.attach", () => {
             session = childSession(`session${depth}`);
         }
 
-        expect(handle.childCount()).toBe(MAX_CHILD_ATTACH_DEPTH);
+        expect(handle.children().length).toBe(MAX_CHILD_ATTACH_DEPTH);
         expect(handle.droppedCount()).toBe(1);
     });
 
@@ -252,7 +252,7 @@ describe("ChildTargets.attach", () => {
         attach("child1", "child-session-1", peer);
         attach("grandchild", "grandchild-session", childSession("child-session-1"));
 
-        expect(handle.childCount()).toBe(2);
+        expect(handle.children().length).toBe(2);
         const autoAttached = sent
             .filter((call) => call.method === "Target.setAutoAttach")
             .map((call) => call.session)
@@ -269,7 +269,7 @@ describe("ChildTargets.attach", () => {
             attach(`child${index}`, `session${index}`, peer);
         }
 
-        expect(handle.childCount()).toBe(MAX_CHILD_SESSIONS_PER_TAB);
+        expect(handle.children().length).toBe(MAX_CHILD_SESSIONS_PER_TAB);
         expect(handle.droppedCount()).toBe(1);
         expect(log.join("\n")).toContain(String(MAX_CHILD_SESSIONS_PER_TAB));
         const detach = sent.find((call) => call.method === "Target.detachFromTarget");
@@ -292,7 +292,7 @@ describe("ChildTargets.attach", () => {
         emit(peer, "Target.detachedFromTarget", { sessionId: "child-session-1" }, "peer-session");
         emit(peer, "Target.detachedFromTarget", { sessionId: "unknown" }, "peer-session");
 
-        expect(handle.childCount()).toBe(0);
+        expect(handle.children().length).toBe(0);
         expect(seen).toEqual(["child-session-1"]);
     });
 
@@ -339,7 +339,7 @@ describe("ChildTargets.attach", () => {
         );
 
         expect(seen).toEqual(["grandchild-session"]);
-        expect(handle.childCount()).toBe(1);
+        expect(handle.children().length).toBe(1);
     });
 
     it("hands out unmatched children until they match and retries failures", async () => {
@@ -356,7 +356,7 @@ describe("ChildTargets.attach", () => {
         ]);
         handle.confirmMatched("child-session-1");
         expect(handle.takeUnmatched()).toEqual([]);
-        expect(handle.childCount()).toBe(1);
+        expect(handle.children().length).toBe(1);
     });
 
     it("detaches every child and stops listening on detachAll", async () => {
@@ -370,7 +370,7 @@ describe("ChildTargets.attach", () => {
         emit(peer, "Target.detachedFromTarget", { sessionId: "child-session-3" }, "peer-session");
 
         expect(detached.sort()).toEqual(["child-session-1", "child-session-2"]);
-        expect(handle.childCount()).toBe(0);
+        expect(handle.children().length).toBe(0);
         expect(handle.children()).toEqual([]);
         await handle.detachAll();
         expect(detached).toHaveLength(2);
@@ -393,7 +393,7 @@ describe("ChildTargets.attach", () => {
         attach("child1", "child-session-1", peer);
         emit(peer, "Target.detachedFromTarget", { sessionId: "child-session-1" }, "peer-session");
 
-        expect(handle.childCount()).toBe(0);
+        expect(handle.children().length).toBe(0);
         expect(log.join("\n")).toContain("child detach handler threw");
     });
 });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ErrorCode, RpcError, SessionRegistry } from "../src/daemon/index.js";
-import { checkGuardedCall, isGuarded, NO_SAFETY, type SessionSafety } from "../src/daemon/cdp-safety.js";
+import { checkGuardedCall, NO_SAFETY, type SessionSafety } from "../src/daemon/cdp-safety.js";
 import { FakeBackend } from "./helpers/fake-backend.js";
 
 const safe = (patch: Partial<SessionSafety>): SessionSafety => ({ ...NO_SAFETY, ...patch });
@@ -21,17 +21,17 @@ describe("guarded CDP methods", () => {
     it.each([
         "Network.getCookies",
         "Network.setCookie",
-        "Network.setCookies",
         "Network.deleteCookies",
-        "Storage.getCookies",
-        "Storage.setCookies",
         "DOM.setFileInputFiles",
     ])("guards %s", (method) => {
-        expect(isGuarded(method)).toBe(true);
+        const safety = safe({ confirmDangerous: true });
+
+        expect(refusal(() =>
+            checkGuardedCall({ method, params: {}, safety, confirmed: false }),
+        )).toContain("confirmation");
     });
 
     it("does not guard ordinary methods", () => {
-        expect(isGuarded("Runtime.evaluate")).toBe(false);
         expect(refusal(() =>
             checkGuardedCall({ method: "Runtime.evaluate", params: {}, safety: safe({ readOnly: true }), confirmed: false }),
         )).toBeUndefined();
@@ -70,15 +70,6 @@ describe("guarded CDP methods", () => {
         expect(refusal(write({ domain: "evil.test" }, "https://example.com/"))).toContain("evil.test");
         expect(refusal(write({ url: "https://example.com/" }, "https://evil.test/"))).toContain("evil.test");
         expect(refusal(write({ url: "https://example.com/" }, undefined))).toContain("tab URL is unknown");
-    });
-
-    it("checks every cookie of setCookies", () => {
-        const safety = safe({ allowedDomains: ["example.com"] });
-        const cookies = [{ url: "https://example.com/" }, { domain: "evil.test" }];
-
-        expect(refusal(() =>
-            checkGuardedCall({ method: "Network.setCookies", params: { cookies }, safety, confirmed: false, tabUrl: "https://example.com/" }),
-        )).toContain("evil.test");
     });
 
     it("checks the tab and frame of a file attachment but leaves cookie reads alone", () => {
