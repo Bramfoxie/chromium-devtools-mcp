@@ -15,9 +15,6 @@ concurrency:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    outputs:
-      published: ${{ steps.version.outputs.publish }}
-      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -32,7 +29,6 @@ jobs:
         run: |
           name=$(node -p "require('./package.json').name")
           version=$(node -p "require('./package.json').version")
-          echo "version=${version}" >> "$GITHUB_OUTPUT"
           if output=$(npm view "${name}@${version}" version 2>&1); then
             echo "publish=false" >> "$GITHUB_OUTPUT"
           elif printf '%s' "$output" | grep -q E404; then
@@ -60,7 +56,6 @@ jobs:
 
   github-release:
     needs: publish
-    if: needs.publish.outputs.published == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -68,13 +63,27 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - name: Create the GitHub release
+      - name: Create the GitHub release when it is missing
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ needs.publish.outputs.version }}
         run: |
-          gh release create "v${VERSION}" \
+          name=$(node -p "require('./package.json').name")
+          version=$(node -p "require('./package.json').version")
+          if ! output=$(npm view "${name}@${version}" version 2>&1); then
+            printf '%s\n' "$output"
+            echo "${name}@${version} is not on npm, so no release is created for it. Run this workflow again once the version is published."
+            exit 1
+          fi
+          if gh release view "v${version}" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "The release v${version} already exists."
+            exit 0
+          fi
+          if [ ! -s "docs/releases/${version}.md" ]; then
+            echo "docs/releases/${version}.md is missing or empty. Write the release notes before releasing ${version}."
+            exit 1
+          fi
+          gh release create "v${version}" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "v${VERSION}" \
-            --notes-file "docs/releases/${VERSION}.md"
+            --title "v${version}" \
+            --notes-file "docs/releases/${version}.md"
