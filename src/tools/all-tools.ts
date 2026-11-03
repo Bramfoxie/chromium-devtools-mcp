@@ -14,6 +14,7 @@ import { inputScroll } from "./input-scroll.js";
 import { inputSelect } from "./input-select.js";
 import { inputKey, inputType } from "./input-text.js";
 import { inputUpload } from "./input-upload.js";
+import { fillForm } from "./fill-form.js";
 import { jsEvaluate } from "./js-evaluate.js";
 import { networkMock } from "./network-mock.js";
 import { networkRequests } from "./network-requests.js";
@@ -66,4 +67,5 @@ export const allTools: AnyTool[] = [
     inputScroll,
     inputSelect,
     inputUpload,
+    fillForm,
 ];

@@ -342,6 +342,15 @@ export const inputType = defineTool({
     },
 });
 
+export async function clearText(
+    context : ToolContext,
+    targetId: string,
+    element : ResolvedElement,
+): Promise<void> {
+    await focusElement(elementAccess(context.access, element), targetId, element);
+    await clearField(context, targetId);
+}
+
 async function clearField(context: ToolContext, targetId: string): Promise<void> {
     const platform = await browserPlatform(context.access, context.elements, targetId);
 
