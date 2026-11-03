@@ -1,0 +1,168 @@
+import type { BrowserBackend } from "./browser-backend.js";
+import {
+    ClientSession,
+    type Emit,
+    type Ownership,
+    type SessionOptions,
+} from "./client-session.js";
+import type { SessionSafety } from "./cdp-safety.js";
+import { RpcError } from "./errors.js";
+import { ErrorCode } from "./protocol.js";
+import { closedError, translate } from "./rpc-errors.js";
+
+const MAX_REMEMBERED_DESTROYED = 512;
+
+export interface SessionSummary {
+    sessionId : string;
+    clientName: string;
+    isolated  : boolean;
+    tabs      : number;
+    own       : boolean;
+}
+
+export interface SessionOpenOptions {
+    isolated  : boolean;
+    clientName: string;
+    safety?   : SessionSafety;
+}
+
+export class SessionRegistry<K> implements Ownership {
+    private readonly sessions = new Map<K, ClientSession>();
+    private readonly owners = new Map<string, ClientSession>();
+    private readonly opening = new Map<K, symbol>();
+    private readonly sessionIds = new Map<ClientSession, string>();
+    private nextSessionId = 1;
+    private readonly destroyed = new Set<string>();
+    private readonly stopListening: () => void;
+    private shuttingDown = false;
+
+    constructor(
+        private readonly backend: BrowserBackend,
+        private readonly options: SessionOptions,
+    ) {
+        this.stopListening = backend.onTargetDestroyed((targetId) => {
+            this.remember(targetId);
+            this.owners.get(targetId)?.handleTargetDestroyed(targetId);
+        });
+    }
+
+    get(key: K): ClientSession | undefined {
+        return this.sessions.get(key);
+    }
+
+    ownerOf(targetId: string): ClientSession | undefined {
+        return this.owners.get(targetId);
+    }
+
+    setOwner(targetId: string, session: ClientSession): void {
+        this.owners.set(targetId, session);
+    }
+
+    releaseOwner(targetId: string, session: ClientSession): void {
+        if (this.owners.get(targetId) === session) this.owners.delete(targetId);
+    }
+
+    wasDestroyed(targetId: string): boolean {
+        return this.destroyed.has(targetId);
+    }
+
+    async open(key: K, emit: Emit, options: SessionOpenOptions): Promise<ClientSession> {
+        if (this.shuttingDown) throw closedError();
+
+        if (this.sessions.has(key) || this.opening.has(key)) {
+            throw new RpcError(ErrorCode.badRequest, "A session is already open on this connection.");
+        }
+
+        const ticket = Symbol("open");
+
+        this.opening.set(key, ticket);
+        let contextId: string | undefined;
+
+        try {
+            contextId = options.isolated ? await this.backend.createContext() : undefined;
+        } catch (error) {
+            if (this.opening.get(key) === ticket) this.opening.delete(key);
+
+            throw translate(error);
+        }
+
+        if (this.opening.get(key) !== ticket) {
+            if (contextId !== undefined) {
+                await this.backend.disposeContext(contextId).catch(() => undefined);
+            }
+
+            throw closedError();
+        }
+
+        this.opening.delete(key);
+        const session = new ClientSession(
+            this.backend,
+            this,
+            emit,
+            this.options,
+            contextId,
+            options.clientName,
+            options.safety,
+        );
+
+        this.sessions.set(key, session);
+        this.sessionIds.set(session, `session${this.nextSessionId++}`);
+
+        return session;
+    }
+
+    listSessions(caller: K): SessionSummary[] {
+        const callerSession = this.sessions.get(caller);
+        const summaries: SessionSummary[] = [];
+
+        for (const session of this.sessions.values()) {
+            if (session.closed) continue;
+
+            const sessionId = this.sessionIds.get(session);
+
+            if (sessionId === undefined) continue;
+
+            summaries.push({
+                sessionId,
+                clientName: session.clientName,
+                isolated  : session.isolated,
+                tabs      : session.tabCount,
+                own       : session === callerSession,
+            });
+        }
+
+        return summaries;
+    }
+
+    async close(key: K): Promise<void> {
+        this.opening.delete(key);
+        const session = this.sessions.get(key);
+
+        if (!session) return;
+
+        this.sessions.delete(key);
+        this.sessionIds.delete(session);
+        await session.close();
+    }
+
+    async closeAll(): Promise<void> {
+        this.shuttingDown = true;
+        this.stopListening();
+        this.opening.clear();
+        const sessions = [...this.sessions.values()];
+
+        this.sessions.clear();
+        this.sessionIds.clear();
+        await Promise.all(sessions.map((session) => session.close()));
+    }
+
+    private remember(targetId: string): void {
+        this.destroyed.add(targetId);
+
+        if (this.destroyed.size > MAX_REMEMBERED_DESTROYED) {
+            const oldest = this.destroyed.values().next().value;
+
+            if (oldest !== undefined) this.destroyed.delete(oldest);
+        }
+    }
+}
