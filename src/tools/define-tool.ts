@@ -10,6 +10,7 @@ import type { InterceptionManager } from "./mock/interception.js";
 import type { EmulationState } from "./emulation/state.js";
 import type { ScreencastRecorder } from "./perf/screencast-recorder.js";
 import type { TraceRecorder } from "./perf/trace-recorder.js";
+import type { LighthouseTools } from "./perf/lighthouse-tools.js";
 import type { VideoTools } from "./perf/video.js";
 import type { FocusEmulation } from "./focus-emulation.js";
 import type { FrameState } from "./frames.js";
@@ -58,6 +59,7 @@ export interface ToolContext {
     trace     : TraceRecorder;
     screencast: ScreencastRecorder;
     video     : VideoTools;
+    lighthouse: LighthouseTools;
     artifacts : ArtifactStore;
     config    : Config;
     clock     : ToolClock;

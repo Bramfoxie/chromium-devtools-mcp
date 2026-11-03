@@ -72,6 +72,10 @@ export { fillForm } from "./fill-form.js";
 
 export { heapSnapshot } from "./perf/heap-snapshot.js";
 
+export { lighthouseAudit } from "./perf/lighthouse.js";
+
+export { type LighthouseTools, nodeLighthouseTools } from "./perf/lighthouse-tools.js";
+
 export { screencastStart, screencastStop } from "./perf/screencast.js";
 
 export { type VideoTools, nodeVideoTools } from "./perf/video.js";

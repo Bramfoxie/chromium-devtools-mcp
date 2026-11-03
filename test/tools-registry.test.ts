@@ -100,7 +100,7 @@ const readOnly: Config = {
 };
 
 describe("tool declarations", () => {
-    it("declares forty four tools with unique names, descriptions and access", () => {
+    it("declares forty five tools with unique names, descriptions and access", () => {
         expect(allTools.map((tool) => tool.name)).toEqual([
             "list_tabs",
             "list_sessions",
@@ -129,6 +129,7 @@ describe("tool declarations", () => {
             "heap_snapshot",
             "screencast_start",
             "screencast_stop",
+            "lighthouse_audit",
             "screenshot",
             "list_devices",
             "emulate_device",
@@ -179,6 +180,7 @@ describe("tool declarations", () => {
             "input_type",
             "input_upload",
             "js_evaluate",
+            "lighthouse_audit",
             "new_tab",
             "page_navigate",
             "select_tab",
@@ -601,7 +603,7 @@ describe("runTool", () => {
 });
 
 describe("tools/list", () => {
-    it("lists exactly the forty four tools with their schemas", async () => {
+    it("lists exactly the forty five tools with their schemas", async () => {
         const server = createMcpServer("1.0.0");
 
         registerTools({ server, tools: allTools, runtime: runtime() });
@@ -639,6 +641,7 @@ describe("tools/list", () => {
             "heap_snapshot",
             "screencast_start",
             "screencast_stop",
+            "lighthouse_audit",
             "screenshot",
             "list_devices",
             "emulate_device",

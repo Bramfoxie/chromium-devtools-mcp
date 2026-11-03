@@ -20,9 +20,10 @@ import {
     helloIdentity,
     IpcClosedError,
 } from "./daemon/index.js";
+import { findOnPath } from "./tools/perf/video.js";
 import { messageOf } from "./util/message-of.js";
 
-export type CheckLevel = "ok" | "warn" | "fail";
+export type CheckLevel = "ok" | "info" | "warn" | "fail";
 
 export interface DoctorCheck {
     level : CheckLevel;
@@ -44,9 +45,23 @@ export interface DoctorDeps {
     isPortOpen        : (port: number) => Promise<boolean>;
     isWritable        : (dir: string) => Promise<boolean>;
     probeDaemon       : () => Promise<DaemonProbe>;
+    findProgram       : (name: OptionalProgram) => Promise<string | undefined>;
 }
 
 const MIN_NODE_MAJOR = 22;
+
+export type OptionalProgram = "ffmpeg" | "lighthouse";
+
+const OPTIONAL_PROGRAMS: Record<OptionalProgram, { use: string; install: string }> = {
+    ffmpeg: {
+        use    : "screencast_stop makes a video with it",
+        install: "Install ffmpeg, for example with brew install ffmpeg or apt install ffmpeg.",
+    },
+    lighthouse: {
+        use    : "lighthouse_audit runs it",
+        install: "Install it with npm install -g lighthouse (it needs Node.js 22.19 or newer).",
+    },
+};
 
 async function nearestExisting(dir: string, platform: NodeJS.Platform): Promise<string> {
     const p = pathFor(platform);
@@ -119,6 +134,7 @@ export function realDoctorDeps(): DoctorDeps {
         isPortOpen        : (port) => probePort(port),
         isWritable        : (dir) => writableOrCreatable(dir, process.platform),
         probeDaemon,
+        findProgram       : (name) => findOnPath(process.env, process.platform, name),
     };
 }
 
@@ -251,6 +267,19 @@ function checkDaemon(config: Config, probe: DaemonProbe): DoctorCheck {
     return { level: "ok", title: "Daemon", detail: "running and ready" };
 }
 
+async function checkOptional(name: OptionalProgram, deps: DoctorDeps): Promise<DoctorCheck> {
+    const found = await deps.findProgram(name);
+
+    return found === undefined
+        ? {
+            level : "info",
+            title : name,
+            detail: `not found, it is optional: ${OPTIONAL_PROGRAMS[name].use} when it is installed`,
+            fix   : [OPTIONAL_PROGRAMS[name].install],
+        }
+        : { level: "ok", title: name, detail: found };
+}
+
 export async function runDoctor(config: Config, deps: DoctorDeps): Promise<DoctorCheck[]> {
     const checks: DoctorCheck[] = [checkNode(deps), checkConfig(config)];
 
@@ -260,7 +289,11 @@ export async function runDoctor(config: Config, deps: DoctorDeps): Promise<Docto
         checks.push(await checkAttach(config, deps));
     }
 
-    checks.push(checkDaemon(config, await deps.probeDaemon()));
+    checks.push(
+        checkDaemon(config, await deps.probeDaemon()),
+        await checkOptional("ffmpeg", deps),
+        await checkOptional("lighthouse", deps),
+    );
 
     return checks;
 }

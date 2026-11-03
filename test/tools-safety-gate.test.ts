@@ -62,6 +62,7 @@ const MUTATING: Case[] = [
     ["fill_form", { fields: [{ target: { selector: "input" }, value: "x" }] }],
     ["input_drag", { from: { selector: "body" }, to: { x: 1, y: 1 } }],
     ["perf_trace_start", { reload: true }],
+    ["lighthouse_audit", { url: "https://example.com/" }],
 ];
 
 const READING: Case[] = [

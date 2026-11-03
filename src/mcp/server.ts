@@ -10,7 +10,13 @@ import {
     nodeArtifactIO,
 } from "../tools/artifacts.js";
 import { elicitationConfirmer } from "../tools/confirmation.js";
-import { allTools, registerTools, ToolRuntime, type VideoTools } from "../tools/index.js";
+import {
+    allTools,
+    type LighthouseTools,
+    registerTools,
+    ToolRuntime,
+    type VideoTools,
+} from "../tools/index.js";
 import { DaemonAccess } from "./daemon-access.js";
 import {
     connectToDaemon,
@@ -153,10 +159,11 @@ export function createMcpServer(version: string): McpServer {
 }
 
 export interface ToolServerOptions {
-    access?   : DaemonAccess;
-    tools?    : typeof allTools;
-    artifacts?: ArtifactStore;
-    video?    : VideoTools;
+    access?    : DaemonAccess;
+    tools?     : typeof allTools;
+    artifacts? : ArtifactStore;
+    video?     : VideoTools;
+    lighthouse?: LighthouseTools;
 }
 
 export function registerServerTools(
@@ -172,6 +179,7 @@ export function registerServerTools(
         confirm: elicitationConfirmer(server.server),
         ...(options.artifacts === undefined ? {} : { artifacts: options.artifacts }),
         ...(options.video === undefined ? {} : { video: options.video }),
+        ...(options.lighthouse === undefined ? {} : { lighthouse: options.lighthouse }),
     });
 
     runtime.attach();

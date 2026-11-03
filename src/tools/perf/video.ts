@@ -104,58 +104,85 @@ async function executable(file: string): Promise<boolean> {
     }
 }
 
+export async function findOnPath(
+    env     : NodeJS.ProcessEnv,
+    platform: NodeJS.Platform,
+    name    : string,
+): Promise<string | undefined> {
+    const p = pathFor(platform);
+    const names = platform === "win32" ? [`${name}.exe`, `${name}.cmd`] : [name];
+    const dirs = (env.PATH ?? env.Path ?? "").split(p.delimiter).filter((dir) => dir !== "");
+
+    for (const dir of dirs) {
+        if (!p.isAbsolute(dir)) continue;
+
+        for (const candidate of names) {
+            const file = p.join(dir, candidate);
+
+            if (await executable(file)) return file;
+        }
+    }
+
+    return undefined;
+}
+
+export interface RunOptions {
+    cwd      : string;
+    timeoutMs: number;
+    env?     : NodeJS.ProcessEnv;
+    signal?  : AbortSignal;
+}
+
+// Runs a program without a shell; the arguments are never joined into a command line.
+export function runProgram(
+    program: string,
+    args   : string[],
+    options: RunOptions,
+): Promise<RunResult> {
+    return new Promise<RunResult>((resolve) => {
+        let tail = "";
+        let settled = false;
+        const child = spawn(program, args, {
+            cwd        : options.cwd,
+            env        : options.env,
+            shell      : false,
+            stdio      : ["ignore", "ignore", "pipe"],
+            windowsHide: true,
+        });
+        const finish = (result: RunResult): void => {
+            if (settled) return;
+
+            settled = true;
+            clearTimeout(timer);
+            options.signal?.removeEventListener("abort", onAbort);
+            resolve(result);
+        };
+        const onAbort = (): void => {
+            child.kill("SIGKILL");
+            finish({ ok: false, error: "the call was cancelled" });
+        };
+        const timer = setTimeout(() => {
+            child.kill("SIGKILL");
+            finish({ ok: false, error: `${path.basename(program)} did not finish within ${options.timeoutMs} ms` });
+        }, options.timeoutMs);
+
+        options.signal?.addEventListener("abort", onAbort, { once: true });
+        child.stderr.on("data", (chunk: Buffer) => {
+            tail = (tail + chunk.toString("utf8")).slice(-STDERR_TAIL_CHARS);
+        });
+        child.once("error", (error) => finish({ ok: false, error: error.message }));
+        child.once("close", (code) =>
+            finish({ ok: code === 0, error: tail.trim() || `${path.basename(program)} exited with code ${code}` }));
+    });
+}
+
 export function nodeVideoTools(
     env     : NodeJS.ProcessEnv,
     platform: NodeJS.Platform,
 ): VideoTools {
-    const p = pathFor(platform);
-
     return {
-        find: async () => {
-            const names = platform === "win32" ? ["ffmpeg.exe"] : ["ffmpeg"];
-            const dirs = (env.PATH ?? env.Path ?? "").split(p.delimiter).filter((dir) => dir !== "");
-
-            for (const dir of dirs) {
-                if (!p.isAbsolute(dir)) continue;
-
-                for (const name of names) {
-                    const candidate = p.join(dir, name);
-
-                    if (await executable(candidate)) return candidate;
-                }
-            }
-
-            return undefined;
-        },
-        run: (program, args, cwd, timeoutMs) =>
-            new Promise<RunResult>((resolve) => {
-                let tail = "";
-                let settled = false;
-                const child = spawn(program, args, {
-                    cwd,
-                    shell      : false,
-                    stdio      : ["ignore", "ignore", "pipe"],
-                    windowsHide: true,
-                });
-                const finish = (result: RunResult): void => {
-                    if (settled) return;
-
-                    settled = true;
-                    clearTimeout(timer);
-                    resolve(result);
-                };
-                const timer = setTimeout(() => {
-                    child.kill("SIGKILL");
-                    finish({ ok: false, error: `ffmpeg did not finish within ${timeoutMs} ms` });
-                }, timeoutMs);
-
-                child.stderr.on("data", (chunk: Buffer) => {
-                    tail = (tail + chunk.toString("utf8")).slice(-STDERR_TAIL_CHARS);
-                });
-                child.once("error", (error) => finish({ ok: false, error: error.message }));
-                child.once("close", (code) =>
-                    finish({ ok: code === 0, error: tail.trim() || `ffmpeg exited with code ${code}` }));
-            }),
+        find: () => findOnPath(env, platform, "ffmpeg"),
+        run : (program, args, cwd, timeoutMs) => runProgram(program, args, { cwd, timeoutMs }),
         size: async (file) => {
             const info = await stat(file);
 

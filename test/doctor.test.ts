@@ -35,6 +35,7 @@ function deps(overrides: Partial<DoctorDeps> = {}): DoctorDeps {
         isPortOpen : async () => true,
         isWritable : async () => true,
         probeDaemon: async (): Promise<DaemonProbe> => ({ kind: "not-running" }),
+        findProgram: async (name) => `/usr/bin/${name}`,
         ...overrides,
     };
 }
@@ -50,6 +51,8 @@ describe("doctor", () => {
             "ok Settings",
             "ok Browser endpoint",
             "ok Daemon",
+            "ok ffmpeg",
+            "ok lighthouse",
         ]);
         expect(formatChecks(checks)).toContain("No problems found.");
     });
@@ -63,6 +66,8 @@ describe("doctor", () => {
             "ok Chrome",
             "ok Profile directory",
             "ok Daemon",
+            "ok ffmpeg",
+            "ok lighthouse",
         ]);
     });
 
@@ -139,7 +144,9 @@ describe("doctor", () => {
             ...patch,
         });
         const daemonCheck = async (probe: DaemonProbe, config: Config = attach) =>
-            (await runDoctor(config, deps({ probeDaemon: async () => probe }))).at(-1);
+            (await runDoctor(config, deps({ probeDaemon: async () => probe }))).find(
+                (check) => check.title === "Daemon",
+            );
 
         it("is fine when it runs with the same settings", async () => {
             expect(await daemonCheck(running())).toMatchObject({ level: "ok" });
@@ -188,5 +195,35 @@ describe("formatChecks", () => {
         expect(formatChecks([{ level: "ok", title: "Node.js", detail: "x" }])).toContain(
             "No problems found.",
         );
+    });
+});
+
+describe("doctor optional programs", () => {
+    const only = async (findProgram: DoctorDeps["findProgram"]) =>
+        (await runDoctor(attach, deps({ findProgram }))).filter((check) =>
+            ["ffmpeg", "lighthouse"].includes(check.title));
+
+    it("shows where an installed program is", async () => {
+        const checks = await only(async (name) => `/opt/bin/${name}`);
+
+        expect(checks).toEqual([
+            { level: "ok", title: "ffmpeg", detail: "/opt/bin/ffmpeg" },
+            { level: "ok", title: "lighthouse", detail: "/opt/bin/lighthouse" },
+        ]);
+    });
+
+    it("says what a missing program is for and how to install it, without raising a problem", async () => {
+        const checks = await only(async () => undefined);
+
+        expect(checks.map((check) => check.level)).toEqual(["info", "info"]);
+        expect(checks[0]?.detail).toContain("screencast_stop");
+        expect(checks[0]?.fix?.[0]).toContain("brew install ffmpeg");
+        expect(checks[1]?.detail).toContain("lighthouse_audit");
+        expect(checks[1]?.fix?.[0]).toContain("npm install -g lighthouse");
+
+        const all = await runDoctor(attach, deps({ findProgram: async () => undefined }));
+
+        expect(formatChecks(all)).toContain("No problems found.");
+        expect(formatChecks(all)).toContain("[info] lighthouse:");
     });
 });

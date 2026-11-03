@@ -7,7 +7,9 @@ import { DialogState } from "./dialogs.js";
 import { ElementRegistry } from "./element-target.js";
 import { type ArtifactStore, noArtifacts } from "./artifacts.js";
 import { ScreencastRecorder } from "./perf/screencast-recorder.js";
+import { findBrowserExecutable } from "../browser/discovery.js";
 import { TraceRecorder } from "./perf/trace-recorder.js";
+import { type LighthouseTools, nodeLighthouseTools } from "./perf/lighthouse-tools.js";
 import { nodeVideoTools, type VideoTools } from "./perf/video.js";
 import { EmulationState } from "./emulation/state.js";
 import { nodeUploadEnvironment, type UploadEnvironment } from "./upload-environment.js";
@@ -51,21 +53,22 @@ export class SessionTabs {
 }
 
 interface ToolRuntimeOptions {
-    access    : DaemonAccess;
-    config    : Config;
-    clock?    : ToolClock;
-    tabs?     : SessionTabs;
-    elements? : ElementRegistry;
-    frames?   : FrameState;
-    focus?    : FocusEmulation;
-    capture?  : CaptureManager;
-    dialogs?  : DialogState;
-    mock?     : InterceptionManager;
-    emulation?: EmulationState;
-    upload?   : UploadEnvironment;
-    artifacts?: ArtifactStore;
-    video?    : VideoTools;
-    confirm?  : Confirmer;
+    access     : DaemonAccess;
+    config     : Config;
+    clock?     : ToolClock;
+    tabs?      : SessionTabs;
+    elements?  : ElementRegistry;
+    frames?    : FrameState;
+    focus?     : FocusEmulation;
+    capture?   : CaptureManager;
+    dialogs?   : DialogState;
+    mock?      : InterceptionManager;
+    emulation? : EmulationState;
+    upload?    : UploadEnvironment;
+    artifacts? : ArtifactStore;
+    video?     : VideoTools;
+    lighthouse?: LighthouseTools;
+    confirm?   : Confirmer;
 }
 
 export class ToolRuntime {
@@ -84,6 +87,7 @@ export class ToolRuntime {
     readonly trace     : TraceRecorder;
     readonly screencast: ScreencastRecorder;
     readonly video     : VideoTools;
+    readonly lighthouse: LighthouseTools;
     readonly artifacts : ArtifactStore;
     readonly confirm   : Confirmer | undefined;
 
@@ -114,6 +118,14 @@ export class ToolRuntime {
         this.trace = new TraceRecorder(options.access, this.clock);
         this.screencast = new ScreencastRecorder(options.access, this.clock);
         this.video = options.video ?? nodeVideoTools(process.env, process.platform);
+        this.lighthouse = options.lighthouse ??
+            nodeLighthouseTools(process.env, process.platform, () => {
+                try {
+                    return findBrowserExecutable(options.config.browser);
+                } catch {
+                    return undefined;
+                }
+            });
         this.confirm = options.confirm;
     }
 
@@ -190,6 +202,7 @@ export class ToolRuntime {
             trace     : this.trace,
             screencast: this.screencast,
             video     : this.video,
+            lighthouse: this.lighthouse,
             artifacts : this.artifacts,
             config    : this.config,
             clock     : this.clock,
