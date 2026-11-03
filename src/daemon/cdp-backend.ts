@@ -9,6 +9,7 @@ import type {
 } from "./browser-backend.js";
 import { cdpChildTargetsDeps, ChildTargets } from "./child-targets.js";
 import { DaemonError } from "./errors.js";
+import type { PermissionGrant } from "./permissions.js";
 
 const contextsSchema = z.object({
     browserContextIds      : z.array(z.string()).optional(),
@@ -80,6 +81,21 @@ export class CdpBackend implements BrowserBackend {
 
     async disposeContext(contextId: string): Promise<void> {
         await this.client.send("Target.disposeBrowserContext", { browserContextId: contextId });
+    }
+
+    async setPermission(grant: PermissionGrant): Promise<void> {
+        await this.client.send("Browser.setPermission", {
+            permission: { name: grant.name },
+            setting   : "granted",
+            origin    : grant.origin,
+            ...(grant.contextId === undefined ? {} : { browserContextId: grant.contextId }),
+        });
+    }
+
+    async resetPermissions(contextId: string | undefined): Promise<void> {
+        await this.client.send("Browser.resetPermissions", {
+            ...(contextId === undefined ? {} : { browserContextId: contextId }),
+        });
     }
 
     async createTarget(url: string, contextId: string | undefined): Promise<string> {

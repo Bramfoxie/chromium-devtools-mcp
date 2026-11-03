@@ -1,3 +1,4 @@
+import type { PermissionGrant } from "../../src/daemon/permissions.js";
 import type { BackendSession, BrowserBackend, ChildSessionHandle, ChildSessionOptions, FrameChildSession, TargetInfo } from "../../src/daemon/browser-backend.js";
 
 interface SentCommand {
@@ -206,6 +207,24 @@ export class FakeBackend implements BrowserBackend {
         for (const [targetId, target] of [...this.targets]) {
             if (target.contextId === contextId) this.destroyTarget(targetId);
         }
+    }
+
+    readonly permissions = new Map<string, PermissionGrant>();
+    permissionFailure: Error | undefined;
+
+    async setPermission(grant: PermissionGrant): Promise<void> {
+        if (this.permissionFailure) throw this.permissionFailure;
+
+        this.permissions.set(`${grant.contextId ?? ""}|${grant.name}|${grant.origin}`, grant);
+        this.log.push(`setPermission ${grant.name} ${grant.origin} ${grant.contextId ?? "default"}`);
+    }
+
+    async resetPermissions(contextId: string | undefined): Promise<void> {
+        for (const [key, grant] of [...this.permissions]) {
+            if (grant.contextId === contextId) this.permissions.delete(key);
+        }
+
+        this.log.push(`resetPermissions ${contextId ?? "default"}`);
     }
 
     async createTarget(url: string, contextId: string | undefined): Promise<string> {

@@ -148,6 +148,14 @@ export class DaemonAccess {
         );
     }
 
+    async setPermission(request: {
+        name   : "geolocation";
+        setting: "granted" | "reset";
+        origin : string;
+    }): Promise<void> {
+        await this.request("permission.set", request);
+    }
+
     async subscribe(targetId: string, event: string, frameId?: string): Promise<void> {
         await this.request("cdp.subscribe", {
             targetId,

@@ -79,6 +79,40 @@ describe("contexts and targets", () => {
         });
     });
 
+    it("sets and resets a permission for one origin in the default or an isolated context", async () => {
+        const { browser, backend } = await setup();
+        const context = await backend.createContext();
+
+        await backend.setPermission({
+            name     : "geolocation",
+            origin   : "https://a.example",
+            contextId: undefined,
+        });
+        expect(browser.calls.at(-1)).toMatchObject({
+            method: "Browser.setPermission",
+            params: {
+                permission: { name: "geolocation" },
+                setting   : "granted",
+                origin    : "https://a.example",
+            },
+        });
+        expect(browser.calls.at(-1)?.params).not.toHaveProperty("browserContextId");
+
+        await backend.setPermission({
+            name     : "geolocation",
+            origin   : "https://a.example",
+            contextId: context,
+        });
+        expect(browser.calls.at(-1)?.params).toMatchObject({ browserContextId: context });
+
+        await backend.resetPermissions(undefined);
+        expect(browser.calls.at(-1)).toMatchObject({ method: "Browser.resetPermissions" });
+        expect(browser.calls.at(-1)?.params).not.toHaveProperty("browserContextId");
+
+        await backend.resetPermissions(context);
+        expect(browser.calls.at(-1)?.params).toMatchObject({ browserContextId: context });
+    });
+
     it("opens every tab in the background", async () => {
         const { browser, backend } = await setup();
         const context = await backend.createContext();

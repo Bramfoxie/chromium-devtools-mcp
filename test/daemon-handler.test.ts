@@ -179,6 +179,7 @@ describe("parameter validation", () => {
         ["daemon.stop", {}],
         ["session.open", {}],
         ["session.list", {}],
+        ["permission.set", { name: "geolocation", setting: "granted", origin: "https://a.example" }],
         ["tab.create", {}],
         ["tab.list", {}],
         ["tab.claim", { targetId: "t" }],

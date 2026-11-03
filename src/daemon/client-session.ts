@@ -6,6 +6,7 @@ import { describeError, logDaemon } from "../util/log.js";
 import {
     checkGuardedCall,
     checkOpenUrl,
+    checkPermissionOrigin,
     needsTabUrl,
     NO_SAFETY,
     type SessionSafety,
@@ -14,6 +15,7 @@ import { checkCall, checkEvent } from "./method-policy.js";
 import { ErrorCode } from "./protocol.js";
 import { closedError, tabGone, translate } from "./rpc-errors.js";
 import type { TabInfo } from "./wire.js";
+import { type PermissionLedger, type PermissionName } from "./permissions.js";
 import { type OwnedTab, type Subscription, TabFrames } from "./tab-frames.js";
 
 const DETACH_GRACE_MS = 2000;
@@ -41,6 +43,7 @@ export interface ClientSessionInit {
     contextId  : string | undefined;
     clientName?: string;
     safety?    : SessionSafety;
+    permissions: PermissionLedger;
 }
 
 export type Emit = (event: string, params?: unknown) => void;
@@ -54,6 +57,27 @@ export interface Ownership {
 
 function describe(target: TargetInfo, owned: boolean, created: boolean): TabInfo {
     return { targetId: target.targetId, url: target.url, title: target.title, owned, created };
+}
+
+function permissionOrigin(value: string): string {
+    let parsed: URL | undefined;
+
+    try {
+        parsed = new URL(value);
+    } catch {
+        parsed = undefined;
+    }
+
+    const isWeb = parsed?.protocol === "http:" || parsed?.protocol === "https:";
+
+    if (parsed === undefined || !isWeb || parsed.origin !== value) {
+        throw new RpcError(
+            ErrorCode.badRequest,
+            "The origin must be an http or https origin without a path, such as https://example.com.",
+        );
+    }
+
+    return parsed.origin;
 }
 
 async function within(promise: Promise<unknown>, ms: number): Promise<void> {
@@ -71,13 +95,14 @@ export class ClientSession {
     private readonly frames: TabFrames;
     private isClosed = false;
 
-    private readonly backend : BrowserBackend;
-    private readonly registry: Ownership;
-    private readonly emit    : Emit;
-    private readonly options : SessionOptions;
-    readonly contextId       : string | undefined;
-    readonly clientName      : string;
-    private readonly safety  : SessionSafety;
+    private readonly backend    : BrowserBackend;
+    private readonly registry   : Ownership;
+    private readonly emit       : Emit;
+    private readonly options    : SessionOptions;
+    readonly contextId          : string | undefined;
+    readonly clientName         : string;
+    private readonly safety     : SessionSafety;
+    private readonly permissions: PermissionLedger;
 
     constructor(init: ClientSessionInit) {
         this.backend = init.backend;
@@ -87,6 +112,7 @@ export class ClientSession {
         this.contextId = init.contextId;
         this.clientName = init.clientName ?? "";
         this.safety = init.safety ?? NO_SAFETY;
+        this.permissions = init.permissions;
         this.frames = new TabFrames(this.backend, this.emit, (targetId, tab) =>
             this.assertCurrent(targetId, tab));
     }
@@ -164,6 +190,26 @@ export class ClientSession {
             subscriptions: new Map(),
             sync         : new ChildSync(),
         });
+    }
+
+    async setPermission(request: {
+        name   : PermissionName;
+        setting: "granted" | "reset";
+        origin : string;
+    }): Promise<void> {
+        this.ensureOpen();
+        const origin = permissionOrigin(request.origin);
+
+        checkPermissionOrigin(origin, this.safety);
+
+        const grant = { name: request.name, origin, contextId: this.contextId };
+
+        try {
+            if (request.setting === "granted") await this.permissions.grant(this, grant);
+            else await this.permissions.release(this, grant);
+        } catch (error) {
+            throw translate(error);
+        }
     }
 
     async closeTab(targetId: string): Promise<void> {
@@ -415,6 +461,8 @@ export class ClientSession {
         try {
             await Promise.all([this.dispose(entries), within(detaches, DETACH_GRACE_MS)]);
         } finally {
+            await this.permissions.releaseAll(this, this.contextId);
+
             for (const [targetId] of entries) {
                 if (!claimed.has(targetId)) this.registry.releaseOwner(targetId, this);
             }

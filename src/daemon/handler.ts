@@ -107,6 +107,12 @@ export function createRequestHandler(context: HandlerContext): RequestHandler {
         }
 
         switch (method) {
+            case "permission.set": {
+                await session.setPermission(parseParams(method, params));
+
+                return {};
+            }
+
             case "tab.create": {
                 const { url } = parseParams(method, params);
 

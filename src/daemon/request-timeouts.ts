@@ -9,6 +9,7 @@ const TIMEOUT_CLASSES = {
     "daemon.stop"    : "plain",
     "session.open"   : "plain",
     "session.list"   : "plain",
+    "permission.set" : "cdp-bound",
     "tab.create"     : "cdp-bound",
     "tab.list"       : "multi-step",
     "tab.claim"      : "plain",

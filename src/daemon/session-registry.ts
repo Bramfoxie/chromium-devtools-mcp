@@ -7,6 +7,7 @@ import {
 } from "./client-session.js";
 import type { SessionSafety } from "./cdp-safety.js";
 import { RpcError } from "./errors.js";
+import { PermissionLedger } from "./permissions.js";
 import { ErrorCode } from "./protocol.js";
 import type { SessionSummary } from "./wire.js";
 import { closedError, translate } from "./rpc-errors.js";
@@ -28,11 +29,13 @@ export class SessionRegistry<K> implements Ownership {
     private readonly destroyed = new Set<string>();
     private readonly stopListening: () => void;
     private shuttingDown = false;
+    private readonly permissions  : PermissionLedger;
 
     constructor(
         private readonly backend: BrowserBackend,
         private readonly options: SessionOptions,
     ) {
+        this.permissions = new PermissionLedger(backend);
         this.stopListening = backend.onTargetDestroyed((targetId) => {
             this.remember(targetId);
             this.owners.get(targetId)?.handleTargetDestroyed(targetId);
@@ -89,13 +92,14 @@ export class SessionRegistry<K> implements Ownership {
 
         this.opening.delete(key);
         const session = new ClientSession({
-            backend   : this.backend,
-            registry  : this,
+            backend    : this.backend,
+            registry   : this,
             emit,
-            options   : this.options,
+            options    : this.options,
             contextId,
-            clientName: options.clientName,
-            safety    : options.safety,
+            clientName : options.clientName,
+            safety     : options.safety,
+            permissions: this.permissions,
         });
 
         this.sessions.set(key, session);

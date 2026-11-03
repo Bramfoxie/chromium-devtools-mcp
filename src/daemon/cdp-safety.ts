@@ -44,6 +44,12 @@ export function checkOpenUrl(what: string, url: string, safety: SessionSafety): 
     if (!isUrlAllowed(url, safety.allowedDomains)) outside(`${what} would open`, url);
 }
 
+export function checkPermissionOrigin(origin: string, safety: SessionSafety): void {
+    if (safety.readOnly) refuse("permission.set is refused because safety.readOnly is on.");
+
+    if (!isUrlAllowed(origin, safety.allowedDomains)) outside("permission.set would act for", origin);
+}
+
 type Params = Record<string, unknown>;
 
 function cookieTargets(params: Params | undefined): Params[] {
