@@ -184,6 +184,12 @@ With a list set:
 
 The daemon enforces the safety options of each session itself, so a client cannot widen them by talking to the daemon directly. For a session it refuses `tab.create` and `Page.navigate` outside the allowlist or in read-only mode, and it applies the options to the CDP methods that reach beyond the page: `Network.getCookies` and `Storage.getCookies` (reads), `Network.setCookie`, `Network.setCookies`, `Network.deleteCookies`, `Storage.setCookies`, `Storage.clearCookies` and `DOM.setFileInputFiles` (changes). Changes are refused in read-only mode; changes are refused when the tab (or the frame given) is outside the allowlist or when a cookie is written for a `url` or `domain` outside it. Methods of the `Storage` domain and `Network.setCookies` are also blocked by the general method policy.
 
+### Limits of the allowlist
+
+- Only top-level URLs and the frame a tool acts in are checked. Subresource and iframe loads from other hosts are not blocked.
+- `network_mock` patterns are not matched against the list; only the URL of the tab is checked.
+- Cookie reads are gated by `safety.confirmDangerous` only, not by `safety.allowedDomains`.
+
 ## Supported
 
 - Browsers: Chrome (macOS, Linux, Windows).
