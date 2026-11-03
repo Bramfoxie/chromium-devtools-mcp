@@ -1,11 +1,11 @@
-import { chmod, mkdir, rm, stat } from "node:fs/promises";
+import { chmod, mkdir, rm } from "node:fs/promises";
 import net from "node:net";
 import type { InstanceIO, ListeningServer } from "./lock.js";
 import { errorCode } from "./errors.js";
 import { logDaemon } from "./log.js";
+import { removeStaleLock } from "./stale-lock.js";
 
 const PROBE_TIMEOUT_MS = 1000;
-const STALE_LOCK_MS = 5000;
 
 function listenOnSocket(
     path        : string,
@@ -77,11 +77,7 @@ async function lockCleanup(socketPath: string): Promise<(() => Promise<void>) | 
         } catch (error) {
             if (errorCode(error) !== "EEXIST") throw error;
 
-            const held = await stat(dir).catch(() => undefined);
-
-            if (held && Date.now() - held.mtimeMs < STALE_LOCK_MS) return undefined;
-
-            await rm(dir, { recursive: true, force: true });
+            if (!(await removeStaleLock(dir, Date.now))) return undefined;
         }
     }
 

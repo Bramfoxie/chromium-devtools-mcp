@@ -413,6 +413,21 @@ describe("token", () => {
         expect((await readdir(dir)).sort()).toEqual(["daemon.token", "daemon.token.lock"]);
     });
 
+    it("takes over a token lock that is older than the stale limit", async () => {
+        const dir = await tempDir();
+        const file = path.join(dir, "daemon.token");
+
+        await writeFile(file, "garbage");
+        await mkdir(`${file}.lock`);
+        const token = await ensureToken(file, process.platform, uid, {
+            lockWaitMs: 50,
+            now       : () => Date.now() + 60_000,
+        });
+
+        expect(await readToken(file)).toBe(token);
+        expect(await readdir(dir)).toEqual(["daemon.token"]);
+    });
+
     it("gives parallel callers the persisted token on a corrupted file", async () => {
         const dir = await tempDir();
         const file = path.join(dir, "daemon.token");

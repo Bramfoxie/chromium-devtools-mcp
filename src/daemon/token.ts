@@ -3,6 +3,7 @@ import { link, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { pathFor } from "../config/index.js";
 import { DaemonError, errorCode } from "./errors.js";
 import { ensurePrivateDir } from "./private-dir.js";
+import { removeStaleLock } from "./stale-lock.js";
 
 const LOCK_WAIT_MS = 5000;
 const TOKEN_PATTERN = /^[0-9a-f]{64}$/;
@@ -29,7 +30,7 @@ export async function ensureToken(
     file    : string,
     platform: NodeJS.Platform,
     uid     : number | undefined,
-    options : { lockWaitMs?: number } = {},
+    options : { lockWaitMs?: number; now?: () => number } = {},
 ): Promise<string> {
     const existing = await readToken(file);
 
@@ -41,7 +42,12 @@ export async function ensureToken(
 
     try {
         await writeFile(temporary, token, { mode: 0o600, flag: "wx" });
-        await publishToken(file, temporary, options.lockWaitMs ?? LOCK_WAIT_MS);
+        await publishToken(
+            file,
+            temporary,
+            options.lockWaitMs ?? LOCK_WAIT_MS,
+            options.now ?? Date.now,
+        );
 
         return (await readToken(file)) ?? token;
     } finally {
@@ -49,7 +55,12 @@ export async function ensureToken(
     }
 }
 
-async function publishToken(file: string, temporary: string, lockWaitMs: number): Promise<void> {
+async function publishToken(
+    file      : string,
+    temporary : string,
+    lockWaitMs: number,
+    now       : () => number,
+): Promise<void> {
     try {
         await link(temporary, file);
 
@@ -59,7 +70,7 @@ async function publishToken(file: string, temporary: string, lockWaitMs: number)
     }
 
     const lock = `${file}.lock`;
-    const deadline = Date.now() + lockWaitMs;
+    const deadline = now() + lockWaitMs;
 
     for (;;) {
         try {
@@ -72,7 +83,9 @@ async function publishToken(file: string, temporary: string, lockWaitMs: number)
 
             if (winner) return;
 
-            if (Date.now() >= deadline) {
+            if (await removeStaleLock(lock, now)) continue;
+
+            if (now() >= deadline) {
                 throw new DaemonError(
                     `Timed out waiting for the token lock ${lock}. If no other daemon is starting, remove that directory and retry.`,
                 );
