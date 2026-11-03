@@ -15,6 +15,13 @@ import type {
 } from "./browser-backend.js";
 import { RpcError } from "./errors.js";
 import { describeError, logDaemon } from "./log.js";
+import {
+    checkGuardedCall,
+    checkOpenUrl,
+    needsTabUrl,
+    NO_SAFETY,
+    type SessionSafety,
+} from "./cdp-safety.js";
 import { checkCall, checkEvent } from "./method-policy.js";
 import { ErrorCode } from "./protocol.js";
 
@@ -45,6 +52,7 @@ export interface SessionSummary {
 export interface SessionOpenOptions {
     isolated  : boolean;
     clientName: string;
+    safety?   : SessionSafety;
 }
 
 export type TabScope = "owned" | "available";
@@ -134,6 +142,7 @@ export class ClientSession {
         private readonly options : SessionOptions,
         readonly contextId       : string | undefined,
         readonly clientName      : string = "",
+        private readonly safety  : SessionSafety = NO_SAFETY,
     ) {}
 
     get isolated(): boolean {
@@ -156,6 +165,7 @@ export class ClientSession {
 
     async createTab(url: string): Promise<string> {
         this.ensureOpen();
+        checkOpenUrl("tab.create", url, this.safety);
         let targetId: string;
 
         try {
@@ -265,11 +275,14 @@ export class ClientSession {
         params    : Record<string, unknown> | undefined,
         timeoutMs?: number,
         frameId?  : string,
+        confirmed = false,
     ): Promise<unknown> {
         this.ensureOpen();
         const tab = this.owned(targetId);
 
         const checked = checkCall(method, params, this.options);
+
+        await this.enforceSafety(targetId, tab, method, checked, frameId, confirmed);
 
         try {
             const session = await this.sessionFor(targetId, tab, frameId);
@@ -292,6 +305,44 @@ export class ClientSession {
         } catch (error) {
             throw translate(error);
         }
+    }
+
+    private async enforceSafety(
+        targetId : string,
+        tab      : OwnedTab,
+        method   : string,
+        params   : Record<string, unknown> | undefined,
+        frameId  : string | undefined,
+        confirmed: boolean,
+    ): Promise<void> {
+        if (method === "Page.navigate") {
+            checkOpenUrl(method, String(params?.url), this.safety);
+
+            return;
+        }
+
+        let tabUrl: string | undefined;
+
+        if (needsTabUrl(method, this.safety)) {
+            try {
+                tabUrl = (await this.backend.listTargets()).find(
+                    (target) => target.targetId === targetId,
+                )?.url;
+            } catch (error) {
+                throw translate(error);
+            }
+
+            this.assertCurrent(targetId, tab);
+        }
+
+        checkGuardedCall({
+            method,
+            params,
+            safety  : this.safety,
+            confirmed,
+            tabUrl,
+            frameUrl: frameId === undefined ? undefined : tab.frames.get(frameId)?.summary.url,
+        });
     }
 
     async subscribe(targetId: string, event: string, frameId?: string): Promise<void> {
@@ -797,6 +848,7 @@ export class SessionRegistry<K> implements Ownership {
             this.options,
             contextId,
             options.clientName,
+            options.safety,
         );
 
         this.sessions.set(key, session);

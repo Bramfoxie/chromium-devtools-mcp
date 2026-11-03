@@ -28,19 +28,27 @@ const domainName = z.string().regex(DOMAIN_METHOD).max(100);
 
 const schemas = {
     "daemon.status": z.strictObject({}),
-    "session.open" : z.strictObject({ isolated: z.boolean().optional() }),
-    "session.list" : z.strictObject({}),
-    "tab.create"   : z.strictObject({ url: z.string().min(1).max(2048).optional() }),
-    "tab.list"     : z.strictObject({ scope: z.enum(["owned", "available"]).optional() }),
-    "tab.claim"    : z.strictObject({ targetId }),
-    "tab.close"    : z.strictObject({ targetId }),
-    "frame.list"   : z.strictObject({ targetId }),
-    "cdp.send"     : z.strictObject({
+    "session.open" : z.strictObject({
+        isolated: z.boolean().optional(),
+        safety  : z.strictObject({
+            readOnly        : z.boolean(),
+            allowedDomains  : z.array(z.string().min(1).max(300)).max(500),
+            confirmDangerous: z.boolean(),
+        }).optional(),
+    }),
+    "session.list": z.strictObject({}),
+    "tab.create"  : z.strictObject({ url: z.string().min(1).max(2048).optional() }),
+    "tab.list"    : z.strictObject({ scope: z.enum(["owned", "available"]).optional() }),
+    "tab.claim"   : z.strictObject({ targetId }),
+    "tab.close"   : z.strictObject({ targetId }),
+    "frame.list"  : z.strictObject({ targetId }),
+    "cdp.send"    : z.strictObject({
         targetId,
         method   : domainName,
         params   : z.record(z.string(), z.unknown()).optional(),
         timeoutMs: z.number().int().min(1).max(300_000).optional(),
         frameId  : frameId.optional(),
+        confirmed: z.boolean().optional(),
     }),
     "cdp.subscribe"  : z.strictObject({ targetId, event: domainName, frameId: frameId.optional() }),
     "cdp.unsubscribe": z.strictObject({ targetId, event: domainName, frameId: frameId.optional() }),
@@ -95,11 +103,15 @@ export function createRequestHandler(context: HandlerContext): RequestHandler {
         }
 
         if (method === "session.open") {
-            const { isolated } = parseParams(method, params);
+            const { isolated, safety } = parseParams(method, params);
             const session = await registry.open(
                 connection,
                 (event, eventParams) => connection.sendEvent(event, eventParams),
-                { isolated: isolated ?? false, clientName: connection.clientName },
+                {
+                    isolated  : isolated ?? false,
+                    clientName: connection.clientName,
+                    ...(safety === undefined ? {} : { safety }),
+                },
             );
 
             return { isolated: session.isolated };
@@ -157,6 +169,7 @@ export function createRequestHandler(context: HandlerContext): RequestHandler {
                     request.params,
                     request.timeoutMs,
                     request.frameId,
+                    request.confirmed,
                 );
             }
 

@@ -120,7 +120,10 @@ export function createDaemonLink(
         pollIntervalMs: POLL_INTERVAL_MS,
     };
 
-    return new DaemonLink({ identity: daemonIdentity(config), isolated: config.isolated }, deps);
+    return new DaemonLink(
+        { identity: daemonIdentity(config), isolated: config.isolated, safety: config.safety },
+        deps,
+    );
 }
 
 export const SERVER_INSTRUCTIONS =

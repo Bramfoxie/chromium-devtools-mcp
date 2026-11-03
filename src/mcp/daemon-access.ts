@@ -151,18 +151,19 @@ export class DaemonAccess {
         params?   : Record<string, unknown>,
         timeoutMs?: number,
         frameId?  : string,
-        options?  : { signal?: AbortSignal },
+        options?  : { signal?: AbortSignal; confirmed?: boolean },
     ): Promise<unknown> {
         return this.request(
             "cdp.send",
             {
                 targetId,
                 method,
+                ...(options?.confirmed === true ? { confirmed: true } : {}),
                 ...(params === undefined ? {} : { params }),
                 ...(timeoutMs === undefined ? {} : { timeoutMs }),
                 ...(frameId === undefined ? {} : { frameId }),
             },
-            options,
+            options?.signal === undefined ? undefined : { signal: options.signal },
         );
     }
 

@@ -33,6 +33,11 @@ export interface LinkDeps {
 export interface LinkConfig {
     identity : DaemonIdentity;
     isolated?: boolean;
+    safety?  : {
+        readOnly        : boolean;
+        allowedDomains  : string[];
+        confirmDangerous: boolean;
+    };
 }
 
 export type SessionResetHandler = () => void;
@@ -170,7 +175,10 @@ export class DaemonLink {
             if (this.closed) throw new IpcClosedError("the link was closed");
 
             try {
-                await client.request("session.open", { isolated: this.config.isolated ?? false });
+                await client.request("session.open", {
+                    isolated: this.config.isolated ?? false,
+                    ...(this.config.safety === undefined ? {} : { safety: this.config.safety }),
+                });
 
                 return;
             } catch (error) {

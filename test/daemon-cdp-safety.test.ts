@@ -1,0 +1,171 @@
+import { describe, expect, it } from "vitest";
+import { ErrorCode, RpcError, SessionRegistry } from "../src/daemon/index.js";
+import { checkGuardedCall, isGuarded, NO_SAFETY, type SessionSafety } from "../src/daemon/cdp-safety.js";
+import { FakeBackend } from "./helpers/fake-backend.js";
+
+const safe = (patch: Partial<SessionSafety>): SessionSafety => ({ ...NO_SAFETY, ...patch });
+
+function refusal(action: () => unknown): string | undefined {
+    try {
+        action();
+    } catch (error) {
+        if (error instanceof RpcError) return error.message;
+
+        throw error;
+    }
+
+    return undefined;
+}
+
+describe("guarded CDP methods", () => {
+    it.each([
+        "Network.getCookies",
+        "Network.setCookie",
+        "Network.setCookies",
+        "Network.deleteCookies",
+        "Storage.getCookies",
+        "Storage.setCookies",
+        "DOM.setFileInputFiles",
+    ])("guards %s", (method) => {
+        expect(isGuarded(method)).toBe(true);
+    });
+
+    it("does not guard ordinary methods", () => {
+        expect(isGuarded("Runtime.evaluate")).toBe(false);
+        expect(refusal(() =>
+            checkGuardedCall({ method: "Runtime.evaluate", params: {}, safety: safe({ readOnly: true }), confirmed: false }),
+        )).toBeUndefined();
+    });
+
+    it("refuses writes but not cookie reads in read-only mode", () => {
+        const safety = safe({ readOnly: true });
+        const call = (method: string) => () =>
+            checkGuardedCall({ method, params: {}, safety, confirmed: false });
+
+        expect(refusal(call("Network.getCookies"))).toBeUndefined();
+        expect(refusal(call("Network.setCookie"))).toContain("safety.readOnly");
+        expect(refusal(call("Network.deleteCookies"))).toContain("safety.readOnly");
+        expect(refusal(call("DOM.setFileInputFiles"))).toContain("safety.readOnly");
+    });
+
+    it("needs confirmation for every guarded method when confirmDangerous is on", () => {
+        const safety = safe({ confirmDangerous: true });
+        const call = (method: string, confirmed: boolean) => () =>
+            checkGuardedCall({ method, params: {}, safety, confirmed });
+
+        for (const method of ["Network.getCookies", "Network.setCookie", "DOM.setFileInputFiles"]) {
+            expect(refusal(call(method, false))).toContain("confirmation");
+            expect(refusal(call(method, true))).toBeUndefined();
+        }
+    });
+
+    it("checks the tab and the cookie target against the allowlist", () => {
+        const safety = safe({ allowedDomains: ["example.com", "*.example.com"] });
+        const write = (params: Record<string, unknown>, tabUrl: string | undefined) => () =>
+            checkGuardedCall({ method: "Network.setCookie", params, safety, confirmed: false, tabUrl });
+
+        expect(refusal(write({ url: "https://a.example.com/" }, "https://example.com/"))).toBeUndefined();
+        expect(refusal(write({ domain: ".example.com" }, "https://example.com/"))).toBeUndefined();
+        expect(refusal(write({ url: "https://evil.test/" }, "https://example.com/"))).toContain("evil.test");
+        expect(refusal(write({ domain: "evil.test" }, "https://example.com/"))).toContain("evil.test");
+        expect(refusal(write({ url: "https://example.com/" }, "https://evil.test/"))).toContain("evil.test");
+        expect(refusal(write({ url: "https://example.com/" }, undefined))).toContain("tab URL is unknown");
+    });
+
+    it("checks every cookie of setCookies", () => {
+        const safety = safe({ allowedDomains: ["example.com"] });
+        const cookies = [{ url: "https://example.com/" }, { domain: "evil.test" }];
+
+        expect(refusal(() =>
+            checkGuardedCall({ method: "Network.setCookies", params: { cookies }, safety, confirmed: false, tabUrl: "https://example.com/" }),
+        )).toContain("evil.test");
+    });
+
+    it("checks the tab and frame of a file attachment but leaves cookie reads alone", () => {
+        const safety = safe({ allowedDomains: ["example.com"] });
+        const attach = (frameUrl: string | undefined) => () =>
+            checkGuardedCall({ method: "DOM.setFileInputFiles", params: {}, safety, confirmed: false, tabUrl: "https://example.com/", frameUrl });
+
+        expect(refusal(attach(undefined))).toBeUndefined();
+        expect(refusal(attach("about:srcdoc"))).toBeUndefined();
+        expect(refusal(attach("https://evil.test/f"))).toContain("evil.test");
+        expect(refusal(() =>
+            checkGuardedCall({ method: "Network.getCookies", params: {}, safety, confirmed: false, tabUrl: "https://evil.test/" }),
+        )).toBeUndefined();
+    });
+});
+
+describe("session safety in the daemon", () => {
+    async function open(safety: SessionSafety) {
+        const backend = new FakeBackend();
+        const registry = new SessionRegistry<string>(backend, { allowFocus: false });
+        const session = await registry.open("a", () => undefined, {
+            isolated  : false,
+            clientName: "a",
+            safety,
+        });
+
+        return { backend, session };
+    }
+
+    async function failure(promise: Promise<unknown>): Promise<RpcError | undefined> {
+        const error = await promise.then(() => undefined, (caught: unknown) => caught);
+
+        return error instanceof RpcError ? error : undefined;
+    }
+
+    it("refuses tab creation in read-only mode and outside the allowlist", async () => {
+        const readOnly = await open(safe({ readOnly: true }));
+
+        expect((await failure(readOnly.session.createTab("about:blank")))?.code).toBe(ErrorCode.forbiddenMethod);
+
+        const restricted = await open(safe({ allowedDomains: ["example.com"] }));
+
+        expect((await failure(restricted.session.createTab("https://evil.test/")))?.message).toContain("evil.test");
+        await expect(restricted.session.createTab("https://example.com/")).resolves.toMatch(/./);
+        await expect(restricted.session.createTab("about:blank")).resolves.toMatch(/./);
+    });
+
+    it("refuses Page.navigate outside the allowlist before it reaches the browser", async () => {
+        const { backend, session } = await open(safe({ allowedDomains: ["example.com"] }));
+        const tab = await session.createTab("about:blank");
+
+        const error = await failure(session.send(tab, "Page.navigate", { url: "https://evil.test/" }));
+
+        expect(error?.code).toBe(ErrorCode.forbiddenMethod);
+        expect(backend.log.join("\n")).not.toContain("attach");
+        await expect(session.send(tab, "Page.navigate", { url: "https://example.com/" })).resolves.toBeDefined();
+    });
+
+    it("enforces the cookie and file policy with the real tab URL", async () => {
+        const { session, backend } = await open(safe({ allowedDomains: ["example.com"], confirmDangerous: true }));
+        const tab = await session.createTab("https://example.com/");
+
+        const unconfirmed = await failure(session.send(tab, "Network.setCookie", { name: "a", value: "b", url: "https://example.com/" }));
+
+        expect(unconfirmed?.message).toContain("confirmation");
+
+        await expect(
+            session.send(tab, "Network.setCookie", { name: "a", value: "b", url: "https://example.com/" }, undefined, undefined, true),
+        ).resolves.toBeDefined();
+
+        const stranger = await failure(
+            session.send(tab, "Network.setCookie", { name: "a", value: "b", domain: "evil.test" }, undefined, undefined, true),
+        );
+
+        expect(stranger?.message).toContain("evil.test");
+        expect(stranger?.message).not.toContain("value");
+
+        const entry = backend.targets.get(tab);
+
+        if (entry === undefined) throw new Error("missing target");
+
+        entry.url = "https://evil.test/";
+
+        const moved = await failure(
+            session.send(tab, "DOM.setFileInputFiles", { files: ["/tmp/x"], nodeId: 1 }, undefined, undefined, true),
+        );
+
+        expect(moved?.message).toContain("evil.test");
+    });
+});

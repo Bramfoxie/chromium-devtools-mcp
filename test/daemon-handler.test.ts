@@ -86,6 +86,29 @@ describe("session handling", () => {
         expect((await failure(client.request("session.open"))).code).toBe(ErrorCode.badRequest);
     });
 
+    it("applies the safety options of session.open to tab creation", async () => {
+        const { connect } = await start();
+        const client = await connect();
+
+        await client.request("session.open", {
+            safety: { readOnly: false, allowedDomains: ["example.com"], confirmDangerous: false },
+        });
+
+        expect((await failure(client.request("tab.create", { url: "https://evil.test/" }))).code).toBe(
+            ErrorCode.forbiddenMethod,
+        );
+        await expect(client.request("tab.create", { url: "https://example.com/" })).resolves.toBeDefined();
+    });
+
+    it("rejects malformed safety options", async () => {
+        const { connect } = await start();
+        const client = await connect();
+
+        expect(
+            (await failure(client.request("session.open", { safety: { readOnly: true } }))).code,
+        ).toBe(ErrorCode.badRequest);
+    });
+
     it("opens a fresh session after the connection closed and reopened", async () => {
         const { backend, connect } = await start();
         const first = await connect();
