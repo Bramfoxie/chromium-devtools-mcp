@@ -10,6 +10,7 @@ import { ToolRuntime } from "./context.js";
 import { admit } from "./gate.js";
 import { ToolError, toToolMessage } from "./errors.js";
 import { errorResult, jsonResult } from "./result.js";
+import { logDaemon } from "../daemon/log.js";
 import { SessionResetError } from "../mcp/index.js";
 
 export const CANCELLED_MESSAGE = "The request was cancelled. Call the tool again if needed.";
@@ -117,6 +118,10 @@ export async function runTool(
         const validated = tool.output.safeParse(output);
 
         if (!validated.success) {
+            const paths = validated.error.issues.map((issue) => issue.path.join(".") || "(root)");
+
+            logDaemon(`tool ${tool.name} returned an invalid result at: ${paths.join(", ")}`);
+
             return errorResult(`The tool ${tool.name} returned an invalid result. Try the call again.`);
         }
 

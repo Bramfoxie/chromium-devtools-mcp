@@ -3,7 +3,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { RequestHandlerExtra } from "@modelcontextprotocol/sdk/shared/protocol.js";
 import type { ServerNotification, ServerRequest } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { Config } from "../src/config/index.js";
 import { ErrorCode, RpcError } from "../src/daemon/index.js";
 import { createMcpServer } from "../src/mcp/index.js";
@@ -486,13 +486,25 @@ describe("runTool", () => {
             description: "Returns the wrong shape.",
             access     : "read",
             input      : z.strictObject({}),
-            output     : z.strictObject({ text: z.string() }),
-            handler    : async () => ({ other: 1 }) as unknown as { text: string },
+            output     : z.strictObject({ nested: z.strictObject({ text: z.string() }) }),
+            handler    : async () =>
+                ({ nested: { text: 42 } }) as unknown as { nested: { text: string } },
+        });
+        const written: string[] = [];
+        const spy = vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
+            written.push(String(chunk));
+
+            return true;
         });
         const result = await runTool(broken, {}, extra(), runtime());
 
+        spy.mockRestore();
         expect(result.isError).toBe(true);
         expect(JSON.stringify(result.content)).toContain("invalid result");
+        expect(written.join("")).toContain(
+            "tool broken returned an invalid result at: nested.text",
+        );
+        expect(written.join("")).not.toContain("42");
     });
 
     it("refuses cancelled requests before the handler and stops a wait on cancel", async () => {
