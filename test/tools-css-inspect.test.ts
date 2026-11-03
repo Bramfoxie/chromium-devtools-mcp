@@ -1,0 +1,499 @@
+import type { RequestHandlerExtra } from "@modelcontextprotocol/sdk/shared/protocol.js";
+import type { ServerNotification, ServerRequest } from "@modelcontextprotocol/sdk/types.js";
+import { describe, expect, it } from "vitest";
+import {
+    clipCssValue,
+    cssInspect,
+    DEFAULT_CSS_PROPERTIES,
+    newTab,
+    quadToRect,
+    runTool,
+    shapeComputed,
+    shapeInherited,
+    droppedWinners,
+    shapeMatchedRules,
+    ToolRuntime,
+} from "../src/tools/index.js";
+import { FakeAccess } from "./helpers/fake-access.js";
+import { managedConfig } from "./helpers/daemon-env.js";
+
+type Extra = RequestHandlerExtra<ServerRequest, ServerNotification>;
+
+const extra = () => ({ signal: new AbortController().signal }) as Extra;
+
+function setup(access?: FakeAccess) {
+    const fake = access ?? new FakeAccess();
+    const runtime = new ToolRuntime({ access: fake.asAccess(), config: managedConfig });
+
+    return { fake, runtime };
+}
+
+function rule(selector: string, declarations: Array<{ name: string; value: string; important?: boolean }>, origin = "regular") {
+    return {
+        rule: {
+            selectorList: { selectors: [{ text: selector }] },
+            origin,
+            styleSheetId: "sheet-1",
+            style       : { cssProperties: declarations },
+        },
+    };
+}
+
+describe("shapeComputed", () => {
+    it("returns only the requested properties", () => {
+        expect(
+            shapeComputed(
+                [
+                    { name: "display", value: "block" },
+                    { name: "color", value: "red" },
+                ],
+                ["color", "missing"],
+            ),
+        ).toEqual({ color: "red" });
+    });
+
+    it("covers layout, box, typography, color and visibility", () => {
+        for (const name of ["display", "width", "margin-top", "font-size", "color", "visibility", "z-index", "cursor"]) {
+            expect(DEFAULT_CSS_PROPERTIES).toContain(name);
+        }
+
+        expect(DEFAULT_CSS_PROPERTIES.length).toBeGreaterThanOrEqual(40);
+    });
+});
+
+describe("shapeMatchedRules", () => {
+    it("marks the last declaration of each property as winning and clips values", () => {
+        const shaped = shapeMatchedRules(
+            [
+                rule("#main", [{ name: "color", value: "red" }]),
+                rule(".box", [
+                    { name: "color", value: "blue" },
+                    { name: "color", value: "green" },
+                    { name: "margin", value: "x".repeat(300) },
+                ]),
+            ],
+            30,
+        );
+
+        expect(shaped).toHaveLength(2);
+        expect(shaped[0]).toMatchObject({
+            selector    : "#main",
+            origin      : "regular",
+            styleSheetId: "sheet-1",
+            declarations: [{ name: "color", value: "red", important: false, winning: false }],
+        });
+        expect(shaped[1]?.declarations).toEqual([
+            { name: "color", value: "blue", important: false, winning: false },
+            { name: "color", value: "green", important: false, winning: true },
+            { name: "margin", value: "x".repeat(200), important: false, winning: true },
+        ]);
+    });
+
+    it("limits the number of rules", () => {
+        expect(shapeMatchedRules([rule("a", []), rule("b", [])], 1)).toHaveLength(1);
+    });
+
+    it("names properties whose winning declaration is in a dropped rule", () => {
+        const entries = [
+            rule(".a", [
+                { name: "color", value: "red", important: true },
+                { name: "margin", value: "0" },
+            ]),
+            rule("#b", [
+                { name: "color", value: "blue" },
+                { name: "margin", value: "5px" },
+            ]),
+        ];
+
+        expect(droppedWinners(entries, 1)).toEqual(["color"]);
+        expect(droppedWinners(entries, 2)).toEqual([]);
+    });
+
+    it("prefers important declarations over later plain ones", () => {
+        const shaped = shapeMatchedRules(
+            [
+                rule(".a", [{ name: "color", value: "red", important: true }]),
+                rule("#b", [{ name: "color", value: "blue" }]),
+            ],
+            30,
+        );
+
+        expect(shaped[0]?.declarations).toEqual([
+            { name: "color", value: "red", important: true, winning: true },
+        ]);
+        expect(shaped[1]?.declarations).toEqual([
+            { name: "color", value: "blue", important: false, winning: false },
+        ]);
+    });
+
+    it("decides importance separately for each property", () => {
+        const shaped = shapeMatchedRules(
+            [
+                rule(".a", [
+                    { name: "color", value: "red", important: true },
+                    { name: "margin", value: "0" },
+                ]),
+                rule("#b", [
+                    { name: "color", value: "blue" },
+                    { name: "margin", value: "5px" },
+                ]),
+            ],
+            30,
+        );
+
+        expect(shaped[0]?.declarations).toEqual([
+            { name: "color", value: "red", important: true, winning: true },
+            { name: "margin", value: "0", important: false, winning: false },
+        ]);
+        expect(shaped[1]?.declarations).toEqual([
+            { name: "color", value: "blue", important: false, winning: false },
+            { name: "margin", value: "5px", important: false, winning: true },
+        ]);
+    });
+
+    it("lets the last important declaration win its property", () => {
+        const shaped = shapeMatchedRules(
+            [
+                rule(".a", [{ name: "color", value: "red", important: true }]),
+                rule("#b", [{ name: "color", value: "blue", important: true }]),
+            ],
+            30,
+        );
+
+        expect(shaped[0]?.declarations).toEqual([
+            { name: "color", value: "red", important: true, winning: false },
+        ]);
+        expect(shaped[1]?.declarations).toEqual([
+            { name: "color", value: "blue", important: true, winning: true },
+        ]);
+    });
+
+    it("keeps the most specific rules when truncating", () => {
+        const shaped = shapeMatchedRules(
+            [rule("a", [{ name: "color", value: "red" }]), rule("b", [{ name: "color", value: "blue" }])],
+            1,
+        );
+
+        expect(shaped).toHaveLength(1);
+        expect(shaped[0]?.selector).toBe("b");
+    });
+});
+
+describe("shapeInherited", () => {
+    it("prefers the most specific ancestor rule", () => {
+        expect(
+            shapeInherited([
+                {
+                    matchedCSSRules: [
+                        rule("p", [{ name: "color", value: "red" }]),
+                        rule("#x", [{ name: "color", value: "blue" }]),
+                    ],
+                },
+            ]),
+        ).toEqual([{ property: "color", value: "blue", selector: "#x" }]);
+    });
+
+    it("keeps only inherited properties that are set", () => {
+        expect(
+            shapeInherited([
+                {
+                    matchedCSSRules: [
+                        rule("body", [
+                            { name: "color", value: "green" },
+                            { name: "margin", value: "0" },
+                        ]),
+                    ],
+                },
+            ]),
+        ).toEqual([{ property: "color", value: "green", selector: "body" }]);
+    });
+});
+
+describe("clipCssValue", () => {
+    it("clips values to 200 characters", () => {
+        expect(clipCssValue("short")).toBe("short");
+        expect(clipCssValue("x".repeat(201))).toHaveLength(200);
+    });
+});
+
+describe("quadToRect", () => {
+    it("reduces a quad to a rounded rectangle", () => {
+        expect(quadToRect([10.4, 20.6, 30.2, 20.1, 30.9, 40.4, 10.2, 40.8])).toEqual({
+            x     : 10,
+            y     : 20,
+            width : 21,
+            height: 21,
+        });
+    });
+});
+
+describe("css_inspect", () => {
+    function inspectFake() {
+        const fake = new FakeAccess();
+
+        fake.respond = (_targetId, method) => {
+            switch (method) {
+                case "DOM.resolveNode":
+                    return { object: { objectId: "obj-7" } };
+                case "DOM.describeNode":
+                    return { node: { nodeId: 41, backendNodeId: 7 } };
+                case "CSS.getComputedStyleForNode":
+                    return {
+                        computedStyle: [
+                            { name: "display", value: "block" },
+                            { name: "color", value: "rgb(255, 0, 0)" },
+                        ],
+                    };
+                case "CSS.getMatchedStylesForNode":
+                    return {
+                        matchedCSSRules: [rule("#main", [{ name: "display", value: "block" }])],
+                        inherited      : [
+                            { matchedCSSRules: [rule("body", [{ name: "color", value: "green" }])] },
+                        ],
+                    };
+                case "DOM.getBoxModel":
+                    return {
+                        model: {
+                            content: [1, 2, 11, 2, 11, 12, 1, 12],
+                            padding: [0, 1, 12, 1, 12, 13, 0, 13],
+                            border : [0, 1, 12, 1, 12, 13, 0, 13],
+                            margin : [-5, -5, 17, -5, 17, 18, -5, 18],
+                        },
+                    };
+                default:
+                    return {};
+            }
+        };
+
+        return fake;
+    }
+
+    it("inspects an element uid with the default properties", async () => {
+        const fake = inspectFake();
+        const { runtime } = setup(fake);
+
+        await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+
+        runtime.elements.nextGeneration("tab1");
+
+        const [uid] = runtime.elements.assign("tab1", [{ backendNodeId: 7 }]);
+        const result = await runTool(cssInspect, { target: { uid } }, extra(), runtime);
+
+        expect(result.structuredContent).toEqual({
+            computed    : { display: "block", color: "rgb(255, 0, 0)" },
+            matchedRules: [
+                {
+                    selector    : "#main",
+                    origin      : "regular",
+                    styleSheetId: "sheet-1",
+                    declarations: [{ name: "display", value: "block", important: false, winning: true }],
+                },
+            ],
+            inherited: [{ property: "color", value: "green", selector: "body" }],
+            box      : {
+                content: { x: 1, y: 2, width: 10, height: 10 },
+                padding: { x: 0, y: 1, width: 12, height: 12 },
+                border : { x: 0, y: 1, width: 12, height: 12 },
+                margin : { x: -5, y: -5, width: 22, height: 23 },
+            },
+            totalRules    : 1,
+            truncated     : false,
+            droppedWinners: [],
+        });
+        expect(fake.sent.map((call) => call.method)).toEqual([
+            "DOM.resolveNode",
+            "Runtime.releaseObject",
+            "DOM.describeNode",
+            "DOM.enable",
+            "CSS.enable",
+            "CSS.getComputedStyleForNode",
+            "CSS.getMatchedStylesForNode",
+            "DOM.getBoxModel",
+            "CSS.disable",
+        ]);
+    });
+
+    it("honors custom properties and skips rules and box on request", async () => {
+        const fake = inspectFake();
+        const { runtime } = setup(fake);
+
+        await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+
+        runtime.elements.nextGeneration("tab1");
+
+        const [uid] = runtime.elements.assign("tab1", [{ backendNodeId: 7 }]);
+        const result = await runTool(
+            cssInspect,
+            { target: { uid }, properties: ["color"], includeMatchedRules: false, includeBox: false },
+            extra(),
+            runtime,
+        );
+
+        expect(result.structuredContent).toMatchObject({
+            computed      : { color: "rgb(255, 0, 0)" },
+            matchedRules  : [],
+            inherited     : [],
+            box           : null,
+            totalRules    : 0,
+            truncated     : false,
+            droppedWinners: [],
+        });
+        expect(fake.sent.map((call) => call.method)).not.toContain("CSS.getMatchedStylesForNode");
+        expect(fake.sent.map((call) => call.method)).not.toContain("DOM.getBoxModel");
+        expect(fake.sent.map((call) => call.method)).toContain("CSS.disable");
+    });
+
+    it("signals truncated rules with totals", async () => {
+        const fake = inspectFake();
+
+        fake.respond = (_targetId, method) => {
+            switch (method) {
+                case "DOM.resolveNode":
+                    return { object: { objectId: "obj-7" } };
+                case "DOM.describeNode":
+                    return { node: { nodeId: 41, backendNodeId: 7 } };
+                case "CSS.getComputedStyleForNode":
+                    return { computedStyle: [{ name: "color", value: "red" }] };
+                case "CSS.getMatchedStylesForNode":
+                    return {
+                        matchedCSSRules: [
+                            rule(".a", [{ name: "color", value: "red", important: true }]),
+                            rule("#b", [{ name: "color", value: "blue" }]),
+                        ],
+                        inherited: [],
+                    };
+                case "DOM.getBoxModel":
+                    return null;
+                default:
+                    return {};
+            }
+        };
+
+        const { runtime } = setup(fake);
+
+        await runTool(newTab, {}, extra(), runtime);
+
+        runtime.elements.nextGeneration("tab1");
+
+        const [uid] = runtime.elements.assign("tab1", [{ backendNodeId: 7 }]);
+        const result = await runTool(
+            cssInspect,
+            { target: { uid }, properties: ["color"], maxRules: 1, includeBox: false },
+            extra(),
+            runtime,
+        );
+
+        expect(result.structuredContent).toMatchObject({
+            matchedRules: [
+                {
+                    selector    : "#b",
+                    declarations: [{ name: "color", value: "blue", winning: false }],
+                },
+            ],
+            totalRules    : 2,
+            truncated     : true,
+            droppedWinners: ["color"],
+        });
+    });
+
+    it("reports a stale uid without calling the browser", async () => {
+        const { fake, runtime } = setup();
+
+        await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+
+        const result = await runTool(cssInspect, { target: { uid: "5_5" } }, extra(), runtime);
+
+        expect(result.isError).toBe(true);
+        expect(JSON.stringify(result.content)).toContain("stale");
+        expect(fake.sent).toEqual([]);
+    });
+
+    it("names new_tab when no tab is selected", async () => {
+        const { runtime } = setup();
+        const result = await runTool(cssInspect, { target: { uid: "1_1" } }, extra(), runtime);
+
+        expect(result.isError).toBe(true);
+        expect(JSON.stringify(result.content)).toContain("new_tab");
+    });
+});
+
+describe("css_inspect piercing", () => {
+    it("inspects an element inside a shadow root through a chain", async () => {
+        const fake = new FakeAccess();
+
+        fake.respond = (_targetId, method, params) => {
+            switch (method) {
+                case "DOM.getDocument":
+                    return { root: { nodeId: 1 } };
+
+                case "DOM.querySelector": {
+                    const selector = (params as { selector?: unknown })?.selector;
+
+                    if (selector === "my-app") return { nodeId: 13 };
+
+                    return { nodeId: 15 };
+                }
+
+                case "DOM.resolveNode":
+                    return { object: { objectId: "obj-1" } };
+
+                case "DOM.describeNode": {
+                    const nodeId = (params as { nodeId?: unknown })?.nodeId;
+
+                    if (nodeId === 13) {
+                        return {
+                            node: {
+                                nodeId       : 13,
+                                backendNodeId: 5,
+                                shadowRoots  : [{ nodeId: 14 }],
+                            },
+                        };
+                    }
+
+                    return { node: { nodeId: 15, backendNodeId: 9 } };
+                }
+
+                case "DOM.enable":
+                case "CSS.enable":
+                case "CSS.disable":
+                    return {};
+                case "CSS.getComputedStyleForNode":
+                    return { computedStyle: [{ name: "display", value: "inline-block" }] };
+                case "CSS.getMatchedStylesForNode":
+                    return { matchedCSSRules: [], inherited: [] };
+                case "DOM.getBoxModel":
+                    return {
+                        model: {
+                            content: [1, 2, 3, 2, 3, 4, 1, 4],
+                            padding: [1, 2, 3, 2, 3, 4, 1, 4],
+                            border : [1, 2, 3, 2, 3, 4, 1, 4],
+                            margin : [1, 2, 3, 2, 3, 4, 1, 4],
+                        },
+                    };
+                default:
+                    throw new Error(`unexpected CDP call ${method}`);
+            }
+        };
+
+        const { runtime } = setup(fake);
+
+        await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+
+        const result = await runTool(
+            cssInspect,
+            { target: { selector: "my-app >>> #inner" }, properties: ["display"] },
+            extra(),
+            runtime,
+        );
+
+        expect(result.isError).not.toBe(true);
+        expect(result.structuredContent).toMatchObject({
+            computed: { display: "inline-block" },
+        });
+        expect(fake.sent.map((call) => call.method)).toContain("DOM.querySelector");
+    });
+});

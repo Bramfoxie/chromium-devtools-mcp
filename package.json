@@ -1,6 +1,6 @@
 {
   "name": "chromium-devtools-mcp",
-  "version": "0.0.2",
+  "version": "0.1.0",
   "description": "MCP server that lets AI agents drive your Chromium browser through the DevTools Protocol",
   "license": "MIT",
   "author": "Milana Kustinskaya <me@bramfoxie.com>",
@@ -16,7 +16,6 @@
   "bin": {
     "chromium-devtools-mcp": "dist/cli.js"
   },
-  "main": "dist/index.js",
   "files": [
     "dist"
   ],
@@ -27,25 +26,31 @@
     "mcp",
     "chrome",
     "chromium",
-    "arc",
     "devtools",
     "cdp"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . && prettier --check .",
-    "format": "prettier --write .",
+    "format": "eslint . --fix && prettier --write .",
     "test": "vitest run --passWithNoTests",
-    "prepare": "git config core.hooksPath .githooks || true",
+    "prepare": "git config core.hooksPath .githooks || exit 0",
     "prepublishOnly": "npm run build"
   },
   "devDependencies": {
+    "@stylistic/eslint-plugin": "^5.10.0",
     "@types/node": "^26.6.6",
+    "@types/ws": "^8.18.2",
     "eslint": "^10.14.0",
     "prettier": "^3.9.10",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.72.1",
     "vitest": "^5.0.5"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "ws": "^8.22.0",
+    "zod": "^4.6.7"
   }
 }

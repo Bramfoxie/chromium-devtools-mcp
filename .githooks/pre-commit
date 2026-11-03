@@ -1,22 +1,23 @@
 #!/bin/sh
+. "$(dirname "$0")/lib.sh"
+
 fail() {
   echo "pre-commit: $1" >&2
   exit 1
 }
 
-staged=$(git diff --cached --name-only --diff-filter=ACM)
+staged=$(git -c core.quotePath=false diff --cached --name-only --diff-filter=ACMRT)
 [ -n "$staged" ] || exit 0
 
-for f in AGENTS.md CLAUDE.md; do
-  printf '%s\n' "$staged" | grep -qx "$f" && fail "$f must not be committed"
-done
+printf '%s\n' "$staged" | grep -qE '(^|/)(AGENTS|CLAUDE)\.md$' && fail "AGENTS.md and CLAUDE.md must not be committed"
 
-dashes="$(printf '\342\200\224')|$(printf '\342\200\223')"
-for f in $staged; do
-  [ -f "$f" ] || continue
+printf '%s\n' "$staged" | while IFS= read -r f; do
+  if readme_without_marks "$f" | has_typography; then
+    fail "typographic dash, quote, ellipsis or emoji found in $f"
+  fi
   case "$f" in .githooks/*) continue ;; esac
-  git show ":$f" | grep -qE "$dashes" && fail "em or en dash found in $f"
-done
+  if git show ":$f" | has_attribution; then fail "tool attribution found in $f"; fi
+done || exit 1
 
 if [ -f package.json ]; then
   has_script() { node -e "process.exit(require('./package.json').scripts?.['$1'] ? 0 : 1)"; }

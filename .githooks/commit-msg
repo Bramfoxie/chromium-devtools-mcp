@@ -1,18 +1,18 @@
 #!/bin/sh
-msg_file="$1"
-msg=$(grep -v '^#' "$msg_file")
+. "$(dirname "$0")/lib.sh"
+
+msg=$(sed '/^# -\{24\} >8 -\{24\}$/,$d' "$1" | grep -v '^#')
 
 fail() {
   echo "commit-msg: $1" >&2
   exit 1
 }
 
-printf '%s' "$msg" | grep -qiE '^co-authored-by:' && fail "Co-Authored-By trailers are not allowed"
-printf '%s' "$msg" | grep -qiE 'generated with|claude code|noreply@anthropic' && fail "tool attribution is not allowed"
-printf '%s' "$msg" | grep -q "$(printf '\360\237\244\226')" && fail "emoji attribution is not allowed"
-printf '%s' "$msg" | grep -q "$(printf '\342\200\224')\|$(printf '\342\200\223')" && fail "em and en dashes are not allowed"
+printf '%s\n' "$msg" | has_attribution && fail "tool attribution is not allowed"
+printf '%s\n' "$msg" | has_typography && fail "typographic dashes, quotes, ellipses and emoji are not allowed"
 
-subject=$(printf '%s' "$msg" | sed -n '1p')
+subject=$(printf '%s\n' "$msg" | sed -n '1p')
 [ -n "$subject" ] || fail "empty subject"
-[ ${#subject} -le 72 ] || fail "subject is longer than 72 characters"
+length=$(printf '%s' "$subject" | LC_ALL=C tr -d '\200-\277' | wc -c | tr -d ' ')
+[ "$length" -le 72 ] || fail "subject is longer than 72 characters"
 exit 0

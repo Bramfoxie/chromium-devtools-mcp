@@ -1,0 +1,493 @@
+import type { RequestHandlerExtra } from "@modelcontextprotocol/sdk/shared/protocol.js";
+import type { ServerNotification, ServerRequest } from "@modelcontextprotocol/sdk/types.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+    ElementRegistry,
+    inputClick,
+    inputHover,
+    runTool,
+    ToolRuntime,
+} from "../src/tools/index.js";
+import { crossSiteFake, MID_FRAME, pointerCounters, type CrossSiteWorld } from "./helpers/cross-site-fake.js";
+import { managedConfig } from "./helpers/daemon-env.js";
+import type { FakeAccess } from "./helpers/fake-access.js";
+
+type Extra = RequestHandlerExtra<ServerRequest, ServerNotification>;
+
+const extra = () => ({ signal: new AbortController().signal }) as Extra;
+
+function setup(world: CrossSiteWorld = {}): { fake: FakeAccess; runtime: ToolRuntime } {
+    const fake = crossSiteFake(world);
+    const runtime = new ToolRuntime({
+        access  : fake.asAccess(),
+        config  : managedConfig,
+        elements: new ElementRegistry(),
+    });
+
+    runtime.tabs.refresh(
+        [{ targetId: "tab1", url: "http://a.example/", title: "t", owned: true, created: true }],
+        "tab1",
+    );
+    runtime.elements.nextGeneration("tab1");
+    runtime.elements.assign("tab1", [{ backendNodeId: 101, frameId: MID_FRAME, isolated: true }]);
+
+    return { fake, runtime };
+}
+
+async function withFakeTime<T>(run: () => Promise<T>): Promise<T> {
+    vi.useFakeTimers();
+
+    const pending = run();
+
+    await vi.advanceTimersByTimeAsync(30000);
+
+    return pending;
+}
+
+afterEach(() => {
+    vi.useRealTimers();
+});
+
+function mouseEvents(
+    fake: FakeAccess,
+    via : "frame" | "tab" | "any" = "any",
+): Array<{ type: unknown; x: unknown; y: unknown }> {
+    return fake.sent
+        .filter((call) => call.method === "Input.dispatchMouseEvent")
+        .filter((call) => via === "any" || (via === "frame") === (call.frameId === MID_FRAME))
+        .map((call) => ({ type: call.params?.type, x: call.params?.x, y: call.params?.y }));
+}
+
+function mouseSessions(fake: FakeAccess): Array<string | undefined> {
+    return fake.sent
+        .filter((call) => call.method === "Input.dispatchMouseEvent")
+        .map((call) => call.frameId);
+}
+
+const BAD_ROUTING = { dropMoves: Number.POSITIVE_INFINITY, dropDowns: Number.POSITIVE_INFINITY };
+
+describe("input_click in a cross-site frame", () => {
+    it("dispatches the mouse events in the frame session at frame coordinates", async () => {
+        const { fake, runtime } = setup();
+        const result = await runTool(inputClick, { target: { uid: "1_1" } }, extra(), runtime);
+
+        expect(result.isError).not.toBe(true);
+        expect(mouseEvents(fake)).toEqual([
+            { type: "mouseMoved", x: 60, y: 50 },
+            { type: "mousePressed", x: 60, y: 50 },
+            { type: "mouseReleased", x: 60, y: 50 },
+        ]);
+        expect(mouseSessions(fake)).toEqual([MID_FRAME, MID_FRAME, MID_FRAME]);
+    });
+
+    it("clicks while the browser never routes top-level input into the frame", async () => {
+        const { fake, runtime } = setup(BAD_ROUTING);
+        const result = await runTool(inputClick, { target: { uid: "1_1" } }, extra(), runtime);
+
+        expect(result.isError).not.toBe(true);
+        expect(mouseSessions(fake).every((session) => session === MID_FRAME)).toBe(true);
+        expect(pointerCounters.get(fake)).toMatchObject({ downs: 1, removes: 1 });
+    });
+
+    it("falls back to the tab session at top-level coordinates when the frame session delivers nothing", async () => {
+        const { fake, runtime } = setup({ frameDown: true });
+        const result = await runTool(inputClick, { target: { uid: "1_1" } }, extra(), runtime);
+
+        expect(result.isError).not.toBe(true);
+        expect(mouseEvents(fake).slice(-2)).toEqual([
+            { type: "mousePressed", x: 122, y: 182 },
+            { type: "mouseReleased", x: 122, y: 182 },
+        ]);
+        expect(mouseSessions(fake).slice(-2)).toEqual([undefined, undefined]);
+        expect(mouseSessions(fake).filter((session) => session === MID_FRAME)).toHaveLength(3);
+        expect(pointerCounters.get(fake)).toMatchObject({ downs: 1 });
+    });
+
+    it("presses again once in the frame session when the first press is dropped", async () => {
+        const { fake, runtime } = setup({ frameDropDowns: 1 });
+        const result = await runTool(inputClick, { target: { uid: "1_1" } }, extra(), runtime);
+
+        expect(result.isError).not.toBe(true);
+        expect(mouseEvents(fake).map((event) => event.type)).toEqual([
+            "mouseMoved", "mousePressed", "mouseReleased", "mousePressed", "mouseReleased",
+        ]);
+        expect(pointerCounters.get(fake)).toMatchObject({ downs: 1 });
+    });
+
+    it("measures the element and runs the hit test in the frame session", async () => {
+        const { fake, runtime } = setup();
+
+        await runTool(inputClick, { target: { uid: "1_1" } }, extra(), runtime);
+
+        const inFrame = fake.sent
+            .filter((call) => call.frameId === MID_FRAME)
+            .map((call) => call.method);
+
+        expect(inFrame).toContain("DOM.scrollIntoViewIfNeeded");
+        expect(inFrame).toContain("Runtime.callFunctionOn");
+        const hit = fake.sent.find(
+            (call) => call.frameId === MID_FRAME && Array.isArray(call.params?.arguments) &&
+                call.params.arguments.length === 4,
+        );
+
+        expect(hit?.params?.arguments).toEqual([
+            { objectId: "obj-mid" },
+            { value: 60 },
+            { value: 50 },
+            { value: true },
+        ]);
+    });
+
+    it("installs the probe in the frame session before the press and removes it afterwards", async () => {
+        const { fake, runtime } = setup();
+
+        await runTool(inputClick, { target: { uid: "1_1" } }, extra(), runtime);
+
+        const probes = fake.sent.filter(
+            (call) => call.method === "Runtime.callFunctionOn" &&
+                String(call.params?.functionDeclaration).includes("cdmProbe"),
+        );
+        const names = probes.map((call) => /cdmProbe\w+/.exec(String(call.params?.functionDeclaration))?.[0]);
+        const press = fake.sent.findIndex((call) => call.params?.type === "mousePressed");
+
+        expect(names[0]).toBe("cdmProbeInstall");
+        expect(names.at(-1)).toBe("cdmProbeRemove");
+        expect(probes.every((call) => call.frameId === MID_FRAME)).toBe(true);
+        expect(fake.sent.indexOf(probes[0] as never)).toBeLessThan(press);
+        expect(pointerCounters.get(fake)).toMatchObject({ installs: 1, removes: 1 });
+    });
+
+    it("retries the move until the frame receives it and then presses", async () => {
+        const { fake, runtime } = setup({ dropMoves: 3, frameDown: true });
+        const result = await runTool(inputClick, { target: { uid: "1_1" } }, extra(), runtime);
+
+        expect(result.isError).not.toBe(true);
+        expect(mouseEvents(fake).map((event) => event.type)).toEqual([
+            "mouseMoved", "mouseMoved", "mouseMoved", "mouseMoved", "mouseMoved", "mouseMoved", "mouseMoved",
+            "mousePressed", "mouseReleased",
+        ]);
+        expect(pointerCounters.get(fake)).toMatchObject({ downs: 1, removes: 1 });
+    });
+
+    it("fails without pressing when the frame never receives the move", async () => {
+        const { fake, runtime } = setup({ dropMoves: 1000, frameDown: true });
+        const result = await withFakeTime(() =>
+            runTool(inputClick, { target: { uid: "1_1" } }, extra(), runtime));
+
+        expect(result.isError).toBe(true);
+        expect(JSON.stringify(result.content)).toContain("did not receive pointer input");
+        expect(mouseEvents(fake).some((event) => event.type === "mousePressed")).toBe(false);
+        expect(pointerCounters.get(fake)).toMatchObject({ installs: 1, removes: 1 });
+    });
+
+    it("uses settled geometry for the top-level fallback when the first measurement was taken early", async () => {
+        const { fake, runtime } = setup({ staleUntilSettle: true, frameDown: true });
+        const result = await withFakeTime(() =>
+            runTool(inputClick, { target: { uid: "1_1" } }, extra(), runtime));
+        const events = mouseEvents(fake, "tab");
+
+        expect(result.isError).not.toBe(true);
+        expect(events[0]).toEqual({ type: "mouseMoved", x: 122, y: 182 });
+        expect(events.at(-2)).toEqual({ type: "mousePressed", x: 122, y: 182 });
+        expect(events.at(-1)).toEqual({ type: "mouseReleased", x: 122, y: 182 });
+        expect(events.filter((event) => event.type === "mouseMoved").at(-1)).toEqual({
+            type: "mouseMoved", x: 122, y: 182,
+        });
+    });
+
+    it("keeps retrying a move that arrives after more than two seconds", async () => {
+        const { fake, runtime } = setup({ moveDelayMs: 4000, frameDown: true });
+        const result = await withFakeTime(() =>
+            runTool(inputClick, { target: { uid: "1_1" } }, extra(), runtime));
+
+        expect(result.isError).not.toBe(true);
+        expect(pointerCounters.get(fake)).toMatchObject({ downs: 1, removes: 1 });
+    });
+
+    it("gives up after the budget and reports where the move landed", async () => {
+        const { fake, runtime } = setup({ dropMoves: 1000, misrouteTop: true, frameDown: true });
+        const result = await withFakeTime(() =>
+            runTool(inputClick, { target: { uid: "1_1" } }, extra(), runtime));
+        const text = JSON.stringify(result.content);
+
+        expect(result.isError).toBe(true);
+        expect(text).toContain("Make sure the page is visible and not busy, then try again.\\nDiagnostics: ");
+        expect(text).toMatch(/attempts=\d+ elapsedMs=\d+ point=\(122,182\) depth=1 frames=\(50,120,324,224\) dpr=2 landed=top:1 visibility=\w+ route=tab hit=false hits=0\/\d+/);
+        expect(pointerCounters.get(fake)).toMatchObject({ installs: 1, removes: 1 });
+    });
+
+    it("reports whether the browser resolves the point to the frame in the diagnostics", async () => {
+        const reported = async (world: CrossSiteWorld): Promise<string> => {
+            const { runtime } = setup({ ...world, dropMoves: 1000, frameDown: true });
+            const result = await withFakeTime(() =>
+                runTool(inputClick, { target: { uid: "1_1" } }, extra(), runtime));
+
+            return JSON.stringify(result.content);
+        };
+
+        expect(await reported({ nodeAtPoint: "frame" })).toMatch(/route=tab hit=true hits=(\d+)\/\1/);
+        expect(await reported({ nodeAtPoint: "parent" })).toMatch(/route=tab hit=false hits=0\/\d+/);
+        expect(await reported({})).toMatch(/route=tab hit=false hits=0\/\d+/);
+    });
+
+    it("releases and presses again once when the first press is dropped", async () => {
+        const { fake, runtime } = setup({ dropDowns: 1, frameDown: true });
+        const result = await runTool(inputClick, { target: { uid: "1_1" } }, extra(), runtime);
+
+        expect(result.isError).not.toBe(true);
+        expect(mouseEvents(fake, "tab").map((event) => event.type)).toEqual([
+            "mouseMoved", "mousePressed", "mouseReleased", "mousePressed", "mouseReleased",
+        ]);
+        expect(pointerCounters.get(fake)).toMatchObject({ downs: 1, removes: 1 });
+    });
+
+    it("does not press a second time when the first press arrives late", async () => {
+        const { fake, runtime } = setup({ dropDowns: 1, lateDowns: true, frameDown: true });
+        const result = await runTool(inputClick, { target: { uid: "1_1" } }, extra(), runtime);
+
+        expect(result.isError).not.toBe(true);
+        expect(mouseEvents(fake).filter((event) => event.type === "mousePressed")).toHaveLength(1);
+        expect(pointerCounters.get(fake)).toMatchObject({ downs: 1, removes: 1 });
+    });
+
+    it("fails when no press is delivered after the single retry", async () => {
+        const { fake, runtime } = setup({ dropDowns: 1000, frameDropDowns: 1000 });
+        const result = await runTool(inputClick, { target: { uid: "1_1" } }, extra(), runtime);
+
+        expect(result.isError).toBe(true);
+        expect(JSON.stringify(result.content)).toContain("did not receive the mouse press");
+        expect(mouseEvents(fake).filter((event) => event.type === "mousePressed")).toHaveLength(2);
+        expect(pointerCounters.get(fake)).toMatchObject({ removes: 1 });
+    });
+
+    it("verifies every press of a multi click", async () => {
+        const { fake, runtime } = setup();
+
+        await runTool(inputClick, { target: { uid: "1_1" }, clickCount: 2 }, extra(), runtime);
+
+        expect(pointerCounters.get(fake)).toMatchObject({ downs: 2 });
+    });
+
+    it("scrolls the iframe element into view in the parent session", async () => {
+        const { fake, runtime } = setup();
+
+        await runTool(inputClick, { target: { uid: "1_1" } }, extra(), runtime);
+
+        const scroll = fake.sent.find(
+            (call) => call.method === "DOM.scrollIntoViewIfNeeded" && call.frameId === undefined,
+        );
+
+        expect(scroll?.params).toMatchObject({ backendNodeId: 6 });
+    });
+
+    it("honors an offset position inside the element", async () => {
+        const { fake, runtime } = setup();
+
+        await runTool(
+            inputClick,
+            { target: { uid: "1_1" }, position: { x: 10, y: 4 } },
+            extra(),
+            runtime,
+        );
+
+        expect(mouseEvents(fake)[0]).toEqual({ type: "mouseMoved", x: 38, y: 37 });
+    });
+
+    it("refuses to click through an element covering it inside the frame", async () => {
+        const { fake, runtime } = setup({ innerHit: { kind: "covered", tag: "div", id: "veil", classes: [] } });
+        const result = await runTool(inputClick, { target: { uid: "1_1" } }, extra(), runtime);
+
+        expect(result.isError).toBe(true);
+        expect(JSON.stringify(result.content)).toContain("div#veil");
+        expect(mouseEvents(fake)).toEqual([]);
+    });
+
+    it("refuses to click through an element of the parent page covering the iframe", async () => {
+        const { fake, runtime } = setup({ outerHit: { kind: "covered", tag: "div", id: "banner", classes: [] } });
+        const result = await runTool(inputClick, { target: { uid: "1_1" } }, extra(), runtime);
+
+        expect(result.isError).toBe(true);
+        expect(JSON.stringify(result.content)).toContain("div#banner");
+        expect(mouseEvents(fake)).toEqual([]);
+    });
+
+    it("clicks through a cover when forced, still at translated coordinates", async () => {
+        const { fake, runtime } = setup({ outerHit: { kind: "covered", tag: "div", id: "banner", classes: [] } });
+        const result = await runTool(
+            inputClick,
+            { target: { uid: "1_1" }, force: true },
+            extra(),
+            runtime,
+        );
+
+        expect(result.isError).not.toBe(true);
+        expect(mouseEvents(fake)[1]).toEqual({ type: "mousePressed", x: 60, y: 50 });
+    });
+
+    it("reports a point outside the frame viewport", async () => {
+        const { runtime } = setup({ innerHit: { kind: "outside" } });
+        const result = await runTool(inputClick, { target: { uid: "1_1" } }, extra(), runtime);
+
+        expect(result.isError).toBe(true);
+        expect(JSON.stringify(result.content)).toContain("outside the frame viewport");
+    });
+});
+
+describe("input_hover in a cross-site frame", () => {
+    it("hovers in the frame session while the browser never routes top-level input into the frame", async () => {
+        const { fake, runtime } = setup(BAD_ROUTING);
+        const result = await runTool(inputHover, { target: { uid: "1_1" } }, extra(), runtime);
+
+        expect(result.structuredContent).toMatchObject({ ok: true, hovered: true });
+        expect(mouseSessions(fake).every((session) => session === MID_FRAME)).toBe(true);
+    });
+
+    it("moves the mouse at frame coordinates and reads :hover in the frame session", async () => {
+        const { fake, runtime } = setup();
+        const result = await runTool(inputHover, { target: { uid: "1_1" } }, extra(), runtime);
+
+        expect(result.structuredContent).toMatchObject({ ok: true, hovered: true });
+        expect(mouseEvents(fake).at(-1)).toEqual({ type: "mouseMoved", x: 60, y: 50 });
+        expect(mouseSessions(fake).at(-1)).toBe(MID_FRAME);
+        const hover = fake.sent.find(
+            (call) => call.method === "Runtime.callFunctionOn" &&
+                String(call.params?.functionDeclaration).includes(":hover"),
+        );
+
+        expect(hover?.frameId).toBe(MID_FRAME);
+    });
+
+    it("reports that the element is not hovered when the page did not react", async () => {
+        const { runtime } = setup({ hovered: false });
+        const result = await runTool(inputHover, { target: { uid: "1_1" } }, extra(), runtime);
+
+        expect(result.structuredContent).toMatchObject({ ok: false, hovered: false });
+    });
+
+    it("retries a dropped move before hovering and cleans the probe up", async () => {
+        const { fake, runtime } = setup({ dropMoves: 2, frameDown: true });
+        const result = await runTool(inputHover, { target: { uid: "1_1" } }, extra(), runtime);
+
+        expect(result.structuredContent).toMatchObject({ ok: true, hovered: true });
+        expect(mouseEvents(fake)).toHaveLength(8);
+        expect(mouseEvents(fake, "tab").at(-1)).toEqual({ type: "mouseMoved", x: 122, y: 182 });
+        expect(pointerCounters.get(fake)).toMatchObject({ installs: 1, removes: 1 });
+    });
+
+    it("fails when the frame never receives the hover move", async () => {
+        const { runtime } = setup({ dropMoves: 1000, frameDown: true });
+        const result = await withFakeTime(() =>
+            runTool(inputHover, { target: { uid: "1_1" } }, extra(), runtime));
+
+        expect(result.isError).toBe(true);
+        expect(JSON.stringify(result.content)).toContain("did not receive pointer input");
+    });
+});
+
+function indexOfMethod(fake: FakeAccess, method: string, from = 0): number {
+    return fake.sent.findIndex((call, index) => index >= from && call.method === method);
+}
+
+function lastIndexWhere(
+    fake : FakeAccess,
+    match: (call: FakeAccess["sent"][number]) => boolean,
+): number {
+    for (let index = fake.sent.length - 1; index >= 0; index -= 1) {
+        if (match(fake.sent[index] as FakeAccess["sent"][number])) return index;
+    }
+
+    return -1;
+}
+
+function lastIndexOfMouse(fake: FakeAccess, type: string): number {
+    return lastIndexWhere(fake, (call) => call.params?.type === type);
+}
+
+const ONE_HOLD = { screencastStarts: 1, screencastStops: 1 };
+
+const NO_HOLD = { screencastStarts: 0, screencastStops: 0 };
+
+describe("rendering during cross-site pointer input", () => {
+    it("delivers the click when the tab only routes input while it renders", async () => {
+        const { fake, runtime } = setup({ renderGated: true, frameDown: true });
+        const result = await runTool(inputClick, { target: { uid: "1_1" } }, extra(), runtime);
+
+        expect(result.isError).not.toBe(true);
+        expect(pointerCounters.get(fake)).toMatchObject({ downs: 1 });
+    });
+
+    it("starts the screencast before measuring and stops it after the release", async () => {
+        const { fake, runtime } = setup({ renderGated: true });
+
+        await runTool(inputClick, { target: { uid: "1_1" } }, extra(), runtime);
+
+        const start = indexOfMethod(fake, "Page.startScreencast");
+        const stop = indexOfMethod(fake, "Page.stopScreencast");
+
+        expect(start).toBeGreaterThanOrEqual(0);
+        expect(start).toBeLessThan(
+            fake.sent.findIndex((call) => call.method === "DOM.getBoxModel" && call.params?.backendNodeId === 6),
+        );
+        expect(stop).toBeGreaterThan(lastIndexOfMouse(fake, "mouseReleased"));
+        expect(pointerCounters.get(fake)).toMatchObject(ONE_HOLD);
+    });
+
+    it("holds the screencast once across retries", async () => {
+        const { fake, runtime } = setup({ renderGated: true, dropMoves: 3, frameDown: true });
+
+        await runTool(inputClick, { target: { uid: "1_1" } }, extra(), runtime);
+
+        expect(pointerCounters.get(fake)).toMatchObject(ONE_HOLD);
+    });
+
+    it("stops the screencast when delivery fails", async () => {
+        const { fake, runtime } = setup({ renderGated: true, dropMoves: 1000, frameDown: true });
+        const result = await withFakeTime(() =>
+            runTool(inputClick, { target: { uid: "1_1" } }, extra(), runtime));
+
+        expect(result.isError).toBe(true);
+        expect(pointerCounters.get(fake)).toMatchObject(ONE_HOLD);
+        expect(indexOfMethod(fake, "Page.stopScreencast")).toBeGreaterThan(
+            lastIndexWhere(fake, (call) => call.method === "Input.dispatchMouseEvent"),
+        );
+    });
+
+    it("stops the screencast when the point is covered", async () => {
+        const { fake, runtime } = setup({
+            renderGated: true,
+            innerHit   : { kind: "covered", tag: "div", id: "veil", classes: [] },
+        });
+        const result = await runTool(inputClick, { target: { uid: "1_1" } }, extra(), runtime);
+
+        expect(result.isError).toBe(true);
+        expect(pointerCounters.get(fake)).toMatchObject(ONE_HOLD);
+    });
+
+    it("holds rendering for hover", async () => {
+        const { fake, runtime } = setup({ renderGated: true });
+        const result = await runTool(inputHover, { target: { uid: "1_1" } }, extra(), runtime);
+
+        expect(result.isError).not.toBe(true);
+        expect(pointerCounters.get(fake)).toMatchObject({ ...ONE_HOLD });
+    });
+
+    it("does not start a screencast for an element in the same process", async () => {
+        const { fake, runtime } = setup();
+
+        const [uid] = runtime.elements.assign("tab1", [{ backendNodeId: 101 }]);
+        const target = { uid: uid as string };
+        const result = await runTool(inputClick, { target }, extra(), runtime);
+
+        expect(result.isError).not.toBe(true);
+        expect(mouseEvents(fake)).toHaveLength(3);
+        expect(pointerCounters.get(fake)).toMatchObject(NO_HOLD);
+    });
+
+    it("reports the visibility of the top document in the diagnostics", async () => {
+        const { runtime } = setup({ dropMoves: 1000, frameDown: true });
+        const result = await withFakeTime(() =>
+            runTool(inputClick, { target: { uid: "1_1" } }, extra(), runtime));
+
+        expect(JSON.stringify(result.content)).toMatch(/landed=\S+ visibility=(hidden|visible)/);
+    });
+});
