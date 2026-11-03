@@ -33,28 +33,19 @@ export function elicitationConfirmer(server: Server): Confirmer {
     };
 }
 
+type SendArguments = Parameters<DaemonAccess["send"]>;
+
 export function confirmedAccess(access: DaemonAccess): DaemonAccess {
+    const send = (...[tab, method, params, timeoutMs, frame, options]: SendArguments) =>
+        access.send(tab, method, params, timeoutMs, frame, { ...options, confirmed: true });
+
     return new Proxy(access, {
         get(target, property) {
-            if (property === "send") {
-                return (
-                    tab       : string,
-                    method    : string,
-                    params?   : Record<string, unknown>,
-                    timeoutMs?: number,
-                    frame?    : string,
-                    options?  : { signal?: AbortSignal },
-                ) => target.send(tab, method, params, timeoutMs, frame, {
-                    ...options,
-                    confirmed: true,
-                });
-            }
+            if (property === "send") return send;
 
             const value: unknown = Reflect.get(target, property, target);
 
-            return typeof value === "function"
-                ? (value as (...args: unknown[]) => unknown).bind(target)
-                : value;
+            return typeof value === "function" ? value.bind(target) : value;
         },
     });
 }

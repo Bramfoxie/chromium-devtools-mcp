@@ -4,44 +4,33 @@ import type { AnyTool } from "./define-tool.js";
 import { isRestricted } from "../safety/index.js";
 import { checkSafety, type SafetyAccess, type SafetyDecision, type SafetyFrame } from "./safety.js";
 import { safetyFrameOf } from "./safety-frame.js";
+import { accessFor, dangerousFor, tabUrlExemptFor } from "./tool-traits.js";
 
 type Admission =
     | { admitted: true; confirmed: boolean }
     | { admitted: false; message: string };
 
-function selectedTab(args: unknown, runtime: ToolRuntime): string | undefined {
+function explicitTab(args: unknown): string | undefined {
     const argTab = (args as { tab?: unknown } | null)?.tab;
 
-    if (typeof argTab === "string" && argTab.length > 0) return argTab;
+    return typeof argTab === "string" && argTab.length > 0 ? argTab : undefined;
+}
 
-    return runtime.tabs.selected();
+function selectedTab(args: unknown, runtime: ToolRuntime): string | undefined {
+    return explicitTab(args) ?? runtime.tabs.selected();
 }
 
 async function resolveTabUrl(
     args   : unknown,
     runtime: ToolRuntime,
 ): Promise<string | undefined> {
-    const argTab = (args as { tab?: unknown } | null)?.tab;
+    const tab = selectedTab(args, runtime);
 
-    if (typeof argTab === "string" && argTab.length > 0) {
-        const tabs = await runtime.access.listTabs("owned");
-        const known = tabs.find((tab) => tab.targetId === argTab);
+    if (tab === undefined) return undefined;
 
-        return known?.url;
-    }
+    const tabs = await runtime.access.listTabs("owned");
 
-    if (runtime.tabs.selected() !== undefined) {
-        const tabs = await runtime.access.listTabs("owned");
-        const known = tabs.find((tab) => tab.targetId === runtime.tabs.selected());
-
-        return known?.url;
-    }
-
-    return undefined;
-}
-
-function evaluated<T>(value: T | ((args: unknown) => T), args: unknown): T {
-    return typeof value === "function" ? (value as (args: unknown) => T)(args) : value;
+    return tabs.find((known) => known.targetId === tab)?.url;
 }
 
 function refusal(decision: Extract<SafetyDecision, { allowed: false }>): Admission {
@@ -55,8 +44,8 @@ export function admit(
     signal : AbortSignal,
     runtime: ToolRuntime,
 ): Admission | Promise<Admission> {
-    const access: SafetyAccess = evaluated(tool.access, args);
-    const dangerous = evaluated(tool.dangerous ?? false, args);
+    const access = accessFor(tool, args);
+    const dangerous = dangerousFor(tool, args);
 
     if (access === "mutate" || (dangerous && runtime.config.safety.confirmDangerous)) {
         return admitWithChecks(tool, args, signal, runtime, access, dangerous);
@@ -75,7 +64,7 @@ async function admitWithChecks(
     access   : SafetyAccess,
     dangerous: boolean,
 ): Promise<Admission> {
-    const exempt = evaluated(tool.tabUrlExempt ?? false, args);
+    const exempt = tabUrlExemptFor(tool, args);
     let tabUrl: string | undefined;
 
     if (access === "mutate" && isRestricted(runtime.config.safety.allowedDomains) && !exempt) {

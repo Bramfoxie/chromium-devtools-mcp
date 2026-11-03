@@ -9,6 +9,7 @@ import type { AnyTool } from "./define-tool.js";
 import { ToolRuntime } from "./context.js";
 import { admit } from "./gate.js";
 import { ToolError, toToolMessage } from "./errors.js";
+import { accessFor, mayBeDangerous, mayMutate } from "./tool-traits.js";
 import { errorResult, jsonResult } from "./result.js";
 import { logDaemon } from "../util/log.js";
 import { SessionResetError } from "../mcp/index.js";
@@ -34,13 +35,10 @@ export function toolAnnotations(tool: AnyTool): {
     destructiveHint: boolean;
     openWorldHint  : boolean;
 } {
-    const mutate = typeof tool.access === "function" ? true : tool.access === "mutate";
-    const dangerous = typeof tool.dangerous === "function" ? true : (tool.dangerous ?? false);
-
     return {
         title          : tool.name,
-        readOnlyHint   : !mutate,
-        destructiveHint: dangerous,
+        readOnlyHint   : !mayMutate(tool),
+        destructiveHint: mayBeDangerous(tool),
         openWorldHint  : tool.closedWorld !== true,
     };
 }
@@ -111,7 +109,7 @@ export async function runTool(
         const output = await raceWithSignal(
             tool.handler(parsed.data, runtime.context(extra.signal, admission.confirmed)),
             extra.signal,
-            (typeof tool.access === "function" ? tool.access(parsed.data) : tool.access) === "mutate"
+            accessFor(tool, parsed.data) === "mutate"
                 ? CANCELLED_MUTATING_MESSAGE
                 : CANCELLED_MESSAGE,
         );
