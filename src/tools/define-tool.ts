@@ -2,6 +2,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import type { Config } from "../config/index.js";
 import type { DaemonAccess } from "../mcp/index.js";
+import type { ArtifactStore } from "./artifacts.js";
 import type { CaptureManager } from "./capture/manager.js";
 import type { DialogState } from "./dialogs.js";
 import type { ElementRegistry } from "./element-target.js";
@@ -51,6 +52,7 @@ export interface ToolContext {
     mock     : InterceptionManager;
     emulation: EmulationState;
     upload   : UploadEnvironment;
+    artifacts: ArtifactStore;
     config   : Config;
     clock    : ToolClock;
     signal   : AbortSignal;

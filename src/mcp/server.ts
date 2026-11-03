@@ -4,6 +4,11 @@ import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { pathFor, type Config } from "../config/index.js";
+import {
+    type ArtifactStore,
+    DirectoryArtifactStore,
+    nodeArtifactIO,
+} from "../tools/artifacts.js";
 import { elicitationConfirmer } from "../tools/confirmation.js";
 import { allTools, registerTools, ToolRuntime } from "../tools/index.js";
 import { DaemonAccess } from "./daemon-access.js";
@@ -57,6 +62,12 @@ export function daemonLogFile(layout: DaemonLayout): string {
     const p = pathFor(layout.platform);
 
     return p.join(p.dirname(layout.tokenFile), "daemon.log");
+}
+
+export function artifactsDir(layout: DaemonLayout): string {
+    const p = pathFor(layout.platform);
+
+    return p.join(p.dirname(layout.tokenFile), "artifacts");
 }
 
 export function daemonScriptPath(here: string = import.meta.url): string {
@@ -142,8 +153,9 @@ export function createMcpServer(version: string): McpServer {
 }
 
 export interface ToolServerOptions {
-    access?: DaemonAccess;
-    tools? : typeof allTools;
+    access?   : DaemonAccess;
+    tools?    : typeof allTools;
+    artifacts?: ArtifactStore;
 }
 
 export function registerServerTools(
@@ -157,6 +169,7 @@ export function registerServerTools(
         access,
         config,
         confirm: elicitationConfirmer(server.server),
+        ...(options.artifacts === undefined ? {} : { artifacts: options.artifacts }),
     });
 
     runtime.attach();
@@ -177,7 +190,14 @@ export async function runMcpServer(
         clientName: () => connectedClientName(server),
     });
 
-    registerServerTools(server, config, link);
+    const layout = currentLayout();
+
+    registerServerTools(server, config, link, {
+        artifacts: new DirectoryArtifactStore({
+            dir: artifactsDir(layout),
+            io : nodeArtifactIO(layout.platform, layout.uid),
+        }),
+    });
     let finish: () => void = () => undefined;
     const done = new Promise<void>((resolve) => {
         finish = resolve;

@@ -5,6 +5,7 @@ import { CaptureManager } from "./capture/manager.js";
 import type { KnownTab, ToolClock, ToolContext } from "./define-tool.js";
 import { DialogState } from "./dialogs.js";
 import { ElementRegistry } from "./element-target.js";
+import { type ArtifactStore, noArtifacts } from "./artifacts.js";
 import { EmulationState } from "./emulation/state.js";
 import { nodeUploadEnvironment, type UploadEnvironment } from "./upload-environment.js";
 import { FocusEmulation } from "./focus-emulation.js";
@@ -59,6 +60,7 @@ interface ToolRuntimeOptions {
     mock?     : InterceptionManager;
     emulation?: EmulationState;
     upload?   : UploadEnvironment;
+    artifacts?: ArtifactStore;
     confirm?  : Confirmer;
 }
 
@@ -75,6 +77,7 @@ export class ToolRuntime {
     readonly mock     : InterceptionManager;
     readonly emulation: EmulationState;
     readonly upload   : UploadEnvironment;
+    readonly artifacts: ArtifactStore;
     readonly confirm  : Confirmer | undefined;
 
     constructor(options: ToolRuntimeOptions) {
@@ -100,6 +103,7 @@ export class ToolRuntime {
             new InterceptionManager({ access: options.access, clock: this.clock });
         this.emulation = options.emulation ?? new EmulationState();
         this.upload = options.upload ?? nodeUploadEnvironment();
+        this.artifacts = options.artifacts ?? noArtifacts;
         this.confirm = options.confirm;
     }
 
@@ -163,6 +167,7 @@ export class ToolRuntime {
             mock     : this.mock,
             emulation: this.emulation,
             upload   : this.upload,
+            artifacts: this.artifacts,
             config   : this.config,
             clock    : this.clock,
             signal,

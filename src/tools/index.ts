@@ -133,3 +133,12 @@ export { checkNetworkInput, conditionsOf, emulateNetwork } from "./emulation/emu
 export { emulateGeolocation } from "./emulation/emulate-geolocation.js";
 
 export { checkAcceptLanguage, emulateLocale, hasLocaleSelection } from "./emulation/emulate-locale.js";
+
+export {
+    type ArtifactFile,
+    type ArtifactIO,
+    type ArtifactStore,
+    DirectoryArtifactStore,
+    nodeArtifactIO,
+    noArtifacts,
+} from "./artifacts.js";
