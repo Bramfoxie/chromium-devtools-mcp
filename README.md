@@ -10,7 +10,7 @@ An MCP server that lets AI agents drive Chrome through the DevTools Protocol, ei
 
 - Works with the browser you already use (attach) or with a persistent managed profile. No bundled browser, no fresh profile per run.
 - One per-user daemon serves several MCP clients at once, each in its own session, optionally in an isolated browser context.
-- Never steals focus: tabs open in the background and input does not raise windows.
+- Never steals focus: tabs open in the background and input does not raise windows. `bring_to_front` exists for the moment you ask to see a tab and works only with `allowFocus` on.
 - Reaches into shadow DOM and cross-site iframes from every element tool.
 - Safety options for agents: read-only mode, domain allowlist, confirmation of dangerous actions.
 
@@ -67,11 +67,11 @@ Compared against Chrome DevTools MCP 1.12.0 (2026-10-22, [ChromeDevTools/chrome-
 
 ## Tools
 
-35 tools. Details and parameters are in [docs/tools.md](docs/tools.md).
+36 tools. Details and parameters are in [docs/tools.md](docs/tools.md).
 
 | Category    | Tools                                                                                                            |
 | ----------- | ---------------------------------------------------------------------------------------------------------------- |
-| Tabs        | `list_tabs`, `list_sessions`, `select_tab`, `new_tab`, `close_tab`                                               |
+| Tabs        | `list_tabs`, `list_sessions`, `select_tab`, `new_tab`, `close_tab`, `bring_to_front`                             |
 | Pages       | `page_info`, `page_navigate`, `page_wait`, `page_dialogs`, `page_metrics`, `page_pdf`                            |
 | Inspection  | `dom_query`, `dom_snapshot`, `css_inspect`, `js_evaluate`, `screenshot`                                          |
 | Input       | `click`, `input_click`, `input_hover`, `input_type`, `input_key`, `input_scroll`, `input_select`, `input_upload` |

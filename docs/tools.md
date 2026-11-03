@@ -9,6 +9,7 @@ Every tool with its behavior. Element targeting is in [frames-and-shadow-dom.md]
 - `select_tab`: select an owned tab, claiming an available one when needed. Never focuses it.
 - `new_tab`: open a background tab and select it. With a `url` it waits for the page to commit and load, for at most `timeoutMs` (default 30000), and returns the committed `url` and `title`, `waited` (`load`, `timeout` or `none`), the document `readyState` and the HTTP `status` when observed. A download, an empty 204 response or a network error does not fail the call: the tab stays open, on `about:blank` for a download or a 204 and on the browser error page for a network error, and `navigationError` says why. The tab is never brought to the front.
 - `close_tab`: close a tab opened by this session.
+- `bring_to_front`: bring a tab and its window to the front and take the keyboard focus. It is the only tool that does, and it works only when `allowFocus` is on (off by default); otherwise it refuses and says so. It acts on the given tab or the selected one, does not change the selection, and in read-only mode or on a tab outside `safety.allowedDomains` it is refused like other state changing tools. Use it only when the user asked to see the tab.
 - `page_info`: read the URL, title, viewport, scroll position and emulation state of a tab.
 - `page_navigate`: open a URL, go back or forward, or reload, waiting for the page to load. Back and forward refuse a history entry that is not an http, https or about:blank page.
 

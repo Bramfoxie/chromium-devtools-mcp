@@ -113,7 +113,10 @@ export interface Env {
     stop(): Promise<void>;
 }
 
-export async function startEnv(safety?: Config["safety"]): Promise<Env> {
+export async function startEnv(
+    safety?: Config["safety"],
+    allowFocus = false,
+): Promise<Env> {
     const harness = createSocketHarness();
     const home = await mkdtemp(path.join(os.tmpdir(), "cdm-it-home-"));
     const profile = await mkdtemp(path.join(os.tmpdir(), "cdm-it-profile-"));
@@ -126,7 +129,7 @@ export async function startEnv(safety?: Config["safety"]): Promise<Env> {
         headless  : true,
         profileDir: profile,
         debugPort : port,
-        allowFocus: false,
+        allowFocus,
         isolated  : true,
         safety    : safety ?? { readOnly: false, allowedDomains: [], confirmDangerous: false },
     };

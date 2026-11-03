@@ -66,6 +66,8 @@ export { navigationWaitReduce, navigationWaitStart } from "./page-navigate-wait.
 
 export { PAGE_STATE_EXPRESSION } from "./page-navigate-state.js";
 
+export { bringToFront } from "./bring-to-front.js";
+
 export { closeTab, listSessions, listTabs, newTab, selectTab } from "./tabs.js";
 
 export { boxOf, ElementRegistry, elementTargetSchema, MAX_UIDS_PER_TAB, rectOfQuad, resolveElement, revealElement, splitPierceChain, STALE_UID_MESSAGE, withElement } from "./element-target.js";

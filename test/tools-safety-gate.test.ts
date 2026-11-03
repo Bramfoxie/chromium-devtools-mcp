@@ -37,6 +37,7 @@ const MUTATING: Case[] = [
     ["new_tab", {}],
     ["select_tab", { tab: "tab1" }],
     ["close_tab", { tab: "tab1" }],
+    ["bring_to_front", { tab: "tab1" }],
     ["page_navigate", { url: "https://example.com/" }],
     ["js_evaluate", { expression: "1" }],
     ["page_wait", { expression: "true" }],

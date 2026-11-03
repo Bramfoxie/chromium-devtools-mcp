@@ -94,13 +94,14 @@ const readOnly: Config = {
 };
 
 describe("tool declarations", () => {
-    it("declares thirty five tools with unique names, descriptions and access", () => {
+    it("declares thirty six tools with unique names, descriptions and access", () => {
         expect(allTools.map((tool) => tool.name)).toEqual([
             "list_tabs",
             "list_sessions",
             "select_tab",
             "new_tab",
             "close_tab",
+            "bring_to_front",
             "page_info",
             "page_navigate",
             "js_evaluate",
@@ -146,6 +147,7 @@ describe("tool declarations", () => {
         const mutate = allTools.filter((tool) => tool.access === "mutate").map((tool) => tool.name);
 
         expect(mutate.sort()).toEqual([
+            "bring_to_front",
             "click",
             "close_tab",
             "emulate_device",
@@ -322,6 +324,7 @@ describe("tool declarations", () => {
 
 describe("open world annotation", () => {
     const CLOSED = [
+        "bring_to_front",
         "close_tab",
         "emulate_device",
         "emulate_locale",
@@ -569,7 +572,7 @@ describe("runTool", () => {
 });
 
 describe("tools/list", () => {
-    it("lists exactly the thirty five tools with their schemas", async () => {
+    it("lists exactly the thirty six tools with their schemas", async () => {
         const server = createMcpServer("1.0.0");
 
         registerTools({ server, tools: allTools, runtime: runtime() });
@@ -585,6 +588,7 @@ describe("tools/list", () => {
             "select_tab",
             "new_tab",
             "close_tab",
+            "bring_to_front",
             "page_info",
             "page_navigate",
             "js_evaluate",

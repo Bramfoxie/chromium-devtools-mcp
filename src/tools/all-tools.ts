@@ -1,3 +1,4 @@
+import { bringToFront } from "./bring-to-front.js";
 import { consoleLogs } from "./console-logs.js";
 import { cssInspect } from "./css-inspect.js";
 import type { AnyTool } from "./define-tool.js";
@@ -34,6 +35,7 @@ export const allTools: AnyTool[] = [
     selectTab,
     newTab,
     closeTab,
+    bringToFront,
     pageInfo,
     pageNavigate,
     jsEvaluate,
