@@ -9,6 +9,7 @@ import { ToolError } from "./errors.js";
 import { exceptionText } from "./js-evaluate.js";
 import { throwIfCancelled } from "./registry.js";
 import { elementCollector } from "./walk-script.js";
+import { resolveTab, tabSchema } from "./tab-target.js";
 
 const WAIT_DEFAULT_TIMEOUT_MS = 10_000;
 
@@ -452,7 +453,7 @@ export const pageWait = defineTool({
     dangerous: (args) => args.expression !== undefined,
     summarize: (args) => `It runs this script in the page: ${(args.expression ?? "").slice(0, 300)}`,
     input    : z.strictObject({
-        tab       : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
+        tab       : tabSchema,
         selector  : conditionSchema.shape.selector,
         state     : conditionSchema.shape.state,
         text      : conditionSchema.shape.text,
@@ -474,11 +475,7 @@ export const pageWait = defineTool({
         detail   : z.unknown().describe("Debugging detail: match counts, the URL, or the ready state. A pierce selector wait visits at most 20000 elements and sets capped in the detail when it stopped early."),
     }),
     handler: async (args, context) => {
-        const targetId = args.tab ?? context.state.selected;
-
-        if (targetId === undefined) {
-            throw new ToolError("No tab is selected. Open one with new_tab first.");
-        }
+        const targetId = resolveTab(args, context);
 
         const conditionArgs: WaitCondition = {
             selector  : args.selector,

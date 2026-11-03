@@ -6,6 +6,7 @@ import { ToolError } from "./errors.js";
 import { assertPageAllowed } from "./page-allowed.js";
 import { throwIfCancelled } from "./registry.js";
 import { itemsSchema, pageLocation } from "./storage-read.js";
+import { resolveTab, tabSchema } from "./tab-target.js";
 
 const WRITE_MAX_ENTRIES = 100;
 
@@ -116,7 +117,7 @@ export const storageWrite = defineTool({
     dangerous: true,
     summarize: (args) => `It will ${args.action} ${args.kind} of the page origin.`,
     input    : z.strictObject({
-        tab    : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
+        tab    : tabSchema,
         kind   : z.enum(["local", "session", "cookies"]).describe("What to write."),
         action : z.enum(["set", "remove", "clear"]).describe("What to do."),
         entries: z.record(z.string().min(1).max(WRITE_MAX_KEY_CHARS), z.string().max(WRITE_MAX_VALUE_CHARS)).optional().describe("Entries to set, for local and session. At most 100."),
@@ -135,11 +136,7 @@ export const storageWrite = defineTool({
         effect   : z.string().describe("Short summary of what happened. Never carries values."),
     }),
     handler: async (args, context) => {
-        const targetId = args.tab ?? context.state.selected;
-
-        if (targetId === undefined) {
-            throw new ToolError("No tab is selected. Open one with new_tab first.");
-        }
+        const targetId = resolveTab(args, context);
 
         if (args.kind === "cookies") {
             if (args.entries !== undefined || args.keys !== undefined) {

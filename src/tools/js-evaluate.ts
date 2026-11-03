@@ -15,6 +15,7 @@ import { ToolError } from "./errors.js";
 import { truncateText } from "./result.js";
 import { stackTraceSchema } from "./cdp-schemas.js";
 import { releaseQuietly } from "./remote-objects.js";
+import { resolveTab, tabSchema } from "./tab-target.js";
 
 const EVALUATE_DEFAULT_TIMEOUT_MS = 10_000;
 
@@ -180,7 +181,7 @@ export const jsEvaluate = defineTool({
     dangerous: true,
     summarize: (args) => `It runs this script in the page: ${args.expression.slice(0, 300)}`,
     input    : z.strictObject({
-        tab           : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
+        tab           : tabSchema,
         expression    : z.string().min(1).max(EVALUATE_MAX_EXPRESSION_CHARS).describe("JavaScript expression to evaluate."),
         awaitPromise  : z.boolean().optional().describe("Await a promise result. Defaults to true."),
         timeoutMs     : z.number().int().min(1).max(EVALUATE_MAX_TIMEOUT_MS).optional().describe("How long to wait for the result. Defaults to 10000 ms."),
@@ -191,11 +192,7 @@ export const jsEvaluate = defineTool({
     }),
     output : evaluatedOutput,
     handler: async (args, context) => {
-        const targetId = args.tab ?? context.state.selected;
-
-        if (targetId === undefined) {
-            throw new ToolError("No tab is selected. Open one with new_tab first.");
-        }
+        const targetId = resolveTab(args, context);
 
         await ensureNoDialog(context.dialogs, targetId);
 

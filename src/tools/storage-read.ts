@@ -5,6 +5,7 @@ import { ensureNoDialog } from "./dialogs.js";
 import { ToolError } from "./errors.js";
 import { throwIfCancelled } from "./registry.js";
 import { truncateText } from "./result.js";
+import { resolveTab, tabSchema } from "./tab-target.js";
 
 const STORAGE_MAX_ENTRIES = 1000;
 
@@ -255,7 +256,7 @@ export const storageRead = defineTool({
     summarize: (args) =>
         `It reads the cookies of the page${args.includeValues === true ? ", including their values" : ""}.`,
     input: z.strictObject({
-        tab          : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
+        tab          : tabSchema,
         kind         : z.enum(["local", "session", "cookies"]).describe("What to read."),
         keys         : z.array(z.string().min(1).max(STORAGE_MAX_KEY_CHARS)).max(STORAGE_MAX_KEYS).optional().describe("Storage keys to read, for local and session. Defaults to all."),
         maxEntries   : z.number().int().min(1).max(STORAGE_MAX_ENTRIES).optional().describe("Maximum entries to return. Defaults to 100."),
@@ -264,11 +265,7 @@ export const storageRead = defineTool({
     }),
     output : storageOutput,
     handler: async (args, context) => {
-        const targetId = args.tab ?? context.state.selected;
-
-        if (targetId === undefined) {
-            throw new ToolError("No tab is selected. Open one with new_tab first.");
-        }
+        const targetId = resolveTab(args, context);
 
         if (args.kind === "cookies" && args.keys !== undefined) {
             throw new ToolError("keys only applies to local and session storage, not to cookies.");

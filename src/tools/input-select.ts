@@ -12,6 +12,7 @@ import {
 import { ToolError } from "./errors.js";
 import { changedUrl, navigationOf, summarizeTarget, targetSummarySchema } from "./input-click.js";
 import { throwIfCancelled } from "./registry.js";
+import { resolveTab, tabSchema } from "./tab-target.js";
 
 export const SELECT_OPTIONS_LIMIT = 50;
 
@@ -179,7 +180,7 @@ export const inputSelect = defineTool({
         "Choose options of a select element by value, label or index, firing input and change.",
     access: "mutate",
     input : z.strictObject({
-        tab    : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
+        tab    : tabSchema,
         target : elementTargetSchema.describe("Element uid from a snapshot or query, or a CSS selector. Must resolve to a select."),
         values : z.array(z.string().max(500)).max(100).optional().describe("Option values to select, exactly one of values, labels or indexes."),
         labels : z.array(z.string().max(500)).max(100).optional().describe("Visible option labels to select, exactly one of values, labels or indexes."),
@@ -207,11 +208,7 @@ export const inputSelect = defineTool({
         urlAfter: z.string().optional().describe("URL after the selection, present only when the page navigated."),
     }),
     handler: async (args, context) => {
-        const targetId = args.tab ?? context.state.selected;
-
-        if (targetId === undefined) {
-            throw new ToolError("No tab is selected. Open one with new_tab first.");
-        }
+        const targetId = resolveTab(args, context);
 
         throwIfCancelled(context.signal);
 

@@ -13,6 +13,7 @@ import { ToolError } from "./errors.js";
 import { changedUrl, navigationOf, summarizeTarget, targetSummarySchema } from "./input-click.js";
 import { throwIfCancelled } from "./registry.js";
 import type { UploadEnvironment } from "./upload-environment.js";
+import { resolveTab, tabSchema } from "./tab-target.js";
 
 const UPLOAD_MAX_FILES = 20;
 
@@ -128,7 +129,7 @@ export const inputUpload = defineTool({
     dangerous: true,
     summarize: (args) => `It sends these local files to the page: ${args.files.slice(0, 5).join(", ")}${args.files.length > 5 ? ", ..." : ""}`,
     input    : z.strictObject({
-        tab   : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
+        tab   : tabSchema,
         target: elementTargetSchema.describe("Element uid from a snapshot or query, or a CSS selector. Must resolve to an input of type file."),
         files : z.array(z.string().min(1).max(4096)).min(1).max(UPLOAD_MAX_FILES).describe("Absolute local paths to attach, at most 20. Each must be a readable file under 100 MiB."),
     }),
@@ -143,11 +144,7 @@ export const inputUpload = defineTool({
         urlAfter: z.string().optional().describe("URL after the upload, present only when the page navigated."),
     }),
     handler: async (args, context) => {
-        const targetId = args.tab ?? context.state.selected;
-
-        if (targetId === undefined) {
-            throw new ToolError("No tab is selected. Open one with new_tab first.");
-        }
+        const targetId = resolveTab(args, context);
 
         throwIfCancelled(context.signal);
 

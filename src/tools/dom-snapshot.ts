@@ -8,6 +8,7 @@ import { ToolError } from "./errors.js";
 import { bindAccess } from "./frame-scope.js";
 import { truncateText } from "./result.js";
 import { releaseQuietly } from "./remote-objects.js";
+import { resolveTab, tabSchema } from "./tab-target.js";
 
 const SNAPSHOT_DEFAULT_CHARS = 50_000;
 
@@ -209,7 +210,7 @@ export const domSnapshot = defineTool({
         "Read a compact text snapshot of the page with element ids for later calls. Take a new snapshot after the page changes. It reads at most 20000 accessibility nodes, at most 50 levels deep, and the DOM to 10 levels; truncated reports when a cap applied.",
     access: "read",
     input : z.strictObject({
-        tab            : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
+        tab            : tabSchema,
         maxChars       : z.number().int().min(1).max(SNAPSHOT_MAX_CHARS).optional().describe("Maximum characters of the snapshot text. Defaults to 50000."),
         interactiveOnly: z.boolean().optional().describe("List only interactive elements. Defaults to false."),
         root           : elementTargetSchema.optional().describe("Limit the snapshot to the subtree of this element."),
@@ -232,11 +233,7 @@ export const domSnapshot = defineTool({
         })).describe("Frames of the tab in tree order, starting with the main frame."),
     }),
     handler: async (args, context) => {
-        const targetId = args.tab ?? context.state.selected;
-
-        if (targetId === undefined) {
-            throw new ToolError("No tab is selected. Open one with new_tab first.");
-        }
+        const targetId = resolveTab(args, context);
 
         await ensureNoDialog(context.dialogs, targetId);
 

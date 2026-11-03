@@ -4,6 +4,7 @@ import { ensureNoDialog } from "./dialogs.js";
 import { selectionOf } from "./tabs.js";
 import { emulationSummarySchema, summarizeEmulation } from "./emulation/summary.js";
 import { ToolError } from "./errors.js";
+import { resolveTab, tabSchema } from "./tab-target.js";
 
 const PAGE_INFO_TIMEOUT_MS = 5000;
 
@@ -53,7 +54,7 @@ export const pageInfo = defineTool({
     description: "Read the URL, title, viewport and scroll position of a tab.",
     access     : "read",
     input      : z.strictObject({
-        tab: z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
+        tab: tabSchema,
     }),
     output: z.strictObject({
         tab       : z.string().describe("Tab id."),
@@ -77,11 +78,7 @@ export const pageInfo = defineTool({
         emulation: emulationSummarySchema.optional().describe("Emulation overrides active on the tab, when any."),
     }),
     handler: async (args, context) => {
-        const targetId = args.tab ?? context.state.selected;
-
-        if (targetId === undefined) {
-            throw new ToolError("No tab is selected. Open one with new_tab first.");
-        }
+        const targetId = resolveTab(args, context);
 
         await ensureNoDialog(context.dialogs, targetId);
 

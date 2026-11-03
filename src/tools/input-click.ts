@@ -28,6 +28,7 @@ import {
 import { ToolError } from "./errors.js";
 import { KEY_MODIFIERS, modifiersMask } from "./keys.js";
 import { throwIfCancelled } from "./registry.js";
+import { resolveTab, tabSchema } from "./tab-target.js";
 
 const CLICK_EXPRESSION = `function (element, scroll) {
   if (scroll) element.scrollIntoView({ block: "center", inline: "center" });
@@ -258,7 +259,7 @@ export const click = defineTool({
         "Click an element at the DOM level with element.click() semantics, without moving the mouse.",
     access: "mutate",
     input : z.strictObject({
-        tab           : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
+        tab           : tabSchema,
         target        : elementTargetSchema.describe("Element uid from a snapshot or query, or a CSS selector."),
         scrollIntoView: z.boolean().optional().describe("Scroll the element into view first. Defaults to true."),
     }),
@@ -269,11 +270,7 @@ export const click = defineTool({
         urlAfter: z.string().optional().describe("URL after the click, present only when the click navigated."),
     }),
     handler: async (args, context) => {
-        const targetId = args.tab ?? context.state.selected;
-
-        if (targetId === undefined) {
-            throw new ToolError("No tab is selected. Open one with new_tab first.");
-        }
+        const targetId = resolveTab(args, context);
 
         throwIfCancelled(context.signal);
 
@@ -327,7 +324,7 @@ export const inputClick = defineTool({
         "Click at an element with trusted CDP mouse events, like a real user, without focusing the window.",
     access: "mutate",
     input : z.strictObject({
-        tab       : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
+        tab       : tabSchema,
         target    : elementTargetSchema.describe("Element uid from a snapshot or query, or a CSS selector."),
         button    : z.enum(MOUSE_BUTTONS).optional().describe("Mouse button. Defaults to left."),
         clickCount: z.number().int().min(1).max(CLICK_COUNT_MAX).optional().describe("How many clicks in a row, 1 to 3. Defaults to 1."),
@@ -342,11 +339,7 @@ export const inputClick = defineTool({
         urlAfter: z.string().optional().describe("URL after the click, present only when the click navigated."),
     }),
     handler: async (args, context) => {
-        const targetId = args.tab ?? context.state.selected;
-
-        if (targetId === undefined) {
-            throw new ToolError("No tab is selected. Open one with new_tab first.");
-        }
+        const targetId = resolveTab(args, context);
 
         throwIfCancelled(context.signal);
 
@@ -458,7 +451,7 @@ export const inputHover = defineTool({
         "Hover an element with trusted CDP mouse events, so hover styles and menus react.",
     access: "mutate",
     input : z.strictObject({
-        tab     : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
+        tab     : tabSchema,
         target  : elementTargetSchema.describe("Element uid from a snapshot or query, or a CSS selector."),
         position: positionSchema.optional().describe("Offset in CSS pixels from the top left corner of the element. Defaults to the center."),
         force   : z.boolean().optional().describe("Skip the hit test and hover through a covering element. Defaults to false."),
@@ -470,11 +463,7 @@ export const inputHover = defineTool({
         hovered: z.boolean().describe("Whether element.matches(':hover') is true now."),
     }),
     handler: async (args, context) => {
-        const targetId = args.tab ?? context.state.selected;
-
-        if (targetId === undefined) {
-            throw new ToolError("No tab is selected. Open one with new_tab first.");
-        }
+        const targetId = resolveTab(args, context);
 
         throwIfCancelled(context.signal);
 

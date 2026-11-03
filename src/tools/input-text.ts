@@ -18,6 +18,7 @@ import {
     parseKeyChord,
 } from "./keys.js";
 import { throwIfCancelled } from "./registry.js";
+import { resolveTab, tabSchema } from "./tab-target.js";
 
 const TYPE_MAX_CHARS = 20000;
 
@@ -188,7 +189,7 @@ export const inputType = defineTool({
         "Type text into a field with trusted input events, focusing it first without clicking.",
     access: "mutate",
     input : z.strictObject({
-        tab    : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
+        tab    : tabSchema,
         text   : z.string().min(1).max(TYPE_MAX_CHARS).describe("Text to type, up to 20000 characters."),
         target : elementTargetSchema.optional().describe("Element uid from a snapshot or query, or a CSS selector. Omit to type into the focused element."),
         clear  : z.boolean().optional().describe("Select all and delete in the field first. Defaults to false."),
@@ -205,11 +206,7 @@ export const inputType = defineTool({
         urlAfter   : z.string().optional().describe("URL after typing, present only when the page navigated, for example after submit."),
     }),
     handler: async (args, context) => {
-        const targetId = args.tab ?? context.state.selected;
-
-        if (targetId === undefined) {
-            throw new ToolError("No tab is selected. Open one with new_tab first.");
-        }
+        const targetId = resolveTab(args, context);
 
         throwIfCancelled(context.signal);
 
@@ -374,7 +371,7 @@ export const inputKey = defineTool({
         "Press a key or chord like Enter or ControlOrMeta+C with trusted CDP key events.",
     access: "mutate",
     input : z.strictObject({
-        tab   : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
+        tab   : tabSchema,
         key   : z.string().min(1).max(64).describe("Key or chord, for example Enter, Tab, Control+A, ControlOrMeta+C, Shift++ (a trailing plus names the plus key)."),
         target: elementTargetSchema.optional().describe("Element uid from a snapshot or query, or a CSS selector. The element is focused first; omit to press into the focused element."),
         repeat: z.number().int().min(1).max(KEY_REPEAT_MAX).optional().describe("How many times to press, 1 to 20. Modifiers are held across repeats. Defaults to 1."),
@@ -387,11 +384,7 @@ export const inputKey = defineTool({
         urlAfter: z.string().optional().describe("URL after the press, present only when the press navigated."),
     }),
     handler: async (args, context) => {
-        const targetId = args.tab ?? context.state.selected;
-
-        if (targetId === undefined) {
-            throw new ToolError("No tab is selected. Open one with new_tab first.");
-        }
+        const targetId = resolveTab(args, context);
 
         const parsed = parseKeyChord(args.key);
         const repeat = args.repeat ?? 1;

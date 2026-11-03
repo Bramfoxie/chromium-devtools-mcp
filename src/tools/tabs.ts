@@ -5,6 +5,7 @@ import { parkIfForbidden } from "./final-url.js";
 import { ToolError } from "./errors.js";
 import { NAVIGATE_DEFAULT_TIMEOUT_MS, NAVIGATE_MAX_TIMEOUT_MS, loadInTab, type TabLoad } from "./page-navigate.js";
 import { truncateText } from "./result.js";
+import { resolveTab } from "./tab-target.js";
 
 const TAB_URL_MAX_CHARS = 2000;
 const TAB_TITLE_MAX_CHARS = 500;
@@ -23,10 +24,6 @@ export function selectionOf(tabs: Array<{ targetId: string }>, selected: string 
     return selected !== undefined && tabs.some((tab) => tab.targetId === selected)
         ? selected
         : undefined;
-}
-
-function noTabError(): ToolError {
-    return new ToolError("No tab is selected. Open one with new_tab first.");
 }
 
 export const newTab = defineTool({
@@ -222,9 +219,7 @@ export const closeTab = defineTool({
         selected: z.string().nullable().describe("Id of the newly selected tab, if any."),
     }),
     handler: async (args, context) => {
-        const targetId = args.tab ?? context.state.selected;
-
-        if (targetId === undefined) throw noTabError();
+        const targetId = resolveTab(args, context);
 
         try {
             await context.access.closeTab(targetId);

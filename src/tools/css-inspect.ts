@@ -6,6 +6,7 @@ import { elementAccess, elementTargetSchema, resolveElement } from "./element-ta
 import { ToolError } from "./errors.js";
 import { frameChain, mapRect, measureChain } from "./frame-geometry.js";
 import { releaseQuietly } from "./remote-objects.js";
+import { resolveTab, tabSchema } from "./tab-target.js";
 
 const CSS_MAX_RULES_DEFAULT = 30;
 
@@ -289,7 +290,7 @@ export const cssInspect = defineTool({
     description: "Read the computed style, matched CSS rules and box of an element. The box is null for an element without a rendered box, such as display none.",
     access     : "read",
     input      : z.strictObject({
-        tab                : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
+        tab                : tabSchema,
         target             : elementTargetSchema.describe("Element uid from a snapshot or query, or a CSS selector."),
         properties         : z.array(z.string().min(1).max(64)).max(100).optional().describe("Computed style properties to return. Defaults to a curated layout and typography list."),
         includeMatchedRules: z.boolean().optional().describe("Include the matched CSS rules. Defaults to true."),
@@ -325,11 +326,7 @@ export const cssInspect = defineTool({
         droppedWinners: z.array(z.string()).describe("Properties whose winning declaration is in a rule dropped by maxRules."),
     }),
     handler: async (args, context) => {
-        const targetId = args.tab ?? context.state.selected;
-
-        if (targetId === undefined) {
-            throw new ToolError("No tab is selected. Open one with new_tab first.");
-        }
+        const targetId = resolveTab(args, context);
 
         await ensureNoDialog(context.dialogs, targetId);
 

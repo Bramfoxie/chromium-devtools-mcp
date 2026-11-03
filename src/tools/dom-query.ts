@@ -9,6 +9,7 @@ import { bindAccess, isolatedDocumentNode } from "./frame-scope.js";
 import { elementCollector } from "./walk-script.js";
 import { documentSchema, nodeIdSchema, resolvedSchema } from "./cdp-schemas.js";
 import { releaseGroupQuietly, releaseQuietly } from "./remote-objects.js";
+import { resolveTab, tabSchema } from "./tab-target.js";
 
 const QUERY_DEFAULT_LIMIT = 20;
 
@@ -197,7 +198,7 @@ export const domQuery = defineTool({
     description: "Find elements by a CSS selector and read their text, attributes and boxes. Total counts every match in the page; the text filter scans at most the first 2000 matches and pierce visits at most 20000 elements; truncated reports when more matches exist than returned or a cap applied.",
     access     : "read",
     input      : z.strictObject({
-        tab       : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
+        tab       : tabSchema,
         selector  : z.string().min(1).max(1024).describe("CSS selector to match. Use >>> to chain through shadow roots, for example my-app >>> #inner."),
         all       : z.boolean().optional().describe("Return up to limit matches instead of one. Defaults to false."),
         limit     : z.number().int().min(1).max(QUERY_MAX_LIMIT).optional().describe("Maximum matches to return. Defaults to 20 with all and to 1 without it."),
@@ -214,11 +215,7 @@ export const domQuery = defineTool({
         truncated: z.boolean().describe("True when total is larger than the matches returned, the text filter looked at only the first 2000 selector matches, or a pierce walk stopped after 20000 elements."),
     }),
     handler: async (args, context) => {
-        const targetId = args.tab ?? context.state.selected;
-
-        if (targetId === undefined) {
-            throw new ToolError("No tab is selected. Open one with new_tab first.");
-        }
+        const targetId = resolveTab(args, context);
 
         await ensureNoDialog(context.dialogs, targetId);
 

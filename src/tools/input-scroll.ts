@@ -14,6 +14,7 @@ import { ToolError } from "./errors.js";
 import { frameChain, revealChain } from "./frame-geometry.js";
 import { summarizeTarget, targetSummarySchema } from "./input-click.js";
 import { throwIfCancelled } from "./registry.js";
+import { resolveTab, tabSchema } from "./tab-target.js";
 
 const SCROLL_DELTA_MAX = 20000;
 
@@ -164,7 +165,7 @@ export const inputScroll = defineTool({
         "Scroll the page by wheel deltas, to an edge, or an element into view, with trusted wheel events.",
     access: "mutate",
     input : z.strictObject({
-        tab   : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
+        tab   : tabSchema,
         target: elementTargetSchema.optional().describe("Element uid from a snapshot or query, or a CSS selector. Scrolls it into view; combine with block."),
         block : z.enum(SCROLL_BLOCKS).optional().describe("Vertical alignment inside the viewport when scrolling to an element. Defaults to center."),
         deltaX: z.number().int().min(-SCROLL_DELTA_MAX).max(SCROLL_DELTA_MAX).optional().describe("Horizontal pixels to scroll, negative scrolls left."),
@@ -207,11 +208,7 @@ export const inputScroll = defineTool({
         maxY  : z.number().describe("Maximum vertical scroll position."),
     }),
     handler: async (args, context) => {
-        const targetId = args.tab ?? context.state.selected;
-
-        if (targetId === undefined) {
-            throw new ToolError("No tab is selected. Open one with new_tab first.");
-        }
+        const targetId = resolveTab(args, context);
 
         throwIfCancelled(context.signal);
 

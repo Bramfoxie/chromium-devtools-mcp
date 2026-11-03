@@ -2,6 +2,7 @@ import { z } from "zod";
 import { defineTool, type ToolContext } from "./define-tool.js";
 import { ensureNoDialog } from "./dialogs.js";
 import { ToolError } from "./errors.js";
+import { resolveTab, tabSchema } from "./tab-target.js";
 
 const METRICS_TIMEOUT_MS = 5000;
 
@@ -137,7 +138,7 @@ export const pageMetrics = defineTool({
     description: "Read performance counters, layout metrics and navigation timing of a tab.",
     access     : "read",
     input      : z.strictObject({
-        tab: z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
+        tab: tabSchema,
     }),
     output: z.strictObject({
         tab        : z.string().describe("Tab id."),
@@ -146,11 +147,7 @@ export const pageMetrics = defineTool({
         navigation : navigationOutput.optional().describe("Navigation timing, when the page reports it."),
     }),
     handler: async (args, context) => {
-        const targetId = args.tab ?? context.state.selected;
-
-        if (targetId === undefined) {
-            throw new ToolError("No tab is selected. Open one with new_tab first.");
-        }
+        const targetId = resolveTab(args, context);
 
         await ensureNoDialog(context.dialogs, targetId);
 

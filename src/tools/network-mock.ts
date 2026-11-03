@@ -16,6 +16,7 @@ import {
     type RuleInput,
 } from "./mock/interception.js";
 import { throwIfCancelled } from "./registry.js";
+import { resolveTab, tabSchema } from "./tab-target.js";
 
 const MOCK_METHOD_MAX_CHARS = 32;
 
@@ -168,7 +169,7 @@ export const networkMock = defineTool({
     access: (args: unknown) =>
         (args as { action?: unknown } | null)?.action === "list" ? "read" : "mutate",
     input: z.strictObject({
-        tab   : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
+        tab   : tabSchema,
         action: z.enum(["add", "remove", "list", "clear"]).describe("What to do."),
         rule  : addSchema.optional().describe("Rule to add, for the add action."),
         id    : z.string().min(1).max(64).optional().describe("Rule id, for the remove action."),
@@ -180,11 +181,7 @@ export const networkMock = defineTool({
         rules : z.array(ruleSchema).describe("Active rules in insertion order."),
     }),
     handler: async (args, context) => {
-        const targetId = args.tab ?? context.state.selected;
-
-        if (targetId === undefined) {
-            throw new ToolError("No tab is selected. Open one with new_tab first.");
-        }
+        const targetId = resolveTab(args, context);
 
         throwIfCancelled(context.signal);
 

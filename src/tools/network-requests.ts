@@ -2,6 +2,7 @@ import { z } from "zod";
 import { type NetworkFilter, type UrlPattern, compileUrlPattern } from "./capture/network-log.js";
 import { defineTool } from "./define-tool.js";
 import { ToolError } from "./errors.js";
+import { resolveTab, tabSchema } from "./tab-target.js";
 
 const NETWORK_REQUESTS_DEFAULT_LIMIT = 50;
 
@@ -81,7 +82,7 @@ export const networkRequests = defineTool({
         "Read HTTP requests of a tab since network capture started. Sensitive query values and header values are replaced by [redacted].",
     access: "read",
     input : z.strictObject({
-        tab           : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
+        tab           : tabSchema,
         urlContains   : z.string().min(1).max(NETWORK_URL_CONTAINS_MAX_CHARS).optional().describe("Keep only URLs containing this text."),
         urlRegex      : z.string().min(1).max(NETWORK_URL_REGEX_MAX_CHARS).optional().describe("Keep only URLs matching this regular expression, up to 200 characters. A match that takes longer than 50 ms is stopped and fails the call."),
         methods       : listOf("Keep only these HTTP methods."),
@@ -103,11 +104,7 @@ export const networkRequests = defineTool({
         totalBuffered: z.number().describe("Records currently buffered for the tab."),
     }),
     handler: async (args, context) => {
-        const targetId = args.tab ?? context.state.selected;
-
-        if (targetId === undefined) {
-            throw new ToolError("No tab is selected. Open one with new_tab first.");
-        }
+        const targetId = resolveTab(args, context);
 
         const filter = networkFilterOf(args);
 

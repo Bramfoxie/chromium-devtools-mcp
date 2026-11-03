@@ -15,6 +15,7 @@ import { holdRendering } from "./hold-rendering.js";
 import { frameChain, mapRect, measureChain, revealChain, settleRendering } from "./frame-geometry.js";
 import { type ImageSize, imageSize } from "./image-size.js";
 import { binaryResult, imageBlock } from "./result.js";
+import { resolveTab, tabSchema } from "./tab-target.js";
 
 const SCREENSHOT_DEFAULT_QUALITY = 80;
 
@@ -290,7 +291,7 @@ export const screenshot = defineTool({
     access: (args: unknown) =>
         (args as { target?: unknown } | null)?.target === undefined ? "read" : "mutate",
     input: z.strictObject({
-        tab         : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
+        tab         : tabSchema,
         format      : z.enum(["png", "jpeg", "webp"]).optional().describe("Image format. Defaults to jpeg."),
         quality     : z.number().int().min(1).max(100).optional().describe("Quality for jpeg and webp. Defaults to 80."),
         fullPage    : z.boolean().optional().describe("Capture beyond the viewport. Defaults to false."),
@@ -316,11 +317,7 @@ export const screenshot = defineTool({
         return binaryResult(small, imageBlock({ data, mimeType }));
     },
     handler: async (args, context) => {
-        const targetId = args.tab ?? context.state.selected;
-
-        if (targetId === undefined) {
-            throw new ToolError("No tab is selected. Open one with new_tab first.");
-        }
+        const targetId = resolveTab(args, context);
 
         return holdRendering(context.access, targetId, async () => {
             const format = args.format ?? "jpeg";

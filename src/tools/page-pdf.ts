@@ -4,6 +4,7 @@ import { defineTool } from "./define-tool.js";
 import { ToolError } from "./errors.js";
 import { binaryResult, resourceBlock } from "./result.js";
 import { formatByteLimit } from "./screenshot.js";
+import { resolveTab, tabSchema } from "./tab-target.js";
 
 const PDF_DEFAULT_MAX_BYTES = 8 * 1024 * 1024;
 
@@ -67,7 +68,7 @@ export const pagePdf = defineTool({
         "Print a tab to PDF. Needs a headless managed browser when the headed browser refuses to print.",
     access: "read",
     input : z.strictObject({
-        tab              : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
+        tab              : tabSchema,
         landscape        : z.boolean().optional().describe("Use landscape orientation. Defaults to false."),
         printBackground  : z.boolean().optional().describe("Print background graphics. Defaults to true."),
         scale            : z.number().min(0.1).max(2).optional().describe("Scale factor. Defaults to 1."),
@@ -90,11 +91,7 @@ export const pagePdf = defineTool({
         return binaryResult({ ...small, uri }, resourceBlock(uri, { data, mimeType }));
     },
     handler: async (args, context) => {
-        const targetId = args.tab ?? context.state.selected;
-
-        if (targetId === undefined) {
-            throw new ToolError("No tab is selected. Open one with new_tab first.");
-        }
+        const targetId = resolveTab(args, context);
 
         const maxBytes = args.maxBytes ?? PDF_DEFAULT_MAX_BYTES;
         const margins = {

@@ -7,6 +7,7 @@ import { DomainRefusal, requireAllowedFinalUrl } from "./final-url.js";
 import { describeUrlHost, isRestricted, isUrlAllowed } from "../safety/index.js";
 import { ToolError } from "./errors.js";
 import { throwIfCancelled } from "./registry.js";
+import { resolveTab, tabSchema } from "./tab-target.js";
 
 export const NAVIGATE_DEFAULT_TIMEOUT_MS = 30_000;
 
@@ -238,7 +239,7 @@ export const pageNavigate = defineTool({
         "Navigate a tab to a URL, back, forward or reload it, waiting for the page to load.",
     access: "mutate",
     input : z.strictObject({
-        tab        : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
+        tab        : tabSchema,
         action     : z.enum(["url", "back", "forward", "reload"]).optional().describe("What to do. Defaults to url."),
         url        : z.string().min(1).max(2048).optional().describe("URL to open, http, https or about:blank. Required for the url action."),
         waitUntil  : waitUntilSchema.optional().describe("Wait for the load event, DOMContentLoaded, or return at once. Defaults to load."),
@@ -262,11 +263,7 @@ export const pageNavigate = defineTool({
             : undefined,
     tabUrlExempt: (args) => (args.action ?? "url") === "url",
     handler     : async (args, context) => {
-        const targetId = args.tab ?? context.state.selected;
-
-        if (targetId === undefined) {
-            throw new ToolError("No tab is selected. Open one with new_tab first.");
-        }
+        const targetId = resolveTab(args, context);
 
         const action = args.action ?? "url";
 

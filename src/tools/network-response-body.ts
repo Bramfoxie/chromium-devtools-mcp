@@ -4,6 +4,7 @@ import { MAX_RESPONSE_BYTES, RESULT_TOO_LARGE_MESSAGE } from "../daemon/protocol
 import { defineTool } from "./define-tool.js";
 import { ToolError } from "./errors.js";
 import { truncateText } from "./result.js";
+import { resolveTab, tabSchema } from "./tab-target.js";
 
 const RESPONSE_BODY_DEFAULT_CHARS = 50_000;
 
@@ -35,7 +36,7 @@ export const networkResponseBody = defineTool({
         "Read the response body of a request from network_requests. Binary bodies need asBase64.",
     access: "read",
     input : z.strictObject({
-        tab      : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
+        tab      : tabSchema,
         requestId: z.number().int().min(1).describe("Record id from network_requests."),
         maxChars : z.number().int().min(1).max(RESPONSE_BODY_MAX_CHARS).optional().describe("Maximum characters of the returned body. Defaults to 50000."),
         asBase64 : z.boolean().optional().describe("Return binary content as base64. Defaults to false."),
@@ -52,11 +53,7 @@ export const networkResponseBody = defineTool({
         needsBase64: z.boolean().optional().describe("True when the body is binary and asBase64 was not set."),
     }),
     handler: async (args, context) => {
-        const targetId = args.tab ?? context.state.selected;
-
-        if (targetId === undefined) {
-            throw new ToolError("No tab is selected. Open one with new_tab first.");
-        }
+        const targetId = resolveTab(args, context);
 
         await context.capture.ensureNetwork(targetId);
 
