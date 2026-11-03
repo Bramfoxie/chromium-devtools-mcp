@@ -12,6 +12,12 @@ import { readToken } from "./token.js";
 
 const helloSchema = z.object({ daemon: identitySchema });
 
+export function helloIdentity(client: IpcClient): DaemonIdentity | undefined {
+    const hello = helloSchema.safeParse(client.helloResult);
+
+    return hello.success ? hello.data.daemon : undefined;
+}
+
 export interface ConnectToDaemonOptions {
     clientName       : string;
     expect?          : DaemonIdentity;

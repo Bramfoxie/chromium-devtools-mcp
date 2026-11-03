@@ -13,6 +13,8 @@ export {
 export {
     type DaemonIdentity,
     daemonIdentity,
+    describeIdentity,
+    describeSettings,
 } from "./identity.js";
 
 export {
@@ -37,6 +39,7 @@ export {
 
 export {
     connectToDaemon,
+    helloIdentity,
 } from "./daemon-client.js";
 
 export {

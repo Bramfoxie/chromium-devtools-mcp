@@ -13,6 +13,14 @@ How the per-user daemon, sessions, browser modes and attach setup work.
 - Its log is `daemon.log` in the data directory of the package: `~/Library/Application Support/chromium-devtools-mcp/daemon.log` on macOS, `~/.local/share/chromium-devtools-mcp/daemon.log` on Linux and `%LOCALAPPDATA%\chromium-devtools-mcp\daemon.log` on Windows. The access token `daemon.token` lives in the same directory and is readable only by you.
 - Tabs can open only `http`, `https` and `about:blank` URLs.
 
+## Commands
+
+- `chromium-devtools-mcp daemon status` prints whether the daemon runs, its state (`starting`, `waiting` or `ready`), the browser and mode, the waiting message when there is one, its settings and the log file. It exits with 0 when the daemon runs and 1 when it does not.
+- `chromium-devtools-mcp daemon stop` asks the daemon to stop and waits until its socket is gone, for up to 30 seconds. It stops the same way as on a signal, so a managed browser the daemon launched is closed. It exits with 0 also when no daemon runs, and with 1 when the daemon is still there after the wait.
+- `chromium-devtools-mcp daemon logs` prints the last 100 lines of `daemon.log`; `--lines <count>` takes a number from 1 to 10000. The file exists only when an MCP client started the daemon; a daemon started by hand with `chromium-devtools-mcp daemon` writes to its own terminal.
+
+These commands talk to the daemon of the current user and take no browser settings. `chromium-devtools-mcp daemon` with options still runs the daemon.
+
 ## Attach mode setup
 
 - A recent Chrome: open `chrome://inspect/#remote-debugging` and turn on remote debugging for this browser instance. Chrome may ask you to allow a connection; click Allow.

@@ -318,3 +318,34 @@ describe("config file errors", () => {
         expect(served).toEqual([]);
     });
 });
+
+describe("daemon subcommands", () => {
+    it.each([
+        [["daemon", "status"], "status", []],
+        [["daemon", "stop"], "stop", []],
+        [["daemon", "logs", "--lines", "5"], "logs", ["--lines", "5"]],
+    ])("routes %j to the control command", async (argv, subcommand, rest) => {
+        const control = vi.fn(async () => 7);
+        const { run, served } = harness({ control });
+
+        expect(await run(argv)).toBe(7);
+        expect(control).toHaveBeenCalledWith(subcommand, rest);
+        expect(served).toEqual([]);
+    });
+
+    it("still runs the daemon for options", async () => {
+        const control = vi.fn(async () => 0);
+        const outcome: DaemonOutcome = { reason: "requested" };
+        const run = vi.fn(
+            async (): Promise<RunningDaemon> => ({
+                done: Promise.resolve(outcome),
+                stop: async () => outcome,
+            }),
+        );
+        const { run: invoke } = harness({ control, run });
+
+        expect(await invoke(["daemon", "--mode", "managed"])).toBe(0);
+        expect(control).not.toHaveBeenCalled();
+        expect(run).toHaveBeenCalledTimes(1);
+    });
+});

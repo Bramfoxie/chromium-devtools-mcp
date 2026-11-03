@@ -56,3 +56,10 @@ export function describeIdentity(
 ): string {
     return fields.map((field) => `${field} ${String(identity[field] ?? "unset")}`).join(", ");
 }
+
+export function describeSettings(identity: DaemonIdentity): string {
+    return describeIdentity(
+        identity,
+        FIELDS.filter((field) => identity[field] !== undefined),
+    );
+}

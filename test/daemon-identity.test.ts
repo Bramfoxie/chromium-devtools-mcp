@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { daemonIdentity, differingFields } from "../src/daemon/identity.js";
+import { daemonIdentity, describeSettings, differingFields } from "../src/daemon/identity.js";
 
 const attach = {
     browser   : "chrome",
@@ -28,5 +28,16 @@ describe("daemon identity with an explicit endpoint", () => {
         expect(differingFields(first, second)).toEqual(["wsEndpoint"]);
         expect(differingFields(first, daemonIdentity(attach))).toEqual(["wsEndpoint"]);
         expect(differingFields(first, first)).toEqual([]);
+    });
+});
+
+describe("describing the settings of a daemon", () => {
+    it("lists only the settings that are set", () => {
+        expect(describeSettings(daemonIdentity(attach))).toBe(
+            "browser chrome, mode attach, debugPort 9222, allowFocus false",
+        );
+        expect(describeSettings(daemonIdentity({ ...attach, mode: "managed" }))).toBe(
+            "browser chrome, mode managed, debugPort 9222, allowFocus false, headless false, profileDir /p",
+        );
     });
 });
