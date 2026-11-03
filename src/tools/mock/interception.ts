@@ -112,17 +112,43 @@ function pausedOf(params: unknown): PausedRequest | undefined {
     };
 }
 
+type PatternToken = { kind: "star" } | { kind: "any" } | { kind: "char"; value: string };
+
+function tokenize(pattern: string): PatternToken[] {
+    const tokens: PatternToken[] = [];
+
+    for (let index = 0; index < pattern.length; index += 1) {
+        const char = pattern[index] as string;
+
+        if (char === "\\" && index + 1 < pattern.length) {
+            index += 1;
+            tokens.push({ kind: "char", value: pattern[index] as string });
+        } else if (char === "*") {
+            tokens.push({ kind: "star" });
+        } else if (char === "?") {
+            tokens.push({ kind: "any" });
+        } else {
+            tokens.push({ kind: "char", value: char });
+        }
+    }
+
+    return tokens;
+}
+
 export function matchWildcard(pattern: string, value: string): boolean {
+    const tokens = tokenize(pattern);
     let pi = 0;
     let vi = 0;
     let star = -1;
     let mark = 0;
 
     while (vi < value.length) {
-        if (pi < pattern.length && (pattern[pi] === "?" || pattern[pi] === value[vi])) {
+        const token = tokens[pi];
+
+        if (token !== undefined && (token.kind === "any" || (token.kind === "char" && token.value === value[vi]))) {
             pi += 1;
             vi += 1;
-        } else if (pi < pattern.length && pattern[pi] === "*") {
+        } else if (token?.kind === "star") {
             star = pi;
             mark = vi;
             pi += 1;
@@ -135,9 +161,9 @@ export function matchWildcard(pattern: string, value: string): boolean {
         }
     }
 
-    while (pi < pattern.length && pattern[pi] === "*") pi += 1;
+    while (tokens[pi]?.kind === "star") pi += 1;
 
-    return pi === pattern.length;
+    return pi === tokens.length;
 }
 
 export function ruleMatches(

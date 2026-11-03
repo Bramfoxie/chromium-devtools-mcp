@@ -26,6 +26,15 @@ describe("matchWildcard", () => {
         expect(matchWildcard("*.example/file?.json", "https://a.example/file12.json")).toBe(false);
     });
 
+    it("honors the backslash escape of wildcard characters", () => {
+        expect(matchWildcard("https://a.example/a\\*b", "https://a.example/a*b")).toBe(true);
+        expect(matchWildcard("https://a.example/a\\*b", "https://a.example/axxb")).toBe(false);
+        expect(matchWildcard("https://a.example/a\\?b", "https://a.example/a?b")).toBe(true);
+        expect(matchWildcard("https://a.example/a\\?b", "https://a.example/axb")).toBe(false);
+        expect(matchWildcard("a\\\\b", "a\\b")).toBe(true);
+        expect(matchWildcard("a\\", "a\\")).toBe(true);
+    });
+
     it("treats regex characters as literals", () => {
         expect(matchWildcard("https://a.example/a+b", "https://a.example/a+b")).toBe(true);
         expect(matchWildcard("https://a.example/a+b", "https://a.example/aab")).toBe(false);

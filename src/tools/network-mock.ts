@@ -70,7 +70,7 @@ const failSchema = z.strictObject({
 });
 
 const addSchema = z.strictObject({
-    urlPattern  : z.string().min(1).max(MOCK_URL_PATTERN_MAX_CHARS).describe("Fetch wildcard pattern with * and ?."),
+    urlPattern  : z.string().min(1).max(MOCK_URL_PATTERN_MAX_CHARS).describe("Fetch wildcard pattern with * and ?, where a backslash escapes the next character."),
     method      : z.string().min(1).max(MOCK_METHOD_MAX_CHARS).optional().describe("HTTP method filter, case insensitive."),
     resourceType: z.string().min(1).max(MOCK_RESOURCE_TYPE_MAX_CHARS).optional().describe("CDP resource type filter."),
     response    : responseSchema.optional().describe("Mocked response, exactly one of response and fail."),

@@ -34,7 +34,7 @@ Every tool with its behavior. Element targeting is in [frames-and-shadow-dom.md]
 
 - `network_requests`: read HTTP requests of a tab with URL, method, resource type, status and failure filters.
 - `network_response_body`: read the response body of a request from `network_requests`. Binary bodies need `asBase64`; without it the result has `needsBase64: true` and no body. `maxChars` defaults to 50000 and allows up to 500000; a base64 body is cut at a multiple of 4 characters and always keeps at least 4. Bodies over the 32 MiB transport limit are refused. Redirect responses have no body.
-- `network_mock`: mock responses or fail requests by Fetch wildcard pattern, with delay and a use count. First match in insertion order wins.
+- `network_mock`: mock responses or fail requests by Fetch wildcard pattern (`*`, `?` and the `\` escape), with delay and a use count. First match in insertion order wins.
 - `console_logs`: read console messages, uncaught exceptions and browser messages of a tab, with level and text filters, paging and clear.
 - `page_dialogs`: see and resolve JavaScript dialogs, or set an automatic accept or dismiss policy for later ones.
 - `page_wait`: wait for a selector, text, URL, load state or expression. A timeout returns `met: false`, not an error.
