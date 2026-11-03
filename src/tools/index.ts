@@ -176,14 +176,11 @@ export {
     shapeRemoteValue,
 } from "./js-evaluate.js";
 
-export {
-    NAVIGATE_DEFAULT_TIMEOUT_MS,
-    NAVIGATE_MAX_TIMEOUT_MS,
-    navigationWaitReduce,
-    navigationWaitStart,
-    PAGE_STATE_EXPRESSION,
-    pageNavigate,
-} from "./page-navigate.js";
+export { NAVIGATE_DEFAULT_TIMEOUT_MS, NAVIGATE_MAX_TIMEOUT_MS, pageNavigate } from "./page-navigate.js";
+
+export { navigationWaitReduce, navigationWaitStart } from "./page-navigate-wait.js";
+
+export { PAGE_STATE_EXPRESSION } from "./page-navigate-state.js";
 
 export { closeTab, listSessions, listTabs, newTab, selectTab, selectionOf } from "./tabs.js";
 

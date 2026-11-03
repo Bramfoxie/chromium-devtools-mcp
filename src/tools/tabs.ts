@@ -3,7 +3,8 @@ import { RpcError, ErrorCode, normalizeUrl } from "../daemon/index.js";
 import { defineTool } from "./define-tool.js";
 import { parkIfForbidden } from "./final-url.js";
 import { ToolError } from "./errors.js";
-import { NAVIGATE_DEFAULT_TIMEOUT_MS, NAVIGATE_MAX_TIMEOUT_MS, loadInTab, type TabLoad } from "./page-navigate.js";
+import { loadInTab, type TabLoad } from "./page-navigate-load.js";
+import { NAVIGATE_DEFAULT_TIMEOUT_MS, NAVIGATE_MAX_TIMEOUT_MS } from "./page-navigate.js";
 import { truncateText } from "./result.js";
 import { resolveTab } from "./tab-target.js";
 
