@@ -81,6 +81,8 @@ function minimalArgs(name: string): Record<string, unknown> {
             return { target: { selector: "input" }, files: ["/tmp/a.png"] };
         case "fill_form":
             return { fields: [{ target: { selector: "input" }, value: "x" }] };
+        case "input_drag":
+            return { from: { selector: "body" }, to: { x: 1, y: 1 } };
         default:
             return {};
     }
@@ -96,7 +98,7 @@ const readOnly: Config = {
 };
 
 describe("tool declarations", () => {
-    it("declares thirty seven tools with unique names, descriptions and access", () => {
+    it("declares thirty eight tools with unique names, descriptions and access", () => {
         expect(allTools.map((tool) => tool.name)).toEqual([
             "list_tabs",
             "list_sessions",
@@ -129,6 +131,7 @@ describe("tool declarations", () => {
             "click",
             "input_click",
             "input_hover",
+            "input_drag",
             "input_type",
             "input_key",
             "input_scroll",
@@ -159,6 +162,7 @@ describe("tool declarations", () => {
             "emulate_network",
             "fill_form",
             "input_click",
+            "input_drag",
             "input_hover",
             "input_key",
             "input_scroll",
@@ -576,7 +580,7 @@ describe("runTool", () => {
 });
 
 describe("tools/list", () => {
-    it("lists exactly the thirty seven tools with their schemas", async () => {
+    it("lists exactly the thirty eight tools with their schemas", async () => {
         const server = createMcpServer("1.0.0");
 
         registerTools({ server, tools: allTools, runtime: runtime() });
@@ -618,6 +622,7 @@ describe("tools/list", () => {
             "click",
             "input_click",
             "input_hover",
+            "input_drag",
             "input_type",
             "input_key",
             "input_scroll",

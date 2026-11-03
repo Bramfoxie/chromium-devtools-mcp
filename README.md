@@ -67,18 +67,18 @@ Compared against Chrome DevTools MCP 1.12.0 (2026-10-22, [ChromeDevTools/chrome-
 
 ## Tools
 
-37 tools. Details and parameters are in [docs/tools.md](docs/tools.md).
+38 tools. Details and parameters are in [docs/tools.md](docs/tools.md).
 
-| Category    | Tools                                                                                                                         |
-| ----------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| Tabs        | `list_tabs`, `list_sessions`, `select_tab`, `new_tab`, `close_tab`, `bring_to_front`                                          |
-| Pages       | `page_info`, `page_navigate`, `page_wait`, `page_dialogs`, `page_metrics`, `page_pdf`                                         |
-| Inspection  | `dom_query`, `dom_snapshot`, `css_inspect`, `js_evaluate`, `screenshot`                                                       |
-| Input       | `click`, `input_click`, `input_hover`, `input_type`, `input_key`, `input_scroll`, `input_select`, `input_upload`, `fill_form` |
-| Observation | `console_logs`, `network_requests`, `network_response_body`                                                                   |
-| Network     | `network_mock`                                                                                                                |
-| Storage     | `storage_read`, `storage_write`                                                                                               |
-| Emulation   | `list_devices`, `emulate_device`, `emulate_media`, `emulate_network`, `emulate_locale`                                        |
+| Category    | Tools                                                                                                                                       |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| Tabs        | `list_tabs`, `list_sessions`, `select_tab`, `new_tab`, `close_tab`, `bring_to_front`                                                        |
+| Pages       | `page_info`, `page_navigate`, `page_wait`, `page_dialogs`, `page_metrics`, `page_pdf`                                                       |
+| Inspection  | `dom_query`, `dom_snapshot`, `css_inspect`, `js_evaluate`, `screenshot`                                                                     |
+| Input       | `click`, `input_click`, `input_hover`, `input_drag`, `input_type`, `input_key`, `input_scroll`, `input_select`, `input_upload`, `fill_form` |
+| Observation | `console_logs`, `network_requests`, `network_response_body`                                                                                 |
+| Network     | `network_mock`                                                                                                                              |
+| Storage     | `storage_read`, `storage_write`                                                                                                             |
+| Emulation   | `list_devices`, `emulate_device`, `emulate_media`, `emulate_network`, `emulate_locale`                                                      |
 
 ## Safety
 

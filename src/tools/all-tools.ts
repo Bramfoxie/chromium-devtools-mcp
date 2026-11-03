@@ -10,6 +10,7 @@ import { emulateMedia } from "./emulation/emulate-media.js";
 import { emulateNetwork } from "./emulation/emulate-network.js";
 import { listDevices } from "./emulation/list-devices.js";
 import { click, inputClick, inputHover } from "./input-click.js";
+import { inputDrag } from "./input-drag.js";
 import { inputScroll } from "./input-scroll.js";
 import { inputSelect } from "./input-select.js";
 import { inputKey, inputType } from "./input-text.js";
@@ -62,6 +63,7 @@ export const allTools: AnyTool[] = [
     click,
     inputClick,
     inputHover,
+    inputDrag,
     inputType,
     inputKey,
     inputScroll,

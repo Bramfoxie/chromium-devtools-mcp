@@ -59,6 +59,7 @@ const MUTATING: Case[] = [
     ["input_select", { target: { selector: "select" }, indexes: [0] }],
     ["input_upload", { target: { selector: "input" }, files: ["/tmp/a.png"] }],
     ["fill_form", { fields: [{ target: { selector: "input" }, value: "x" }] }],
+    ["input_drag", { from: { selector: "body" }, to: { x: 1, y: 1 } }],
 ];
 
 const READING: Case[] = [
