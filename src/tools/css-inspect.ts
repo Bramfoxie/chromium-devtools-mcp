@@ -5,6 +5,7 @@ import { ensureNoDialog } from "./dialogs.js";
 import { elementAccess, elementTargetSchema, resolveElement } from "./element-target.js";
 import { ToolError } from "./errors.js";
 import { frameChain, mapRect, measureChain } from "./frame-geometry.js";
+import { releaseQuietly } from "./remote-objects.js";
 
 const CSS_MAX_RULES_DEFAULT = 30;
 
@@ -341,9 +342,7 @@ export const cssInspect = defineTool({
         );
         const owner = elementAccess(context.access, element);
 
-        await owner.send(targetId, "Runtime.releaseObject", {
-            objectId: element.objectId,
-        }).catch(() => undefined);
+        await releaseQuietly(owner, targetId, [element.objectId]);
 
         const wanted = args.properties ?? DEFAULT_CSS_PROPERTIES;
         const includeMatchedRules = args.includeMatchedRules ?? true;

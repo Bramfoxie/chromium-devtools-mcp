@@ -8,6 +8,7 @@ import { ToolError } from "./errors.js";
 import { bindAccess, isolatedDocumentNode } from "./frame-scope.js";
 import { elementCollector } from "./walk-script.js";
 import { documentSchema, nodeIdSchema, resolvedSchema } from "./cdp-schemas.js";
+import { releaseGroupQuietly, releaseQuietly } from "./remote-objects.js";
 
 const QUERY_DEFAULT_LIMIT = 20;
 
@@ -894,7 +895,7 @@ async function queryElements(
 
         return { queried, walkCapped, total };
     } finally {
-        await access.send(targetId, "Runtime.releaseObjectGroup", { objectGroup }).catch(() => undefined);
+        await releaseGroupQuietly(access, targetId, objectGroup);
     }
 }
 
@@ -969,9 +970,7 @@ async function chainedMatches(
 
             text = read.success ? (read.data.result.value ?? "") : "";
 
-            await context.access.send(targetId, "Runtime.releaseObject", {
-                objectId,
-            }).catch(() => undefined);
+            await releaseQuietly(context.access, targetId, [objectId]);
         }
 
         if (filter !== undefined && !text.toLowerCase().includes(filter.toLowerCase())) continue;

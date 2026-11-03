@@ -8,6 +8,7 @@ import { bindAccess, isolatedDocumentNode } from "./frame-scope.js";
 import type { FrameState } from "./frames.js";
 import { assertPageAllowed } from "./page-allowed.js";
 import { documentSchema, nodeIdSchema, quadSchema, resolvedSchema } from "./cdp-schemas.js";
+import { releaseQuietly } from "./remote-objects.js";
 
 const MAX_SELECTOR_LENGTH = 1024;
 
@@ -850,9 +851,7 @@ export async function withElement<T>(
 
         return await use(element);
     } finally {
-        await elementAccess(scope.access, element).send(tab, "Runtime.releaseObject", {
-            objectId: element.objectId,
-        }).catch(() => undefined);
+        await releaseQuietly(elementAccess(scope.access, element), tab, [element.objectId]);
     }
 }
 

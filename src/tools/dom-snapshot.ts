@@ -7,6 +7,7 @@ import { elementAccess, elementTargetSchema, resolveElement } from "./element-ta
 import { ToolError } from "./errors.js";
 import { bindAccess } from "./frame-scope.js";
 import { truncateText } from "./result.js";
+import { releaseQuietly } from "./remote-objects.js";
 
 const SNAPSHOT_DEFAULT_CHARS = 50_000;
 
@@ -264,9 +265,7 @@ export const domSnapshot = defineTool({
                 rootFrame = { frameId: root.frameId };
             }
 
-            await scoped.send(targetId, "Runtime.releaseObject", {
-                objectId: root.objectId,
-            }).catch(() => undefined);
+            await releaseQuietly(scoped, targetId, [root.objectId]);
         }
 
         const tree: unknown = backendNodeId === undefined

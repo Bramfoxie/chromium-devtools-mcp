@@ -14,6 +14,7 @@ import {
 import { ToolError } from "./errors.js";
 import { truncateText } from "./result.js";
 import { stackTraceSchema } from "./cdp-schemas.js";
+import { releaseQuietly } from "./remote-objects.js";
 
 const EVALUATE_DEFAULT_TIMEOUT_MS = 10_000;
 
@@ -240,7 +241,7 @@ export const jsEvaluate = defineTool({
         const parsed = evaluatedSchema.safeParse(result);
 
         if (!parsed.success) {
-            await releaseObjects(scope.access, targetId, [
+            await releaseQuietly(scope.access, targetId, [
                 looseObjectId(result),
                 elementObjectId,
             ]);
@@ -265,7 +266,7 @@ export const jsEvaluate = defineTool({
                 ? {}
                 : { columnNumber: exception.columnNumber };
 
-            await releaseObjects(scope.access, targetId, [
+            await releaseQuietly(scope.access, targetId, [
                 resultObjectId,
                 exceptionObjectId,
                 elementObjectId,
@@ -307,7 +308,7 @@ export const jsEvaluate = defineTool({
                 ...(shaped.value === undefined ? {} : { value: shaped.value }),
             };
         } finally {
-            await releaseObjects(scope.access, targetId, [resultObjectId, elementObjectId]);
+            await releaseQuietly(scope.access, targetId, [resultObjectId, elementObjectId]);
         }
     },
 });
@@ -332,18 +333,6 @@ function looseObjectId(response: unknown): string | undefined {
     const parsed = looseResultSchema.safeParse(response);
 
     return parsed.success ? parsed.data.result?.objectId : undefined;
-}
-
-async function releaseObjects(
-    access   : DaemonAccess,
-    targetId : string,
-    objectIds: Array<string | undefined>,
-): Promise<void> {
-    for (const objectId of objectIds) {
-        if (objectId === undefined) continue;
-
-        await access.send(targetId, "Runtime.releaseObject", { objectId }).catch(() => undefined);
-    }
 }
 
 const SERIALIZE_DECLARATION = "function(){return JSON.stringify(this)}";
@@ -441,7 +430,7 @@ async function settlePromise(
             { signal: request.deadline.signal },
         );
     } finally {
-        await releaseObjects(access, targetId, [promiseObjectId]);
+        await releaseQuietly(access, targetId, [promiseObjectId]);
     }
 }
 
@@ -500,7 +489,7 @@ async function evaluate(
             { signal: request.deadline.signal },
         );
     } catch (error) {
-        await releaseObjects(owner, targetId, [element.objectId]);
+        await releaseQuietly(owner, targetId, [element.objectId]);
 
         throw error;
     }
