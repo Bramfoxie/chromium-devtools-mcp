@@ -6,13 +6,10 @@ import type {
     ServerRequest,
 } from "@modelcontextprotocol/sdk/types.js";
 import type { AnyTool } from "./define-tool.js";
-import { confirmationRefusal } from "./confirmation.js";
 import { ToolRuntime } from "./context.js";
+import { admit } from "./gate.js";
 import { ToolError, toToolMessage } from "./errors.js";
 import { errorResult, jsonResult } from "./result.js";
-import { isRestricted } from "../safety/index.js";
-import { checkSafety, type SafetyAccess } from "./safety.js";
-import { safetyFrameOf } from "./safety-frame.js";
 import { SessionResetError } from "../mcp/index.js";
 
 export const CANCELLED_MESSAGE = "The request was cancelled. Call the tool again if needed.";
@@ -42,37 +39,6 @@ export function toolAnnotations(tool: AnyTool): {
         destructiveHint: dangerous,
         openWorldHint  : tool.closedWorld !== true,
     };
-}
-
-function selectedTab(args: unknown, runtime: ToolRuntime): string | undefined {
-    const argTab = (args as { tab?: unknown } | null)?.tab;
-
-    if (typeof argTab === "string" && argTab.length > 0) return argTab;
-
-    return runtime.tabs.selected();
-}
-
-async function resolveTabUrl(
-    args   : unknown,
-    runtime: ToolRuntime,
-): Promise<string | undefined> {
-    const argTab = (args as { tab?: unknown } | null)?.tab;
-
-    if (typeof argTab === "string" && argTab.length > 0) {
-        const tabs = await runtime.access.listTabs("owned");
-        const known = tabs.find((tab) => tab.targetId === argTab);
-
-        return known?.url;
-    }
-
-    if (runtime.tabs.selected() !== undefined) {
-        const tabs = await runtime.access.listTabs("owned");
-        const known = tabs.find((tab) => tab.targetId === runtime.tabs.selected());
-
-        return known?.url;
-    }
-
-    return undefined;
 }
 
 function raceWithSignal<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
@@ -130,67 +96,16 @@ export async function runTool(
 
     if (extra.signal.aborted) return errorResult(CANCELLED_MESSAGE);
 
-    const access: SafetyAccess = typeof tool.access === "function"
-        ? (tool.access as (args: unknown) => SafetyAccess)(parsed.data)
-        : tool.access;
-    const dangerous = typeof tool.dangerous === "function"
-        ? (tool.dangerous as (args: unknown) => boolean)(parsed.data)
-        : (tool.dangerous ?? false);
+    const verdict = admit(tool, parsed.data, extra.signal, runtime);
+    const admission = verdict instanceof Promise ? await verdict : verdict;
 
-    const exempt = typeof tool.tabUrlExempt === "function"
-        ? (tool.tabUrlExempt as (args: unknown) => boolean)(parsed.data)
-        : (tool.tabUrlExempt ?? false);
-    let tabUrl: string | undefined;
-
-    if (access === "mutate" && isRestricted(runtime.config.safety.allowedDomains) && !exempt) {
-        try {
-            tabUrl = await resolveTabUrl(parsed.data, runtime);
-        } catch {
-            return errorResult(
-                "The tab URL could not be read to check it against safety.allowedDomains. Call the tool again.",
-            );
-        }
-    }
-
-    const tab = access === "mutate" ? selectedTab(parsed.data, runtime) : undefined;
-    const frame = tab === undefined
-        ? undefined
-        : await safetyFrameOf(parsed.data, tab, runtime.elements, runtime.frames).catch(
-            () => undefined,
-        );
-    const decision = checkSafety({
-        tool  : tool.name,
-        access,
-        config: runtime.config,
-        target: tool.target?.(parsed.data as never),
-        tabUrl,
-        ...(frame === undefined ? {} : { frame }),
-        dangerous,
-    });
-
-    if (!decision.allowed) return errorResult(`${decision.reason} ${decision.hint}`);
-
-    const confirming = dangerous && runtime.config.safety.confirmDangerous;
-
-    if (confirming) {
-        const outcome = runtime.confirm === undefined
-            ? "unsupported" as const
-            : await runtime.confirm(
-                {
-                    tool   : tool.name,
-                    summary: tool.summarize?.(parsed.data as never) ?? "It can reach beyond the page.",
-                },
-                extra.signal,
-            );
-
-        if (outcome !== "accepted") return errorResult(confirmationRefusal(tool.name, outcome));
-    }
+    if (!admission.admitted) return errorResult(admission.message);
 
     const generation = runtime.access.sessionGeneration;
 
     try {
         const output = await raceWithSignal(
-            tool.handler(parsed.data, runtime.context(extra.signal, confirming)),
+            tool.handler(parsed.data, runtime.context(extra.signal, admission.confirmed)),
             extra.signal,
         );
         const validated = tool.output.safeParse(output);
