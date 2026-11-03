@@ -305,7 +305,7 @@ export const cssInspect = defineTool({
             styleSheetId: z.string().optional().describe("Style sheet id, when the rule comes from one."),
             declarations: z.array(z.strictObject({
                 name     : z.string().describe("Property name."),
-                value    : z.string().describe("Property value, clipped to 200 characters."),
+                value    : z.string().describe(`Property value, clipped to ${CSS_VALUE_CLIP} characters.`),
                 important: z.boolean().describe("Whether the declaration is important."),
                 winning  : z.boolean().describe("Whether this is the last declaration of its property in response order, which wins the cascade."),
             })).describe("Declarations of the rule in source order."),

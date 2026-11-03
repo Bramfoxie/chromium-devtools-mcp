@@ -1,6 +1,12 @@
 import type { DaemonAccess } from "../mcp/index.js";
 
-const SCREENCAST = { format: "jpeg", quality: 1, everyNthFrame: 1000 };
+const SCREENCAST_QUALITY = 1;
+const SCREENCAST_EVERY_NTH_FRAME = 1000;
+const SCREENCAST = {
+    format       : "jpeg",
+    quality      : SCREENCAST_QUALITY,
+    everyNthFrame: SCREENCAST_EVERY_NTH_FRAME,
+};
 
 export async function startRendering(
     access: DaemonAccess,

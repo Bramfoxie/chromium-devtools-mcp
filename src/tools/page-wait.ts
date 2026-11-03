@@ -19,6 +19,14 @@ const WAIT_DEFAULT_POLL_MS = 100;
 
 const WAIT_MIN_POLL_MS = 50;
 
+const WAIT_MAX_POLL_MS = 5000;
+
+const WAIT_MARGIN_MAX_MS = 5000;
+
+const WAIT_CANCEL_TIMEOUT_MS = 5000;
+
+const WAIT_READ_TIMEOUT_MS = 5000;
+
 const WAIT_MAX_SLEEP_MS = 60_000;
 
 const WAIT_NETWORK_IDLE_MS = 500;
@@ -256,7 +264,7 @@ async function runScript(
     token     : string,
     contextId?: number,
 ): Promise<{ met: boolean; elapsedMs: number; detail: unknown }> {
-    const margin = Math.min(5000, Math.floor(timeoutMs / 4) + 1000);
+    const margin = Math.min(WAIT_MARGIN_MAX_MS, Math.floor(timeoutMs / 4) + 1000);
     let result: unknown;
     const cancelInPage = (): Promise<unknown> => context.access.send(
         targetId,
@@ -265,7 +273,7 @@ async function runScript(
             expression: cancelWaitScript(token),
             ...(contextId === undefined ? {} : { contextId }),
         },
-        5000,
+        WAIT_CANCEL_TIMEOUT_MS,
     ).catch(() => undefined);
     const onAbort = (): void => { void cancelInPage(); };
 
@@ -329,7 +337,7 @@ async function evaluateString(
         targetId,
         "Runtime.evaluate",
         { expression, returnByValue: true },
-        5000,
+        WAIT_READ_TIMEOUT_MS,
     ).catch(() => undefined);
     const parsed = z.object({
         result: z.object({ value: z.unknown().optional() }),
@@ -462,8 +470,8 @@ export const pageWait = defineTool({
         loadState : conditionSchema.shape.loadState,
         expression: conditionSchema.shape.expression,
         ms        : conditionSchema.shape.ms,
-        timeoutMs : z.number().int().min(1).max(WAIT_MAX_TIMEOUT_MS).optional().describe("How long to wait. Defaults to 10000 ms."),
-        pollMs    : z.number().int().min(WAIT_MIN_POLL_MS).max(5000).optional().describe("Poll interval in ms. Defaults to 100."),
+        timeoutMs : z.number().int().min(1).max(WAIT_MAX_TIMEOUT_MS).optional().describe(`How long to wait. Defaults to ${WAIT_DEFAULT_TIMEOUT_MS} ms.`),
+        pollMs    : z.number().int().min(WAIT_MIN_POLL_MS).max(WAIT_MAX_POLL_MS).optional().describe("Poll interval in ms. Defaults to 100."),
         pierce    : z.boolean().optional().describe("Match the selector through open shadow roots. Only with a selector condition. Defaults to false."),
         frame     : z.string().min(1).max(MAX_FRAME_LENGTH).optional().describe("Frame id from dom_snapshot to wait in. Only with a selector condition. Defaults to the main frame."),
     }),

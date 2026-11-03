@@ -48,7 +48,7 @@ const cookiesSchema = z.object({ cookies: z.array(cookieSchema) });
 type StorageCookie = z.infer<typeof cookieSchema>;
 
 const entrySchema = z.strictObject({
-    key      : z.string().describe("Storage key, clipped to 200 characters."),
+    key      : z.string().describe(`Storage key, clipped to ${STORAGE_KEY_CLIP_CHARS} characters.`),
     value    : z.string().optional().describe("Value clipped to maxValueChars, present only with includeValues."),
     valueSize: z.number().describe("Full value length in characters."),
     truncated: z.boolean().describe("Whether the value was clipped."),
@@ -119,6 +119,8 @@ export function cookieMatchesUrl(
     );
 }
 
+const PAGE_LOCATION_TIMEOUT_MS = 5000;
+
 export async function pageLocation(
     access  : DaemonAccess,
     targetId: string,
@@ -127,7 +129,7 @@ export async function pageLocation(
         targetId,
         "Runtime.evaluate",
         { expression: "location.href", returnByValue: true },
-        5000,
+        PAGE_LOCATION_TIMEOUT_MS,
     );
     const parsed = evaluatedSchema.safeParse(result);
     const value = parsed.success ? parsed.data.result.value : undefined;

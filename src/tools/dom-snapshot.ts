@@ -222,7 +222,7 @@ export const domSnapshot = defineTool({
         generation: z.number().describe("Uid generation of the tab. Uids of older generations are stale."),
         nodeCount : z.number().describe("Nodes in the snapshot text."),
         omitted   : z.number().describe("Tree nodes left out of the text."),
-        truncated : z.boolean().describe("Whether the text was truncated at maxChars, the DOM was deeper than 10 levels, or the accessibility tree exceeded 20000 nodes or 50 levels."),
+        truncated : z.boolean().describe(`Whether the text was truncated at maxChars, the DOM was deeper than ${SNAPSHOT_DOM_DEPTH} levels, or the accessibility tree exceeded ${SNAPSHOT_MAX_AX_NODES} nodes or ${SNAPSHOT_MAX_AX_DEPTH} levels.`),
         frames    : z.array(z.strictObject({
             frameId  : z.string().describe("Frame id for the frame argument of element targets."),
             parent   : z.string().optional().describe("Parent frame id, absent for the main frame."),

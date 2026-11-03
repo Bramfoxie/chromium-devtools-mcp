@@ -184,7 +184,7 @@ export const jsEvaluate = defineTool({
         tab           : tabSchema,
         expression    : z.string().min(1).max(EVALUATE_MAX_EXPRESSION_CHARS).describe("JavaScript expression to evaluate."),
         awaitPromise  : z.boolean().optional().describe("Await a promise result. Defaults to true."),
-        timeoutMs     : z.number().int().min(1).max(EVALUATE_MAX_TIMEOUT_MS).optional().describe("How long to wait for the result. Defaults to 10000 ms."),
+        timeoutMs     : z.number().int().min(1).max(EVALUATE_MAX_TIMEOUT_MS).optional().describe(`How long to wait for the result. Defaults to ${EVALUATE_DEFAULT_TIMEOUT_MS} ms.`),
         maxResultChars: z.number().int().min(1).max(EVALUATE_MAX_RESULT_CHARS).optional().describe("Maximum characters of the returned value. Defaults to 50000."),
         target        : elementTargetSchema.optional().describe(
             "Run the expression against an element. A function expression is called as is, anything else runs as the body of function (element) { ... }. Both receive the element as this and as the first argument.",

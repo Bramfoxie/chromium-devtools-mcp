@@ -181,8 +181,8 @@ const matchSchema = z.strictObject({
     tag       : z.string().describe("Lowercase tag name."),
     id        : z.string().describe("Element id, empty when absent."),
     classes   : z.array(z.string()).describe("Class names."),
-    attributes: z.record(z.string(), z.string()).describe("Requested attributes, values clipped to 200 characters."),
-    text      : z.string().describe("Visible text, clipped to 200 characters."),
+    attributes: z.record(z.string(), z.string()).describe(`Requested attributes, values clipped to ${QUERY_CLIP_CHARS} characters.`),
+    text      : z.string().describe(`Visible text, clipped to ${QUERY_CLIP_CHARS} characters.`),
     visible   : z.boolean().describe("Whether the element has a rendered box."),
     box       : z.strictObject({
         x     : z.number().describe("Left edge in CSS pixels."),
@@ -201,7 +201,7 @@ export const domQuery = defineTool({
         tab       : tabSchema,
         selector  : z.string().min(1).max(1024).describe("CSS selector to match. Use >>> to chain through shadow roots, for example my-app >>> #inner."),
         all       : z.boolean().optional().describe("Return up to limit matches instead of one. Defaults to false."),
-        limit     : z.number().int().min(1).max(QUERY_MAX_LIMIT).optional().describe("Maximum matches to return. Defaults to 20 with all and to 1 without it."),
+        limit     : z.number().int().min(1).max(QUERY_MAX_LIMIT).optional().describe(`Maximum matches to return. Defaults to ${QUERY_DEFAULT_LIMIT} with all and to 1 without it.`),
         text      : z.string().min(1).max(200).optional().describe("Keep only elements whose text contains this, case insensitively."),
         attributes: z.array(z.string().min(1).max(64)).max(50).optional().describe("Attribute names to include."),
         includeBox: z.boolean().optional().describe("Include bounding boxes. Defaults to true."),
@@ -212,7 +212,7 @@ export const domQuery = defineTool({
         matches  : z.array(matchSchema).describe("Matched elements, in document order."),
         total    : z.number().describe("Number of elements the selector matches in the page, before the text filter and the limit. A pierce walk counts at most 20000 elements."),
         returned : z.number().describe("Matches in this result, after the text filter and the limit."),
-        truncated: z.boolean().describe("True when total is larger than the matches returned, the text filter looked at only the first 2000 selector matches, or a pierce walk stopped after 20000 elements."),
+        truncated: z.boolean().describe(`True when total is larger than the matches returned, the text filter looked at only the first ${QUERY_MAX_TEXT_CANDIDATES} selector matches, or a pierce walk stopped after 20000 elements.`),
     }),
     handler: async (args, context) => {
         const targetId = resolveTab(args, context);

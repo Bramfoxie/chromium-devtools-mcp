@@ -133,6 +133,8 @@ const pageStateSchema = z.object({
     }),
 });
 
+const PAGE_STATE_TIMEOUT_MS = 5000;
+
 export const PAGE_STATE_EXPRESSION =
     "({url: location.href, title: document.title, readyState: document.readyState})";
 
@@ -167,7 +169,7 @@ async function currentPage(
             targetId,
             "Runtime.evaluate",
             { expression: PAGE_STATE_EXPRESSION, returnByValue: true },
-            5000,
+            PAGE_STATE_TIMEOUT_MS,
         );
         const parsed = pageStateSchema.safeParse(result);
 
@@ -243,7 +245,7 @@ export const pageNavigate = defineTool({
         action     : z.enum(["url", "back", "forward", "reload"]).optional().describe("What to do. Defaults to url."),
         url        : z.string().min(1).max(2048).optional().describe("URL to open, http, https or about:blank. Required for the url action."),
         waitUntil  : waitUntilSchema.optional().describe("Wait for the load event, DOMContentLoaded, or return at once. Defaults to load."),
-        timeoutMs  : z.number().int().min(1).max(NAVIGATE_MAX_TIMEOUT_MS).optional().describe("How long to wait for the page. Defaults to 30000 ms."),
+        timeoutMs  : z.number().int().min(1).max(NAVIGATE_MAX_TIMEOUT_MS).optional().describe(`How long to wait for the page. Defaults to ${NAVIGATE_DEFAULT_TIMEOUT_MS} ms.`),
         ignoreCache: z.boolean().optional().describe("Reload ignoring the cache. Only for the reload action."),
     }),
     output: z.strictObject({

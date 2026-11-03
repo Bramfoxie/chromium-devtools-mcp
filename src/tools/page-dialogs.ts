@@ -37,7 +37,7 @@ export const pageDialogs = defineTool({
     input: z.strictObject({
         tab       : tabSchema,
         action    : z.enum(["status", "accept", "dismiss"]).optional().describe("What to do. Defaults to status."),
-        promptText: z.string().max(DIALOG_PROMPT_TEXT_MAX_CHARS).optional().describe("Text for a prompt, up to 10000 characters."),
+        promptText: z.string().max(DIALOG_PROMPT_TEXT_MAX_CHARS).optional().describe(`Text for a prompt, up to ${DIALOG_PROMPT_TEXT_MAX_CHARS} characters.`),
         policy    : z.enum(["none", "accept", "dismiss"]).optional().describe("Automatic handling for dialogs that open later. Defaults to none and is cleared on reset."),
     }),
     output: z.strictObject({
