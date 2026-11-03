@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { redactUrl } from "./network-log.js";
 
 export const CONSOLE_ENTRY_CLIP_CHARS = 2000;
 
@@ -137,7 +138,7 @@ export function formatConsoleStack(frames: CallFrame[]): string {
         .slice(0, CONSOLE_STACK_FRAMES)
         .map(
             (frame) =>
-                `${frame.functionName || "(anonymous)"} (${frame.url}:${frame.lineNumber + 1}:${frame.columnNumber + 1})`,
+                `${frame.functionName || "(anonymous)"} (${redactUrl(frame.url)}:${frame.lineNumber + 1}:${frame.columnNumber + 1})`,
         )
         .join("\n");
 }
@@ -169,7 +170,11 @@ function locationOf(frames: CallFrame[] | undefined): FrameLocation {
 
     if (first === undefined) return {};
 
-    return { url: first.url, line: first.lineNumber + 1, column: first.columnNumber + 1 };
+    return {
+        url   : redactUrl(first.url),
+        line  : first.lineNumber + 1,
+        column: first.columnNumber + 1,
+    };
 }
 
 export function normalizeConsoleEvent(
@@ -208,7 +213,8 @@ export function normalizeConsoleEvent(
         );
         const frames = details.stackTrace?.callFrames ?? [];
         const stack = formatConsoleStack(frames);
-        const url = details.url ?? frames[0]?.url;
+        const rawUrl = details.url ?? frames[0]?.url;
+        const url = rawUrl === undefined ? undefined : redactUrl(rawUrl);
         const line = details.lineNumber === undefined ? frames[0]?.lineNumber : details.lineNumber;
         const column = details.columnNumber === undefined
             ? frames[0]?.columnNumber
@@ -238,7 +244,7 @@ export function normalizeConsoleEvent(
             level : levelOfLogLevel(entry.level),
             source: "browser",
             text  : clipConsoleText(entry.text),
-            ...(entry.url === undefined ? {} : { url: entry.url }),
+            ...(entry.url === undefined ? {} : { url: redactUrl(entry.url) }),
             ...(entry.lineNumber === undefined ? {} : { line: entry.lineNumber + 1 }),
         };
     }

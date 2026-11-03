@@ -167,6 +167,30 @@ describe("console formatting", () => {
         });
     });
 
+    it("redacts sensitive URL parts in entry urls and stack frames", () => {
+        const secret = "https://user:pw@a.example/app.js?token=abc123&page=2";
+        const frames = [{ functionName: "main", url: secret, lineNumber: 0, columnNumber: 0 }];
+        const call = normalizeConsoleEvent("Runtime.consoleAPICalled", {
+            type: "log", args: [], stackTrace: { callFrames: frames },
+        }, "t");
+        const thrown = normalizeConsoleEvent("Runtime.exceptionThrown", {
+            exceptionDetails: { text: "boom", url: secret, stackTrace: { callFrames: frames } },
+        }, "t");
+        const logged = normalizeConsoleEvent("Log.entryAdded", {
+            entry: { source: "network", level: "error", text: "x", url: secret },
+        }, "t");
+
+        for (const entry of [call, thrown, logged]) {
+            const text = JSON.stringify(entry);
+
+            expect(text).not.toContain("abc123");
+            expect(text).not.toContain("user:pw");
+            expect(text).toContain("page=2");
+        }
+
+        expect(call?.stack).toContain("token=[redacted]");
+    });
+
     it("maps console types and log levels to severities", () => {
         const call = (type: string) =>
             normalizeConsoleEvent("Runtime.consoleAPICalled", { type, args: [] }, "t")?.level;
