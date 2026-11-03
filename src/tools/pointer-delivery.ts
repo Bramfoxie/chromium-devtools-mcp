@@ -18,13 +18,24 @@ export const LANDING_WAIT_MS = 300;
 
 export const PRESS_WAIT_MS = 300;
 
+export const FRAME_ATTEMPTS = 3;
+
+export type PointerVia = "frame" | "tab";
+
+export interface PointerTarget {
+    via  : PointerVia;
+    point: Point;
+}
+
 export interface Measurement {
     point: Point;
+    local: Point;
     boxes: Rect[];
 }
 
 export interface PointerRoute {
     owner     : DaemonAccess;
+    frameId   : string;
     objectId  : string;
     relays    : DaemonAccess[];
     links     : FrameLink[];
@@ -92,6 +103,8 @@ function pause(ms: number): Promise<void> {
 export class PointerDelivery {
     private current: Measurement;
 
+    private via: PointerVia = "frame";
+
     constructor(
         private readonly route: PointerRoute,
         private readonly tab  : string,
@@ -107,19 +120,27 @@ export class PointerDelivery {
         await this.call(REMOVE, []).catch(() => undefined);
     }
 
-    async prepareMove(sendMove: (point: Point) => Promise<void>): Promise<Point> {
+    async prepareMove(sendMove: (target: PointerTarget) => Promise<void>): Promise<PointerTarget> {
         const base = (await this.read()).moves;
-        const started = Date.now();
+        const begun = Date.now();
+        let tabStarted = begun;
         let pauseMs = RETRY_PAUSE_MIN_MS;
         let attempts = 0;
 
         for (;;) {
             attempts += 1;
-            await sendMove(this.current.point);
+            const via: PointerVia = attempts <= FRAME_ATTEMPTS ? "frame" : "tab";
 
-            if (await this.wait("moves", base, MOVE_WAIT_MS) > base) return this.current.point;
+            if (attempts === FRAME_ATTEMPTS + 1) tabStarted = Date.now();
 
-            if (Date.now() - started >= MOVE_BUDGET_MS) break;
+            this.via = via;
+            const target = this.targetFor(via);
+
+            await sendMove(target);
+
+            if (await this.wait("moves", base, MOVE_WAIT_MS) > base) return target;
+
+            if (via === "tab" && Date.now() - tabStarted >= MOVE_BUDGET_MS) break;
 
             await settleRendering(this.route.relays, this.tab);
             await pause(pauseMs);
@@ -129,13 +150,13 @@ export class PointerDelivery {
 
         throw new ToolError(
             `The frame did not receive pointer input from the browser. Make sure the page is visible and not busy, then try again.\n${
-                await this.diagnostics(attempts, Date.now() - started, sendMove)}`,
+                await this.diagnostics(attempts, Date.now() - begun, sendMove)}`,
         );
     }
 
     async press(
-        press  : (point: Point) => Promise<void>,
-        release: (point: Point) => Promise<void>,
+        press  : (target: PointerTarget) => Promise<void>,
+        release: (target: PointerTarget) => Promise<void>,
     ): Promise<void> {
         const first = (await this.read()).downs;
 
@@ -143,12 +164,14 @@ export class PointerDelivery {
             if (attempt > 1) await this.remeasure();
 
             const base = (await this.read()).downs;
-            const point = this.current.point;
 
-            await press(point);
+            this.via = attempt === 1 ? this.via : "tab";
+            const target = this.targetFor(this.via);
+
+            await press(target);
             const seen = await this.wait("downs", base, PRESS_WAIT_MS);
 
-            await release(point);
+            await release(target);
 
             if (seen <= base) {
                 await settleRendering(this.route.relays, this.tab);
@@ -172,6 +195,10 @@ export class PointerDelivery {
         throw new ToolError(
             "The frame did not receive the mouse press from the browser. Make sure the page is visible and not busy, then try again.",
         );
+    }
+
+    private targetFor(via: PointerVia): PointerTarget {
+        return { via, point: via === "frame" ? this.current.local : this.current.point };
     }
 
     private async remeasure(): Promise<void> {
@@ -198,7 +225,7 @@ export class PointerDelivery {
     private async diagnostics(
         attempts: number,
         elapsed : number,
-        sendMove: (point: Point) => Promise<void>,
+        sendMove: (target: PointerTarget) => Promise<void>,
     ): Promise<string> {
         const { point, boxes } = this.current;
         const landed = await this.landing(point, sendMove);
@@ -211,7 +238,7 @@ export class PointerDelivery {
 
     private async landing(
         point   : Point,
-        sendMove: (point: Point) => Promise<void>,
+        sendMove: (target: PointerTarget) => Promise<void>,
     ): Promise<string> {
         const probes: Array<{ access: DaemonAccess; objectId: string }> = [];
 
@@ -233,7 +260,7 @@ export class PointerDelivery {
                 probes.push({ access: link.access, objectId });
             }
 
-            await sendMove(point);
+            await sendMove({ via: "tab", point });
             await pause(LANDING_WAIT_MS);
 
             const seen: string[] = [];

@@ -43,6 +43,8 @@ export interface CrossSiteWorld {
     staleUntilSettle?: boolean;
     misrouteTop?     : boolean;
     renderGated?     : boolean;
+    frameDown?       : boolean;
+    frameDropDowns?  : number;
 }
 
 export interface PointerCounters {
@@ -76,6 +78,7 @@ export function crossSiteFake(world: CrossSiteWorld = {}): FakeAccess {
     const routed = (): boolean => world.renderGated !== true || screencast;
     let dropMoves = world.dropMoves ?? 0;
     let dropDowns = world.dropDowns ?? 0;
+    let frameDropDowns = world.frameDropDowns ?? 0;
     let settled = world.staleUntilSettle !== true;
     let firstMoveAt: number | undefined;
     let topProbe = false;
@@ -109,6 +112,16 @@ export function crossSiteFake(world: CrossSiteWorld = {}): FakeAccess {
 
             case "Input.dispatchMouseEvent": {
                 const type = (params as { type?: unknown } | undefined)?.type;
+
+                if (session === MID_FRAME) {
+                    if (world.frameDown !== true) {
+                        if (type === "mouseMoved") counters.moves += 1;
+                        if (type === "mousePressed" && frameDropDowns > 0) frameDropDowns -= 1;
+                        else if (type === "mousePressed") counters.downs += 1;
+                    }
+
+                    return {};
+                }
 
                 if (type === "mouseMoved") {
                     const at = params as { x?: number; y?: number };

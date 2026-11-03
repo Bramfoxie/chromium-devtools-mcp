@@ -9,7 +9,12 @@ import {
 import { clickPointOf, type ClickPoint, TOP_LEVEL_ORIGIN } from "./coordinates.js";
 import { defineTool, type ToolContext } from "./define-tool.js";
 import { ensureNoDialog } from "./dialogs.js";
-import { type Measurement, withPointerDelivery, type PointerRoute } from "./pointer-delivery.js";
+import {
+    type Measurement,
+    type PointerRoute,
+    type PointerTarget,
+    withPointerDelivery,
+} from "./pointer-delivery.js";
 import { startRendering } from "./hold-rendering.js";
 import { frameChain, mapPoint, measureChain, outerHitTest, revealChain } from "./frame-geometry.js";
 import {
@@ -200,20 +205,21 @@ async function measuredPoint(
 
         const fresh = await measureChain(chain, targetId);
 
+        const freshLocal = clickPointOf(revealed.box, request.position, TOP_LEVEL_ORIGIN);
+
         return {
-            point: mapPoint(
-                fresh.toTop,
-                clickPointOf(revealed.box, request.position, TOP_LEVEL_ORIGIN),
-            ),
+            point: mapPoint(fresh.toTop, freshLocal),
+            local: freshLocal,
             boxes: fresh.boxes,
         };
     };
     const route: PointerRoute | undefined = chain.links.length === 0 ? undefined : {
         owner    : request.owner,
+        frameId  : request.element.frameId ?? "",
         objectId : request.element.objectId,
         relays   : [context.access, ...chain.links.map((link) => link.access), request.owner],
         links    : chain.links,
-        initial  : { point, boxes: measured.boxes },
+        initial  : { point, local, boxes: measured.boxes },
         release,
         measure,
         stillOver: request.force
@@ -363,11 +369,14 @@ export const inputClick = defineTool({
             const modifiers = modifiersMask(held);
             const buttons = MOUSE_BUTTON_BIT[button];
 
-            const sendMove = async (at: { x: number; y: number }): Promise<void> => {
-                await context.access.send(targetId, "Input.dispatchMouseEvent", {
+            const dispatcher = (target: PointerTarget) =>
+                target.via === "frame" && route !== undefined ? route.owner : context.access;
+
+            const sendMove = async (at: PointerTarget): Promise<void> => {
+                await dispatcher(at).send(targetId, "Input.dispatchMouseEvent", {
                     type      : "mouseMoved",
-                    x         : at.x,
-                    y         : at.y,
+                    x         : at.point.x,
+                    y         : at.point.y,
                     modifiers,
                     button,
                     buttons   : 0,
@@ -379,26 +388,26 @@ export const inputClick = defineTool({
                 navigationOf(context.access, targetId, async () => {
                     throwIfCancelled(context.signal);
 
-                    if (delivery === undefined) await sendMove(point);
+                    if (delivery === undefined) await sendMove({ via: "tab", point });
                     else await delivery.prepareMove(sendMove);
 
                     for (let count = 1; count <= clickCount; count += 1) {
-                        const press = async (from: { x: number; y: number }): Promise<void> => {
-                            await context.access.send(targetId, "Input.dispatchMouseEvent", {
+                        const press = async (from: PointerTarget): Promise<void> => {
+                            await dispatcher(from).send(targetId, "Input.dispatchMouseEvent", {
                                 type      : "mousePressed",
-                                x         : from.x,
-                                y         : from.y,
+                                x         : from.point.x,
+                                y         : from.point.y,
                                 modifiers,
                                 button,
                                 buttons,
                                 clickCount: count,
                             });
                         };
-                        const release = async (from: { x: number; y: number }): Promise<void> => {
+                        const release = async (from: PointerTarget): Promise<void> => {
                             const event = {
                                 type      : "mouseReleased",
-                                x         : from.x,
-                                y         : from.y,
+                                x         : from.point.x,
+                                y         : from.point.y,
                                 modifiers,
                                 button,
                                 buttons,
@@ -406,9 +415,9 @@ export const inputClick = defineTool({
                             };
 
                             try {
-                                await context.access.send(targetId, "Input.dispatchMouseEvent", event);
+                                await dispatcher(from).send(targetId, "Input.dispatchMouseEvent", event);
                             } catch (error) {
-                                await context.access.send(targetId, "Input.dispatchMouseEvent", event)
+                                await dispatcher(from).send(targetId, "Input.dispatchMouseEvent", event)
                                     .catch(() => undefined);
 
                                 throw error;
@@ -416,8 +425,8 @@ export const inputClick = defineTool({
                         };
 
                         if (delivery === undefined) {
-                            await press(point);
-                            await release(point);
+                            await press({ via: "tab", point });
+                            await release({ via: "tab", point });
                         } else {
                             await delivery.press(press, release);
                         }
@@ -482,8 +491,10 @@ export const inputHover = defineTool({
                 args.force ?? false,
             );
 
-            const moveTo = async (x: number, y: number): Promise<void> => {
-                await context.access.send(targetId, "Input.dispatchMouseEvent", {
+            const moveTo = async (via: PointerTarget["via"], x: number, y: number): Promise<void> => {
+                const access = via === "frame" && route !== undefined ? route.owner : context.access;
+
+                await access.send(targetId, "Input.dispatchMouseEvent", {
                     type      : "mouseMoved",
                     x,
                     y,
@@ -497,12 +508,14 @@ export const inputHover = defineTool({
             await withPointerDelivery(route, targetId, async (delivery) => {
                 throwIfCancelled(context.signal);
 
-                const moved = await delivery?.prepareMove((target) => moveTo(target.x, target.y));
-                const at = moved ?? point;
+                const moved = await delivery?.prepareMove((target) =>
+                    moveTo(target.via, target.point.x, target.point.y));
+                const via = moved?.via ?? "tab";
+                const at = moved?.point ?? point;
                 const leadIn = at.x >= 1 ? at.x - 1 : at.x + 1;
 
                 for (let step = 0; step < HOVER_DEFAULT_STEPS; step += 1) {
-                    await moveTo(step === HOVER_DEFAULT_STEPS - 1 ? at.x : leadIn, at.y);
+                    await moveTo(via, step === HOVER_DEFAULT_STEPS - 1 ? at.x : leadIn, at.y);
                 }
             });
 
