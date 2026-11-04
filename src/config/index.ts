@@ -1,4 +1,10 @@
-export { loadConfig, type LoadOptions } from "./load.js";
+export {
+    type ConfigReport,
+    type ConfigSource,
+    describeConfig,
+    loadConfig,
+    type LoadOptions,
+} from "./load.js";
 
 export { APP_NAME, baseDir, configFilePath, defaultProfileDir, pathFor, type PathContext } from "./paths.js";
 

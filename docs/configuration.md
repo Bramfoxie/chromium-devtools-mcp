@@ -28,6 +28,8 @@ The default `profileDir` is `~/Library/Application Support/chromium-devtools-mcp
 
 `safety.allowedDomains` and `safety.deniedDomains` entries are host rules: `example.com`, `*.example.com`, `localhost:3000` or `[::1]:3000`. An entry that is not one of these forms (a URL such as `https://example.com`, a path, a bare `*`, an empty string or a host with spaces) is a configuration error from every source, the config file, the environment variable and the flag, and the installer reports it with exit code 2.
 
+`chromium-devtools-mcp config` takes the same flags and environment variables as the server and prints the effective configuration, one line per setting with its value and the source that set it (`default`, `file`, `env` or `flag`; the last source that sets a value wins), and the path of the config file with whether it exists. An invalid file, variable or flag is reported with the field and the accepted forms and the command exits with 2; a valid configuration exits with 0. It reads nothing but the configuration, so it never starts a browser or a daemon and prints no secrets (the configuration holds none).
+
 Boolean env values accept `true`, `1`, `false`, `0`, case-insensitively, with surrounding whitespace ignored. An empty or whitespace-only env value counts as unset. Every boolean flag also accepts a `--no-` form, for example `--no-read-only`.
 
 On macOS and Linux `XDG_CONFIG_HOME` overrides the directory of the config file. On Linux `XDG_DATA_HOME` overrides the directory of the managed profile; on macOS the profile always lives under `~/Library/Application Support`. On Windows `APPDATA` and `LOCALAPPDATA` play the same roles. Empty or relative values of these variables are ignored.

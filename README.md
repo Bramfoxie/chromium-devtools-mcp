@@ -36,7 +36,7 @@ First run:
 - attach (default): the server connects to your running Chrome. If Chrome does not allow it yet, the server prints how to enable remote debugging at `chrome://inspect/#remote-debugging` and keeps waiting. It never falls back to another profile.
 - managed: pass `--mode managed`. The server launches Chrome with its own persistent profile, headed or with `--headless`.
 
-If something does not connect, run `npx chromium-devtools-mcp doctor` (add the same flags as in your client entry). It checks the setup and prints how to fix what it finds. `daemon status`, `daemon stop` and `daemon logs` show and control the background daemon, see [docs/daemon.md](docs/daemon.md).
+If something does not connect, run `npx chromium-devtools-mcp doctor` (add the same flags as in your client entry). It checks the setup and prints how to fix what it finds. `chromium-devtools-mcp config` (with the same flags) prints the effective configuration and which source set each value, and validates the config file. `daemon status`, `daemon stop` and `daemon logs` show and control the background daemon, see [docs/daemon.md](docs/daemon.md).
 
 ## Compared with the official Chrome DevTools MCP
 

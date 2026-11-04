@@ -350,6 +350,37 @@ describe("daemon subcommands", () => {
     });
 });
 
+describe("config", () => {
+    it("prints the effective configuration to stdout and exits with 0", async () => {
+        const out: string[] = [];
+        const { run, output } = harness({
+            out     : (text) => void out.push(text),
+            describe: () => ({
+                file   : "/c.json",
+                exists : true,
+                config : cannedConfig(),
+                sources: { mode: "flag" },
+            }),
+        });
+
+        expect(await run(["config", "--mode", "attach"])).toBe(0);
+        expect(out.join("")).toContain("Config file: /c.json (found)");
+        expect(out.join("")).toMatch(/mode\s+attach\s+flag/);
+        expect(output).toEqual([]);
+    });
+
+    it("explains an invalid configuration and exits with 2", async () => {
+        const { run, output } = harness({
+            describe: () => {
+                throw new ConfigError("invalid configuration: mode: bad");
+            },
+        });
+
+        expect(await run(["config", "--mode", "bad"])).toBe(2);
+        expect(output.join("")).toContain("invalid configuration: mode: bad");
+    });
+});
+
 describe("doctor", () => {
     it("runs the checks with the loaded config and returns their exit code", async () => {
         const doctor = vi.fn(async () => 1);
