@@ -22,8 +22,7 @@ function keyOf(grant: PermissionGrant): string {
     return `${grant.contextId ?? ""}|${grant.name}|${grant.origin}`;
 }
 
-// The browser keeps one permission override per origin and context, so the sessions that share
-// one are counted here and the override is removed only when the last of them lets go.
+// Counts the holders of an override and removes it when the last one lets go.
 export class PermissionLedger {
     private readonly entries = new Map<string, Entry>();
     private queue: Promise<unknown> = Promise.resolve();

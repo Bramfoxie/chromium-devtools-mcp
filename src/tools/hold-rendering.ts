@@ -63,8 +63,7 @@ async function halt(access: DaemonAccess, tab: string): Promise<void> {
     }).catch(() => undefined);
 }
 
-// A tab has one screencast. Holds only keep the page rendering and are counted; a recording
-// takes the screencast over with its own settings and gives it back to the holds when it ends.
+// One screencast per tab: a recording takes it over and gives it back to the holds.
 export async function startRendering(
     access: DaemonAccess,
     tab   : string,
