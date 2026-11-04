@@ -19,6 +19,16 @@ const CSS_MAX_RULES_LIMIT = 100;
 
 const CSS_VALUE_CLIP = 200;
 
+export const FORCEABLE_STATES = [
+    "hover",
+    "focus",
+    "active",
+    "focus-visible",
+    "focus-within",
+    "visited",
+    "target",
+] as const;
+
 export const DEFAULT_CSS_PROPERTIES = [
     "display",
     "position",
@@ -301,6 +311,7 @@ export const cssInspect = defineTool({
         includeMatchedRules: z.boolean().optional().describe("Include the matched CSS rules. Defaults to true."),
         maxRules           : z.number().int().min(1).max(CSS_MAX_RULES_LIMIT).optional().describe("Maximum matched rules to return. Defaults to 30."),
         includeBox         : z.boolean().optional().describe("Include the box model. Defaults to true."),
+        forceStates        : z.array(z.enum(FORCEABLE_STATES)).max(FORCEABLE_STATES.length).optional().describe("Pseudo classes to apply to the element while it is read, for example hover or focus, so the computed style and the matched rules show that state. They are removed again before the call returns."),
     }),
     output: z.strictObject({
         computed    : z.record(z.string(), z.string()).describe("Requested computed style properties."),
@@ -329,6 +340,7 @@ export const cssInspect = defineTool({
         totalRules    : z.number().describe("Matched rules before the maxRules limit."),
         truncated     : z.boolean().describe("Whether maxRules dropped rules."),
         droppedWinners: z.array(z.string()).describe("Properties whose winning declaration is in a rule dropped by maxRules."),
+        forcedStates  : z.array(z.enum(FORCEABLE_STATES)).optional().describe("The pseudo classes that were applied while the element was read."),
     }),
     handler: async (args, context) => {
         const targetId = resolveTab(args, context);
@@ -395,7 +407,17 @@ export const cssInspect = defineTool({
             params: {},
         });
 
+        const forced = [...new Set(args.forceStates ?? [])];
+
         try {
+            if (forced.length > 0) {
+                await owner.send({
+                    targetId,
+                    method: "CSS.forcePseudoState",
+                    params: { nodeId, forcedPseudoClasses: forced },
+                });
+            }
+
             const computed = computedSchema.safeParse(
                 await owner.send({
                     targetId,
@@ -453,8 +475,17 @@ export const cssInspect = defineTool({
                 totalRules,
                 truncated,
                 droppedWinners: dropped,
+                ...(forced.length === 0 ? {} : { forcedStates: forced }),
             };
         } finally {
+            if (forced.length > 0) {
+                await owner.send({
+                    targetId,
+                    method: "CSS.forcePseudoState",
+                    params: { nodeId, forcedPseudoClasses: [] },
+                }).catch(() => undefined);
+            }
+
             await owner.send({
                 targetId,
                 method: "CSS.disable",
