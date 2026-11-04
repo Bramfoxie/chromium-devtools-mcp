@@ -34,6 +34,10 @@ export { buildDomEditRequest, domEdit, domEditEffect, isDangerousDomEdit, isVali
 
 export { consoleLogs } from "./console-logs.js";
 
+export { a11ySnapshot } from "./a11y-snapshot.js";
+
+export { a11yEntries, summarize as summarizeA11y } from "./a11y-tree.js";
+
 export { downloads } from "./downloads.js";
 
 export { DownloadState, safeFilename, type DownloadItem } from "./download-state.js";

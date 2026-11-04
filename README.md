@@ -74,13 +74,13 @@ Compared against Chrome DevTools MCP 1.12.0 (2026-10-22, [ChromeDevTools/chrome-
 
 ## Tools
 
-51 tools. Details and parameters are in [docs/tools.md](docs/tools.md).
+52 tools. Details and parameters are in [docs/tools.md](docs/tools.md).
 
 | Category    | Tools                                                                                                                                       |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | Tabs        | `list_tabs`, `list_sessions`, `select_tab`, `new_tab`, `close_tab`, `bring_to_front`                                                        |
 | Pages       | `page_info`, `page_navigate`, `page_wait`, `page_dialogs`, `page_metrics`, `page_pdf`                                                       |
-| Inspection  | `dom_query`, `dom_snapshot`, `dom_edit`, `css_inspect`, `css_edit`, `js_evaluate`, `screenshot`                                             |
+| Inspection  | `dom_query`, `dom_snapshot`, `a11y_snapshot`, `dom_edit`, `css_inspect`, `css_edit`, `js_evaluate`, `screenshot`                            |
 | Input       | `click`, `input_click`, `input_hover`, `input_drag`, `input_type`, `input_key`, `input_scroll`, `input_select`, `input_upload`, `fill_form` |
 | Performance | `perf_trace_start`, `perf_trace_stop`, `heap_snapshot`, `screencast_start`, `screencast_stop`, `lighthouse_audit`                           |
 | Observation | `console_logs`, `network_requests`, `network_har`, `network_response_body`                                                                  |

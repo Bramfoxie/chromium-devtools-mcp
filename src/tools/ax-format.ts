@@ -3,7 +3,7 @@ import { ToolError } from "./errors.js";
 
 export const AX_NAME_CLIP = 100;
 
-const INTERACTIVE_ROLES = new Set([
+export const INTERACTIVE_ROLES = new Set([
     "button",
     "link",
     "textbox",
@@ -25,7 +25,7 @@ const INTERACTIVE_ROLES = new Set([
     "row",
 ]);
 
-const LANDMARK_ROLES = new Set([
+export const LANDMARK_ROLES = new Set([
     "banner",
     "complementary",
     "contentinfo",
@@ -38,7 +38,7 @@ const LANDMARK_ROLES = new Set([
     "alertdialog",
 ]);
 
-const SKIPPED_ROLES = new Set(["rootwebarea", "webarea", "none", "presentation"]);
+export const SKIPPED_ROLES = new Set(["rootwebarea", "webarea", "none", "presentation"]);
 
 const VALUE_ROLES = new Set([
     "textbox",

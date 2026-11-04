@@ -5,6 +5,7 @@ import { cssInspect } from "./css-inspect.js";
 import { domEdit } from "./dom-edit.js";
 import type { AnyTool } from "./define-tool.js";
 import { domQuery } from "./dom-query.js";
+import { a11ySnapshot } from "./a11y-snapshot.js";
 import { domSnapshot } from "./dom-snapshot.js";
 import { emulateDevice } from "./emulation/emulate-device.js";
 import { emulateGeolocation } from "./emulation/emulate-geolocation.js";
@@ -54,6 +55,7 @@ export const allTools: AnyTool[] = [
     jsEvaluate,
     domQuery,
     domSnapshot,
+    a11ySnapshot,
     domEdit,
     cssInspect,
     cssEdit,
