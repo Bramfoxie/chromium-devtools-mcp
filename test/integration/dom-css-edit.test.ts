@@ -485,9 +485,9 @@ describe.skipIf(!present)("css_edit in a real browser", () => {
 describe.skipIf(!present)("dom and css edits under safety options in a real browser", () => {
     it("refuses both tools in read-only mode", async () => {
         const locked = await startEnv({
-            readOnly        : true,
-            allowedDomains  : [],
-            confirmDangerous: false,
+            readOnly            : true,
+            allowedDomains      : [],
+            deniedDomains       : [], allowPrivateNetworks: true, confirmDangerous    : false,
         });
 
         try {
@@ -513,9 +513,9 @@ describe.skipIf(!present)("dom and css edits under safety options in a real brow
 
     it("refuses edits on a tab outside the allowlist", async () => {
         const guarded = await startEnv({
-            readOnly        : false,
-            allowedDomains  : ["127.0.0.1"],
-            confirmDangerous: false,
+            readOnly            : false,
+            allowedDomains      : ["127.0.0.1"],
+            deniedDomains       : [], allowPrivateNetworks: true, confirmDangerous    : false,
         });
 
         try {
@@ -556,9 +556,9 @@ describe.skipIf(!present)("dom and css edits under safety options in a real brow
 
     it("refuses an edit inside a frame from another origin", async () => {
         const guarded = await startEnv({
-            readOnly        : false,
-            allowedDomains  : ["127.0.0.1"],
-            confirmDangerous: false,
+            readOnly            : false,
+            allowedDomains      : ["127.0.0.1"],
+            deniedDomains       : [], allowPrivateNetworks: true, confirmDangerous    : false,
         });
 
         try {

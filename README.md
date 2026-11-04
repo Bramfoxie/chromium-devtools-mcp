@@ -94,6 +94,8 @@ Compared against Chrome DevTools MCP 1.12.0 (2026-10-22, [ChromeDevTools/chrome-
 
 - `safety.readOnly` refuses every tool that changes page or browser state.
 - `safety.allowedDomains` limits where mutating tools may act; redirects are checked too.
+- `safety.deniedDomains` blocks hosts for mutating tools and navigation, and wins over the allow list.
+- `safety.allowPrivateNetworks` is off by default: `new_tab` and `page_navigate` refuse local and private network addresses (`localhost`, `192.168.x.x`, `169.254.169.254` and similar), also after a redirect. A host named in `safety.allowedDomains` is still opened.
 - `safety.confirmDangerous` asks the user through MCP elicitation before scripts, storage writes, cookie reads, file uploads, location emulation, heap snapshots that are saved and DOM edits that replace HTML or remove an element.
 
 The daemon enforces these per session. Limits and exact rules: [docs/safety.md](docs/safety.md).
@@ -102,19 +104,21 @@ The daemon enforces these per session. Limits and exact rules: [docs/safety.md](
 
 Sources from lowest to highest priority: defaults, JSON file, `CHROMIUM_DEVTOOLS_MCP_*` environment variables, command line flags.
 
-| Field                     | Flag                  | Default                 |
-| ------------------------- | --------------------- | ----------------------- |
-| `browser`                 | `--browser`           | `chrome`                |
-| `mode`                    | `--mode`              | `attach`                |
-| `headless`                | `--headless`          | false                   |
-| `profileDir`              | `--profile-dir`       | per-user data directory |
-| `debugPort`               | `--debug-port`        | 0 managed, 9222 attach  |
-| `wsEndpoint`              | `--ws-endpoint`       | unset, attach only      |
-| `allowFocus`              | `--allow-focus`       | false                   |
-| `isolated`                | `--isolated`          | false                   |
-| `safety.readOnly`         | `--read-only`         | false                   |
-| `safety.allowedDomains`   | `--allowed-domains`   | empty, no limit         |
-| `safety.confirmDangerous` | `--confirm-dangerous` | false                   |
+| Field                         | Flag                       | Default                 |
+| ----------------------------- | -------------------------- | ----------------------- |
+| `browser`                     | `--browser`                | `chrome`                |
+| `mode`                        | `--mode`                   | `attach`                |
+| `headless`                    | `--headless`               | false                   |
+| `profileDir`                  | `--profile-dir`            | per-user data directory |
+| `debugPort`                   | `--debug-port`             | 0 managed, 9222 attach  |
+| `wsEndpoint`                  | `--ws-endpoint`            | unset, attach only      |
+| `allowFocus`                  | `--allow-focus`            | false                   |
+| `isolated`                    | `--isolated`               | false                   |
+| `safety.readOnly`             | `--read-only`              | false                   |
+| `safety.allowedDomains`       | `--allowed-domains`        | empty, no limit         |
+| `safety.deniedDomains`        | `--denied-domains`         | empty                   |
+| `safety.allowPrivateNetworks` | `--allow-private-networks` | false                   |
+| `safety.confirmDangerous`     | `--confirm-dangerous`      | false                   |
 
 Env names, file paths and rules: [docs/configuration.md](docs/configuration.md).
 

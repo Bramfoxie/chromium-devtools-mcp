@@ -29,7 +29,14 @@ export const configSchema = z.strictObject({
                     `invalid entry ${JSON.stringify(issue.input)}, accepted forms: ${DOMAIN_RULE_FORMS}`,
             }),
         ),
-        confirmDangerous: z.boolean(),
+        deniedDomains: z.array(
+            z.string().refine(isValidDomainRule, {
+                error: (issue) =>
+                    `invalid entry ${JSON.stringify(issue.input)}, accepted forms: ${DOMAIN_RULE_FORMS}`,
+            }),
+        ),
+        allowPrivateNetworks: z.boolean(),
+        confirmDangerous    : z.boolean(),
     }),
 }).refine((config) => config.wsEndpoint === undefined || config.mode === "attach", {
     path   : ["wsEndpoint"],

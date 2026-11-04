@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { Config } from "../config/index.js";
 import type { DaemonAccess } from "../mcp/index.js";
-import { isRestricted } from "../safety/index.js";
+import { isPolicyActive } from "../safety/index.js";
 import { ToolError } from "./errors.js";
 import { bindAccess } from "./frame-scope.js";
 import type { FrameState } from "./frames.js";
@@ -186,7 +186,7 @@ export async function assertElementOriginAllowed(
     tab    : string,
     element: ResolvedElement,
 ): Promise<void> {
-    if (scope.config === undefined || !isRestricted(scope.config.safety.allowedDomains)) return;
+    if (scope.config === undefined || !isPolicyActive(scope.config.safety)) return;
 
     let origin: unknown;
 
@@ -208,13 +208,13 @@ export async function assertElementOriginAllowed(
 
     if (typeof origin !== "string") {
         throw new ToolError(
-            "The document of the element could not be checked against safety.allowedDomains. Call the tool again.",
+            "The document of the element could not be checked against the domain rules in safety. Call the tool again.",
         );
     }
 
     if (origin === "null") {
         throw new ToolError(
-            "The element is in a frame with no origin of its own, such as a sandboxed frame, which cannot be checked against safety.allowedDomains.",
+            "The element is in a frame with no origin of its own, such as a sandboxed frame, which cannot be checked against the domain rules in safety.",
         );
     }
 

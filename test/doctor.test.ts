@@ -18,7 +18,13 @@ const attach: Config = {
     debugPort : 9222,
     allowFocus: false,
     isolated  : false,
-    safety    : { readOnly: false, allowedDomains: [], confirmDangerous: false },
+    safety    : {
+        readOnly            : false,
+        allowedDomains      : [],
+        deniedDomains       : [],
+        allowPrivateNetworks: true,
+        confirmDangerous    : false,
+    },
 };
 const managed: Config = { ...attach, mode: "managed", debugPort: 0 };
 

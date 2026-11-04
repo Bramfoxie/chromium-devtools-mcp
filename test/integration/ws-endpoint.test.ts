@@ -42,7 +42,13 @@ describe.skipIf(!present)("attach through an explicit endpoint in a real browser
             wsEndpoint: browser?.webSocketUrl,
             allowFocus: false,
             isolated  : false,
-            safety    : { readOnly: false, allowedDomains: [], confirmDangerous: false },
+            safety    : {
+                readOnly            : false,
+                allowedDomains      : [],
+                deniedDomains       : [],
+                allowPrivateNetworks: true,
+                confirmDangerous    : false,
+            },
         };
         const waiting: string[] = [];
         const handle = await createConnector()(

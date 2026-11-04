@@ -77,6 +77,7 @@ function envLayer(env: NodeJS.ProcessEnv): Layer {
     };
     const port = get("DEBUG_PORT");
     const domains = get("ALLOWED_DOMAINS");
+    const denied = get("DENIED_DOMAINS");
 
     return compact({
         browser   : get("BROWSER"),
@@ -88,9 +89,11 @@ function envLayer(env: NodeJS.ProcessEnv): Layer {
         allowFocus: bool("ALLOW_FOCUS"),
         isolated  : bool("ISOLATED"),
         safety    : {
-            readOnly        : bool("READ_ONLY"),
-            allowedDomains  : domains === undefined ? undefined : toList(domains),
-            confirmDangerous: bool("CONFIRM_DANGEROUS"),
+            readOnly            : bool("READ_ONLY"),
+            allowedDomains      : domains === undefined ? undefined : toList(domains),
+            deniedDomains       : denied === undefined ? undefined : toList(denied),
+            allowPrivateNetworks: bool("ALLOW_PRIVATE_NETWORKS"),
+            confirmDangerous    : bool("CONFIRM_DANGEROUS"),
         },
     });
 }
@@ -103,17 +106,19 @@ function parseFlags(argv: string[]) {
             allowPositionals: false,
             allowNegative   : true,
             options         : {
-                browser            : { type: "string" },
-                mode               : { type: "string" },
-                headless           : { type: "boolean" },
-                "profile-dir"      : { type: "string" },
-                "debug-port"       : { type: "string" },
-                "ws-endpoint"      : { type: "string" },
-                "allow-focus"      : { type: "boolean" },
-                isolated           : { type: "boolean" },
-                "read-only"        : { type: "boolean" },
-                "allowed-domains"  : { type: "string" },
-                "confirm-dangerous": { type: "boolean" },
+                browser                 : { type: "string" },
+                mode                    : { type: "string" },
+                headless                : { type: "boolean" },
+                "profile-dir"           : { type: "string" },
+                "debug-port"            : { type: "string" },
+                "ws-endpoint"           : { type: "string" },
+                "allow-focus"           : { type: "boolean" },
+                isolated                : { type: "boolean" },
+                "read-only"             : { type: "boolean" },
+                "allowed-domains"       : { type: "string" },
+                "denied-domains"        : { type: "string" },
+                "allow-private-networks": { type: "boolean" },
+                "confirm-dangerous"     : { type: "boolean" },
             },
         });
     } catch (error) {
@@ -127,6 +132,7 @@ function argvLayer(argv: string[]): Layer {
     const { values } = parseFlags(argv);
     const port = values["debug-port"];
     const domains = values["allowed-domains"];
+    const denied = values["denied-domains"];
 
     return compact({
         browser   : values.browser,
@@ -138,9 +144,11 @@ function argvLayer(argv: string[]): Layer {
         allowFocus: values["allow-focus"],
         isolated  : values.isolated,
         safety    : {
-            readOnly        : values["read-only"],
-            allowedDomains  : typeof domains === "string" ? toList(domains) : domains,
-            confirmDangerous: values["confirm-dangerous"],
+            readOnly            : values["read-only"],
+            allowedDomains      : typeof domains === "string" ? toList(domains) : domains,
+            deniedDomains       : typeof denied === "string" ? toList(denied) : denied,
+            allowPrivateNetworks: values["allow-private-networks"],
+            confirmDangerous    : values["confirm-dangerous"],
         },
     });
 }
@@ -191,7 +199,13 @@ export function loadConfig(options: LoadOptions = {}): Config {
         profileDir: defaultProfileDir(ctx),
         allowFocus: false,
         isolated  : false,
-        safety    : { readOnly: false, allowedDomains: [], confirmDangerous: false },
+        safety    : {
+            readOnly            : false,
+            allowedDomains      : [],
+            deniedDomains       : [],
+            allowPrivateNetworks: false,
+            confirmDangerous    : false,
+        },
     };
 
     const layers = [

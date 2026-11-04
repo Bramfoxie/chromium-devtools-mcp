@@ -145,7 +145,13 @@ export async function startEnv(
         debugPort : port,
         allowFocus,
         isolated  : true,
-        safety    : safety ?? { readOnly: false, allowedDomains: [], confirmDangerous: false },
+        safety    : safety ?? {
+            readOnly            : false,
+            allowedDomains      : [],
+            deniedDomains       : [],
+            allowPrivateNetworks: true,
+            confirmDangerous    : false,
+        },
     };
     const options = await harness.options();
     const tokenDir = await mkdtemp(path.join(home, "token-"));

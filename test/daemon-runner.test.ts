@@ -23,7 +23,13 @@ const config: Config = {
     debugPort : 9222,
     allowFocus: false,
     isolated  : false,
-    safety    : { readOnly: false, allowedDomains: [], confirmDangerous: false },
+    safety    : {
+        readOnly            : false,
+        allowedDomains      : [],
+        deniedDomains       : [],
+        allowPrivateNetworks: true,
+        confirmDangerous    : false,
+    },
 };
 
 async function start(

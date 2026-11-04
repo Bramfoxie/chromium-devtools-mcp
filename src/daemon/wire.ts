@@ -24,7 +24,11 @@ export const requestParamSchemas = {
             allowedDomains: z.array(
                 z.string().min(1).max(MAX_DOMAIN_RULE_CHARS).refine(isValidDomainRule),
             ).max(MAX_DOMAIN_RULES),
-            confirmDangerous: z.boolean(),
+            deniedDomains: z.array(
+                z.string().min(1).max(MAX_DOMAIN_RULE_CHARS).refine(isValidDomainRule),
+            ).max(MAX_DOMAIN_RULES),
+            allowPrivateNetworks: z.boolean(),
+            confirmDangerous    : z.boolean(),
         }).optional(),
     }),
     "session.list"  : z.strictObject({}),

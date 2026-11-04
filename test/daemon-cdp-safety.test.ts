@@ -129,8 +129,58 @@ describe("session safety in the daemon", () => {
         await expect(session.send({ targetId: tab, method: "Page.navigate", params: { url: "https://example.com/" } })).resolves.toMatchObject({ echoed: "Page.navigate" });
     });
 
+    it("refuses a denied host and a private address when a tab is created or navigated", async () => {
+        const { backend, session } = await open(
+            safe({ deniedDomains: ["bad.test"], allowPrivateNetworks: false }),
+        );
+
+        expect((await failure(session.createTab("https://bad.test/")))?.message)
+            .toContain("safety.deniedDomains");
+        expect((await failure(session.createTab("http://127.0.0.1:3000/")))?.message)
+            .toContain("safety.allowPrivateNetworks");
+        expect((await failure(session.createTab("http://169.254.169.254/")))?.code)
+            .toBe(ErrorCode.forbiddenMethod);
+        await expect(session.createTab("https://example.com/")).resolves.toMatch(/./);
+
+        const tab = await session.createTab("about:blank");
+        const moved = await failure(
+            session.send({ targetId: tab, method: "Page.navigate", params: { url: "http://localhost/" } }),
+        );
+
+        expect(moved?.code).toBe(ErrorCode.forbiddenMethod);
+        expect(backend.log.join("\n")).not.toContain("localhost");
+    });
+
+    it("opens a private address once the session allows private networks or names the host", async () => {
+        const open1 = await open(safe({ allowPrivateNetworks: true }));
+        const named = await open(
+            safe({ allowedDomains: ["localhost:3000"], allowPrivateNetworks: false }),
+        );
+
+        await expect(open1.session.createTab("http://127.0.0.1:3000/")).resolves.toMatch(/./);
+        await expect(named.session.createTab("http://localhost:3000/")).resolves.toMatch(/./);
+        expect((await failure(named.session.createTab("http://localhost:4000/")))?.message)
+            .toContain("safety.allowedDomains");
+    });
+
+    it("refuses cookie writes for a denied host", () => {
+        const safety = safe({ deniedDomains: ["bad.test"] });
+        const write = (params: Record<string, unknown>) => () =>
+            checkGuardedCall({
+                method   : "Network.setCookie",
+                params,
+                safety,
+                confirmed: false,
+                tabUrl   : "https://example.com/",
+            });
+
+        expect(refusal(write({ url: "https://bad.test/" }))).toContain("safety.deniedDomains");
+        expect(refusal(write({ domain: ".bad.test" }))).toContain("safety.deniedDomains");
+        expect(refusal(write({ url: "https://example.com/" }))).toBeUndefined();
+    });
+
     it("enforces the cookie and file policy with the real tab URL", async () => {
-        const { session, backend } = await open(safe({ allowedDomains: ["example.com"], confirmDangerous: true }));
+        const { session, backend } = await open(safe({ allowedDomains: ["example.com"], deniedDomains: [], allowPrivateNetworks: true, confirmDangerous: true }));
         const tab = await session.createTab("https://example.com/");
 
         const unconfirmed = await failure(session.send({ targetId: tab, method: "Network.setCookie", params: { name: "a", value: "b", url: "https://example.com/" } }));

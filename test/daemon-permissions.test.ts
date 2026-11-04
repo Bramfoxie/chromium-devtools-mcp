@@ -165,7 +165,13 @@ describe("permission.set on a session", () => {
     it("is refused in read-only mode", async () => {
         const { backend, open } = setup();
         const session = await open("a", {
-            safety: { readOnly: true, allowedDomains: [], confirmDangerous: false },
+            safety: {
+                readOnly            : true,
+                allowedDomains      : [],
+                deniedDomains       : [],
+                allowPrivateNetworks: true,
+                confirmDangerous    : false,
+            },
         });
 
         expect(await code(session.setPermission({ ...grant, origin: SITE }))).toBe(
@@ -177,7 +183,7 @@ describe("permission.set on a session", () => {
     it("is refused for an origin outside allowedDomains", async () => {
         const { backend, open } = setup();
         const session = await open("a", {
-            safety: { readOnly: false, allowedDomains: ["a.example"], confirmDangerous: false },
+            safety: { readOnly: false, allowedDomains: ["a.example"], deniedDomains: [], allowPrivateNetworks: true, confirmDangerous: false },
         });
 
         expect(await code(session.setPermission({ ...grant, origin: OTHER }))).toBe(
