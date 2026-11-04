@@ -40,6 +40,8 @@ export { a11yEntries, summarize as summarizeA11y } from "./a11y-tree.js";
 
 export { downloads } from "./downloads.js";
 
+export { selectTools, TOOL_GROUPS, type ToolSelection } from "./tool-selection.js";
+
 export { DownloadState, safeFilename, type DownloadItem } from "./download-state.js";
 
 export { networkHar } from "./network-har.js";

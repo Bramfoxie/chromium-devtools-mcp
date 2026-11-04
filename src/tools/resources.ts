@@ -131,8 +131,20 @@ function describe(kind: Kind): { title: string; description: string; mimeType: s
 }
 
 // The resources of the tabs this session owns, read with the same limits as the tools.
-export function registerResources(server: McpServer, runtime: ToolRuntime): void {
+const NEEDS: Record<Kind, readonly string[]> = {
+    text      : ["dom_query", "dom_snapshot", "a11y_snapshot"],
+    screenshot: ["screenshot"],
+    console   : ["console_logs"],
+};
+
+export function registerResources(
+    server  : McpServer,
+    runtime : ToolRuntime,
+    enabled?: ReadonlySet<string>,
+): void {
     for (const kind of KINDS) {
+        if (enabled !== undefined && !NEEDS[kind].some((name) => enabled.has(name))) continue;
+
         const meta = describe(kind);
         const template = new ResourceTemplate(`${SCHEME}{tab}/${kind}`, {
             list: async () => {

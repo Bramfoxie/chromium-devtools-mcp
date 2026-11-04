@@ -15,6 +15,7 @@ import {
     type LighthouseTools,
     registerResources,
     registerTools,
+    selectTools,
     ToolRuntime,
     type VideoTools,
 } from "../tools/index.js";
@@ -182,8 +183,10 @@ export function registerServerTools(
     });
 
     runtime.attach();
-    registerTools({ server, tools: options.tools ?? allTools, runtime });
-    registerResources(server, runtime);
+    const tools = options.tools ?? selectTools(allTools, config);
+
+    registerTools({ server, tools, runtime });
+    registerResources(server, runtime, new Set(tools.map((tool) => tool.name)));
 
     return runtime;
 }

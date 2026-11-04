@@ -78,17 +78,21 @@ function envLayer(env: NodeJS.ProcessEnv): Layer {
     const port = get("DEBUG_PORT");
     const domains = get("ALLOWED_DOMAINS");
     const denied = get("DENIED_DOMAINS");
+    const tools = get("TOOLS");
+    const excluded = get("EXCLUDE_TOOLS");
 
     return compact({
-        browser   : get("BROWSER"),
-        mode      : get("MODE"),
-        headless  : bool("HEADLESS"),
-        profileDir: get("PROFILE_DIR"),
-        debugPort : port === undefined ? undefined : toInt(port),
-        wsEndpoint: get("WS_ENDPOINT"),
-        allowFocus: bool("ALLOW_FOCUS"),
-        isolated  : bool("ISOLATED"),
-        safety    : {
+        browser     : get("BROWSER"),
+        mode        : get("MODE"),
+        headless    : bool("HEADLESS"),
+        profileDir  : get("PROFILE_DIR"),
+        debugPort   : port === undefined ? undefined : toInt(port),
+        wsEndpoint  : get("WS_ENDPOINT"),
+        allowFocus  : bool("ALLOW_FOCUS"),
+        isolated    : bool("ISOLATED"),
+        tools       : tools === undefined ? undefined : toList(tools),
+        excludeTools: excluded === undefined ? undefined : toList(excluded),
+        safety      : {
             readOnly            : bool("READ_ONLY"),
             allowedDomains      : domains === undefined ? undefined : toList(domains),
             deniedDomains       : denied === undefined ? undefined : toList(denied),
@@ -118,6 +122,8 @@ function parseFlags(argv: string[]) {
                 "allowed-domains"       : { type: "string" },
                 "denied-domains"        : { type: "string" },
                 "allow-private-networks": { type: "boolean" },
+                tools                   : { type: "string" },
+                "exclude-tools"         : { type: "string" },
                 "confirm-dangerous"     : { type: "boolean" },
             },
         });
@@ -133,17 +139,21 @@ function argvLayer(argv: string[]): Layer {
     const port = values["debug-port"];
     const domains = values["allowed-domains"];
     const denied = values["denied-domains"];
+    const tools = values.tools;
+    const excluded = values["exclude-tools"];
 
     return compact({
-        browser   : values.browser,
-        mode      : values.mode,
-        headless  : values.headless,
-        profileDir: values["profile-dir"],
-        debugPort : typeof port === "string" ? toInt(port) : port,
-        wsEndpoint: values["ws-endpoint"],
-        allowFocus: values["allow-focus"],
-        isolated  : values.isolated,
-        safety    : {
+        browser     : values.browser,
+        mode        : values.mode,
+        headless    : values.headless,
+        profileDir  : values["profile-dir"],
+        debugPort   : typeof port === "string" ? toInt(port) : port,
+        wsEndpoint  : values["ws-endpoint"],
+        allowFocus  : values["allow-focus"],
+        isolated    : values.isolated,
+        tools       : typeof tools === "string" ? toList(tools) : tools,
+        excludeTools: typeof excluded === "string" ? toList(excluded) : excluded,
+        safety      : {
             readOnly            : values["read-only"],
             allowedDomains      : typeof domains === "string" ? toList(domains) : domains,
             deniedDomains       : typeof denied === "string" ? toList(denied) : denied,
@@ -277,6 +287,8 @@ const FIELDS = [
     "wsEndpoint",
     "allowFocus",
     "isolated",
+    "tools",
+    "excludeTools",
 ] as const;
 
 const SAFETY_FIELDS = [

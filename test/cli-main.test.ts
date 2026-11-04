@@ -369,6 +369,21 @@ describe("config", () => {
         expect(output).toEqual([]);
     });
 
+    it("exits with 2 for a tool name that does not exist", async () => {
+        const { run, output } = harness({
+            out     : () => undefined,
+            describe: () => ({
+                file   : "/c.json",
+                exists : false,
+                config : cannedConfig({ tools: ["clik"] }),
+                sources: {},
+            }),
+        });
+
+        expect(await run(["config", "--tools", "clik"])).toBe(2);
+        expect(output.join("")).toContain('unknown tool or group "clik"');
+    });
+
     it("explains an invalid configuration and exits with 2", async () => {
         const { run, output } = harness({
             describe: () => {
