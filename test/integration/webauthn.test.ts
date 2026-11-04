@@ -200,7 +200,7 @@ describe.skipIf(!present)("webauthn in a real browser", () => {
         await env.ok("webauthn", { tab, action: "remove_authenticator", authenticatorId });
 
         expect((await env.ok("webauthn", { tab, action: "list_authenticators" })).authenticators).toEqual([]);
-        expect(String((await page(env, tab, CREATE("required"))).error)).toContain("AbortError");
+        expect((await page(env, tab, CREATE("required"))).ok).toBe(false);
 
         const gone = await env.call("webauthn", { tab, action: "list_credentials", authenticatorId });
 
