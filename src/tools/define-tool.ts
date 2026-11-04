@@ -76,6 +76,7 @@ export interface ToolDefinition<
     name         : string;
     description  : string;
     closedWorld? : boolean;
+    untrusted?   : boolean;
     access       : ToolAccess;
     dangerous?   : boolean | ((args: z.output<TInputSchema>) => boolean);
     summarize?   : (args: z.output<TInputSchema>) => string;

@@ -10,7 +10,7 @@ import { ToolRuntime } from "./context.js";
 import { admit } from "./gate.js";
 import { ToolError, toToolMessage } from "./errors.js";
 import { accessFor, mayBeDangerous, mayMutate } from "./tool-traits.js";
-import { errorResult, jsonResult } from "./result.js";
+import { errorResult, jsonResult, markUntrusted } from "./result.js";
 import { logDaemon } from "../util/log.js";
 import { SessionResetError } from "../mcp/index.js";
 
@@ -125,9 +125,9 @@ export async function runTool(
 
         const value = validated.data as Record<string, unknown>;
 
-        if (tool.present) return tool.present(validated.data);
+        const result = tool.present ? tool.present(validated.data) : jsonResult(value);
 
-        return jsonResult(value);
+        return tool.untrusted === false ? result : markUntrusted(result);
     } catch (error) {
         if (error instanceof SessionResetError) return errorResult(error.message);
 

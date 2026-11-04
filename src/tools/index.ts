@@ -8,7 +8,7 @@ export { ToolError, toToolMessage } from "./errors.js";
 
 export { CANCELLED_MESSAGE, registerTools, runTool, throwIfCancelled } from "./registry.js";
 
-export { binaryResult, errorResult, imageBlock, jsonResult, resourceBlock, textBlock, truncateText } from "./result.js";
+export { binaryResult, errorResult, imageBlock, jsonResult, markUntrusted, resourceBlock, textBlock, truncateText, UNTRUSTED_NOTICE } from "./result.js";
 
 export { checkSafety, type SafetyRequest } from "./safety.js";
 

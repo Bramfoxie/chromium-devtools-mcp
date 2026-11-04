@@ -7,6 +7,7 @@ const BRING_TO_FRONT_TIMEOUT_MS = 5000;
 
 export const bringToFront = defineTool({
     name       : "bring_to_front",
+    untrusted  : false,
     closedWorld: true,
     description:
         "Bring a tab and its window to the front and take the keyboard focus. Call it only when the user asked to see the tab. It works only when the owner enabled allowFocus.",
