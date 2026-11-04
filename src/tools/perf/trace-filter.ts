@@ -24,6 +24,23 @@ const MAX_DEPTH = 6;
 
 const SCHEME_MARK = "://";
 
+const FRAME_KEY = /^frame(Id)?$/i;
+
+const IDENTITY_KEYS = new Set([
+    "url",
+    "title",
+    "host",
+    "hostname",
+    "origin",
+    "href",
+    "domain",
+    "message",
+    "documentloaderurl",
+    "securityorigin",
+]);
+
+const PAGE_CHOSEN_CATEGORIES = ["blink.user_timing", "blink.console", "latencyInfo"];
+
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null;
 }
@@ -40,21 +57,29 @@ function collectFrames(value: unknown, found: Set<string>, depth = 0): void {
     if (!isRecord(value)) return;
 
     for (const [key, item] of Object.entries(value)) {
-        if (key === "frame" && typeof item === "string") found.add(item);
+        if (FRAME_KEY.test(key) && typeof item === "string") found.add(item);
         else collectFrames(item, found, depth + 1);
     }
 }
 
-function mentionsAddress(value: unknown, depth = 0): boolean {
+function mentionsIdentity(value: unknown, depth = 0): boolean {
     if (typeof value === "string") return value.includes(SCHEME_MARK);
 
     if (depth > MAX_DEPTH) return true;
 
-    if (Array.isArray(value)) return value.some((item) => mentionsAddress(item, depth + 1));
+    if (Array.isArray(value)) return value.some((item) => mentionsIdentity(item, depth + 1));
 
     if (!isRecord(value)) return false;
 
-    return Object.values(value).some((item) => mentionsAddress(item, depth + 1));
+    return Object.entries(value).some(
+        ([key, item]) => IDENTITY_KEYS.has(key.toLowerCase()) || mentionsIdentity(item, depth + 1),
+    );
+}
+
+function pageChosen(event: TraceEvent): boolean {
+    const categories = (event.cat ?? "").split(",");
+
+    return PAGE_CHOSEN_CATEGORIES.some((category) => categories.includes(category));
 }
 
 function framesOf(event: TraceEvent): Set<string> {
@@ -79,9 +104,7 @@ function ownFramesOnly(event: TraceEvent, tabFrames: ReadonlySet<string>): Trace
         : { ...event, args: { ...event.args, data: { ...data, frames } } };
 }
 
-// A trace covers the whole browser, so only what belongs to the frames of one tab is kept:
-// events that name those frames, and the events of the processes that host them when they
-// carry no address. Everything else, including every browser process event, is dropped.
+// Keeps the events that name only frames of the tab and the identity free events of its processes.
 export function filterTrace(
     events   : readonly TraceEvent[],
     tabFrames: ReadonlySet<string>,
@@ -131,7 +154,10 @@ export function filterTrace(
             return;
         }
 
-        if (event.pid !== undefined && tabPids.has(event.pid) && !mentionsAddress(event.args)) {
+        if (
+            event.pid !== undefined && tabPids.has(event.pid) &&
+            !pageChosen(event) && !mentionsIdentity(event.args)
+        ) {
             kept.push(event);
         }
     });

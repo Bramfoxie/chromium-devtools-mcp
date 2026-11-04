@@ -12,7 +12,7 @@ An MCP server that lets AI agents drive Chrome through the DevTools Protocol, ei
 - One per-user daemon serves several MCP clients at once, each in its own session, optionally in an isolated browser context.
 - Never steals focus: tabs open in the background and input does not raise windows. `bring_to_front` exists for the moment you ask to see a tab and works only with `allowFocus` on.
 - Reaches into shadow DOM and cross-site iframes from every element tool.
-- Performance traces, Core Web Vitals, heap snapshots, screen recording, Lighthouse audits, passkey testing and location emulation, each kept to the tab it was asked for.
+- Performance traces, Core Web Vitals, heap snapshots, screen recording, Lighthouse audits, passkey testing and location emulation, each for the tab you point it at.
 - Safety options for agents: read-only mode, domain allowlist, confirmation of dangerous actions.
 
 ## Quick start

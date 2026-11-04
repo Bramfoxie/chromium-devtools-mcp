@@ -62,7 +62,7 @@ export const perfTraceStop = defineTool({
     name       : "perf_trace_stop",
     closedWorld: true,
     description:
-        "Stop the trace of a tab, save it as a file that the Performance panel of Chrome DevTools opens, and report the Core Web Vitals, long tasks, main thread activity, requests and a rating of each. The file and the numbers hold the tab only, never the other tabs of the browser.",
+        "Stop the trace of a tab, save it as a file that the Performance panel of Chrome DevTools opens, and report the Core Web Vitals, long tasks, main thread activity, requests and a rating of each. The file and the numbers keep the events of the frames of the tab and the address free events of its processes, not those of other tabs.",
     access: "read",
     input : z.strictObject({ tab: tabSchema }),
     output: z.strictObject({

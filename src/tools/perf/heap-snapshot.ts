@@ -11,7 +11,7 @@ const CHUNK_EVENT = "HeapProfiler.addHeapSnapshotChunk";
 
 const SNAPSHOT_TIMEOUT_MS = 120_000;
 
-const MAX_SNAPSHOT_CHARS = 150 * 1024 * 1024;
+const MAX_SNAPSHOT_CHARS = 100 * 1024 * 1024;
 
 const TOP_DEFAULT = 15;
 
@@ -123,7 +123,7 @@ export const heapSnapshot = defineTool({
 
         if (collected.tooLarge) {
             throw new ToolError(
-                "The snapshot is larger than 150 MiB, so it was dropped. Close what the page keeps in memory and try again.",
+                "The snapshot is larger than 100 MiB, so it was dropped. Close what the page keeps in memory and try again.",
             );
         }
 

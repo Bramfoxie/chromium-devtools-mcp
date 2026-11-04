@@ -150,11 +150,11 @@ describe("heap_snapshot", () => {
 
     it("drops a snapshot that is too large", async () => {
         const huge = "x".repeat(1024 * 1024);
-        const { runtime, written } = setup({ chunks: Array.from({ length: 151 }, () => huge) });
+        const { runtime, written } = setup({ chunks: Array.from({ length: 101 }, () => huge) });
         const result = await runTool(heapSnapshot, {}, extra(), runtime);
 
         expect(result.isError).toBe(true);
-        expect(text(result)).toContain("larger than 150 MiB");
+        expect(text(result)).toContain("larger than 100 MiB");
         expect(written).toEqual([]);
     });
 

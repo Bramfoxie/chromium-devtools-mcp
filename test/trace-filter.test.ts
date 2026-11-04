@@ -109,4 +109,43 @@ describe("filterTrace", () => {
             `${MINE}:RunTask`,
         ]);
     });
+
+    it("drops identity carrying and page chosen events of a process the tab shares", () => {
+        const shared: TraceEvent[] = [
+            ev({ pid: MINE, name: "navigationStart", args: { frame: MY_FRAME } }),
+            ev({ pid: MINE, name: "RunTask", dur: 4, args: {} }),
+            ev({ pid: MINE, name: "MinorGC", dur: 2, args: { usedHeapSizeBefore: 1 } }),
+            ev({ pid: MINE, cat: "blink.user_timing", name: "mark:secret-order-12345", args: {} }),
+            ev({ pid: MINE, cat: "blink.console", name: "TimeStamp", args: {} }),
+            ev({ pid: MINE, name: "EventDispatch", args: { data: { title: "Inbox (3) - bob@corp" } } }),
+            ev({ pid: MINE, name: "Resolve", args: { host: "secret.test" } }),
+            ev({ pid: MINE, name: "Resolve", args: { data: { Hostname: "secret.test" } } }),
+            ev({ pid: MINE, name: "TimeStamp", args: { data: { message: "order 12345" } } }),
+            ev({ pid: MINE, name: "Layout", args: { frameId: OTHER_FRAME } }),
+            ev({ pid: MINE, name: "Layout", args: { data: { frame: MY_FRAME, frameId: OTHER_FRAME } } }),
+        ];
+        const kept = filterTrace(shared, tabFrames).events;
+
+        expect(names(kept)).toEqual([
+            `${MINE}:navigationStart`,
+            `${MINE}:RunTask`,
+            `${MINE}:MinorGC`,
+        ]);
+
+        for (const secret of ["secret-order", "bob@corp", "secret.test", "order 12345", "FRAME-OTHER"]) {
+            expect(JSON.stringify(kept)).not.toContain(secret);
+        }
+    });
+
+    it("keeps an event of the tab that names its frame under the key frameId", () => {
+        const kept = filterTrace(
+            [
+                ev({ pid: MINE, name: "navigationStart", args: { frame: MY_FRAME } }),
+                ev({ pid: MINE, name: "Layout", args: { frameId: MY_FRAME } }),
+            ],
+            tabFrames,
+        ).events;
+
+        expect(names(kept)).toEqual([`${MINE}:navigationStart`, `${MINE}:Layout`]);
+    });
 });
