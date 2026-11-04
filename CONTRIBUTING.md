@@ -16,12 +16,12 @@ npm install
 
 - `npm run lint`: eslint
 - `npm run typecheck`: TypeScript without emit
-- `npm test`: unit tests and, when a Chrome is found, integration tests in a temporary profile
+- `npm test`: unit tests and, when a Chrome is found, integration tests in a temporary profile; the test of the built server over stdio runs only when `dist/` exists, so build first
 - `npm run build`: compile to `dist/`
 
 ## Definition of done
 
-Run `npm run lint && npm run typecheck && npm test && npm run build`. Update the README and docs when behavior changes. Every new behavior has tests in `test/`, and a bug fix starts with a failing test. Unit tests need no browser and no network.
+Run `npm run lint && npm run typecheck && npm run build && npm test`. Update the README and docs when behavior changes. Every new behavior has tests in `test/`, and a bug fix starts with a failing test. Unit tests need no browser and no network.
 
 ## Code and text
 
