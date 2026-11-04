@@ -93,7 +93,11 @@ describe.skipIf(!present)("perf_trace in a real browser", () => {
 
         await env.ok("perf_trace_start", { tab: mine });
         await env.ok("input_click", { tab: mine, target: { selector: "#slow" } });
-        await new Promise((resolve) => setTimeout(resolve, 600));
+        await env.ok("page_wait", {
+            tab       : mine,
+            expression: "document.getElementById('slow').textContent === 'done'",
+        });
+        await new Promise((resolve) => setTimeout(resolve, 1500));
 
         const stopped = (await env.ok("perf_trace_stop", { tab: mine })) as unknown as Stopped;
 
