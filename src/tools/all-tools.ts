@@ -1,5 +1,6 @@
 import { bringToFront } from "./bring-to-front.js";
 import { consoleLogs } from "./console-logs.js";
+import { cssEdit } from "./css-edit.js";
 import { cssInspect } from "./css-inspect.js";
 import { domEdit } from "./dom-edit.js";
 import type { AnyTool } from "./define-tool.js";
@@ -53,6 +54,7 @@ export const allTools: AnyTool[] = [
     domSnapshot,
     domEdit,
     cssInspect,
+    cssEdit,
     consoleLogs,
     networkRequests,
     networkResponseBody,

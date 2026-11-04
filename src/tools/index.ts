@@ -26,6 +26,8 @@ export { WALK_NODE_BUDGET } from "./walk-script.js";
 
 export { clipCssValue, cssInspect, DEFAULT_CSS_PROPERTIES, quadToRect, shapeComputed, shapeInherited, droppedWinners, shapeMatchedRules } from "./css-inspect.js";
 
+export { buildRuleText, buildSetStyleRequest, clipPreviousMap, cssEdit, isValidPropertyName, splitImportant } from "./css-edit.js";
+
 export { buildDomEditRequest, domEdit, domEditEffect, isDangerousDomEdit, isValidAttributeName, isValidClassToken, shapePrevious } from "./dom-edit.js";
 
 export { consoleLogs } from "./console-logs.js";

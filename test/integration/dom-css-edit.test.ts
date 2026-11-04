@@ -214,3 +214,139 @@ describe.skipIf(!present)("dom_edit in a real browser", () => {
         expect(missing.text).toContain("needs text");
     });
 });
+
+describe.skipIf(!present)("css_edit in a real browser", () => {
+    it("edits inline styles and reports previous and computed values", async () => {
+        const tab = await env.open("/edit");
+
+        const result = (await env.ok("css_edit", {
+            tab,
+            target      : { selector: "#card" },
+            action      : "set_style",
+            declarations: { color: "rgb(255, 0, 0)" },
+        })) as { previous?: Record<string, string>; computed?: Record<string, string> };
+
+        expect(result.previous).toEqual({ color: "" });
+        expect(result.computed?.color).toContain("255, 0, 0");
+        expect(await read(tab, "document.getElementById('card').style.color")).toBe("rgb(255, 0, 0)");
+
+        const cleared = (await env.ok("css_edit", {
+            tab,
+            target      : { selector: "#card" },
+            action      : "set_style",
+            declarations: { color: "" },
+        })) as { previous?: Record<string, string> };
+
+        expect(cleared.previous).toEqual({ color: "rgb(255, 0, 0)" });
+        expect(await read(tab, "document.getElementById('card').style.color")).toBe("");
+    });
+
+    it("adds and removes a rule in a tagged style element", async () => {
+        const tab = await env.open("/edit");
+
+        expect(await read(tab, "document.querySelectorAll('style[data-cdm]').length")).toBe(0);
+
+        const added = (await env.ok("css_edit", {
+            tab,
+            target      : { selector: "#card" },
+            action      : "add_rule",
+            selector    : "#card",
+            declarations: { color: "rgb(0, 0, 255)" },
+        })) as { ruleId?: string; selector?: string };
+
+        expect(typeof added.ruleId).toBe("string");
+        expect(added.selector).toBe("#card");
+        expect(await read(tab, "document.querySelectorAll('style[data-cdm]').length")).toBe(1);
+        expect(await read(tab, "getComputedStyle(document.getElementById('card')).color")).toContain("0, 0, 255");
+
+        const again = (await env.ok("css_edit", {
+            tab,
+            target      : { selector: "#card" },
+            action      : "add_rule",
+            selector    : "#gone",
+            declarations: { color: "rgb(0, 128, 0)" },
+        })) as { ruleId?: string };
+
+        expect(again.ruleId).not.toBe(added.ruleId);
+        expect(await read(tab, "document.querySelectorAll('style[data-cdm]').length")).toBe(1);
+
+        await env.ok("css_edit", { tab, target: { selector: "#card" }, action: "remove_rule", ruleId: added.ruleId });
+        expect(await read(tab, "getComputedStyle(document.getElementById('card')).color")).not.toContain("0, 0, 255");
+        expect(await read(tab, "document.querySelectorAll('style[data-cdm]').length")).toBe(1);
+
+        await env.ok("css_edit", { tab, target: { selector: "#card" }, action: "remove_rule", ruleId: again.ruleId });
+        expect(await read(tab, "document.querySelectorAll('style[data-cdm]').length")).toBe(0);
+
+        const missing = await env.call("css_edit", {
+            tab,
+            target: { selector: "#card" },
+            action: "remove_rule",
+            ruleId: "99",
+        });
+
+        expect(missing.isError).toBe(false);
+        expect(missing.text).toContain("already have been removed");
+    });
+
+    it("edits styles in shadow DOM and in same-process iframes", async () => {
+        const tab = await env.open("/edit");
+
+        const shadow = (await env.ok("css_edit", {
+            tab,
+            target      : { selector: "#host >>> #deep" },
+            action      : "set_style",
+            declarations: { color: "rgb(255, 0, 0)" },
+        })) as { computed?: Record<string, string> };
+
+        expect(shadow.computed?.color).toContain("255, 0, 0");
+
+        const frame = await frameIdOf(tab, "/edit-inner");
+        const framed = (await env.ok("css_edit", {
+            tab,
+            target      : { selector: "#inner", frame },
+            action      : "set_style",
+            declarations: { color: "rgb(0, 0, 255)" },
+        })) as { computed?: Record<string, string> };
+
+        expect(framed.computed?.color).toContain("0, 0, 255");
+        expect(await read(tab, `getComputedStyle(document.querySelector("iframe").contentDocument.getElementById("inner")).color`))
+            .toContain("0, 0, 255");
+
+        await env.ok("css_edit", {
+            tab,
+            target      : { selector: "#inner", frame },
+            action      : "add_rule",
+            selector    : "#inner",
+            declarations: { color: "rgb(0, 128, 0)" },
+        });
+        expect(await read(tab, `document.querySelector("iframe").contentDocument.querySelectorAll("style[data-cdm]").length`))
+            .toBe(1);
+        expect(await read(tab, "document.querySelectorAll('style[data-cdm]').length")).toBe(0);
+    });
+
+    it("rejects an invalid selector and bad property names", async () => {
+        const tab = await env.open("/edit");
+
+        const bad = await env.call("css_edit", {
+            tab,
+            target      : { selector: "#card" },
+            action      : "add_rule",
+            selector    : "???",
+            declarations: { color: "red" },
+        });
+
+        expect(bad.isError).toBe(true);
+        expect(bad.text).toContain("is invalid");
+        expect(await read(tab, "document.querySelectorAll('style[data-cdm]').length")).toBe(0);
+
+        const property = await env.call("css_edit", {
+            tab,
+            target      : { selector: "#card" },
+            action      : "set_style",
+            declarations: { "bad name": "red" },
+        });
+
+        expect(property.isError).toBe(true);
+        expect(property.text).toContain("Property names");
+    });
+});
