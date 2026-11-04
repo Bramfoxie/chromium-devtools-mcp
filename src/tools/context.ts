@@ -162,9 +162,7 @@ export class ToolRuntime {
         const origin = this.emulation.snapshot(targetId).geolocation?.origin;
 
         this.emulation.forget(targetId);
-        await mock;
-        await trace;
-        await screencast;
+        await Promise.allSettled([mock, trace, screencast]);
 
         if (origin !== undefined && !this.emulation.geolocationOrigins().has(origin)) {
             await this.access
