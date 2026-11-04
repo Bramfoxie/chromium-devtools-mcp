@@ -67,6 +67,14 @@ describe("describeConfig", () => {
 });
 
 describe("formatConfigReport", () => {
+    it("does not print the browser id of a wsEndpoint", () => {
+        const given = "ws://127.0.0.1:9222/devtools/browser/abc-secret-id";
+        const text = formatConfigReport(describeWith(undefined, {}, [`--ws-endpoint=${given}`]));
+
+        expect(text).toContain("ws://127.0.0.1:9222/devtools/browser/<id>");
+        expect(text).not.toContain("abc-secret-id");
+    });
+
     it("lists every setting with its value and source and says the configuration is valid", () => {
         const text = formatConfigReport(
             describeWith(JSON.stringify({ safety: { allowedDomains: ["a.test", "b.test"] } }), {}, [

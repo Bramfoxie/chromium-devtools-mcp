@@ -8,6 +8,10 @@ function show(value: unknown): string {
     return String(value);
 }
 
+function maskEndpoint(endpoint: string | undefined): string | undefined {
+    return endpoint?.replace(/(\/devtools\/browser\/).*$/, "$1<id>");
+}
+
 export function formatConfigReport(report: ConfigReport): string {
     const { config } = report;
     const rows: Array<[string, unknown]> = [
@@ -16,7 +20,7 @@ export function formatConfigReport(report: ConfigReport): string {
         ["headless", config.headless],
         ["profileDir", config.profileDir],
         ["debugPort", config.debugPort],
-        ["wsEndpoint", config.wsEndpoint],
+        ["wsEndpoint", maskEndpoint(config.wsEndpoint)],
         ["allowFocus", config.allowFocus],
         ["isolated", config.isolated],
         ["tools", config.tools === undefined || config.tools.length === 0 ? "(all)" : config.tools],
