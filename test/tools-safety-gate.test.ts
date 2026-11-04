@@ -77,6 +77,7 @@ const READING: Case[] = [
     ["css_inspect", { uid: "1_1" }],
     ["console_logs", {}],
     ["network_requests", {}],
+    ["network_har", {}],
     ["network_response_body", {}],
     ["network_mock", { action: "list" }],
     ["page_dialogs", {}],

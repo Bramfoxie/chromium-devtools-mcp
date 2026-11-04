@@ -16,6 +16,7 @@ export interface NetworkRecord {
     redirect        : boolean;
     errorText?      : string;
     startTime?      : number;
+    wallTime?       : number;
     finishedAt?     : number;
     durationMs?     : number;
     encodedBytes?   : number;
@@ -159,6 +160,7 @@ export function reduceNetworkEvent(
         record.url = redactUrl(data.request.url);
         record.resourceType = data.type ?? "";
         record.startTime = data.timestamp;
+        record.wallTime = data.wallTime;
         record.initiator = data.initiator?.type;
         record.requestHeaders = stringHeaders(data.request.headers);
 

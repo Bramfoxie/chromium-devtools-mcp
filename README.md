@@ -74,7 +74,7 @@ Compared against Chrome DevTools MCP 1.12.0 (2026-10-22, [ChromeDevTools/chrome-
 
 ## Tools
 
-49 tools. Details and parameters are in [docs/tools.md](docs/tools.md).
+50 tools. Details and parameters are in [docs/tools.md](docs/tools.md).
 
 | Category    | Tools                                                                                                                                       |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -83,7 +83,7 @@ Compared against Chrome DevTools MCP 1.12.0 (2026-10-22, [ChromeDevTools/chrome-
 | Inspection  | `dom_query`, `dom_snapshot`, `dom_edit`, `css_inspect`, `css_edit`, `js_evaluate`, `screenshot`                                             |
 | Input       | `click`, `input_click`, `input_hover`, `input_drag`, `input_type`, `input_key`, `input_scroll`, `input_select`, `input_upload`, `fill_form` |
 | Performance | `perf_trace_start`, `perf_trace_stop`, `heap_snapshot`, `screencast_start`, `screencast_stop`, `lighthouse_audit`                           |
-| Observation | `console_logs`, `network_requests`, `network_response_body`                                                                                 |
+| Observation | `console_logs`, `network_requests`, `network_har`, `network_response_body`                                                                  |
 | Network     | `network_mock`                                                                                                                              |
 | Storage     | `storage_read`, `storage_write`                                                                                                             |
 | Web auth    | `webauthn`                                                                                                                                  |

@@ -32,7 +32,11 @@ export { buildDomEditRequest, domEdit, domEditEffect, isDangerousDomEdit, isVali
 
 export { consoleLogs } from "./console-logs.js";
 
+export { networkHar } from "./network-har.js";
+
 export { networkFilterOf, networkRequests } from "./network-requests.js";
+
+export { buildHar, type Har, type HarEntry } from "./capture/har.js";
 
 export { bodyByteSize, isTextMimeType, networkResponseBody } from "./network-response-body.js";
 

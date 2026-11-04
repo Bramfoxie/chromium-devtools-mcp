@@ -50,6 +50,7 @@ function minimalArgs(name: string): Record<string, unknown> {
         case "page_info":
         case "console_logs":
         case "network_requests":
+        case "network_har":
         case "network_response_body":
         case "storage_read":
             return {};
@@ -108,7 +109,7 @@ const readOnly: Config = {
 };
 
 describe("tool declarations", () => {
-    it("declares forty nine tools with unique names, descriptions and access", () => {
+    it("declares fifty tools with unique names, descriptions and access", () => {
         expect(allTools.map((tool) => tool.name)).toEqual([
             "list_tabs",
             "list_sessions",
@@ -126,6 +127,7 @@ describe("tool declarations", () => {
             "css_edit",
             "console_logs",
             "network_requests",
+            "network_har",
             "network_response_body",
             "network_mock",
             "page_dialogs",
@@ -676,7 +678,7 @@ describe("runTool", () => {
 });
 
 describe("tools/list", () => {
-    it("lists exactly the forty nine tools with their schemas", async () => {
+    it("lists exactly the fifty tools with their schemas", async () => {
         const server = createMcpServer("1.0.0");
 
         registerTools({ server, tools: allTools, runtime: runtime() });
@@ -703,6 +705,7 @@ describe("tools/list", () => {
             "css_edit",
             "console_logs",
             "network_requests",
+            "network_har",
             "network_response_body",
             "network_mock",
             "page_dialogs",

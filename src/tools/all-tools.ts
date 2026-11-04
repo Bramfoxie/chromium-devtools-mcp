@@ -21,6 +21,7 @@ import { inputUpload } from "./input-upload.js";
 import { fillForm } from "./fill-form.js";
 import { jsEvaluate } from "./js-evaluate.js";
 import { networkMock } from "./network-mock.js";
+import { networkHar } from "./network-har.js";
 import { networkRequests } from "./network-requests.js";
 import { networkResponseBody } from "./network-response-body.js";
 import { lighthouseAudit } from "./perf/lighthouse.js";
@@ -57,6 +58,7 @@ export const allTools: AnyTool[] = [
     cssEdit,
     consoleLogs,
     networkRequests,
+    networkHar,
     networkResponseBody,
     networkMock,
     pageDialogs,
