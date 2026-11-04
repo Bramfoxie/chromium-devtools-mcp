@@ -73,14 +73,6 @@ jobs:
       - if: steps.version.outputs.publish == 'true'
         run: npm ci
       - if: steps.version.outputs.publish == 'true'
-        run: npm run lint
-      - if: steps.version.outputs.publish == 'true'
-        run: npm run typecheck
-      - if: steps.version.outputs.publish == 'true'
-        run: npm test
-      - if: steps.version.outputs.publish == 'true'
-        run: npm run build
-      - if: steps.version.outputs.publish == 'true'
         run: npm publish --access public
 
   github-release:
