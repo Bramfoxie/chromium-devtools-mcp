@@ -111,8 +111,9 @@ describe.skipIf(!present)("screencast in a real browser", () => {
     it("reports a recording that ended at its time limit", async () => {
         const tab = await without.open("/anim");
 
-        await without.ok("screencast_start", { tab, maxDurationMs: 1000 });
-        await new Promise((resolve) => setTimeout(resolve, 1600));
+        await without.ok("screencast_start", { tab, maxDurationMs: 1500 });
+        await without.ok("page_navigate", { tab, action: "reload" });
+        await new Promise((resolve) => setTimeout(resolve, 2200));
         const result = (await without.ok("screencast_stop", { tab })) as unknown as Stopped;
 
         expect(result.note).toContain("time limit");
