@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { redactUrl } from "../capture/redact.js";
 
 const FAILED_SHOWN = 15;
 
@@ -11,6 +12,8 @@ const SNIPPET_MAX_CHARS = 160;
 const WARNINGS_SHOWN = 5;
 
 const LINK = /\[([^\]]*)\]\([^)]*\)/g;
+
+const ADDRESS = /https?:\/\/[^\s"'<>)]+/g;
 
 const nodeSchema = z.object({
     selector: z.string().optional(),
@@ -75,8 +78,12 @@ export interface LighthouseSummary {
     warnings    : string[];
 }
 
+function redactAddresses(text: string): string {
+    return text.replace(ADDRESS, (address) => redactUrl(address));
+}
+
 function plain(text: string): string {
-    const clean = text.replace(LINK, "$1").replace(/\s+/g, " ").trim();
+    const clean = redactAddresses(text.replace(LINK, "$1")).replace(/\s+/g, " ").trim();
 
     return clean.length <= TEXT_MAX_CHARS ? clean : `${clean.slice(0, TEXT_MAX_CHARS)}...`;
 }
@@ -91,9 +98,13 @@ function nodesOf(items: unknown[] | undefined): { nodes: AuditNode[]; total: num
 
         const { selector, snippet } = wrapper.data.node;
 
+        const shown = snippet === undefined
+            ? undefined
+            : redactAddresses(snippet).slice(0, SNIPPET_MAX_CHARS);
+
         found.push({
             ...(selector === undefined ? {} : { selector }),
-            ...(snippet === undefined ? {} : { snippet: snippet.slice(0, SNIPPET_MAX_CHARS) }),
+            ...(shown === undefined ? {} : { snippet: shown }),
         });
     }
 
@@ -124,8 +135,8 @@ export function summarizeLighthouse(report: unknown): LighthouseSummary | undefi
 
     return {
         version     : lhr.lighthouseVersion,
-        url         : lhr.finalDisplayedUrl ?? lhr.finalUrl ?? lhr.requestedUrl ?? "",
-        requestedUrl: lhr.requestedUrl ?? "",
+        url         : redactUrl(lhr.finalDisplayedUrl ?? lhr.finalUrl ?? lhr.requestedUrl ?? ""),
+        requestedUrl: redactUrl(lhr.requestedUrl ?? ""),
         device      : lhr.configSettings?.formFactor ?? "unknown",
         durationMs  : Math.round(lhr.timing?.total ?? 0),
         scores      : Object.entries(lhr.categories).map(([category, entry]) => ({

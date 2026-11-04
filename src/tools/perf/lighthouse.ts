@@ -1,5 +1,6 @@
 import path from "node:path";
 import { z } from "zod";
+import { childEnvironment } from "../../util/programs.js";
 import { defineTool } from "../define-tool.js";
 import { ToolError } from "../errors.js";
 import { throwIfCancelled } from "../registry.js";
@@ -114,7 +115,7 @@ export const lighthouseAudit = defineTool({
             ],
             dir.path,
             args.timeoutMs ?? TIMEOUT_DEFAULT_MS,
-            { ...process.env, ...(chrome === undefined ? {} : { CHROME_PATH: chrome }) },
+            childEnvironment(process.env, { CHROME_PATH: chrome }),
             context.signal,
         );
 

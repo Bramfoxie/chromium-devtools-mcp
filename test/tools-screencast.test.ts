@@ -45,9 +45,10 @@ function setup(video: Partial<VideoTools> = {}) {
         }),
     };
     const tools: VideoTools = {
-        find: async () => undefined,
-        run : async () => ({ ok: true, error: "" }),
-        size: async () => 4096,
+        find  : async () => undefined,
+        run   : async () => ({ ok: true, error: "" }),
+        size  : async () => 4096,
+        remove: async () => undefined,
         ...video,
     };
     const runtime = new ToolRuntime({

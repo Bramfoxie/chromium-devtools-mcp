@@ -13,7 +13,8 @@ function tools(overrides: Partial<VideoTools> = {}) {
 
             return { ok: true, error: "" };
         },
-        size: async () => 1234,
+        size  : async () => 1234,
+        remove: async () => undefined,
         ...overrides,
     };
 

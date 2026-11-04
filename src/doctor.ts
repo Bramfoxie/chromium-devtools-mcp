@@ -20,7 +20,7 @@ import {
     helloIdentity,
     IpcClosedError,
 } from "./daemon/index.js";
-import { findOnPath } from "./tools/perf/video.js";
+import { findOnPath } from "./util/programs.js";
 import { messageOf } from "./util/message-of.js";
 
 export type CheckLevel = "ok" | "info" | "warn" | "fail";

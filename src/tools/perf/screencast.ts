@@ -130,7 +130,7 @@ export const screencastStop = defineTool({
 
         await dir.write("frames.txt", concatList(recorded.frames));
 
-        const encoded = await encodeVideo(context.video, dir.path);
+        const encoded = await encodeVideo(context.video, dir.path, context.signal);
         const early = REASON_TEXT[recorded.reason];
         const base = {
             tab       : targetId,
