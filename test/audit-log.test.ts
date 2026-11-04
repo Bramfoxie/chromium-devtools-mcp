@@ -24,6 +24,19 @@ type Extra = RequestHandlerExtra<ServerRequest, ServerNotification>;
 const extra = () => ({ signal: new AbortController().signal }) as Extra;
 
 describe("summarizeArgs", () => {
+    it("keeps secrets of a network_mock rule out of the summary", () => {
+        const summary = JSON.stringify(summarizeArgs({
+            action: "add",
+            rule  : {
+                urlPattern: "https://example.com/?token=SECRET",
+                response  : { status: 200, body: "password=SECRET", bodyBase64: "U0VDUkVU", headers: { "X-Custom": "SECRET" } },
+            },
+        }));
+
+        expect(summary).not.toContain("SECRET");
+        expect(summary).not.toContain("U0VDUkVU");
+    });
+
     it("keeps short plain values and drops nothing that is not a secret", () => {
         expect(summarizeArgs({ tab: "t1", limit: 5, clear: true, action: "list" })).toEqual({
             tab   : "t1",

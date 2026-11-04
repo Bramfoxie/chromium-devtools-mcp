@@ -12,11 +12,13 @@ const MAX_ITEMS = 10;
 const MAX_ERROR_CHARS = 300;
 
 // What the agent types or runs may hold a secret, so only its length and a short fingerprint are kept.
-const CONTENT_KEYS = new Set(["text", "value", "expression", "html", "prompttext"]);
+const CONTENT_KEYS = new Set(["text", "value", "expression", "html", "prompttext", "body", "bodybase64"]);
+
+const HEADER_MAPS = new Set(["headers"]);
 
 const SECRET_KEY = /pass|secret|token|key|auth|cookie|credential/i;
 
-const URL_KEYS = new Set(["url", "urlcontains", "urlregex", "origin", "href"]);
+const URL_KEYS = new Set(["url", "urlcontains", "urlregex", "origin", "href", "urlpattern"]);
 
 export interface AuditEntry {
     time      : string;
@@ -47,6 +49,12 @@ function summarizeValue(key: string, value: unknown, depth: number): unknown {
     const name = key.toLowerCase();
 
     if (SECRET_KEY.test(key)) return "<redacted>";
+
+    if (HEADER_MAPS.has(name) && typeof value === "object" && value !== null && !Array.isArray(value)) {
+        return Object.fromEntries(
+            Object.entries(value).map(([header, text]) => [header, fingerprint(String(text))]),
+        );
+    }
 
     if (typeof value === "string") {
         if (CONTENT_KEYS.has(name)) return fingerprint(value);
