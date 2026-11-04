@@ -18,7 +18,7 @@ const TIMEOUT_MAX_MS = 300_000;
 const REPORT_BASE = "report";
 
 const NOT_INSTALLED =
-    "Lighthouse is not installed on this machine, so the audit cannot run. Ask the user to install it with `npm install -g lighthouse` (it needs Node.js 22.19 or newer), then call this tool again. Nothing was changed.";
+    "Lighthouse is not installed on this machine, so the audit cannot run. Ask the user to install it with `npm install -g lighthouse`, then call this tool again. Nothing was changed.";
 
 const nodeSchema = z.strictObject({
     selector: z.string().optional().describe("CSS selector of the element."),

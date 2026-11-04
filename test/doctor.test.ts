@@ -72,10 +72,10 @@ describe("doctor", () => {
     });
 
     it("fails on an old Node.js", async () => {
-        const [node] = await runDoctor(attach, deps({ nodeVersion: "20.11.0" }));
+        const [node] = await runDoctor(attach, deps({ nodeVersion: "22.11.0" }));
 
         expect(node?.level).toBe("fail");
-        expect(node?.fix?.[0]).toContain("Node.js 22");
+        expect(node?.fix?.[0]).toContain("Node.js 24");
     });
 
     it("fails when a managed browser is not installed", async () => {

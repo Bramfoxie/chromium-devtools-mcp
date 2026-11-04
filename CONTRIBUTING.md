@@ -2,7 +2,7 @@
 
 ## Setup
 
-Node 22 or newer is required.
+Node 24 or newer is required.
 
 ```sh
 git clone https://github.com/Bramfoxie/chromium-devtools-mcp.git

@@ -122,7 +122,7 @@ Env names, file paths and rules: [docs/configuration.md](docs/configuration.md).
 
 - Browser: Chrome.
 - OS: macOS, Linux, Windows.
-- Node.js 22 or newer. Transport: stdio.
+- Node.js 24 or newer. Transport: stdio.
 
 ## Documentation
 

@@ -48,7 +48,7 @@ export interface DoctorDeps {
     findProgram       : (name: OptionalProgram) => Promise<string | undefined>;
 }
 
-const MIN_NODE_MAJOR = 22;
+const MIN_NODE_MAJOR = 24;
 
 export type OptionalProgram = "ffmpeg" | "lighthouse";
 
@@ -59,7 +59,7 @@ const OPTIONAL_PROGRAMS: Record<OptionalProgram, { use: string; install: string 
     },
     lighthouse: {
         use    : "lighthouse_audit runs it",
-        install: "Install it with npm install -g lighthouse (it needs Node.js 22.19 or newer).",
+        install: "Install it with npm install -g lighthouse.",
     },
 };
 
