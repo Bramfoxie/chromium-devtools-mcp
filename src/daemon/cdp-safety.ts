@@ -45,7 +45,7 @@ export function needsTabUrl(method: string, safety: SessionSafety): boolean {
 
     const writes = guard === "cookie-write" || guard === "file-attach";
 
-    return writes && isPolicyActive(safety);
+    return (writes || guard === "cookie-read") && isPolicyActive(safety);
 }
 
 export function checkOpenUrl(what: string, url: string, safety: SessionSafety): void {
@@ -120,7 +120,7 @@ export function checkGuardedCall(call: GuardedCall): void {
         );
     }
 
-    if (guard === "cookie-read" || !isPolicyActive(safety)) return;
+    if (!isPolicyActive(safety)) return;
 
     for (const url of [call.tabUrl, call.frameUrl]) {
         if (url === undefined || url === "about:srcdoc") continue;

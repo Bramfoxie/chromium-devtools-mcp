@@ -85,6 +85,35 @@ describe.skipIf(!present)("allowed domains in a real browser", () => {
         expect(read.isError).toBe(false);
     });
 
+    it("refuses to read the cookies of a tab that left the list, and to mock for a host outside it", async () => {
+        const tab = await env.open("/jump");
+
+        await settled(tab);
+
+        const cookies = await env.call("storage_read", { tab, kind: "cookies" });
+
+        expect(cookies.isError).toBe(true);
+        expect(cookies.text).toContain("localhost");
+
+        const inside = await env.open("/a");
+        const allowed = await env.call("storage_read", { tab: inside, kind: "cookies" });
+        const mockOutside = await env.call("network_mock", {
+            tab   : inside,
+            action: "add",
+            rule  : { urlPattern: `${env.other.origin}/*`, response: { status: 200, body: "x" } },
+        });
+        const mockInside = await env.call("network_mock", {
+            tab   : inside,
+            action: "add",
+            rule  : { urlPattern: `${env.fixture.origin}/api/*`, response: { status: 200, body: "x" } },
+        });
+
+        expect(allowed.isError).toBe(false);
+        expect(mockOutside.isError).toBe(true);
+        expect(mockOutside.text).toContain("localhost");
+        expect(mockInside.isError).toBe(false);
+    });
+
     it("refuses to go back to a forbidden history entry", async () => {
         const tab = await env.open("/jump");
 

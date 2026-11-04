@@ -14,6 +14,8 @@ import {
     type MockResponse,
     type RuleInput,
 } from "./mock/interception.js";
+import { describeBlock, isPolicyActive } from "../safety/index.js";
+import { checkMockPattern } from "./mock/pattern-policy.js";
 import { throwIfCancelled } from "./registry.js";
 import { resolveTab, tabSchema } from "./tab-target.js";
 
@@ -161,6 +163,29 @@ export function ruleInputOf(args: MockAddInput): RuleInput {
     };
 }
 
+function assertMockPatternAllowed(
+    policy : Parameters<typeof checkMockPattern>[1],
+    pattern: string,
+): void {
+    if (!isPolicyActive(policy)) return;
+
+    const verdict = checkMockPattern(pattern, policy);
+
+    if (verdict.ok) return;
+
+    if (verdict.reason === "unparsable") {
+        throw new ToolError(
+            "With safety.allowedDomains or safety.deniedDomains set, a mock pattern must start with a scheme and name its host, for example https://api.example.com/*. A wildcard is allowed only as *. in front of the host.",
+        );
+    }
+
+    const described = describeBlock(verdict.block);
+
+    throw new ToolError(
+        `The pattern would mock requests to ${verdict.host}, ${described.reason}. ${described.hint}`,
+    );
+}
+
 export const networkMock = defineTool({
     name: "network_mock",
     description:
@@ -200,6 +225,8 @@ export const networkMock = defineTool({
                     `At most ${MOCK_RULES_MAX} mock rules per tab. Remove one first.`,
                 );
             }
+
+            assertMockPatternAllowed(context.config.safety, args.rule.urlPattern);
 
             const input = ruleInputOf(args.rule);
             const incoming = Buffer.from(input.response?.bodyBase64 ?? "", "base64").length;

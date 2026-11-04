@@ -73,7 +73,7 @@ describe("guarded CDP methods", () => {
         expect(refusal(write({ url: "https://example.com/" }, undefined))).toContain("tab URL is unknown");
     });
 
-    it("checks the tab and frame of a file attachment but leaves cookie reads alone", () => {
+    it("checks the tab and frame of a file attachment and checks the tab of a cookie read too", () => {
         const safety = safe({ allowedDomains: ["example.com"] });
         const attach = (frameUrl: string | undefined) => () =>
             checkGuardedCall({ method: "DOM.setFileInputFiles", params: {}, safety, confirmed: false, tabUrl: "https://example.com/", frameUrl });
@@ -81,8 +81,23 @@ describe("guarded CDP methods", () => {
         expect(refusal(attach(undefined))).toBeUndefined();
         expect(refusal(attach("about:srcdoc"))).toBeUndefined();
         expect(refusal(attach("https://evil.test/f"))).toContain("evil.test");
+        const read = (tabUrl: string | undefined) => () =>
+            checkGuardedCall({ method: "Network.getCookies", params: {}, safety, confirmed: false, tabUrl });
+
+        expect(refusal(read("https://example.com/"))).toBeUndefined();
+        expect(refusal(read("https://evil.test/"))).toContain("evil.test");
+        expect(refusal(read(undefined))).toContain("tab URL is unknown");
+    });
+
+    it("lets a cookie read through when no domain rule is set", () => {
         expect(refusal(() =>
-            checkGuardedCall({ method: "Network.getCookies", params: {}, safety, confirmed: false, tabUrl: "https://evil.test/" }),
+            checkGuardedCall({
+                method   : "Network.getCookies",
+                params   : {},
+                safety   : safe({}),
+                confirmed: false,
+                tabUrl   : "https://anything.test/",
+            }),
         )).toBeUndefined();
     });
 });
@@ -177,6 +192,28 @@ describe("session safety in the daemon", () => {
         expect(refusal(write({ url: "https://bad.test/" }))).toContain("safety.deniedDomains");
         expect(refusal(write({ domain: ".bad.test" }))).toContain("safety.deniedDomains");
         expect(refusal(write({ url: "https://example.com/" }))).toBeUndefined();
+    });
+
+    it("refuses a cookie read for a tab that is outside the rules, with the real tab URL", async () => {
+        const { session, backend } = await open(safe({ allowedDomains: ["example.com"] }));
+        const tab = await session.createTab("https://example.com/");
+
+        await expect(
+            session.send({ targetId: tab, method: "Network.getCookies", params: {} }),
+        ).resolves.toMatchObject({ echoed: "Network.getCookies" });
+
+        const entry = backend.targets.get(tab);
+
+        if (entry === undefined) throw new Error("missing target");
+
+        entry.url = "https://evil.test/";
+
+        const moved = await failure(
+            session.send({ targetId: tab, method: "Network.getCookies", params: {} }),
+        );
+
+        expect(moved?.code).toBe(ErrorCode.forbiddenMethod);
+        expect(moved?.message).toContain("evil.test");
     });
 
     it("enforces the cookie and file policy with the real tab URL", async () => {

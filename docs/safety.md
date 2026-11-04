@@ -32,5 +32,5 @@ The text of every tool result that can hold page content (page text, titles, add
 ### Limits of the allowlist
 
 - Only top-level URLs and the frame a tool acts in are checked. Subresource and iframe loads from other hosts are not blocked.
-- `network_mock` patterns are not matched against the list; only the URL of the tab is checked.
-- Cookie reads are gated by `safety.confirmDangerous` only, not by `safety.allowedDomains`.
+- A `network_mock` rule is added only when its pattern names a host that the rules accept: it must start with a scheme (`https://`, `http://` or `*://`) and give the host, with a wildcard allowed only as `*.` in front of it, for example `https://api.example.com/*` or `https://*.cdn.example.com/*`. A host outside `safety.allowedDomains` or on `safety.deniedDomains`, or a pattern that does not name a host (`*`, `https://*/*`, `https://api.*/x`), is refused while either list is set. Rules that were already added are not checked again when the list changes.
+- Cookie reads (`storage_read` with `kind: "cookies"`, and `Network.getCookies` in the daemon) are refused for a tab whose page is outside `safety.allowedDomains` or on `safety.deniedDomains`, and still need `safety.confirmDangerous` when it is on. Local and session storage are reads like any other and are not limited by the lists.

@@ -3,6 +3,7 @@ import type { DaemonAccess } from "../mcp/index.js";
 import { defineTool } from "./define-tool.js";
 import { ensureNoDialog } from "./dialogs.js";
 import { ToolError } from "./errors.js";
+import { assertPageAllowed } from "./page-allowed.js";
 import { throwIfCancelled } from "./registry.js";
 import { truncateText } from "./result.js";
 import { resolveTab, tabSchema } from "./tab-target.js";
@@ -293,6 +294,8 @@ export const storageRead = defineTool({
         const withValues = args.includeValues ?? false;
 
         if (args.kind === "cookies") {
+            assertPageAllowed(context, href, "The cookies belong to a page that shows");
+
             const read = await readCookies(
                 context.access,
                 targetId,
