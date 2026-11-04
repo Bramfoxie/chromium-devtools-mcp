@@ -1,5 +1,6 @@
 import nodeFs from "node:fs";
 import path from "node:path";
+import { readIfExistsSync } from "../util/read-if-exists.js";
 
 export interface InstallFs {
     read     : (file: string) => string | undefined;
@@ -8,15 +9,7 @@ export interface InstallFs {
 }
 
 export const realFs: InstallFs = {
-    read: (file) => {
-        try {
-            return nodeFs.readFileSync(file, "utf8");
-        } catch (error) {
-            if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
-
-            throw error;
-        }
-    },
+    read     : readIfExistsSync,
     writeFile: (file, text) => {
         let target = file;
         let mode = 0o600;

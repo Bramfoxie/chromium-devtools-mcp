@@ -5,22 +5,23 @@ import { ensureNoDialog } from "./dialogs.js";
 import { ToolError } from "./errors.js";
 import { throwIfCancelled } from "./registry.js";
 import { truncateText } from "./result.js";
+import { resolveTab, tabSchema } from "./tab-target.js";
 
-export const STORAGE_MAX_ENTRIES = 1000;
+const STORAGE_MAX_ENTRIES = 1000;
 
-export const STORAGE_DEFAULT_ENTRIES = 100;
+const STORAGE_DEFAULT_ENTRIES = 100;
 
-export const STORAGE_MAX_VALUE_CHARS = 20_000;
+const STORAGE_MAX_VALUE_CHARS = 20_000;
 
-export const STORAGE_DEFAULT_VALUE_CHARS = 500;
+const STORAGE_DEFAULT_VALUE_CHARS = 500;
 
-export const STORAGE_MAX_KEYS = 1000;
+const STORAGE_MAX_KEYS = 1000;
 
-export const STORAGE_MAX_KEY_CHARS = 1024;
+const STORAGE_MAX_KEY_CHARS = 1024;
 
-export const STORAGE_KEY_CLIP_CHARS = 200;
+const STORAGE_KEY_CLIP_CHARS = 200;
 
-const itemsSchema = z.object({ entries: z.array(z.tuple([z.string(), z.string()])) });
+export const itemsSchema = z.object({ entries: z.array(z.tuple([z.string(), z.string()])) });
 
 const evaluatedSchema = z.object({
     result: z.object({
@@ -44,10 +45,10 @@ const cookieSchema = z.object({
 
 const cookiesSchema = z.object({ cookies: z.array(cookieSchema) });
 
-export type StorageCookie = z.infer<typeof cookieSchema>;
+type StorageCookie = z.infer<typeof cookieSchema>;
 
 const entrySchema = z.strictObject({
-    key      : z.string().describe("Storage key, clipped to 200 characters."),
+    key      : z.string().describe(`Storage key, clipped to ${STORAGE_KEY_CLIP_CHARS} characters.`),
     value    : z.string().optional().describe("Value clipped to maxValueChars, present only with includeValues."),
     valueSize: z.number().describe("Full value length in characters."),
     truncated: z.boolean().describe("Whether the value was clipped."),
@@ -118,16 +119,18 @@ export function cookieMatchesUrl(
     );
 }
 
+const PAGE_LOCATION_TIMEOUT_MS = 5000;
+
 export async function pageLocation(
     access  : DaemonAccess,
     targetId: string,
 ): Promise<{ href: string; origin: string }> {
-    const result = await access.send(
+    const result = await access.send({
         targetId,
-        "Runtime.evaluate",
-        { expression: "location.href", returnByValue: true },
-        5000,
-    );
+        method   : "Runtime.evaluate",
+        params   : { expression: "location.href", returnByValue: true },
+        timeoutMs: PAGE_LOCATION_TIMEOUT_MS,
+    });
     const parsed = evaluatedSchema.safeParse(result);
     const value = parsed.success ? parsed.data.result.value : undefined;
 
@@ -168,11 +171,19 @@ async function readDomStorage(
     maxChars  : number,
     withValues: boolean,
 ): Promise<Pick<z.infer<typeof storageOutput>, "count" | "returned" | "truncated" | "entries">> {
-    await access.send(targetId, "DOMStorage.enable", {});
+    await access.send({
+        targetId,
+        method: "DOMStorage.enable",
+        params: {},
+    });
 
     const items = itemsSchema.safeParse(
-        await access.send(targetId, "DOMStorage.getDOMStorageItems", {
-            storageId: { securityOrigin: origin, isLocalStorage: local },
+        await access.send({
+            targetId,
+            method: "DOMStorage.getDOMStorageItems",
+            params: {
+                storageId: { securityOrigin: origin, isLocalStorage: local },
+            },
         }),
     );
 
@@ -213,7 +224,10 @@ async function readCookies(
     maxChars  : number,
     withValues: boolean,
 ): Promise<Pick<z.infer<typeof storageOutput>, "count" | "returned" | "truncated" | "cookies">> {
-    const parsed = cookiesSchema.safeParse(await access.send(targetId, "Network.getCookies"));
+    const parsed = cookiesSchema.safeParse(await access.send({
+        targetId,
+        method: "Network.getCookies",
+    }));
 
     if (!parsed.success) {
         throw new ToolError(
@@ -249,26 +263,22 @@ async function readCookies(
 export const storageRead = defineTool({
     name: "storage_read",
     description:
-        "Read local storage, session storage or cookies of the page origin. Cookie values are secrets and stay hidden unless includeValues is true.",
+        "Read local storage, session storage or cookies of the page origin; the result lists keys and value sizes, and values are hidden unless you pass includeValues: true.",
     access   : "read",
     dangerous: (args) => args.kind === "cookies",
     summarize: (args) =>
         `It reads the cookies of the page${args.includeValues === true ? ", including their values" : ""}.`,
     input: z.strictObject({
-        tab          : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
+        tab          : tabSchema,
         kind         : z.enum(["local", "session", "cookies"]).describe("What to read."),
         keys         : z.array(z.string().min(1).max(STORAGE_MAX_KEY_CHARS)).max(STORAGE_MAX_KEYS).optional().describe("Storage keys to read, for local and session. Defaults to all."),
         maxEntries   : z.number().int().min(1).max(STORAGE_MAX_ENTRIES).optional().describe("Maximum entries to return. Defaults to 100."),
         maxValueChars: z.number().int().min(1).max(STORAGE_MAX_VALUE_CHARS).optional().describe("Maximum characters per value. Defaults to 500."),
-        includeValues: z.boolean().optional().describe("Include values. Defaults to true for storage, false for cookies."),
+        includeValues: z.boolean().optional().describe("Include values. Defaults to false; pass true to read them. Cookie values are secrets."),
     }),
     output : storageOutput,
     handler: async (args, context) => {
-        const targetId = args.tab ?? context.state.selected;
-
-        if (targetId === undefined) {
-            throw new ToolError("No tab is selected. Open one with new_tab first.");
-        }
+        const targetId = resolveTab(args, context);
 
         if (args.kind === "cookies" && args.keys !== undefined) {
             throw new ToolError("keys only applies to local and session storage, not to cookies.");
@@ -280,7 +290,7 @@ export const storageRead = defineTool({
         const { href, origin } = await pageLocation(context.access, targetId);
         const maxEntries = args.maxEntries ?? STORAGE_DEFAULT_ENTRIES;
         const maxChars = args.maxValueChars ?? STORAGE_DEFAULT_VALUE_CHARS;
-        const withValues = args.includeValues ?? args.kind !== "cookies";
+        const withValues = args.includeValues ?? false;
 
         if (args.kind === "cookies") {
             const read = await readCookies(

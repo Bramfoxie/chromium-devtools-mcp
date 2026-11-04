@@ -1,8 +1,9 @@
 import { z } from "zod";
 import { RpcError } from "./errors.js";
-import { quoted } from "./log.js";
+import { quoted } from "../util/log.js";
 import { normalizeUrl } from "./method-policy.js";
 import { ErrorCode } from "./protocol.js";
+import { requestParamSchemas } from "./wire.js";
 import type { ClientConnection, RequestHandler } from "./server.js";
 import type { ClientSession, SessionRegistry } from "./sessions.js";
 
@@ -18,52 +19,21 @@ export interface DaemonStatus {
 export interface HandlerContext {
     registry(): SessionRegistry<ClientConnection> | undefined;
     status(): DaemonStatus;
+    stop(): void;
 }
 
-const DOMAIN_METHOD = /^[A-Za-z][A-Za-z0-9]*\.[A-Za-z][A-Za-z0-9]*$/;
-
-const targetId = z.string().min(1).max(128);
-const frameId = z.string().min(1).max(128);
-const domainName = z.string().regex(DOMAIN_METHOD).max(100);
-
-const schemas = {
-    "daemon.status": z.strictObject({}),
-    "session.open" : z.strictObject({
-        isolated: z.boolean().optional(),
-        safety  : z.strictObject({
-            readOnly        : z.boolean(),
-            allowedDomains  : z.array(z.string().min(1).max(300)).max(500),
-            confirmDangerous: z.boolean(),
-        }).optional(),
-    }),
-    "session.list": z.strictObject({}),
-    "tab.create"  : z.strictObject({ url: z.string().min(1).max(2048).optional() }),
-    "tab.list"    : z.strictObject({ scope: z.enum(["owned", "available"]).optional() }),
-    "tab.claim"   : z.strictObject({ targetId }),
-    "tab.close"   : z.strictObject({ targetId }),
-    "frame.list"  : z.strictObject({ targetId }),
-    "cdp.send"    : z.strictObject({
-        targetId,
-        method   : domainName,
-        params   : z.record(z.string(), z.unknown()).optional(),
-        timeoutMs: z.number().int().min(1).max(300_000).optional(),
-        frameId  : frameId.optional(),
-        confirmed: z.boolean().optional(),
-    }),
-    "cdp.subscribe"  : z.strictObject({ targetId, event: domainName, frameId: frameId.optional() }),
-    "cdp.unsubscribe": z.strictObject({ targetId, event: domainName, frameId: frameId.optional() }),
-} as const;
-
-type Method = keyof typeof schemas;
+type Method = keyof typeof requestParamSchemas;
 
 function isMethod(name: string): name is Method {
-    return Object.hasOwn(schemas, name);
+    return Object.hasOwn(requestParamSchemas, name);
 }
 
-function parseParams<M extends Method>(method: M, params: unknown): z.infer<(typeof schemas)[M]> {
-    const result = schemas[method].safeParse(params ?? {});
+type Params<M extends Method> = z.infer<(typeof requestParamSchemas)[M]>;
 
-    if (result.success) return result.data as z.infer<(typeof schemas)[M]>;
+function parseParams<M extends Method>(method: M, params: unknown): Params<M> {
+    const result = requestParamSchemas[method].safeParse(params ?? {});
+
+    if (result.success) return result.data as Params<M>;
 
     const fields = [
         ...new Set(
@@ -91,6 +61,13 @@ export function createRequestHandler(context: HandlerContext): RequestHandler {
             parseParams(method, params);
 
             return context.status();
+        }
+
+        if (method === "daemon.stop") {
+            parseParams(method, params);
+            context.stop();
+
+            return {};
         }
 
         const registry = context.registry();
@@ -130,6 +107,12 @@ export function createRequestHandler(context: HandlerContext): RequestHandler {
         }
 
         switch (method) {
+            case "permission.set": {
+                await session.setPermission(parseParams(method, params));
+
+                return {};
+            }
+
             case "tab.create": {
                 const { url } = parseParams(method, params);
 
@@ -163,14 +146,14 @@ export function createRequestHandler(context: HandlerContext): RequestHandler {
             case "cdp.send": {
                 const request = parseParams(method, params);
 
-                return session.send(
-                    request.targetId,
-                    request.method,
-                    request.params,
-                    request.timeoutMs,
-                    request.frameId,
-                    request.confirmed,
-                );
+                return session.send({
+                    targetId : request.targetId,
+                    method   : request.method,
+                    params   : request.params,
+                    timeoutMs: request.timeoutMs,
+                    frameId  : request.frameId,
+                    confirmed: request.confirmed,
+                });
             }
 
             case "cdp.subscribe": {

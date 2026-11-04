@@ -1,4 +1,4 @@
-export interface RingBufferOptions<T> {
+interface RingBufferOptions<T> {
     maxEntries: number;
     maxBytes  : number;
     sizeOf    : (value: T) => number;

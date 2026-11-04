@@ -2,8 +2,9 @@ import { z } from "zod";
 import { defineTool } from "./define-tool.js";
 import { ToolError } from "./errors.js";
 import { throwIfCancelled } from "./registry.js";
+import { resolveTab, tabSchema } from "./tab-target.js";
 
-export const DIALOG_PROMPT_TEXT_MAX_CHARS = 10_000;
+const DIALOG_PROMPT_TEXT_MAX_CHARS = 10_000;
 
 const dialogSchema = z.strictObject({
     type             : z.string().describe("Dialog type: alert, confirm, prompt or beforeunload."),
@@ -34,9 +35,9 @@ export const pageDialogs = defineTool({
             : "mutate";
     },
     input: z.strictObject({
-        tab       : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
+        tab       : tabSchema,
         action    : z.enum(["status", "accept", "dismiss"]).optional().describe("What to do. Defaults to status."),
-        promptText: z.string().max(DIALOG_PROMPT_TEXT_MAX_CHARS).optional().describe("Text for a prompt, up to 10000 characters."),
+        promptText: z.string().max(DIALOG_PROMPT_TEXT_MAX_CHARS).optional().describe(`Text for a prompt, up to ${DIALOG_PROMPT_TEXT_MAX_CHARS} characters.`),
         policy    : z.enum(["none", "accept", "dismiss"]).optional().describe("Automatic handling for dialogs that open later. Defaults to none and is cleared on reset."),
     }),
     output: z.strictObject({
@@ -47,11 +48,7 @@ export const pageDialogs = defineTool({
         history: z.array(historySchema).describe("Recently resolved dialogs, oldest first."),
     }),
     handler: async (args, context) => {
-        const targetId = args.tab ?? context.state.selected;
-
-        if (targetId === undefined) {
-            throw new ToolError("No tab is selected. Open one with new_tab first.");
-        }
+        const targetId = resolveTab(args, context);
 
         throwIfCancelled(context.signal);
 

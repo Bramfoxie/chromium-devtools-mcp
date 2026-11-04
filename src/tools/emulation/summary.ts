@@ -32,9 +32,15 @@ export const emulationSummarySchema = z.strictObject({
         timezone      : z.string().optional().describe("Timezone override, when set."),
         acceptLanguage: z.string().optional().describe("Accept-Language override, when set."),
     }).optional().describe("Locale overrides, when set."),
+    geolocation: z.strictObject({
+        latitude : z.number().describe("Emulated latitude."),
+        longitude: z.number().describe("Emulated longitude."),
+        accuracy : z.number().describe("Emulated accuracy in meters."),
+        origin   : z.string().describe("Origin that was allowed to read the position."),
+    }).optional().describe("Geolocation override, when active."),
 });
 
-export type EmulationSummary = z.infer<typeof emulationSummarySchema>;
+type EmulationSummary = z.infer<typeof emulationSummarySchema>;
 
 export function summarizeEmulation(state: TabEmulation): EmulationSummary {
     return {
@@ -76,6 +82,14 @@ export function summarizeEmulation(state: TabEmulation): EmulationSummary {
                 ...(state.locale.acceptLanguage === undefined
                     ? {}
                     : { acceptLanguage: state.locale.acceptLanguage }),
+            },
+        }),
+        ...(state.geolocation === undefined ? {} : {
+            geolocation: {
+                latitude : state.geolocation.latitude,
+                longitude: state.geolocation.longitude,
+                accuracy : state.geolocation.accuracy,
+                origin   : state.geolocation.origin,
             },
         }),
     };

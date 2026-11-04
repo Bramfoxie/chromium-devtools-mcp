@@ -1,13 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-    connectToDaemon,
-    DaemonConfigMismatchError,
-    daemonIdentity,
-    type BrowserConnector,
-    type DaemonLayout,
-    runDaemon,
-    type RunningDaemon,
-} from "../src/daemon/index.js";
+import { connectToDaemon, DaemonConfigMismatchError, daemonIdentity, type DaemonLayout, runDaemon, type RunningDaemon } from "../src/daemon/index.js";
+import { type BrowserConnector } from "../src/daemon/runner.js";
 import { DaemonLink, DaemonNotReadyError, type LinkDeps } from "../src/mcp/index.js";
 import { makeLayout, managedConfig, startFakeBrowser } from "./helpers/daemon-env.js";
 import { createSocketHarness } from "./helpers/daemon-socket.js";

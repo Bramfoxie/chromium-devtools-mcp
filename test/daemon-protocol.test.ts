@@ -1,11 +1,7 @@
 import { describe, expect, it } from "vitest";
-import {
-    encodeMessage,
-    LineDecoder,
-    MAX_REQUEST_BYTES,
-    MAX_RESPONSE_BYTES,
-    ProtocolViolationError,
-} from "../src/daemon/index.js";
+import { MAX_RESPONSE_BYTES } from "../src/daemon/index.js";
+import { encodeMessage, LineDecoder, MAX_REQUEST_BYTES } from "../src/daemon/protocol.js";
+import { ProtocolViolationError } from "../src/daemon/errors.js";
 import {
     boundedFailureMessage,
     DaemonEvent,

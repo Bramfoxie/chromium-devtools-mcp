@@ -3,6 +3,7 @@ import { once } from "node:events";
 import net from "node:net";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { flushMicrotasks } from "./helpers/fake-clock.js";
 import { type RawData, type WebSocket, WebSocketServer } from "ws";
 import {
     CdpClient,
@@ -256,7 +257,7 @@ describe("requests", () => {
 
         expect(failure).toBeInstanceOf(CdpClosedError);
         expect((failure as Error).message).toContain("socket is closed");
-        expect(timers).toHaveBeenCalled();
+        expect(timers).toHaveBeenCalledTimes(1);
     });
 });
 
@@ -743,7 +744,7 @@ describe("close ordering", () => {
         let done = false;
         const closing = client.close().then(() => (done = true));
 
-        await new Promise((resolve) => setTimeout(resolve, 20));
+        await flushMicrotasks();
         expect(done).toBe(false);
         release();
         await closing;
@@ -771,7 +772,7 @@ describe("close ordering", () => {
         const one = client.close().then(() => (first = true));
         const two = client.close().then(() => (second = true));
 
-        await new Promise((resolve) => setTimeout(resolve, 20));
+        await flushMicrotasks();
         expect(first).toBe(false);
         expect(second).toBe(false);
         release();
@@ -826,7 +827,7 @@ describe("onClose", () => {
         const cancelled = vi.fn();
 
         client.onClose(cancelled)();
-        await new Promise((resolve) => setTimeout(resolve, 10));
+        await flushMicrotasks();
         expect(cancelled).not.toHaveBeenCalled();
         expect(stderr).toHaveBeenCalledTimes(1);
     });
@@ -842,6 +843,6 @@ describe("onClose", () => {
         client.onClose(good);
         await client.close();
         expect(good).toHaveBeenCalledTimes(1);
-        expect(stderr).toHaveBeenCalled();
+        expect(stderr).toHaveBeenCalledWith(expect.stringContaining("a close handler threw: boom"));
     });
 });

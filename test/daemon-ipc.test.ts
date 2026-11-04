@@ -2,24 +2,12 @@ import { mkdir } from "node:fs/promises";
 import net from "node:net";
 import { Duplex } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-    type AcceptOptions,
-    acceptConnection,
-    acquireInstance,
-    type ClientConnection,
-    ErrorCode,
-    generateToken,
-    IpcClient,
-    IpcClosedError,
-    IpcTimeoutError,
-    LineDecoder,
-    MAX_PENDING_CONNECTIONS,
-    MAX_REQUEST_BYTES,
-    MAX_RESPONSE_BYTES,
-    PendingConnections,
-    type RequestHandler,
-    RpcError,
-} from "../src/daemon/index.js";
+import { useFakeClock } from "./helpers/fake-clock.js";
+import { ErrorCode, IpcClient, IpcClosedError, IpcTimeoutError, MAX_RESPONSE_BYTES, RpcError } from "../src/daemon/index.js";
+import { type AcceptOptions, acceptConnection, type ClientConnection, MAX_PENDING_CONNECTIONS, PendingConnections, type RequestHandler } from "../src/daemon/server.js";
+import { acquireInstance } from "../src/daemon/lock.js";
+import { generateToken } from "../src/daemon/token.js";
+import { LineDecoder, MAX_REQUEST_BYTES } from "../src/daemon/protocol.js";
 import { createSocketHarness } from "./helpers/daemon-socket.js";
 
 const harness = createSocketHarness();
@@ -155,7 +143,9 @@ describe("handshake", () => {
         await raw.closed;
         expect(raw.lines).toEqual([]);
         expect(server.ready).toEqual([]);
-        expect(stderr).toHaveBeenCalled();
+        expect(stderr).toHaveBeenCalledWith(
+            expect.stringContaining("rejected a daemon connection"),
+        );
     });
 
     it("drops a client that never sends a hello", async () => {
@@ -170,9 +160,14 @@ describe("handshake", () => {
     it("keeps an authenticated connection open past the hello timeout", async () => {
         const server = await startServer({ helloTimeoutMs: 50 });
         const client = await connectClient(server);
+        const clock = useFakeClock();
 
-        await new Promise((resolve) => setTimeout(resolve, 150));
-        await expect(client.request("echo", "still here")).resolves.toBe("still here");
+        try {
+            await clock.advance(150);
+            await expect(client.request("echo", "still here")).resolves.toBe("still here");
+        } finally {
+            clock.restore();
+        }
     });
 
     it("closes a connection beyond the limit of connections waiting for a hello", async () => {
@@ -542,7 +537,11 @@ describe("handler failures", () => {
         const client = await connectClient(server);
 
         for (let round = 0; round < 3; round += 1) {
-            await Promise.all(Array.from({ length: 40 }, () => client.request("echo", round)));
+            const replies = await Promise.all(
+                Array.from({ length: 40 }, () => client.request("echo", round)),
+            );
+
+            expect(replies).toEqual(Array.from({ length: 40 }, () => round));
         }
     });
 
@@ -665,7 +664,7 @@ describe("events", () => {
         server.ready[0]?.sendEvent("tick");
         await client.request("echo");
         expect(good).toHaveBeenCalledTimes(1);
-        expect(stderr).toHaveBeenCalled();
+        expect(stderr).toHaveBeenCalledWith(expect.stringContaining('a handler for "tick" threw'));
     });
 
     it("drops an event that cannot be encoded and logs it", async () => {
@@ -682,7 +681,7 @@ describe("events", () => {
         server.ready[0]?.sendEvent("tick", { n: 1 });
         await client.request("echo");
         expect(seen).toEqual([{ n: 1 }]);
-        expect(stderr).toHaveBeenCalled();
+        expect(stderr).toHaveBeenCalledWith(expect.stringContaining('could not encode event "tick"'));
     });
 });
 

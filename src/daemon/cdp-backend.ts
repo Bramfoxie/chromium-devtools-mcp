@@ -9,6 +9,7 @@ import type {
 } from "./browser-backend.js";
 import { cdpChildTargetsDeps, ChildTargets } from "./child-targets.js";
 import { DaemonError } from "./errors.js";
+import type { PermissionGrant } from "./permissions.js";
 
 const contextsSchema = z.object({
     browserContextIds      : z.array(z.string()).optional(),
@@ -34,13 +35,18 @@ function parseResult<T>(schema: z.ZodType<T>, value: unknown, method: string): T
     throw new DaemonError(`The browser sent an unexpected response to ${method}.`);
 }
 
+const peers = new WeakMap<BackendSession, CdpSession>();
+
 function wrapSession(session: CdpSession): BackendSession {
-    return {
+    const wrapped: BackendSession = {
         send  : (method, params, timeoutMs) => session.send(method, params, { timeoutMs }),
         on    : (event, handler) => session.on(event, (params) => handler(params)),
         detach: () => session.detach(),
-        peer  : session,
-    } as BackendSession & { peer: CdpSession };
+    };
+
+    peers.set(wrapped, session);
+
+    return wrapped;
 }
 
 export class CdpBackend implements BrowserBackend {
@@ -75,6 +81,21 @@ export class CdpBackend implements BrowserBackend {
 
     async disposeContext(contextId: string): Promise<void> {
         await this.client.send("Target.disposeBrowserContext", { browserContextId: contextId });
+    }
+
+    async setPermission(grant: PermissionGrant): Promise<void> {
+        await this.client.send("Browser.setPermission", {
+            permission: { name: grant.name },
+            setting   : "granted",
+            origin    : grant.origin,
+            ...(grant.contextId === undefined ? {} : { browserContextId: grant.contextId }),
+        });
+    }
+
+    async resetPermissions(contextId: string | undefined): Promise<void> {
+        await this.client.send("Browser.resetPermissions", {
+            ...(contextId === undefined ? {} : { browserContextId: contextId }),
+        });
     }
 
     async createTarget(url: string, contextId: string | undefined): Promise<string> {
@@ -124,7 +145,7 @@ export class CdpBackend implements BrowserBackend {
         session: BackendSession,
         options: ChildSessionOptions,
     ): Promise<ChildSessionHandle> {
-        const peer = (session as { peer?: CdpSession }).peer;
+        const peer = peers.get(session);
 
         if (!peer) {
             throw new DaemonError("The tab session does not support child targets.");

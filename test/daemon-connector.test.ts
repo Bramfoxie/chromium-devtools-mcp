@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AttachEndpoint, ManagedBrowser } from "../src/browser/index.js";
 import type { CdpClient } from "../src/cdp/index.js";
 import type { Config } from "../src/config/index.js";
-import { approvalMessage, type ConnectorDeps, createConnector } from "../src/daemon/index.js";
+import { endpointUnreachableMessage } from "../src/browser/index.js";
+import { approvalMessage, type ConnectorDeps, createConnector } from "../src/daemon/runner.js";
 
 const config: Config = {
     browser   : "chrome",
@@ -297,5 +298,44 @@ describe("attach mode", () => {
 
         await connector(attachConfig, hooks, signal);
         expect(hooks.onWaiting).not.toHaveBeenCalled();
+    });
+});
+
+describe("attach mode with an explicit endpoint", () => {
+    const endpoint = "ws://127.0.0.1:9444/devtools/browser/given";
+    const explicitConfig: Config = { ...config, mode: "attach", wsEndpoint: endpoint };
+
+    it("connects to the endpoint without looking for a browser", async () => {
+        const { deps, clients, connector } = setup();
+
+        await connector(explicitConfig, hooks, signal);
+
+        expect(deps.attach).not.toHaveBeenCalled();
+        expect(deps.findRunning).not.toHaveBeenCalled();
+        expect(clients.map((client) => client.url)).toEqual([endpoint]);
+        expect(hooks.onWaiting).not.toHaveBeenCalled();
+    });
+
+    it("tells the clients once that the endpoint is unreachable and keeps retrying", async () => {
+        vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+        let attempts = 0;
+        const { clients, connector } = setup({
+            connect: async (url) => {
+                attempts += 1;
+                if (attempts < 3) throw new Error("refused");
+
+                const client = new FakeClient(url);
+
+                clients.push(client);
+
+                return client as unknown as CdpClient;
+            },
+        });
+
+        await connector(explicitConfig, hooks, signal);
+
+        expect(attempts).toBe(3);
+        expect(hooks.onWaiting).toHaveBeenCalledTimes(1);
+        expect(hooks.onWaiting).toHaveBeenCalledWith(endpointUnreachableMessage(endpoint));
     });
 });

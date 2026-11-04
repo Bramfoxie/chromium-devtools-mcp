@@ -3,8 +3,10 @@ import { RpcError, ErrorCode, normalizeUrl } from "../daemon/index.js";
 import { defineTool } from "./define-tool.js";
 import { parkIfForbidden } from "./final-url.js";
 import { ToolError } from "./errors.js";
-import { NAVIGATE_DEFAULT_TIMEOUT_MS, NAVIGATE_MAX_TIMEOUT_MS, loadInTab, type TabLoad } from "./page-navigate.js";
+import { loadInTab, type TabLoad } from "./page-navigate-load.js";
+import { NAVIGATE_DEFAULT_TIMEOUT_MS, NAVIGATE_MAX_TIMEOUT_MS } from "./page-navigate.js";
 import { truncateText } from "./result.js";
+import { resolveTab } from "./tab-target.js";
 
 const TAB_URL_MAX_CHARS = 2000;
 const TAB_TITLE_MAX_CHARS = 500;
@@ -23,10 +25,6 @@ export function selectionOf(tabs: Array<{ targetId: string }>, selected: string 
     return selected !== undefined && tabs.some((tab) => tab.targetId === selected)
         ? selected
         : undefined;
-}
-
-function noTabError(): ToolError {
-    return new ToolError("No tab is selected. Open one with new_tab first.");
 }
 
 export const newTab = defineTool({
@@ -222,9 +220,7 @@ export const closeTab = defineTool({
         selected: z.string().nullable().describe("Id of the newly selected tab, if any."),
     }),
     handler: async (args, context) => {
-        const targetId = args.tab ?? context.state.selected;
-
-        if (targetId === undefined) throw noTabError();
+        const targetId = resolveTab(args, context);
 
         try {
             await context.access.closeTab(targetId);
@@ -238,18 +234,15 @@ export const closeTab = defineTool({
             throw error;
         }
 
-        context.capture.forget(targetId);
-        context.dialogs.forget(targetId);
-        context.frames.forget(targetId);
-        context.elements.forget(targetId);
-        await context.mock.forget(targetId);
-        context.emulation.forget(targetId);
+        const selectedBefore = context.state.selected;
+
+        await context.forgetTab(targetId);
 
         const tabs = await context.access.listTabs("owned");
         const rest = tabs.filter((tab) => tab.targetId !== targetId);
-        const next = context.state.selected === targetId
+        const next = selectedBefore === targetId
             ? rest[0]?.targetId
-            : selectionOf(tabs, context.state.selected);
+            : selectionOf(tabs, selectedBefore);
 
         context.tabs.refresh(tabs, next);
 

@@ -3,6 +3,7 @@ import type { ServerNotification, ServerRequest } from "@modelcontextprotocol/sd
 import vm from "node:vm";
 import { describe, expect, it } from "vitest";
 import { ErrorCode, RpcError } from "../src/daemon/index.js";
+import { useFakeClock } from "./helpers/fake-clock.js";
 import {
     cancelWaitScript,
     checkConditions,
@@ -108,16 +109,22 @@ describe("wait scripts", () => {
         ["text", (t: string) => textScript("zzz", undefined, 50, 60_000, t)],
         ["expression", (t: string) => expressionScript("false", 50, 60_000, t)],
     ])("leaves no timer behind after a %s wait is cancelled", async (_name, build) => {
-        const { live, context } = pageWorld();
-        const running = vm.runInContext(build("tok"), context) as Promise<{ met: boolean }>;
+        const clock = useFakeClock();
 
-        await new Promise((resolve) => setTimeout(resolve, 120));
-        expect(live.size).toBe(1);
-        vm.runInContext(cancelWaitScript("tok"), context);
+        try {
+            const { live, context } = pageWorld();
+            const running = vm.runInContext(build("tok"), context) as Promise<{ met: boolean }>;
 
-        await expect(running).resolves.toMatchObject({ met: false });
-        expect(live.size).toBe(0);
-        expect(vm.runInContext("globalThis.__chromiumDevtoolsMcpWaits.size", context)).toBe(0);
+            await clock.advance(120);
+            expect(live.size).toBe(1);
+            vm.runInContext(cancelWaitScript("tok"), context);
+
+            await expect(running).resolves.toMatchObject({ met: false });
+            expect(live.size).toBe(0);
+            expect(vm.runInContext("globalThis.__chromiumDevtoolsMcpWaits.size", context)).toBe(0);
+        } finally {
+            clock.restore();
+        }
     });
 
     it("stops a pierce selector wait at the node budget and reports it", async () => {

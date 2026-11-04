@@ -1,8 +1,9 @@
-import { readFileSync } from "node:fs";
 import os from "node:os";
 import { parseArgs } from "node:util";
 import { configFilePath, defaultProfileDir, pathFor, type PathContext } from "./paths.js";
 import { type Config, ConfigError, configSchema } from "./schema.js";
+import { isRecord } from "../util/is-record.js";
+import { readIfExistsSync } from "../util/read-if-exists.js";
 
 type Layer = { [key: string]: unknown; safety?: Record<string, unknown> };
 
@@ -14,18 +15,12 @@ export interface LoadOptions {
     readFile?: (file: string) => string | undefined;
 }
 
-function readIfExists(file: string): string | undefined {
+function readConfigFile(file: string): string | undefined {
     try {
-        return readFileSync(file, "utf8");
+        return readIfExistsSync(file);
     } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
-
         throw new ConfigError(`cannot read config file ${file}: ${(error as Error).message}`);
     }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function toBool(value: string): boolean | string {
@@ -89,6 +84,7 @@ function envLayer(env: NodeJS.ProcessEnv): Layer {
         headless  : bool("HEADLESS"),
         profileDir: get("PROFILE_DIR"),
         debugPort : port === undefined ? undefined : toInt(port),
+        wsEndpoint: get("WS_ENDPOINT"),
         allowFocus: bool("ALLOW_FOCUS"),
         isolated  : bool("ISOLATED"),
         safety    : {
@@ -112,6 +108,7 @@ function parseFlags(argv: string[]) {
                 headless           : { type: "boolean" },
                 "profile-dir"      : { type: "string" },
                 "debug-port"       : { type: "string" },
+                "ws-endpoint"      : { type: "string" },
                 "allow-focus"      : { type: "boolean" },
                 isolated           : { type: "boolean" },
                 "read-only"        : { type: "boolean" },
@@ -137,6 +134,7 @@ function argvLayer(argv: string[]): Layer {
         headless  : values.headless,
         profileDir: values["profile-dir"],
         debugPort : typeof port === "string" ? toInt(port) : port,
+        wsEndpoint: values["ws-endpoint"],
         allowFocus: values["allow-focus"],
         isolated  : values.isolated,
         safety    : {
@@ -164,7 +162,7 @@ function fileLayer(file: string, content: string | undefined): Layer {
         throw new ConfigError(`invalid value at safety in ${file}: expected an object`);
     }
 
-    return parsed as Layer;
+    return parsed;
 }
 
 function merge(base: Layer, layer: Layer): Layer {
@@ -177,7 +175,7 @@ export function loadConfig(options: LoadOptions = {}): Config {
         platform: options.platform ?? process.platform,
         homedir : options.homedir ?? os.homedir(),
     };
-    const read = options.readFile ?? readIfExists;
+    const read = options.readFile ?? readConfigFile;
     const file = configFilePath(ctx);
     const override = ctx.env.CHROMIUM_DEVTOOLS_MCP_CONFIG;
     const content = read(file);

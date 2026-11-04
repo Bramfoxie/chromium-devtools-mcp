@@ -92,10 +92,6 @@ describe("network_mock", () => {
         expect(access({ action: "add" })).toBe("mutate");
         expect(access({ action: "remove" })).toBe("mutate");
         expect(access({ action: "clear" })).toBe("mutate");
-        expect(found?.target?.({ action: "add", rule: { urlPattern: "https://a.example/*" } })).toEqual({
-            pattern: "https://a.example/*",
-        });
-        expect(found?.target?.({ action: "list" })).toBeUndefined();
     });
 
     it("rejects a status outside 200 to 599 and header values with line breaks", async () => {
@@ -204,7 +200,7 @@ describe("network_mock", () => {
             runtime,
         );
         fake.failSend = (_tab, method) =>
-            method === "Fetch.fulfillRequest" ? new Error("boom") : undefined as never;
+            method === "Fetch.fulfillRequest" ? new Error("boom") : undefined;
 
         await runtime.mock.handleCdpEvent({
             targetId: "tab1",

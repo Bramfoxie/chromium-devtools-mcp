@@ -1,25 +1,10 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { useFakeClock } from "./helpers/fake-clock.js";
 import type { Config } from "../src/config/index.js";
-import {
-    AlreadyRunningError,
-    type BrowserConnector,
-    connectToDaemon,
-    DaemonConfigMismatchError,
-    DaemonError,
-    type DaemonIdentity,
-    daemonIdentity,
-    DaemonNotRunningError,
-    type DaemonLayout,
-    type DaemonOutcome,
-    ErrorCode,
-    IpcClient,
-    RpcError,
-    approvalMessage,
-    runDaemon,
-    type RunningDaemon,
-} from "../src/daemon/index.js";
+import { AlreadyRunningError, connectToDaemon, DaemonConfigMismatchError, DaemonError, type DaemonIdentity, daemonIdentity, DaemonNotRunningError, type DaemonLayout, ErrorCode, IpcClient, RpcError, runDaemon, type RunningDaemon } from "../src/daemon/index.js";
+import { type BrowserConnector, createConnector, type DaemonOutcome, approvalMessage } from "../src/daemon/runner.js";
 import { makeLayout, startFakeBrowser } from "./helpers/daemon-env.js";
 import { createSocketHarness } from "./helpers/daemon-socket.js";
 
@@ -50,7 +35,8 @@ async function start(
     const running = await runDaemon(overrides.cfg ?? config, {
         layout,
         connectBrowser,
-        idleTimeoutMs: overrides.idleTimeoutMs ?? 60_000,
+        idleTimeoutMs  : overrides.idleTimeoutMs ?? 60_000,
+        connectSettleMs: 500,
     });
 
     harness.track(async () => void (await running.stop()));
@@ -78,10 +64,16 @@ async function ready(client: IpcClient): Promise<void> {
     });
 }
 
+async function turns(count: number): Promise<void> {
+    for (let turn = 0; turn < count; turn += 1) {
+        await new Promise((resolve) => setImmediate(resolve));
+    }
+}
+
 async function settled(running: RunningDaemon): Promise<DaemonOutcome | "pending"> {
     return Promise.race([
         running.done,
-        new Promise<"pending">((resolve) => setTimeout(() => resolve("pending"), 50)),
+        turns(10).then((): "pending" => "pending"),
     ]);
 }
 
@@ -161,7 +153,7 @@ describe("starting and serving", () => {
     });
 
     it("does not start the idle timer when a daemon is only constructed", async () => {
-        const { Daemon } = await import("../src/daemon/index.js");
+        const { Daemon } = await import("../src/daemon/daemon.js");
 
         vi.useFakeTimers();
 
@@ -299,11 +291,20 @@ describe("waiting for the browser", () => {
         const client = await connect(layout);
 
         gate.announce("Open chrome://inspect and turn on remote debugging.");
-        await new Promise((resolve) => setTimeout(resolve, 300));
-        expect(await settled(running)).toBe("pending");
-        gate.release();
-        await ready(client);
-        await client.close();
+        const clock = useFakeClock();
+
+        try {
+            await clock.advance(300);
+            expect(await settled(running)).toBe("pending");
+            gate.release();
+            await ready(client);
+            await client.close();
+            await turns(10);
+            await clock.advance(80);
+        } finally {
+            clock.restore();
+        }
+
         expect((await running.done).reason).toBe("idle");
     });
 
@@ -321,6 +322,31 @@ describe("waiting for the browser", () => {
 
         expect(await running.stop()).toEqual({ reason: "requested" });
         expect(aborted).toBe(true);
+    });
+
+    it("waits for a managed launch to settle before stop resolves", async () => {
+        const layout = await makeLayout(harness);
+        const events: string[] = [];
+        const connector = createConnector({
+            findRunning: async () => undefined,
+            launch     : (_config, _overrides, signal) =>
+                new Promise((_resolve, reject) => {
+                    events.push("launch started");
+                    signal?.addEventListener("abort", () => {
+                        setTimeout(() => {
+                            events.push("launch killed");
+                            reject(new Error("launch cancelled"));
+                        }, 20);
+                    });
+                }),
+        });
+        const running = await start(layout, connector);
+
+        await vi.waitFor(() => expect(events).toEqual(["launch started"]));
+        await running.stop();
+        events.push("stop resolved");
+
+        expect(events).toEqual(["launch started", "launch killed", "stop resolved"]);
     });
 
     it("stops a browser that finished starting after the daemon was stopped", async () => {
@@ -424,6 +450,40 @@ describe("stopping", () => {
 
         await ready(client);
         await second.stop();
+        expect((await second.done).reason).toBe("requested");
+    });
+
+    it("stops when a client asks for it and frees the socket", async () => {
+        const layout = await makeLayout(harness);
+        const { connect: connector } = await startFakeBrowser(harness);
+        const running = await start(layout, connector);
+        const client = await connect(layout);
+
+        await ready(client);
+        await expect(client.request("daemon.stop")).resolves.toEqual({});
+
+        expect(await running.done).toEqual({ reason: "requested" });
+        await expect(connectToDaemon({ layout, clientName: "late" })).rejects.toBeInstanceOf(
+            DaemonError,
+        );
+    });
+
+    it("stops on request while the browser is not ready yet", async () => {
+        const layout = await makeLayout(harness);
+        const { connect: connector } = await startFakeBrowser(harness);
+        let release: () => void = () => undefined;
+        const gate = new Promise<void>((resolve) => (release = resolve));
+        const running = await start(layout, async (cfg, hooks, signal) => {
+            await gate;
+
+            return connector(cfg, hooks, signal);
+        });
+        const client = await connect(layout);
+
+        await client.request("daemon.stop");
+
+        expect((await running.done).reason).toBe("requested");
+        release();
     });
 
     it("stops when the browser connection is lost", async () => {
@@ -501,7 +561,7 @@ describe("browser failure", () => {
         const client = await connect(layout);
 
         await ready(client);
-        await expect(client.request("session.open", { isolated: false })).resolves.toBeDefined();
+        await expect(client.request("session.open", { isolated: false })).resolves.toEqual({ isolated: false });
         await second.stop();
     });
 
@@ -571,9 +631,18 @@ describe("idle shutdown", () => {
 
         await ready(client);
         expect(await settled(running)).toBe("pending");
-        await new Promise((resolve) => setTimeout(resolve, 200));
-        expect(await settled(running)).toBe("pending");
-        await client.close();
+        const clock = useFakeClock();
+
+        try {
+            await clock.advance(200);
+            expect(await settled(running)).toBe("pending");
+            await client.close();
+            await turns(10);
+            await clock.advance(80);
+        } finally {
+            clock.restore();
+        }
+
         expect((await running.done).reason).toBe("idle");
         expect(recorded.count).toBe(1);
     });
@@ -586,15 +655,24 @@ describe("idle shutdown", () => {
         const second = await connect(layout, "second");
 
         await ready(first);
-        await first.close();
-        await new Promise((resolve) => setTimeout(resolve, 250));
-        expect(await settled(running)).toBe("pending");
-        const third = await connect(layout, "third");
+        const clock = useFakeClock();
 
-        await second.close();
-        await new Promise((resolve) => setTimeout(resolve, 250));
-        expect(await settled(running)).toBe("pending");
-        await third.close();
+        try {
+            await first.close();
+            await clock.advance(250);
+            expect(await settled(running)).toBe("pending");
+            const third = await connect(layout, "third");
+
+            await second.close();
+            await clock.advance(250);
+            expect(await settled(running)).toBe("pending");
+            await third.close();
+            await turns(10);
+            await clock.advance(100);
+        } finally {
+            clock.restore();
+        }
+
         expect((await running.done).reason).toBe("idle");
     });
 
@@ -621,7 +699,7 @@ describe("idle shutdown", () => {
 
 describe("daemon status", () => {
     it("survives a throwing onIdle without crashing the daemon", async () => {
-        const { Daemon } = await import("../src/daemon/index.js");
+        const { Daemon } = await import("../src/daemon/daemon.js");
         const { FakeBackend } = await import("./helpers/fake-backend.js");
         const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
         const daemon = new Daemon({
@@ -643,7 +721,7 @@ describe("daemon status", () => {
     });
 
     it("does not fall back to waiting once the backend is attached", async () => {
-        const { Daemon } = await import("../src/daemon/index.js");
+        const { Daemon } = await import("../src/daemon/daemon.js");
         const { FakeBackend } = await import("./helpers/fake-backend.js");
         const daemon = new Daemon({
             token     : "t",

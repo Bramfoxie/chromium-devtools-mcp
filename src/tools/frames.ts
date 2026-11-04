@@ -24,9 +24,9 @@ interface TabFrames {
     generations: Map<string, number>;
 }
 
-export type FrameNavigatedListener = (tab: string, frameId: string, main: boolean) => void;
+type FrameNavigatedListener = (tab: string, frameId: string, main: boolean) => void;
 
-export interface FrameStateOptions {
+interface FrameStateOptions {
     access: DaemonAccess;
 }
 
@@ -80,11 +80,6 @@ export class FrameState {
 
         this.attached = true;
         this.access.on("cdp.event", (params) => this.handleCdpEvent(params));
-        this.access.on("tab.closed", (params) => {
-            const targetId = (params as { targetId?: unknown } | null)?.targetId;
-
-            if (typeof targetId === "string") this.forget(targetId);
-        });
     }
 
     onNavigated(listener: FrameNavigatedListener): void {

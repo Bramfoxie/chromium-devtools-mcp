@@ -16,20 +16,10 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-    AlreadyRunningError,
-    acquireInstance,
-    DaemonError,
-    type DirIO,
-    type DirStat,
-    ensurePrivateDir,
-    generateToken,
-    type InstanceIO,
-    type InstanceOptions,
-    ensureToken,
-    readToken,
-    tokensMatch,
-} from "../src/daemon/index.js";
+import { AlreadyRunningError, DaemonError, ensurePrivateDir } from "../src/daemon/index.js";
+import { acquireInstance, type InstanceIO, type InstanceOptions } from "../src/daemon/lock.js";
+import { type DirIO, type DirStat } from "../src/daemon/private-dir.js";
+import { generateToken, ensureToken, readToken, tokensMatch } from "../src/daemon/token.js";
 
 const posix = process.platform !== "win32";
 const uid = process.getuid?.();
@@ -247,7 +237,7 @@ describe("acquireInstance with a fake socket layer", () => {
                     () => undefined,
                     deps,
                 ),
-            ).resolves.toBeDefined();
+            ).resolves.toEqual(expect.objectContaining({ release: expect.any(Function) }));
             await expect(
                 acquireInstance(
                     options({ platform, socketPath: make(tooLong), runtimeDir: undefined }),
@@ -413,6 +403,21 @@ describe("token", () => {
         expect((await readdir(dir)).sort()).toEqual(["daemon.token", "daemon.token.lock"]);
     });
 
+    it("takes over a token lock that is older than the stale limit", async () => {
+        const dir = await tempDir();
+        const file = path.join(dir, "daemon.token");
+
+        await writeFile(file, "garbage");
+        await mkdir(`${file}.lock`);
+        const token = await ensureToken(file, process.platform, uid, {
+            lockWaitMs: 50,
+            now       : () => Date.now() + 60_000,
+        });
+
+        expect(await readToken(file)).toBe(token);
+        expect(await readdir(dir)).toEqual(["daemon.token"]);
+    });
+
     it("gives parallel callers the persisted token on a corrupted file", async () => {
         const dir = await tempDir();
         const file = path.join(dir, "daemon.token");
@@ -535,7 +540,9 @@ describe("acquireInstance with real sockets", () => {
     it("accepts connections and refuses a second instance", async () => {
         const opts = await realOptions();
         const accepted = new Promise<net.Socket>((resolve) => {
-            acquireInstance(opts, resolve).then((handle) => cleanups.push(() => handle.release()));
+            void acquireInstance(opts, resolve).then((handle) =>
+                cleanups.push(() => handle.release()),
+            );
         });
 
         await vi.waitFor(async () => {
@@ -550,7 +557,9 @@ describe("acquireInstance with real sockets", () => {
     it("survives errors on accepted sockets", async () => {
         const opts = await realOptions();
         const accepted = new Promise<net.Socket>((resolve) => {
-            acquireInstance(opts, resolve).then((handle) => cleanups.push(() => handle.release()));
+            void acquireInstance(opts, resolve).then((handle) =>
+                cleanups.push(() => handle.release()),
+            );
         });
 
         await vi.waitFor(async () => {
@@ -586,7 +595,10 @@ describe("acquireInstance with real sockets", () => {
 
         cleanups.push(() => second.release());
         await first.release();
-        await connectTo(opts.socketPath);
+        const socket = await connectTo(opts.socketPath);
+
+        expect(socket.destroyed).toBe(false);
+        expect(existsSync(opts.socketPath)).toBe(true);
     });
 
     it.skipIf(!posix)("takes over a socket file left behind by a killed process", async () => {
@@ -642,7 +654,10 @@ describe("acquireInstance with real sockets", () => {
         const handle = await acquireInstance(opts, () => undefined);
 
         cleanups.push(() => handle.release());
-        await connectTo(opts.socketPath);
+        const socket = await connectTo(opts.socketPath);
+
+        expect(socket.destroyed).toBe(false);
+        expect(existsSync(lock)).toBe(false);
     });
 
     it.skipIf(!posix)("creates the runtime directory and the socket as private", async () => {

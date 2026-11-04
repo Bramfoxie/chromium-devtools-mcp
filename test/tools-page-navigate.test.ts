@@ -796,7 +796,7 @@ describe("page_navigate", () => {
         runtime.elements.nextGeneration("tab1");
         const [uid] = runtime.elements.assign("tab1", [{ backendNodeId: 5 }]);
 
-        expect(runtime.elements.lookup("tab1", uid ?? "")).toBeDefined();
+        expect(runtime.elements.lookup("tab1", uid ?? "")).toMatchObject({ backendNodeId: 5 });
         await runTool(pageNavigate, { url: "https://example.org/", waitUntil: "none" }, extra(), runtime);
 
         expect(runtime.elements.lookup("tab1", uid ?? "")).toBeUndefined();
@@ -822,7 +822,7 @@ describe("page_navigate", () => {
             url: "https://example.org/",
         });
         expect(pageNavigate.target?.({ action: "back" } as never)).toBeUndefined();
-        expect(pageNavigate.target?.({ url: "https://example.org/" } as never)).toEqual({
+        expect(pageNavigate.target?.({ url: "https://example.org/" })).toEqual({
             url: "https://example.org/",
         });
     });

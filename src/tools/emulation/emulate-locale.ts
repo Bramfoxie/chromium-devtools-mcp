@@ -14,8 +14,9 @@ import {
 import { readLocale } from "./reads.js";
 import { runSteps } from "./steps.js";
 import { emulationSummarySchema, summarizeEmulation } from "./summary.js";
+import { resolveTab, tabSchema } from "../tab-target.js";
 
-export const ACCEPT_LANGUAGE_MAX_CHARS = 512;
+const ACCEPT_LANGUAGE_MAX_CHARS = 512;
 
 const acceptLanguagePattern = /^[\x20-\x7E]*$/;
 
@@ -27,7 +28,7 @@ export function checkAcceptLanguage(value: string): void {
     }
 }
 
-export function checkLocaleSelection(
+function checkLocaleSelection(
     selection: Partial<LocaleSelection> & { reset: boolean },
 ): void {
     if (selection.reset && hasLocaleSelection({ ...selection, reset: false })) {
@@ -53,10 +54,10 @@ export const emulateLocale = defineTool({
     name       : "emulate_locale",
     closedWorld: true,
     description:
-        "Emulate locale, timezone and Accept-Language on a tab. Applies to new page loads: navigator.language changes after the next navigation, and number and date formatting follow the locale. Geolocation is not emulated. reset restores the real locale and timezone.",
+        "Emulate locale, timezone and Accept-Language on a tab. Applies to new page loads: navigator.language changes after the next navigation, and number and date formatting follow the locale. Use emulate_geolocation for the location. reset restores the real locale and timezone.",
     access: "mutate",
     input : z.strictObject({
-        tab           : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
+        tab           : tabSchema,
         locale        : z.string().min(1).max(64).optional().describe("BCP 47 tag such as de-DE. Merges with the previous timezone and accept language."),
         timezone      : z.string().min(1).max(64).optional().describe("IANA name such as Europe/Berlin."),
         acceptLanguage: z.string().min(1).max(ACCEPT_LANGUAGE_MAX_CHARS).optional().describe("Accept-Language header value, printable ASCII. Merges with the device user agent."),
@@ -68,11 +69,7 @@ export const emulateLocale = defineTool({
         reported : reportedSchema.optional().describe("Language and timezone the page reports, when it answers."),
     }),
     handler: async (args, context) => {
-        const targetId = args.tab ?? context.state.selected;
-
-        if (targetId === undefined) {
-            throw new ToolError("No tab is selected. Open one with new_tab first.");
-        }
+        const targetId = resolveTab(args, context);
 
         const selection: LocaleSelection & { reset: boolean } = {
             locale        : args.locale,

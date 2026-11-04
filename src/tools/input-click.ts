@@ -1,35 +1,19 @@
 import { z } from "zod";
-import type { DaemonAccess } from "../mcp/index.js";
-import {
-    coveredMessage,
-    type ElementState,
-    ensureActionable,
-    hitTest,
-} from "./actionability.js";
-import { clickPointOf, type ClickPoint, TOP_LEVEL_ORIGIN } from "./coordinates.js";
+import { changedUrl, navigationOf, summarizeTarget, targetSummarySchema } from "./input-outcome.js";
+import { mousePoint } from "./input-point.js";
+import { ensureActionable } from "./actionability.js";
+import { elementAtPoint, ensureInsideViewport, ensurePointAllowed, pointSchema } from "./point-target.js";
 import { defineTool, type ToolContext } from "./define-tool.js";
 import { ensureNoDialog } from "./dialogs.js";
-import {
-    type Measurement,
-    type PointerRoute,
-    type PointerTarget,
-    withPointerDelivery,
-} from "./pointer-delivery.js";
-import { startRendering } from "./hold-rendering.js";
-import { frameChain, mapPoint, measureChain, outerHitTest, revealChain } from "./frame-geometry.js";
-import {
-    elementTargetSchema,
-    type Rect,
-    elementAccess,
-    revealElement,
-    withElement,
-    type ResolvedElement,
-} from "./element-target.js";
+import { type PointerRoute, type PointerTarget, withPointerDelivery } from "./pointer-delivery.js";
+import type { ClickPoint } from "./coordinates.js";
+import { elementTargetSchema, elementAccess, withElement } from "./element-target.js";
 import { ToolError } from "./errors.js";
 import { KEY_MODIFIERS, modifiersMask } from "./keys.js";
 import { throwIfCancelled } from "./registry.js";
+import { resolveTab, tabSchema } from "./tab-target.js";
 
-export const CLICK_EXPRESSION = `function (element, scroll) {
+const CLICK_EXPRESSION = `function (element, scroll) {
   if (scroll) element.scrollIntoView({ block: "center", inline: "center" });
   element.click();
   return "clicked";
@@ -45,212 +29,22 @@ const clickResultSchema = z.object({
 
 const MOUSE_BUTTONS = ["left", "middle", "right"] as const;
 
-export type MouseButton = (typeof MOUSE_BUTTONS)[number];
+type MouseButton = (typeof MOUSE_BUTTONS)[number];
 
-export const MOUSE_BUTTON_BIT: Record<MouseButton, number> = {
+const MOUSE_BUTTON_BIT: Record<MouseButton, number> = {
     left  : 1,
     middle: 4,
     right : 2,
 };
 
-export const CLICK_COUNT_MAX = 3;
+const CLICK_COUNT_MAX = 3;
 
-export const HOVER_DEFAULT_STEPS = 2;
+const HOVER_DEFAULT_STEPS = 2;
 
-export const positionSchema = z.strictObject({
+const positionSchema = z.strictObject({
     x: z.number().describe("Offset in CSS pixels from the left edge of the element."),
     y: z.number().describe("Offset in CSS pixels from the top edge of the element."),
 });
-
-export const targetSummarySchema = z.strictObject({
-    uid    : z.string().optional().describe("Element id, when the call used one."),
-    tag    : z.string().describe("Tag of the element."),
-    id     : z.string().optional().describe("Id of the element, when it has one."),
-    classes: z.array(z.string()).describe("Class names of the element, at most 10."),
-});
-
-export type TargetSummary = z.infer<typeof targetSummarySchema>;
-
-export function summarizeTarget(uid: string | undefined, state: ElementState): TargetSummary {
-    return {
-        ...(uid === undefined ? {} : { uid }),
-        tag    : state.tag,
-        ...(state.id === "" ? {} : { id: state.id }),
-        classes: state.classes,
-    };
-}
-
-async function currentUrl(access: DaemonAccess, targetId: string): Promise<string> {
-    try {
-        const result = (await access.send(targetId, "Runtime.evaluate", {
-            expression   : "location.href",
-            returnByValue: true,
-        })) as { result?: { value?: unknown } } | null;
-
-        return typeof result?.result?.value === "string" ? result.result.value : "";
-    } catch {
-        return "";
-    }
-}
-
-export async function navigationOf<T>(
-    access  : DaemonAccess,
-    targetId: string,
-    run     : () => Promise<T>,
-): Promise<{ value: T; urlBefore: string; urlAfter: string }> {
-    const urlBefore = await currentUrl(access, targetId);
-    const value = await run();
-    const urlAfter = await currentUrl(access, targetId);
-
-    return { value, urlBefore, urlAfter };
-}
-
-export function changedUrl(urlBefore: string, urlAfter: string): { urlAfter?: string } {
-    return urlBefore === "" || urlBefore === urlAfter ? {} : { urlAfter };
-}
-
-async function mousePoint(
-    context : ToolContext,
-    targetId: string,
-    element : ResolvedElement,
-    position: { x: number; y: number } | undefined,
-    verb    : string,
-    force   : boolean,
-): Promise<{ point: ClickPoint; state: ElementState; box: Rect; route?: PointerRoute }> {
-    const owner = elementAccess(context.access, element);
-    const scrolled = await ensureActionable(owner, targetId, element, {
-        checkDisabled: true,
-    });
-    const local = clickPointOf(scrolled.box, position, TOP_LEVEL_ORIGIN);
-
-    if (element.isolated === true && element.frameId !== undefined) {
-        const found = await isolatedPoint(context, targetId, element.frameId, scrolled.box, local, {
-            owner,
-            element,
-            verb,
-            force,
-            position,
-        });
-
-        return { point: found.point, state: scrolled.state, box: scrolled.box, route: found.route };
-    }
-
-    if (force) return { point: local, state: scrolled.state, box: scrolled.box };
-
-    const hit = await hitTest(context.access, targetId, element, local);
-
-    if (hit.kind === "covered") throw new ToolError(coveredMessage(hit.by, verb));
-
-    if (hit.kind === "outside") {
-        throw new ToolError(
-            "The target point lies outside the page viewport. Scroll the page and try again.",
-        );
-    }
-
-    return { point: local, state: scrolled.state, box: scrolled.box };
-}
-
-interface IsolatedRequest {
-    owner   : DaemonAccess;
-    element : ResolvedElement;
-    verb    : string;
-    force   : boolean;
-    position: { x: number; y: number } | undefined;
-}
-
-async function isolatedPoint(
-    context : ToolContext,
-    targetId: string,
-    frameId : string,
-    box     : Rect,
-    local   : ClickPoint,
-    request : IsolatedRequest,
-): Promise<{ point: ClickPoint; route?: PointerRoute }> {
-    const chain = await frameChain(context.access, context.frames, targetId, frameId);
-    const release = chain.links.length === 0
-        ? async (): Promise<void> => undefined
-        : await startRendering(context.access, targetId);
-
-    try {
-        return await measuredPoint(context, targetId, chain, box, local, request, release);
-    } catch (error) {
-        await release();
-
-        throw error;
-    }
-}
-
-async function measuredPoint(
-    context : ToolContext,
-    targetId: string,
-    chain   : Awaited<ReturnType<typeof frameChain>>,
-    box     : Rect,
-    local   : ClickPoint,
-    request : IsolatedRequest,
-    release : () => Promise<void>,
-): Promise<{ point: ClickPoint; route?: PointerRoute }> {
-    await revealChain(chain, targetId, box);
-
-    const measured = await measureChain(chain, targetId);
-    const point = mapPoint(measured.toTop, local);
-    const measure = async (): Promise<Measurement> => {
-        const ref = { objectId: request.element.objectId };
-        const revealed = await revealElement(request.owner, targetId, ref);
-
-        if (revealed.box === null || !revealed.visible) {
-            throw new ToolError("The element is hidden: it has no box on the page. Make it visible and try again.");
-        }
-
-        await revealChain(chain, targetId, revealed.box);
-
-        const fresh = await measureChain(chain, targetId);
-
-        const freshLocal = clickPointOf(revealed.box, request.position, TOP_LEVEL_ORIGIN);
-
-        return {
-            point: mapPoint(fresh.toTop, freshLocal),
-            local: freshLocal,
-            boxes: fresh.boxes,
-        };
-    };
-    const route: PointerRoute | undefined = chain.links.length === 0 ? undefined : {
-        owner    : request.owner,
-        frameId  : request.element.frameId ?? "",
-        objectId : request.element.objectId,
-        relays   : [context.access, ...chain.links.map((link) => link.access), request.owner],
-        links    : chain.links,
-        initial  : { point, local, boxes: measured.boxes },
-        release,
-        measure,
-        stillOver: request.force
-            ? undefined
-            : async () => (await hitTest(request.owner, targetId, request.element, local, true)).kind === "hit",
-    };
-
-    if (request.force) return { point, route };
-
-    const inner = await hitTest(request.owner, targetId, request.element, local, true);
-
-    if (inner.kind === "covered") throw new ToolError(coveredMessage(inner.by, request.verb));
-
-    if (inner.kind === "outside") {
-        throw new ToolError(
-            "The target point lies outside the frame viewport. Scroll the frame and try again.",
-        );
-    }
-
-    const outer = await outerHitTest(chain, measured, targetId, local);
-
-    if (outer.kind === "covered") throw new ToolError(coveredMessage(outer.by, request.verb));
-
-    if (outer.kind === "outside") {
-        throw new ToolError(
-            "The target point lies outside the page viewport. Scroll the page and try again.",
-        );
-    }
-
-    return { point, route };
-}
 
 export const click = defineTool({
     name: "click",
@@ -258,7 +52,7 @@ export const click = defineTool({
         "Click an element at the DOM level with element.click() semantics, without moving the mouse.",
     access: "mutate",
     input : z.strictObject({
-        tab           : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
+        tab           : tabSchema,
         target        : elementTargetSchema.describe("Element uid from a snapshot or query, or a CSS selector."),
         scrollIntoView: z.boolean().optional().describe("Scroll the element into view first. Defaults to true."),
     }),
@@ -269,11 +63,7 @@ export const click = defineTool({
         urlAfter: z.string().optional().describe("URL after the click, present only when the click navigated."),
     }),
     handler: async (args, context) => {
-        const targetId = args.tab ?? context.state.selected;
-
-        if (targetId === undefined) {
-            throw new ToolError("No tab is selected. Open one with new_tab first.");
-        }
+        const targetId = resolveTab(args, context);
 
         throwIfCancelled(context.signal);
 
@@ -294,11 +84,15 @@ export const click = defineTool({
 
             const scroll = args.scrollIntoView ?? true;
             const acted = await navigationOf(context.access, targetId, () =>
-                owner.send(targetId, "Runtime.callFunctionOn", {
-                    functionDeclaration: CLICK_EXPRESSION,
-                    objectId           : element.objectId,
-                    arguments          : [{ objectId: element.objectId }, { value: scroll }],
-                    returnByValue      : true,
+                owner.send({
+                    targetId,
+                    method: "Runtime.callFunctionOn",
+                    params: {
+                        functionDeclaration: CLICK_EXPRESSION,
+                        objectId           : element.objectId,
+                        arguments          : [{ objectId: element.objectId }, { value: scroll }],
+                        returnByValue      : true,
+                    },
                 }));
 
             const parsed = clickResultSchema.safeParse(acted.value);
@@ -321,39 +115,174 @@ export const click = defineTool({
     },
 });
 
+interface ClickPlan {
+    button    : MouseButton;
+    clickCount: number;
+    modifiers : Array<(typeof KEY_MODIFIERS)[number]>;
+}
+
+function dispatchClick(
+    context : ToolContext,
+    targetId: string,
+    route   : PointerRoute | undefined,
+    point   : ClickPoint,
+    plan    : ClickPlan,
+) {
+    const { button, clickCount } = plan;
+    const modifiers = modifiersMask(plan.modifiers);
+    const buttons = MOUSE_BUTTON_BIT[button];
+
+    const dispatcher = (target: PointerTarget) =>
+        target.via === "frame" && route !== undefined ? route.owner : context.access;
+
+    const sendMove = async (at: PointerTarget): Promise<void> => {
+        await dispatcher(at).send({
+            targetId,
+            method: "Input.dispatchMouseEvent",
+            params: {
+                type      : "mouseMoved",
+                x         : at.point.x,
+                y         : at.point.y,
+                modifiers,
+                button,
+                buttons   : 0,
+                clickCount: 0,
+            },
+        });
+    };
+
+    return withPointerDelivery(route, targetId, context, (delivery) =>
+        navigationOf(context.access, targetId, async () => {
+            throwIfCancelled(context.signal);
+
+            if (delivery === undefined) await sendMove({ via: "tab", point });
+            else await delivery.prepareMove(sendMove);
+
+            for (let count = 1; count <= clickCount; count += 1) {
+                const press = async (from: PointerTarget): Promise<void> => {
+                    await dispatcher(from).send({
+                        targetId,
+                        method: "Input.dispatchMouseEvent",
+                        params: {
+                            type      : "mousePressed",
+                            x         : from.point.x,
+                            y         : from.point.y,
+                            modifiers,
+                            button,
+                            buttons,
+                            clickCount: count,
+                        },
+                    });
+                };
+                const release = async (from: PointerTarget): Promise<void> => {
+                    const event = {
+                        type      : "mouseReleased",
+                        x         : from.point.x,
+                        y         : from.point.y,
+                        modifiers,
+                        button,
+                        buttons,
+                        clickCount: count,
+                    };
+
+                    try {
+                        await dispatcher(from).send({
+                            targetId,
+                            method: "Input.dispatchMouseEvent",
+                            params: event,
+                        });
+                    } catch (error) {
+                        await dispatcher(from).send({
+                            targetId,
+                            method: "Input.dispatchMouseEvent",
+                            params: event,
+                        })
+                            .catch(() => undefined);
+
+                        throw error;
+                    }
+                };
+
+                if (delivery === undefined) {
+                    await press({ via: "tab", point });
+                    await release({ via: "tab", point });
+                } else {
+                    await delivery.press(press, release);
+                }
+            }
+        }));
+}
+
 export const inputClick = defineTool({
     name: "input_click",
     description:
-        "Click at an element with trusted CDP mouse events, like a real user, without focusing the window.",
+        "Click an element, or a point of the viewport given in CSS pixels (a pixel of a screenshot divided by its pixelRatio), with trusted CDP mouse events, like a real user, without focusing the window.",
     access: "mutate",
     input : z.strictObject({
-        tab       : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
-        target    : elementTargetSchema.describe("Element uid from a snapshot or query, or a CSS selector."),
+        tab       : tabSchema,
+        target    : elementTargetSchema.optional().describe("Element uid from a snapshot or query, or a CSS selector. Pass this or point."),
+        point     : pointSchema.optional().describe("Viewport point to click, for example read from a screenshot. Pass this or target."),
         button    : z.enum(MOUSE_BUTTONS).optional().describe("Mouse button. Defaults to left."),
         clickCount: z.number().int().min(1).max(CLICK_COUNT_MAX).optional().describe("How many clicks in a row, 1 to 3. Defaults to 1."),
         modifiers : z.array(z.enum(KEY_MODIFIERS)).max(4).optional().describe("Held modifiers, for example Control for a control click."),
-        position  : positionSchema.optional().describe("Offset in CSS pixels from the top left corner of the element. Defaults to the center."),
-        force     : z.boolean().optional().describe("Skip the hit test and click through a covering element. Defaults to false."),
+        position  : positionSchema.optional().describe("With target: offset in CSS pixels from the top left corner of the element. Defaults to the center."),
+        force     : z.boolean().optional().describe("With target: skip the hit test and click through a covering element. Defaults to false."),
+    }).superRefine((value, ctx) => {
+        if ((value.target === undefined) === (value.point === undefined)) {
+            ctx.addIssue({ code: "custom", message: "Pass exactly one of target or point." });
+        }
+
+        const targetOnly = value.position !== undefined || value.force !== undefined;
+
+        if (value.point !== undefined && targetOnly) {
+            ctx.addIssue({ code: "custom", message: "position and force apply to target only." });
+        }
     }),
     output: z.strictObject({
         ok      : z.boolean().describe("Whether the mouse events were dispatched."),
-        target  : targetSummarySchema.describe("The element that was clicked."),
+        target  : targetSummarySchema.optional().describe("The element that was clicked. For a point, the element under it, omitted when there is none."),
         effect  : z.string().describe("Short summary of what happened."),
         urlAfter: z.string().optional().describe("URL after the click, present only when the click navigated."),
     }),
     handler: async (args, context) => {
-        const targetId = args.tab ?? context.state.selected;
-
-        if (targetId === undefined) {
-            throw new ToolError("No tab is selected. Open one with new_tab first.");
-        }
+        const targetId = resolveTab(args, context);
 
         throwIfCancelled(context.signal);
 
         await ensureNoDialog(context.dialogs, targetId);
         await context.focus.ensure(context.access, targetId);
 
-        return withElement(context, targetId, args.target, async (element) => {
+        const button = args.button ?? "left";
+        const clickCount = args.clickCount ?? 1;
+        const plan: ClickPlan = {
+            button,
+            clickCount,
+            modifiers: [...new Set(args.modifiers ?? [])],
+        };
+        const times = clickCount > 1 ? ` ${clickCount} times` : "";
+
+        if (args.point !== undefined) {
+            const { point } = args;
+
+            await ensureInsideViewport(context, targetId, point);
+            await ensurePointAllowed("input_click", context, targetId, point);
+
+            const under = await elementAtPoint(context, targetId, point);
+            const acted = await dispatchClick(context, targetId, undefined, point, plan);
+
+            return {
+                ok    : true,
+                ...(under === undefined ? {} : { target: { ...under } }),
+                effect: `The point (${point.x}, ${point.y}) was ${button} clicked${times}.`,
+                ...changedUrl(acted.urlBefore, acted.urlAfter),
+            };
+        }
+
+        const elementTarget = args.target;
+
+        if (elementTarget === undefined) throw new ToolError("Pass exactly one of target or point.");
+
+        return withElement(context, targetId, elementTarget, async (element) => {
             const { point, state, route } = await mousePoint(
                 context,
                 targetId,
@@ -362,88 +291,19 @@ export const inputClick = defineTool({
                 "click",
                 args.force ?? false,
             );
-
-            const button = args.button ?? "left";
-            const clickCount = args.clickCount ?? 1;
-            const held = [...new Set(args.modifiers ?? [])];
-            const modifiers = modifiersMask(held);
-            const buttons = MOUSE_BUTTON_BIT[button];
-
-            const dispatcher = (target: PointerTarget) =>
-                target.via === "frame" && route !== undefined ? route.owner : context.access;
-
-            const sendMove = async (at: PointerTarget): Promise<void> => {
-                await dispatcher(at).send(targetId, "Input.dispatchMouseEvent", {
-                    type      : "mouseMoved",
-                    x         : at.point.x,
-                    y         : at.point.y,
-                    modifiers,
-                    button,
-                    buttons   : 0,
-                    clickCount: 0,
-                });
-            };
-
-            const acted = await withPointerDelivery(route, targetId, (delivery) =>
-                navigationOf(context.access, targetId, async () => {
-                    throwIfCancelled(context.signal);
-
-                    if (delivery === undefined) await sendMove({ via: "tab", point });
-                    else await delivery.prepareMove(sendMove);
-
-                    for (let count = 1; count <= clickCount; count += 1) {
-                        const press = async (from: PointerTarget): Promise<void> => {
-                            await dispatcher(from).send(targetId, "Input.dispatchMouseEvent", {
-                                type      : "mousePressed",
-                                x         : from.point.x,
-                                y         : from.point.y,
-                                modifiers,
-                                button,
-                                buttons,
-                                clickCount: count,
-                            });
-                        };
-                        const release = async (from: PointerTarget): Promise<void> => {
-                            const event = {
-                                type      : "mouseReleased",
-                                x         : from.point.x,
-                                y         : from.point.y,
-                                modifiers,
-                                button,
-                                buttons,
-                                clickCount: count,
-                            };
-
-                            try {
-                                await dispatcher(from).send(targetId, "Input.dispatchMouseEvent", event);
-                            } catch (error) {
-                                await dispatcher(from).send(targetId, "Input.dispatchMouseEvent", event)
-                                    .catch(() => undefined);
-
-                                throw error;
-                            }
-                        };
-
-                        if (delivery === undefined) {
-                            await press({ via: "tab", point });
-                            await release({ via: "tab", point });
-                        } else {
-                            await delivery.press(press, release);
-                        }
-                    }
-                }));
+            const acted = await dispatchClick(context, targetId, route, point, plan);
 
             return {
                 ok    : true,
-                target: summarizeTarget(args.target.uid, state),
-                effect: `The element was ${button} clicked${clickCount > 1 ? ` ${clickCount} times` : ""}.`,
+                target: summarizeTarget(elementTarget.uid, state),
+                effect: `The element was ${button} clicked${times}.`,
                 ...changedUrl(acted.urlBefore, acted.urlAfter),
             };
         });
     },
 });
 
-export const HOVER_EXPRESSION = `function (element) { return element.matches(":hover"); }`;
+const HOVER_EXPRESSION = `function (element) { return element.matches(":hover"); }`;
 
 const hoverSchema = z.object({
     result: z.object({
@@ -458,7 +318,7 @@ export const inputHover = defineTool({
         "Hover an element with trusted CDP mouse events, so hover styles and menus react.",
     access: "mutate",
     input : z.strictObject({
-        tab     : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
+        tab     : tabSchema,
         target  : elementTargetSchema.describe("Element uid from a snapshot or query, or a CSS selector."),
         position: positionSchema.optional().describe("Offset in CSS pixels from the top left corner of the element. Defaults to the center."),
         force   : z.boolean().optional().describe("Skip the hit test and hover through a covering element. Defaults to false."),
@@ -470,11 +330,7 @@ export const inputHover = defineTool({
         hovered: z.boolean().describe("Whether element.matches(':hover') is true now."),
     }),
     handler: async (args, context) => {
-        const targetId = args.tab ?? context.state.selected;
-
-        if (targetId === undefined) {
-            throw new ToolError("No tab is selected. Open one with new_tab first.");
-        }
+        const targetId = resolveTab(args, context);
 
         throwIfCancelled(context.signal);
 
@@ -494,18 +350,22 @@ export const inputHover = defineTool({
             const moveTo = async (via: PointerTarget["via"], x: number, y: number): Promise<void> => {
                 const access = via === "frame" && route !== undefined ? route.owner : context.access;
 
-                await access.send(targetId, "Input.dispatchMouseEvent", {
-                    type      : "mouseMoved",
-                    x,
-                    y,
-                    modifiers : 0,
-                    button    : "none",
-                    buttons   : 0,
-                    clickCount: 0,
+                await access.send({
+                    targetId,
+                    method: "Input.dispatchMouseEvent",
+                    params: {
+                        type      : "mouseMoved",
+                        x,
+                        y,
+                        modifiers : 0,
+                        button    : "none",
+                        buttons   : 0,
+                        clickCount: 0,
+                    },
                 });
             };
 
-            await withPointerDelivery(route, targetId, async (delivery) => {
+            await withPointerDelivery(route, targetId, context, async (delivery) => {
                 throwIfCancelled(context.signal);
 
                 const moved = await delivery?.prepareMove((target) =>
@@ -520,11 +380,15 @@ export const inputHover = defineTool({
             });
 
             const parsed = hoverSchema.safeParse(
-                await elementAccess(context.access, element).send(targetId, "Runtime.callFunctionOn", {
-                    functionDeclaration: HOVER_EXPRESSION,
-                    objectId           : element.objectId,
-                    arguments          : [{ objectId: element.objectId }],
-                    returnByValue      : true,
+                await elementAccess(context.access, element).send({
+                    targetId,
+                    method: "Runtime.callFunctionOn",
+                    params: {
+                        functionDeclaration: HOVER_EXPRESSION,
+                        objectId           : element.objectId,
+                        arguments          : [{ objectId: element.objectId }],
+                        returnByValue      : true,
+                    },
                 }),
             );
 

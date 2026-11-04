@@ -1,12 +1,14 @@
 import { z } from "zod";
+import { redactUrl } from "./redact.js";
+import { stackTraceSchema } from "../cdp-schemas.js";
 
-export const CONSOLE_ENTRY_CLIP_CHARS = 2000;
+const CONSOLE_ENTRY_CLIP_CHARS = 2000;
 
-export const CONSOLE_STACK_FRAMES = 20;
+const CONSOLE_STACK_FRAMES = 20;
 
 export type ConsoleLevel = "debug" | "info" | "warning" | "error";
 
-export type ConsoleSource = "console" | "exception" | "browser";
+type ConsoleSource = "console" | "exception" | "browser";
 
 export interface ConsoleEntry {
     time   : string;
@@ -41,18 +43,7 @@ const remoteObject = z.object({
 const consoleApiCalled = z.object({
     type      : z.string(),
     args      : z.array(remoteObject),
-    stackTrace: z
-        .object({
-            callFrames: z.array(
-                z.object({
-                    functionName: z.string(),
-                    url         : z.string(),
-                    lineNumber  : z.number(),
-                    columnNumber: z.number(),
-                }),
-            ),
-        })
-        .optional(),
+    stackTrace: stackTraceSchema,
 });
 
 const exceptionThrown = z.object({
@@ -62,18 +53,7 @@ const exceptionThrown = z.object({
         columnNumber: z.number().optional(),
         url         : z.string().optional(),
         exception   : remoteObject.optional(),
-        stackTrace  : z
-            .object({
-                callFrames: z.array(
-                    z.object({
-                        functionName: z.string(),
-                        url         : z.string(),
-                        lineNumber  : z.number(),
-                        columnNumber: z.number(),
-                    }),
-                ),
-            })
-            .optional(),
+        stackTrace  : stackTraceSchema,
     }),
 });
 
@@ -137,7 +117,7 @@ export function formatConsoleStack(frames: CallFrame[]): string {
         .slice(0, CONSOLE_STACK_FRAMES)
         .map(
             (frame) =>
-                `${frame.functionName || "(anonymous)"} (${frame.url}:${frame.lineNumber + 1}:${frame.columnNumber + 1})`,
+                `${frame.functionName || "(anonymous)"} (${redactUrl(frame.url)}:${frame.lineNumber + 1}:${frame.columnNumber + 1})`,
         )
         .join("\n");
 }
@@ -169,7 +149,11 @@ function locationOf(frames: CallFrame[] | undefined): FrameLocation {
 
     if (first === undefined) return {};
 
-    return { url: first.url, line: first.lineNumber + 1, column: first.columnNumber + 1 };
+    return {
+        url   : redactUrl(first.url),
+        line  : first.lineNumber + 1,
+        column: first.columnNumber + 1,
+    };
 }
 
 export function normalizeConsoleEvent(
@@ -208,7 +192,8 @@ export function normalizeConsoleEvent(
         );
         const frames = details.stackTrace?.callFrames ?? [];
         const stack = formatConsoleStack(frames);
-        const url = details.url ?? frames[0]?.url;
+        const rawUrl = details.url ?? frames[0]?.url;
+        const url = rawUrl === undefined ? undefined : redactUrl(rawUrl);
         const line = details.lineNumber === undefined ? frames[0]?.lineNumber : details.lineNumber;
         const column = details.columnNumber === undefined
             ? frames[0]?.columnNumber
@@ -238,7 +223,7 @@ export function normalizeConsoleEvent(
             level : levelOfLogLevel(entry.level),
             source: "browser",
             text  : clipConsoleText(entry.text),
-            ...(entry.url === undefined ? {} : { url: entry.url }),
+            ...(entry.url === undefined ? {} : { url: redactUrl(entry.url) }),
             ...(entry.lineNumber === undefined ? {} : { line: entry.lineNumber + 1 }),
         };
     }

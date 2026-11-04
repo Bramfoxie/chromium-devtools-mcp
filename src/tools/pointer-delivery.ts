@@ -1,26 +1,28 @@
 import { z } from "zod";
 import type { DaemonAccess } from "../mcp/index.js";
+import type { ToolContext } from "./define-tool.js";
 import { ToolError } from "./errors.js";
 import type { Rect } from "./element-target.js";
 import { type FrameLink, type Point, settleRendering } from "./frame-geometry.js";
+import { throwIfCancelled } from "./registry.js";
 
 export const MOVE_BUDGET_MS = 10000;
 
-export const MOVE_WAIT_MS = 100;
+const MOVE_WAIT_MS = 100;
 
-export const RETRY_PAUSE_MIN_MS = 50;
+const RETRY_PAUSE_MIN_MS = 50;
 
-export const RETRY_PAUSE_MAX_MS = 500;
+const RETRY_PAUSE_MAX_MS = 500;
 
-export const STABLE_ROUNDS = 4;
+const STABLE_ROUNDS = 4;
 
-export const LANDING_WAIT_MS = 300;
+const LANDING_WAIT_MS = 300;
 
-export const PRESS_WAIT_MS = 300;
+const PRESS_WAIT_MS = 300;
 
 export const FRAME_ATTEMPTS = 3;
 
-export type PointerVia = "frame" | "tab";
+type PointerVia = "frame" | "tab";
 
 export interface PointerTarget {
     via  : PointerVia;
@@ -97,9 +99,7 @@ const readSchema = z.object({
     result: z.object({ value: z.object({ moves: z.number(), downs: z.number() }).nullable() }),
 });
 
-function pause(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-}
+type PointerEnv = Pick<ToolContext, "clock" | "signal">;
 
 export class PointerDelivery {
     private current: Measurement;
@@ -109,6 +109,7 @@ export class PointerDelivery {
     constructor(
         private readonly route: PointerRoute,
         private readonly tab  : string,
+        private readonly env  : PointerEnv,
     ) {
         this.current = route.initial;
     }
@@ -123,17 +124,18 @@ export class PointerDelivery {
 
     async prepareMove(sendMove: (target: PointerTarget) => Promise<void>): Promise<PointerTarget> {
         const base = (await this.read()).moves;
-        const begun = Date.now();
+        const begun = this.env.clock.now();
         let tabStarted = begun;
         let pauseMs = RETRY_PAUSE_MIN_MS;
         let attempts = 0;
         const hits: boolean[] = [];
 
         for (;;) {
+            throwIfCancelled(this.env.signal);
             attempts += 1;
             const via: PointerVia = attempts <= FRAME_ATTEMPTS ? "frame" : "tab";
 
-            if (attempts === FRAME_ATTEMPTS + 1) tabStarted = Date.now();
+            if (attempts === FRAME_ATTEMPTS + 1) tabStarted = this.env.clock.now();
 
             this.via = via;
             const target = this.targetFor(via);
@@ -145,18 +147,18 @@ export class PointerDelivery {
             if (via === "tab") {
                 hits.push(await this.frameAt(target.point));
 
-                if (Date.now() - tabStarted >= MOVE_BUDGET_MS) break;
+                if (this.env.clock.now() - tabStarted >= MOVE_BUDGET_MS) break;
             }
 
             await settleRendering(this.route.relays, this.tab);
-            await pause(pauseMs);
+            await this.pause(pauseMs);
             pauseMs = Math.min(Math.round(pauseMs * 1.5), RETRY_PAUSE_MAX_MS);
             await this.remeasure();
         }
 
         throw new ToolError(
             `The frame did not receive pointer input from the browser. Make sure the page is visible and not busy, then try again.\n${
-                await this.diagnostics(attempts, Date.now() - begun, sendMove, hits)}`,
+                await this.diagnostics(attempts, this.env.clock.now() - begun, sendMove, hits)}`,
         );
     }
 
@@ -167,6 +169,8 @@ export class PointerDelivery {
         const first = (await this.read()).downs;
 
         for (let attempt = 1; attempt <= 2; attempt += 1) {
+            throwIfCancelled(this.env.signal);
+
             if (attempt > 1) await this.remeasure();
 
             const base = (await this.read()).downs;
@@ -203,6 +207,11 @@ export class PointerDelivery {
         );
     }
 
+    private async pause(ms: number): Promise<void> {
+        await this.env.clock.sleep(ms);
+        throwIfCancelled(this.env.signal);
+    }
+
     private targetFor(via: PointerVia): PointerTarget {
         return { via, point: via === "frame" ? this.current.local : this.current.point };
     }
@@ -210,9 +219,10 @@ export class PointerDelivery {
     private async frameAt(point: Point): Promise<boolean> {
         try {
             const parsed = locationSchema.safeParse(
-                await this.route.relays[0]?.send(this.tab, "DOM.getNodeForLocation", {
-                    x: Math.round(point.x),
-                    y: Math.round(point.y),
+                await this.route.relays[0]?.send({
+                    targetId: this.tab,
+                    method  : "DOM.getNodeForLocation",
+                    params  : { x: Math.round(point.x), y: Math.round(point.y) },
                 }),
             );
 
@@ -266,34 +276,46 @@ export class PointerDelivery {
 
         try {
             for (const link of this.route.links) {
-                const resolved = await link.access.send(this.tab, "DOM.resolveNode", {
-                    backendNodeId: link.backendNodeId,
+                const resolved = await link.access.send({
+                    targetId: this.tab,
+                    method  : "DOM.resolveNode",
+                    params  : {
+                        backendNodeId: link.backendNodeId,
+                    },
                 }) as { object?: { objectId?: string } } | null;
                 const objectId = resolved?.object?.objectId;
 
                 if (objectId === undefined) continue;
 
-                await link.access.send(this.tab, "Runtime.callFunctionOn", {
-                    functionDeclaration: INSTALL,
-                    objectId,
-                    arguments          : [],
-                    returnByValue      : true,
+                await link.access.send({
+                    targetId: this.tab,
+                    method  : "Runtime.callFunctionOn",
+                    params  : {
+                        functionDeclaration: INSTALL,
+                        objectId,
+                        arguments          : [],
+                        returnByValue      : true,
+                    },
                 });
                 probes.push({ access: link.access, objectId });
             }
 
             await sendMove({ via: "tab", point });
-            await pause(LANDING_WAIT_MS);
+            await this.pause(LANDING_WAIT_MS);
 
             const seen: string[] = [];
 
             for (const [index, probe] of probes.entries()) {
                 const parsed = readSchema.safeParse(
-                    await probe.access.send(this.tab, "Runtime.callFunctionOn", {
-                        functionDeclaration: READ,
-                        objectId           : probe.objectId,
-                        arguments          : [],
-                        returnByValue      : true,
+                    await probe.access.send({
+                        targetId: this.tab,
+                        method  : "Runtime.callFunctionOn",
+                        params  : {
+                            functionDeclaration: READ,
+                            objectId           : probe.objectId,
+                            arguments          : [],
+                            returnByValue      : true,
+                        },
                     }),
                 );
                 const moves = parsed.success ? parsed.data.result.value?.moves ?? -1 : -1;
@@ -306,11 +328,15 @@ export class PointerDelivery {
             return "unknown";
         } finally {
             for (const probe of probes) {
-                await probe.access.send(this.tab, "Runtime.callFunctionOn", {
-                    functionDeclaration: REMOVE,
-                    objectId           : probe.objectId,
-                    arguments          : [],
-                    returnByValue      : true,
+                await probe.access.send({
+                    targetId: this.tab,
+                    method  : "Runtime.callFunctionOn",
+                    params  : {
+                        functionDeclaration: REMOVE,
+                        objectId           : probe.objectId,
+                        arguments          : [],
+                        returnByValue      : true,
+                    },
                 }).catch(() => undefined);
             }
         }
@@ -321,9 +347,10 @@ export class PointerDelivery {
 
         try {
             const parsed = z.object({ result: z.object({ value: z.number() }) }).safeParse(
-                await top?.send(this.tab, "Runtime.evaluate", {
-                    expression   : "window.devicePixelRatio",
-                    returnByValue: true,
+                await top?.send({
+                    targetId: this.tab,
+                    method  : "Runtime.evaluate",
+                    params  : { expression: "window.devicePixelRatio", returnByValue: true },
                 }),
             );
 
@@ -336,9 +363,10 @@ export class PointerDelivery {
     private async visibility(): Promise<string> {
         try {
             const parsed = z.object({ result: z.object({ value: z.enum(["hidden", "visible", "prerender"]) }) }).safeParse(
-                await this.route.relays[0]?.send(this.tab, "Runtime.evaluate", {
-                    expression   : "document.visibilityState",
-                    returnByValue: true,
+                await this.route.relays[0]?.send({
+                    targetId: this.tab,
+                    method  : "Runtime.evaluate",
+                    params  : { expression: "document.visibilityState", returnByValue: true },
                 }),
             );
 
@@ -380,12 +408,16 @@ export class PointerDelivery {
     }
 
     private call(declaration: string, args: unknown[], awaitPromise = false): Promise<unknown> {
-        return this.route.owner.send(this.tab, "Runtime.callFunctionOn", {
-            functionDeclaration: declaration,
-            objectId           : this.route.objectId,
-            arguments          : args,
-            awaitPromise,
-            returnByValue      : true,
+        return this.route.owner.send({
+            targetId: this.tab,
+            method  : "Runtime.callFunctionOn",
+            params  : {
+                functionDeclaration: declaration,
+                objectId           : this.route.objectId,
+                arguments          : args,
+                awaitPromise,
+                returnByValue      : true,
+            },
         });
     }
 }
@@ -393,11 +425,12 @@ export class PointerDelivery {
 export async function withPointerDelivery<T>(
     route: PointerRoute | undefined,
     tab  : string,
+    env  : PointerEnv,
     run  : (delivery: PointerDelivery | undefined) => Promise<T>,
 ): Promise<T> {
     if (route === undefined) return run(undefined);
 
-    const delivery = new PointerDelivery(route, tab);
+    const delivery = new PointerDelivery(route, tab, env);
 
     try {
         await delivery.install();

@@ -13,7 +13,9 @@ import {
     runningInProfile,
     setupInstructions,
 } from "../src/browser/index.js";
-import { abortableSleep, fetchVersion, probePort, readIfExists } from "../src/browser/attach.js";
+import { fetchVersion, probePort } from "../src/browser/attach.js";
+import { readIfExists } from "../src/util/read-if-exists.js";
+import { abortableSleep } from "../src/util/sleep.js";
 
 const mac = { platform: "darwin" as const, homedir: "/Users/u", env: {} };
 const linux = { platform: "linux" as const, homedir: "/home/u", env: {} };

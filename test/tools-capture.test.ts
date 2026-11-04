@@ -167,6 +167,30 @@ describe("console formatting", () => {
         });
     });
 
+    it("redacts sensitive URL parts in entry urls and stack frames", () => {
+        const secret = "https://user:pw@a.example/app.js?token=abc123&page=2";
+        const frames = [{ functionName: "main", url: secret, lineNumber: 0, columnNumber: 0 }];
+        const call = normalizeConsoleEvent("Runtime.consoleAPICalled", {
+            type: "log", args: [], stackTrace: { callFrames: frames },
+        }, "t");
+        const thrown = normalizeConsoleEvent("Runtime.exceptionThrown", {
+            exceptionDetails: { text: "boom", url: secret, stackTrace: { callFrames: frames } },
+        }, "t");
+        const logged = normalizeConsoleEvent("Log.entryAdded", {
+            entry: { source: "network", level: "error", text: "x", url: secret },
+        }, "t");
+
+        for (const entry of [call, thrown, logged]) {
+            const text = JSON.stringify(entry);
+
+            expect(text).not.toContain("abc123");
+            expect(text).not.toContain("user:pw");
+            expect(text).toContain("page=2");
+        }
+
+        expect(call?.stack).toContain("token=[redacted]");
+    });
+
     it("maps console types and log levels to severities", () => {
         const call = (type: string) =>
             normalizeConsoleEvent("Runtime.consoleAPICalled", { type, args: [] }, "t")?.level;
@@ -677,13 +701,13 @@ describe("CaptureManager", () => {
         expect(capture.networkRecord("tab1", 99)).toBeUndefined();
     });
 
-    it("forgets a tab on tab.closed and everything on reset", async () => {
+    it("forgets a tab and everything on reset", async () => {
         const { fake, capture } = manager();
 
         await capture.ensureConsole("tab1");
         await capture.ensureNetwork("tab1");
         fake.emit("cdp.event", consoleCall("before close"));
-        fake.emit("tab.closed", { targetId: "tab1" });
+        capture.forget("tab1");
         expect(capture.consoleEnabled("tab1")).toBe(false);
         expect(capture.networkEnabled("tab1")).toBe(false);
 

@@ -1,3 +1,5 @@
+export { BROWSERS } from "./browsers.js";
+
 export {
     type BrowserName,
     BrowserNotFoundError,
@@ -25,6 +27,10 @@ export {
     type AttachDeps,
     type AttachEndpoint,
     browserUserDataDir,
+    endpointUnreachableMessage,
+    explicitEndpoint,
+    findAttachEndpoint,
+    probePort,
     type EndpointSource,
     parseActivePortFile,
     resolveAttachEndpoint,

@@ -7,15 +7,11 @@ import {
     IpcTimeoutError,
     RpcError,
 } from "../daemon/index.js";
-import { describeError, logDaemon } from "../daemon/log.js";
+import { describeError, logDaemon } from "../util/log.js";
 import { DaemonNotReadyError, SessionResetError } from "../mcp/index.js";
+import { AppError } from "../util/app-error.js";
 
-export class ToolError extends Error {
-    constructor(message: string) {
-        super(message);
-        this.name = "ToolError";
-    }
-}
+export class ToolError extends AppError {}
 
 const MAX_ERROR_CHARS = 500;
 

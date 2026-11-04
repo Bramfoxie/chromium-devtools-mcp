@@ -130,12 +130,13 @@ describe("storage_read", () => {
             count        : 2,
             returned     : 2,
             truncated    : false,
-            includeValues: true,
+            includeValues: false,
             entries      : [
-                { key: "theme", value: "dark", valueSize: 4, truncated: false },
-                { key: "lang", value: "en", valueSize: 2, truncated: false },
+                { key: "theme", valueSize: 4, truncated: false },
+                { key: "lang", valueSize: 2, truncated: false },
             ],
         });
+        expect(JSON.stringify(result.structuredContent)).not.toContain("dark");
         expect(fake.sent.map((call) => call.method)).toEqual([
             "Page.enable",
             "Runtime.evaluate",
@@ -174,7 +175,7 @@ describe("storage_read", () => {
 
         const result = await runTool(
             storageRead,
-            { kind: "local", keys: ["a", "b", "c"], maxEntries: 2, maxValueChars: 4 },
+            { kind: "local", keys: ["a", "b", "c"], maxEntries: 2, maxValueChars: 4, includeValues: true },
             extra(),
             runtime,
         );
@@ -189,6 +190,34 @@ describe("storage_read", () => {
             ],
         });
         expect(String(JSON.stringify(result.structuredContent))).toContain("[truncated:");
+    });
+
+    it("returns storage values only with includeValues true", async () => {
+        const { fake, runtime } = setup();
+
+        fake.respond = (_tab, method) => {
+            if (method === "Runtime.evaluate") return { result: { value: "https://a.example/p" } };
+
+            return { entries: [["k", "val"]] };
+        };
+
+        const result = await runTool(
+            storageRead,
+            { kind: "session", includeValues: true },
+            extra(),
+            runtime,
+        );
+
+        expect(result.structuredContent).toMatchObject({
+            includeValues: true,
+            entries      : [{ key: "k", value: "val", valueSize: 3, truncated: false }],
+        });
+    });
+
+    it("tells the model how to ask for values", () => {
+        const found = allTools.find((tool) => tool.name === "storage_read");
+
+        expect(found?.description).toContain("includeValues: true");
     });
 
     it("omits values when includeValues is false", async () => {

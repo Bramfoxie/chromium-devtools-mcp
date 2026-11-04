@@ -139,6 +139,18 @@ describe("confirmation of dangerous tools", () => {
         expect(asked[0]?.summary).toBe("It will set cookies of the page origin.");
     });
 
+    it("names the cookie read and whether values are asked for", async () => {
+        const { runtime, asked } = setup(confirming, "declined");
+
+        await runTool(tool("storage_read"), { kind: "cookies" }, extra(), runtime);
+        await runTool(tool("storage_read"), { kind: "cookies", includeValues: true }, extra(), runtime);
+
+        expect(asked.map((entry) => entry.summary)).toEqual([
+            "It reads the cookies of the page.",
+            "It reads the cookies of the page, including their values.",
+        ]);
+    });
+
     it("shows the script of js_evaluate in the question", async () => {
         const { runtime, asked } = setup(confirming, "declined");
 

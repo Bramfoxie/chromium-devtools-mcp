@@ -50,10 +50,10 @@ describe("DialogState", () => {
         const send = fake.send.bind(fake);
         const subscribe = fake.subscribe.bind(fake);
 
-        fake.send = async (...args) => {
-            order.push(`send:${args[1]}`);
+        fake.send = async (command) => {
+            order.push(`send:${command.method}`);
 
-            return send(...args);
+            return send(command);
         };
 
         fake.subscribe = async (...args) => {
@@ -259,7 +259,7 @@ describe("DialogState", () => {
 
         opening(fake, "tab1", { url: "https://a.example/", message: "a", type: "alert" });
         opening(fake, "tab2", { url: "https://b.example/", message: "b", type: "alert" });
-        fake.emit("tab.closed", { targetId: "tab1" });
+        state.forget("tab1");
         expect(state.open("tab1")).toBeUndefined();
         expect(state.open("tab2")?.message).toBe("b");
         state.reset();
@@ -285,7 +285,7 @@ describe("dialog precondition", () => {
         context.tabs.refresh(await fake.listTabs("owned"), "tab1");
         fake.emit = (() => {
             throw new Error("must not emit after attach");
-        }) as never;
+        });
         toolRuntime.dialogs.attach();
         toolRuntime.dialogs.handleCdpEvent({
             targetId: "tab1",

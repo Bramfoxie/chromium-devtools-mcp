@@ -1,4 +1,5 @@
 export {
+    type CdpCommand,
     DaemonAccess,
     type DaemonAccessOptions,
     type DaemonEventHandler,

@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { ErrorCode, RpcError } from "../src/daemon/index.js";
 import {
     boxOf,
     ElementRegistry,
+    FrameState,
     elementTargetSchema,
     MAX_UIDS_PER_TAB,
     rectOfQuad,
@@ -11,7 +12,9 @@ import {
     splitPierceChain,
     STALE_UID_MESSAGE,
     ToolError,
+    withElement,
 } from "../src/tools/index.js";
+import { managedConfig } from "./helpers/daemon-env.js";
 import { FakeAccess } from "./helpers/fake-access.js";
 
 const BOX = {
@@ -111,7 +114,9 @@ describe("ElementRegistry", () => {
         const uids = elements.assign("tab1", nodes);
 
         expect(uids.every((uid) => uid !== undefined)).toBe(true);
-        expect(elements.lookup("tab1", `0_${MAX_UIDS_PER_TAB + 5}`)).toBeDefined();
+        expect(elements.lookup("tab1", `0_${MAX_UIDS_PER_TAB + 5}`)).toMatchObject({
+            backendNodeId: MAX_UIDS_PER_TAB + 5,
+        });
         expect(elements.lookup("tab1", "0_1")).toBeUndefined();
         elements.reset();
 
@@ -124,7 +129,7 @@ describe("ElementRegistry", () => {
         const [first] = elements.assign("tab1", [{ backendNodeId: 7 }]);
         const [second] = elements.assign("tab1", [{ backendNodeId: 7 }]);
 
-        expect(first).toBeDefined();
+        expect(first).toBe("0_1");
         expect(second).toBe(first);
     });
 });
@@ -809,5 +814,77 @@ describe("resolveElement frame ids", () => {
         expect(failure).toBeInstanceOf(ToolError);
         expect((failure as Error).message).toBe(STALE_UID_MESSAGE);
         expect(fake.sent).toEqual([]);
+    });
+});
+
+describe("withElement with a pierced target under an allowlist", () => {
+    const restricted = {
+        ...managedConfig,
+        safety: { ...managedConfig.safety, allowedDomains: ["a.example"] },
+    };
+
+    function pierced(documentUrl: unknown) {
+        const fake = new FakeAccess();
+
+        fake.respond = (_targetId, method) => {
+            switch (method) {
+                case "DOM.getDocument":
+                    return { root: { nodeId: 1 } };
+                case "DOM.enable":
+                case "DOM.discardSearchResults":
+                case "Runtime.releaseObject":
+                    return {};
+                case "DOM.performSearch":
+                    return { searchId: "s1", resultCount: 1 };
+                case "DOM.getSearchResults":
+                    return { nodeIds: [15] };
+                case "DOM.resolveNode":
+                    return { object: { objectId: "obj-1" } };
+                case "DOM.describeNode":
+                    return { node: { nodeId: 15, backendNodeId: 7 } };
+                case "Runtime.callFunctionOn":
+                    if (documentUrl === undefined) throw new Error("detached");
+
+                    return { result: { value: documentUrl } };
+                default:
+                    throw new Error(`unexpected CDP call ${method}`);
+            }
+        };
+
+        const scope = {
+            config  : restricted,
+            access  : fake.asAccess(),
+            elements: new ElementRegistry(),
+            frames  : new FrameState({ access: fake.asAccess() }),
+        };
+
+        return { fake, scope };
+    }
+
+    const target = { selector: "button", pierce: true };
+
+    it("refuses an element whose document is outside the list", async () => {
+        const { fake, scope } = pierced("https://evil.example/frame");
+        const use = vi.fn(async () => "ran");
+        const failure = await withElement(scope, "tab1", target, use).catch((error: unknown) => error);
+
+        expect((failure as Error).message).toContain("outside safety.allowedDomains");
+        expect(use).not.toHaveBeenCalled();
+        expect(fake.sent.at(-1)?.method).toBe("Runtime.releaseObject");
+    });
+
+    it("refuses when the document of the element cannot be read", async () => {
+        const { scope } = pierced(undefined);
+        const failure = await withElement(scope, "tab1", target, async () => "ran").catch(
+            (error: unknown) => error,
+        );
+
+        expect((failure as Error).message).toContain("could not be checked");
+    });
+
+    it("runs the action for an element in an allowed document", async () => {
+        const { scope } = pierced("https://a.example/page");
+
+        await expect(withElement(scope, "tab1", target, async () => "ran")).resolves.toBe("ran");
     });
 });

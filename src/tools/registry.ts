@@ -9,12 +9,17 @@ import type { AnyTool } from "./define-tool.js";
 import { ToolRuntime } from "./context.js";
 import { admit } from "./gate.js";
 import { ToolError, toToolMessage } from "./errors.js";
+import { accessFor, mayBeDangerous, mayMutate } from "./tool-traits.js";
 import { errorResult, jsonResult } from "./result.js";
+import { logDaemon } from "../util/log.js";
 import { SessionResetError } from "../mcp/index.js";
 
 export const CANCELLED_MESSAGE = "The request was cancelled. Call the tool again if needed.";
 
-export interface RegisterToolsOptions {
+const CANCELLED_MUTATING_MESSAGE =
+    "The request was cancelled while the tool was running, so its change may already have been applied. Check the page with page_info or dom_query before calling the tool again.";
+
+interface RegisterToolsOptions {
     server : McpServer;
     tools  : AnyTool[];
     runtime: ToolRuntime;
@@ -30,22 +35,19 @@ export function toolAnnotations(tool: AnyTool): {
     destructiveHint: boolean;
     openWorldHint  : boolean;
 } {
-    const mutate = typeof tool.access === "function" ? true : tool.access === "mutate";
-    const dangerous = typeof tool.dangerous === "function" ? true : (tool.dangerous ?? false);
-
     return {
         title          : tool.name,
-        readOnlyHint   : !mutate,
-        destructiveHint: dangerous,
+        readOnlyHint   : !mayMutate(tool),
+        destructiveHint: mayBeDangerous(tool),
         openWorldHint  : tool.closedWorld !== true,
     };
 }
 
-function raceWithSignal<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
-    if (signal.aborted) return Promise.reject(new ToolError(CANCELLED_MESSAGE));
+function raceWithSignal<T>(work: Promise<T>, signal: AbortSignal, message: string): Promise<T> {
+    if (signal.aborted) return Promise.reject(new ToolError(message));
 
     return new Promise<T>((resolve, reject) => {
-        const onAbort = () => reject(new ToolError(CANCELLED_MESSAGE));
+        const onAbort = () => reject(new ToolError(message));
 
         signal.addEventListener("abort", onAbort, { once: true });
         work.then(
@@ -107,10 +109,17 @@ export async function runTool(
         const output = await raceWithSignal(
             tool.handler(parsed.data, runtime.context(extra.signal, admission.confirmed)),
             extra.signal,
+            accessFor(tool, parsed.data) === "mutate"
+                ? CANCELLED_MUTATING_MESSAGE
+                : CANCELLED_MESSAGE,
         );
         const validated = tool.output.safeParse(output);
 
         if (!validated.success) {
+            const paths = validated.error.issues.map((issue) => issue.path.join(".") || "(root)");
+
+            logDaemon(`tool ${tool.name} returned an invalid result at: ${paths.join(", ")}`);
+
             return errorResult(`The tool ${tool.name} returned an invalid result. Try the call again.`);
         }
 

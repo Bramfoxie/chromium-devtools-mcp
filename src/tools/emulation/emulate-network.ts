@@ -17,10 +17,11 @@ import {
 } from "./commands.js";
 import { runSteps } from "./steps.js";
 import { emulationSummarySchema, summarizeEmulation } from "./summary.js";
+import { resolveTab, tabSchema } from "../tab-target.js";
 
 const presetSchema = z.enum(["offline", "slow-3g", "fast-3g", "4g", "wifi", "none"]);
 
-export interface NetworkInput {
+interface NetworkInput {
     preset      : NetworkPresetName | undefined;
     latencyMs   : number | undefined;
     downloadKbps: number | undefined;
@@ -70,7 +71,7 @@ export function conditionsOf(
     };
 }
 
-export async function ensureNetworkForEmulation(
+async function ensureNetworkForEmulation(
     ensure  : (tab: string) => Promise<void>,
     targetId: string,
 ): Promise<void> {
@@ -84,7 +85,7 @@ export const emulateNetwork = defineTool({
         "Emulate network conditions on a tab: offline, slow-3g (2000 ms, 400/400 Kbps), fast-3g (562 ms, 1600/750 Kbps), 4g (170 ms, 9000/9000 Kbps), wifi (28 ms, 30000/15000 Kbps) or none. Shares Network.enable with the capture manager, never disables capture.",
     access: "mutate",
     input : z.strictObject({
-        tab         : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
+        tab         : tabSchema,
         preset      : presetSchema.optional().describe("Named conditions. none restores a normal connection and clears blocked URLs."),
         latencyMs   : z.number().int().min(0).max(NETWORK_LATENCY_MAX_MS).optional().describe("Added latency in ms, 0 to 60000."),
         downloadKbps: z.number().int().min(-1).max(NETWORK_THROUGHPUT_MAX_KBPS).optional().describe("Download ceiling in Kbps, at least 1, -1 disables throttling. 0 is rejected because it stalls the link."),
@@ -98,11 +99,7 @@ export const emulateNetwork = defineTool({
         emulation: emulationSummarySchema.describe("Emulation state of the tab after the call."),
     }),
     handler: async (args, context) => {
-        const targetId = args.tab ?? context.state.selected;
-
-        if (targetId === undefined) {
-            throw new ToolError("No tab is selected. Open one with new_tab first.");
-        }
+        const targetId = resolveTab(args, context);
 
         const input: NetworkInput = {
             preset      : args.preset,

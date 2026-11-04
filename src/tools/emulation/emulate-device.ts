@@ -24,6 +24,7 @@ import { readDevice, type DeviceRead } from "./reads.js";
 import { runSteps } from "./steps.js";
 import { emulationSummarySchema, summarizeEmulation } from "./summary.js";
 import { connectedChromeMajor, withChromeMajor } from "./user-agent.js";
+import { resolveTab, tabSchema } from "../tab-target.js";
 
 const reportedSchema = z.strictObject({
     innerWidth      : z.number().describe("Inner CSS width the page reports."),
@@ -33,7 +34,7 @@ const reportedSchema = z.strictObject({
     maxTouchPoints  : z.number().describe("Touch points the page reports."),
 });
 
-export interface DeviceInput {
+interface DeviceInput {
     device           : string | undefined;
     width            : number | undefined;
     height           : number | undefined;
@@ -90,7 +91,7 @@ export const emulateDevice = defineTool({
         "Emulate a device size, pixel ratio, mobile viewport, touch and user agent on a tab. Reads back what the page reports. The Chrome version in a device user agent follows the connected browser. Client hints metadata is not emulated.",
     access: "mutate",
     input : z.strictObject({
-        tab              : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
+        tab              : tabSchema,
         device           : z.string().min(1).max(128).optional().describe("Device name from list_devices, case insensitive."),
         width            : z.number().int().min(DEVICE_WIDTH_MIN).max(DEVICE_WIDTH_MAX).optional().describe("Explicit CSS width, 100 to 10000. Needs height, deviceScaleFactor, mobile and touch."),
         height           : z.number().int().min(DEVICE_HEIGHT_MIN).max(DEVICE_HEIGHT_MAX).optional().describe("Explicit CSS height, 100 to 10000."),
@@ -107,11 +108,7 @@ export const emulateDevice = defineTool({
         reported : reportedSchema.optional().describe("Viewport and agent the page reports, when it answers."),
     }),
     handler: async (args, context) => {
-        const targetId = args.tab ?? context.state.selected;
-
-        if (targetId === undefined) {
-            throw new ToolError("No tab is selected. Open one with new_tab first.");
-        }
+        const targetId = resolveTab(args, context);
 
         checkDeviceInput({
             device           : args.device,

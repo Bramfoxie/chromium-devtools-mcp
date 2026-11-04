@@ -345,7 +345,7 @@ describe.skipIf(!present)("real browser", () => {
         expect(cookies.origin).toBe(env.fixture.origin);
         expect((cookies.cookies as Row[]).map((cookie) => cookie.name)).toEqual(["fixture"]);
         await env.ok("storage_write", { kind: "local", action: "set", entries: { key: "value" }, tab });
-        const local = await env.ok("storage_read", { kind: "local", tab });
+        const local = await env.ok("storage_read", { kind: "local", tab, includeValues: true });
 
         expect(local.entries).toMatchObject([{ key: "key", value: "value" }]);
         expect(await evaluate("localStorage.getItem('key')", tab)).toBe("value");
@@ -424,13 +424,17 @@ describe.skipIf(!present)("real browser", () => {
         const image = element.blocks.find((block) => block.type === "image") as { data: string } | undefined;
 
         expect(element.isError).toBe(false);
-        expect(pngSize(image?.data)).toEqual({ width: 120, height: 80 });
+        const ratio = Number(element.data.pixelRatio ?? 1);
+
+        expect(pngSize(image?.data)).toEqual({ width: 120 * ratio, height: 80 * ratio });
         const full = await env.call("screenshot", { tab, fullPage: true, format: "png", scale: 0.5 });
         const fullImage = full.blocks.find((block) => block.type === "image") as { data: string } | undefined;
         const size = pngSize(fullImage?.data);
 
-        expect(size.height).toBeGreaterThan(800);
-        expect(size.height).toBeLessThan(1000);
+        const fullRatio = Number(full.data.pixelRatio ?? 1);
+
+        expect(size.height).toBeGreaterThan(800 * fullRatio);
+        expect(size.height).toBeLessThan(1000 * fullRatio);
     });
 });
 

@@ -22,7 +22,11 @@ export async function connectedChromeMajor(
     targetId: string,
 ): Promise<number | undefined> {
     try {
-        const version = await access.send(targetId, "Browser.getVersion", {});
+        const version = await access.send({
+            targetId,
+            method: "Browser.getVersion",
+            params: {},
+        });
 
         return chromeMajorOf((version as { product?: unknown } | null)?.product);
     } catch {

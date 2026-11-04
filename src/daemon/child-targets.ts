@@ -8,7 +8,26 @@ import {
     type ChildTargetInfo,
     type FrameChildSession,
 } from "./browser-backend.js";
-import { describeError, logDaemon } from "./log.js";
+import { describeError, logDaemon } from "../util/log.js";
+
+export const CHILD_AUTO_ATTACH_TIMEOUT_MS = 5000;
+
+export const CHILD_ATTACH_HANDLER_TIMEOUT_MS = 8000;
+
+async function withinBound(work: Promise<void> | undefined, ms: number): Promise<boolean> {
+    if (work === undefined) return true;
+
+    let timer: NodeJS.Timeout | undefined;
+    const expired = new Promise<false>((resolve) => {
+        timer = setTimeout(() => resolve(false), ms);
+    });
+
+    try {
+        return await Promise.race([work.then(() => true as const), expired]);
+    } finally {
+        clearTimeout(timer);
+    }
+}
 
 const targetInfoSchema = z.object({
     targetId: z.string().min(1),
@@ -26,9 +45,10 @@ const detachedSchema = z.object({ sessionId: z.string().min(1) });
 
 export interface ChildTargetsDeps {
     send(
-        session: CdpSession,
-        method : string,
-        params : Record<string, unknown>,
+        session   : CdpSession,
+        method    : string,
+        params    : Record<string, unknown>,
+        timeoutMs?: number,
     ): Promise<unknown>;
     adopt(sessionId: string, targetId: string): CdpSession;
     on(
@@ -41,7 +61,8 @@ export interface ChildTargetsDeps {
 
 export function cdpChildTargetsDeps(client: CdpClient): ChildTargetsDeps {
     return {
-        send : (session, method, params) => session.send(method, params),
+        send: (session, method, params, timeoutMs) =>
+            session.send(method, params, timeoutMs === undefined ? {} : { timeoutMs }),
         adopt: (sessionId, targetId) => client.adoptSession(sessionId, targetId),
         on   : (session, event, handler) => session.on(event, handler),
         log  : (message) => logDaemon(message),
@@ -98,10 +119,6 @@ export class ChildTargets implements ChildSessionHandle {
         return [...this.known.values()].map((known) => wrap(known.session, known.child));
     }
 
-    childCount(): number {
-        return this.known.size;
-    }
-
     droppedCount(): number {
         return this.dropped;
     }
@@ -141,8 +158,8 @@ export class ChildTargets implements ChildSessionHandle {
 
     private listen(session: CdpSession, depth: number): void {
         const stop = [
-            this.deps.on(session, "Target.attachedToTarget", (params, envelope) =>
-                this.attached(session, depth, params, envelope)),
+            this.deps.on(session, "Target.attachedToTarget", (params) =>
+                this.attached(session, depth, params)),
             this.deps.on(session, "Target.detachedFromTarget", (params) =>
                 this.detached(params)),
         ];
@@ -164,19 +181,12 @@ export class ChildTargets implements ChildSessionHandle {
         }
     }
 
-    private attached(
-        session : CdpSession,
-        depth   : number,
-        params  : unknown,
-        envelope: string | undefined,
-    ): void {
+    private attached(session: CdpSession, depth: number, params: unknown): void {
         if (this.closed) return;
 
         const parsed = attachedSchema.safeParse(params);
 
         if (!parsed.success || parsed.data.targetInfo.type !== "iframe") return;
-
-        if (envelope !== undefined && envelope !== session.sessionId) return;
 
         this.adopt(
             session,
@@ -226,26 +236,38 @@ export class ChildTargets implements ChildSessionHandle {
     }
 
     private async start(adopted: CdpSession, known: KnownChild, waiting: boolean): Promise<void> {
-        await this.deps
-            .send(adopted, "Target.setAutoAttach", {
-                autoAttach            : true,
-                waitForDebuggerOnStart: true,
-                flatten               : true,
-                filter                : [{ type: "iframe", exclude: false }],
-            })
-            .catch((error: unknown) => this.deps.log(`could not auto attach an iframe: ${describeError(error)}`));
-
         try {
-            await this.options.onAttached?.(wrap(adopted, known.child));
-        } catch (error) {
-            this.deps.log(`a child attach handler threw: ${describeError(error)}`);
+            await this.deps
+                .send(
+                    adopted,
+                    "Target.setAutoAttach",
+                    {
+                        autoAttach            : true,
+                        waitForDebuggerOnStart: true,
+                        flatten               : true,
+                        filter                : [{ type: "iframe", exclude: false }],
+                    },
+                    CHILD_AUTO_ATTACH_TIMEOUT_MS,
+                )
+                .catch((error: unknown) => this.deps.log(`could not auto attach an iframe: ${describeError(error)}`));
+
+            try {
+                const handled = await withinBound(
+                    this.options.onAttached?.(wrap(adopted, known.child)),
+                    CHILD_ATTACH_HANDLER_TIMEOUT_MS,
+                );
+
+                if (!handled) this.deps.log("a child attach handler did not finish in time");
+            } catch (error) {
+                this.deps.log(`a child attach handler threw: ${describeError(error)}`);
+            }
+        } finally {
+            if (waiting) {
+                await this.deps
+                    .send(adopted, "Runtime.runIfWaitingForDebugger", {}, CHILD_AUTO_ATTACH_TIMEOUT_MS)
+                    .catch((error: unknown) => this.deps.log(`could not resume an iframe: ${describeError(error)}`));
+            }
         }
-
-        if (!waiting) return;
-
-        await this.deps
-            .send(adopted, "Runtime.runIfWaitingForDebugger", {})
-            .catch((error: unknown) => this.deps.log(`could not resume an iframe: ${describeError(error)}`));
     }
 
     private detached(params: unknown): void {

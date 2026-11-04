@@ -454,7 +454,7 @@ describe("input_scroll in frames", () => {
                 }
             }
 
-            return inner?.(_targetId, method, params) as unknown;
+            return inner?.(_targetId, method, params);
         };
 
         const { runtime } = runtimeWith(fake);

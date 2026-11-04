@@ -2,46 +2,35 @@ import { confirmationRefusal } from "./confirmation.js";
 import type { ToolRuntime } from "./context.js";
 import type { AnyTool } from "./define-tool.js";
 import { isRestricted } from "../safety/index.js";
-import { checkSafety, type SafetyAccess, type SafetyDecision } from "./safety.js";
-import { safetyFrameOf } from "./safety-frame.js";
+import { checkSafety, type SafetyAccess, type SafetyDecision, type SafetyFrame } from "./safety.js";
+import { safetyFramesOf } from "./safety-frame.js";
+import { accessFor, dangerousFor, tabUrlExemptFor } from "./tool-traits.js";
 
-export type Admission =
+type Admission =
     | { admitted: true; confirmed: boolean }
     | { admitted: false; message: string };
 
-function selectedTab(args: unknown, runtime: ToolRuntime): string | undefined {
+function explicitTab(args: unknown): string | undefined {
     const argTab = (args as { tab?: unknown } | null)?.tab;
 
-    if (typeof argTab === "string" && argTab.length > 0) return argTab;
+    return typeof argTab === "string" && argTab.length > 0 ? argTab : undefined;
+}
 
-    return runtime.tabs.selected();
+function selectedTab(args: unknown, runtime: ToolRuntime): string | undefined {
+    return explicitTab(args) ?? runtime.tabs.selected();
 }
 
 async function resolveTabUrl(
     args   : unknown,
     runtime: ToolRuntime,
 ): Promise<string | undefined> {
-    const argTab = (args as { tab?: unknown } | null)?.tab;
+    const tab = selectedTab(args, runtime);
 
-    if (typeof argTab === "string" && argTab.length > 0) {
-        const tabs = await runtime.access.listTabs("owned");
-        const known = tabs.find((tab) => tab.targetId === argTab);
+    if (tab === undefined) return undefined;
 
-        return known?.url;
-    }
+    const tabs = await runtime.access.listTabs("owned");
 
-    if (runtime.tabs.selected() !== undefined) {
-        const tabs = await runtime.access.listTabs("owned");
-        const known = tabs.find((tab) => tab.targetId === runtime.tabs.selected());
-
-        return known?.url;
-    }
-
-    return undefined;
-}
-
-function evaluated<T>(value: T | ((args: unknown) => T), args: unknown): T {
-    return typeof value === "function" ? (value as (args: unknown) => T)(args) : value;
+    return tabs.find((known) => known.targetId === tab)?.url;
 }
 
 function refusal(decision: Extract<SafetyDecision, { allowed: false }>): Admission {
@@ -55,8 +44,8 @@ export function admit(
     signal : AbortSignal,
     runtime: ToolRuntime,
 ): Admission | Promise<Admission> {
-    const access: SafetyAccess = evaluated(tool.access, args);
-    const dangerous = evaluated(tool.dangerous ?? false, args);
+    const access = accessFor(tool, args);
+    const dangerous = dangerousFor(tool, args);
 
     if (access === "mutate" || (dangerous && runtime.config.safety.confirmDangerous)) {
         return admitWithChecks(tool, args, signal, runtime, access, dangerous);
@@ -75,7 +64,7 @@ async function admitWithChecks(
     access   : SafetyAccess,
     dangerous: boolean,
 ): Promise<Admission> {
-    const exempt = evaluated(tool.tabUrlExempt ?? false, args);
+    const exempt = tabUrlExemptFor(tool, args);
     let tabUrl: string | undefined;
 
     if (access === "mutate" && isRestricted(runtime.config.safety.allowedDomains) && !exempt) {
@@ -90,18 +79,36 @@ async function admitWithChecks(
     }
 
     const tab = access === "mutate" ? selectedTab(args, runtime) : undefined;
-    const frame = tab === undefined
-        ? undefined
-        : await safetyFrameOf(args, tab, runtime.elements, runtime.frames).catch(() => undefined);
-    const decision = checkSafety({
+    let frames: SafetyFrame[] = [];
+
+    if (tab !== undefined) {
+        try {
+            frames = await safetyFramesOf(args, tab, runtime.elements, runtime.frames);
+        } catch {
+            if (isRestricted(runtime.config.safety.allowedDomains)) {
+                return {
+                    admitted: false,
+                    message : "The frame of the target could not be checked against safety.allowedDomains. Call the tool again.",
+                };
+            }
+        }
+    }
+
+    const base = {
         tool  : tool.name,
         access,
         config: runtime.config,
-        target: tool.target?.(args as never),
+        target: tool.target?.(args),
         tabUrl,
-        ...(frame === undefined ? {} : { frame }),
         dangerous,
-    });
+    };
+    let decision = checkSafety(base);
+
+    for (const frame of frames) {
+        if (!decision.allowed) break;
+
+        decision = checkSafety({ ...base, frame });
+    }
 
     if (!decision.allowed) return refusal(decision);
 
@@ -114,7 +121,7 @@ async function admitWithChecks(
         : await runtime.confirm(
             {
                 tool   : tool.name,
-                summary: tool.summarize?.(args as never) ?? "It can reach beyond the page.",
+                summary: tool.summarize?.(args) ?? "It can reach beyond the page.",
             },
             signal,
         );

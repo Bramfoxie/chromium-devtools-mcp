@@ -14,21 +14,21 @@ import {
 } from "./network-log.js";
 import { RingBuffer } from "./ring-buffer.js";
 
-export const CONSOLE_BUFFER_ENTRIES = 1000;
+const CONSOLE_BUFFER_ENTRIES = 1000;
 
-export const CONSOLE_BUFFER_BYTES = 2 * 1024 * 1024;
+const CONSOLE_BUFFER_BYTES = 2 * 1024 * 1024;
 
-export const NETWORK_BUFFER_ENTRIES = 2000;
+const NETWORK_BUFFER_ENTRIES = 2000;
 
-export const NETWORK_BUFFER_BYTES = 8 * 1024 * 1024;
+const NETWORK_BUFFER_BYTES = 8 * 1024 * 1024;
 
-export const CONSOLE_EVENTS = [
+const CONSOLE_EVENTS = [
     "Runtime.consoleAPICalled",
     "Runtime.exceptionThrown",
     "Log.entryAdded",
 ] as const;
 
-export const NETWORK_EVENTS = [
+const NETWORK_EVENTS = [
     "Network.requestWillBeSent",
     "Network.responseReceived",
     "Network.loadingFinished",
@@ -47,7 +47,7 @@ interface TabCapture {
     networkDropped: number;
 }
 
-export interface ConsoleQuery {
+interface ConsoleQuery {
     levels?      : ConsoleLevel[];
     textContains?: string;
     afterId?     : number;
@@ -56,14 +56,14 @@ export interface ConsoleQuery {
     clear        : boolean;
 }
 
-export interface NetworkQuery {
+interface NetworkQuery {
     filter : NetworkFilter;
     afterId: number | undefined;
     limit  : number;
     clear  : boolean;
 }
 
-export interface CaptureManagerOptions {
+interface CaptureManagerOptions {
     access: DaemonAccess;
     clock : ToolClock;
 }
@@ -92,11 +92,6 @@ export class CaptureManager {
 
         this.attached = true;
         this.access.on("cdp.event", (params) => this.handleCdpEvent(params));
-        this.access.on("tab.closed", (params) => {
-            const targetId = (params as { targetId?: unknown } | null)?.targetId;
-
-            if (typeof targetId === "string") this.forget(targetId);
-        });
     }
 
     consoleEnabled(tab: string): boolean {
@@ -115,8 +110,16 @@ export class CaptureManager {
         for (const event of CONSOLE_EVENTS) await this.access.subscribe(tab, event);
 
         try {
-            await this.access.send(tab, "Runtime.enable", {});
-            await this.access.send(tab, "Log.enable", {});
+            await this.access.send({
+                targetId: tab,
+                method  : "Runtime.enable",
+                params  : {},
+            });
+            await this.access.send({
+                targetId: tab,
+                method  : "Log.enable",
+                params  : {},
+            });
         } catch (error) {
             for (const event of CONSOLE_EVENTS) {
                 await this.access.unsubscribe(tab, event).catch(() => undefined);
@@ -136,7 +139,11 @@ export class CaptureManager {
         for (const event of NETWORK_EVENTS) await this.access.subscribe(tab, event);
 
         try {
-            await this.access.send(tab, "Network.enable", {});
+            await this.access.send({
+                targetId: tab,
+                method  : "Network.enable",
+                params  : {},
+            });
         } catch (error) {
             for (const event of NETWORK_EVENTS) {
                 await this.access.unsubscribe(tab, event).catch(() => undefined);

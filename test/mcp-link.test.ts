@@ -1,15 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-    DaemonConfigMismatchError,
-    DaemonError,
-    type DaemonIdentity,
-    DaemonNotRunningError,
-    ErrorCode,
-    type IpcClient,
-    IpcClosedError,
-    IpcTimeoutError,
-    RpcError,
-} from "../src/daemon/index.js";
+import { DaemonConfigMismatchError, DaemonError, type DaemonIdentity, DaemonNotRunningError, ErrorCode, type IpcClient, IpcClosedError, IpcTimeoutError, RpcError } from "../src/daemon/index.js";
 import {
     DaemonLink,
     DaemonNotReadyError,

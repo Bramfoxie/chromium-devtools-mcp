@@ -4,8 +4,19 @@ import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { pathFor, type Config } from "../config/index.js";
+import {
+    type ArtifactStore,
+    DirectoryArtifactStore,
+    nodeArtifactIO,
+} from "../tools/artifacts.js";
 import { elicitationConfirmer } from "../tools/confirmation.js";
-import { allTools, registerTools, ToolRuntime } from "../tools/index.js";
+import {
+    allTools,
+    type LighthouseTools,
+    registerTools,
+    ToolRuntime,
+    type VideoTools,
+} from "../tools/index.js";
 import { DaemonAccess } from "./daemon-access.js";
 import {
     connectToDaemon,
@@ -16,9 +27,10 @@ import {
     type DaemonLayout,
     type IpcClient,
 } from "../daemon/index.js";
-import { describeError, logDaemon } from "../daemon/log.js";
+import { describeError, logDaemon } from "../util/log.js";
 import { DaemonLink, type LinkDeps } from "./daemon-link.js";
 import { spawnDaemonProcess } from "./spawn-daemon.js";
+import { sleep } from "../util/sleep.js";
 
 const SERVER_NAME = "chromium-devtools-mcp";
 const START_TIMEOUT_MS = 50_000;
@@ -56,6 +68,12 @@ export function daemonLogFile(layout: DaemonLayout): string {
     const p = pathFor(layout.platform);
 
     return p.join(p.dirname(layout.tokenFile), "daemon.log");
+}
+
+export function artifactsDir(layout: DaemonLayout): string {
+    const p = pathFor(layout.platform);
+
+    return p.join(p.dirname(layout.tokenFile), "artifacts");
 }
 
 export function daemonScriptPath(here: string = import.meta.url): string {
@@ -113,8 +131,7 @@ export function createDaemonLink(
               platform: layout.platform,
               uid     : layout.uid,
           })),
-        sleep:
-            options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms))),
+        sleep         : options.sleep ?? sleep,
         now           : options.now ?? (() => Date.now()),
         logFile,
         startTimeoutMs: START_TIMEOUT_MS,
@@ -142,8 +159,11 @@ export function createMcpServer(version: string): McpServer {
 }
 
 export interface ToolServerOptions {
-    access?: DaemonAccess;
-    tools? : typeof allTools;
+    access?    : DaemonAccess;
+    tools?     : typeof allTools;
+    artifacts? : ArtifactStore;
+    video?     : VideoTools;
+    lighthouse?: LighthouseTools;
 }
 
 export function registerServerTools(
@@ -157,35 +177,12 @@ export function registerServerTools(
         access,
         config,
         confirm: elicitationConfirmer(server.server),
+        ...(options.artifacts === undefined ? {} : { artifacts: options.artifacts }),
+        ...(options.video === undefined ? {} : { video: options.video }),
+        ...(options.lighthouse === undefined ? {} : { lighthouse: options.lighthouse }),
     });
 
-    access.on("tab.closed", (params) => {
-        const targetId = (params as { targetId?: unknown } | null)?.targetId;
-
-        if (typeof targetId === "string") {
-            runtime.tabs.forget(targetId);
-            runtime.elements.forget(targetId);
-            runtime.frames.forget(targetId);
-            runtime.focus.forget(targetId);
-            runtime.dialogs.forget(targetId);
-            void runtime.mock.forget(targetId);
-            runtime.emulation.forget(targetId);
-        }
-    });
-    runtime.capture.attach();
-    runtime.dialogs.attach();
-    runtime.frames.attach();
-    runtime.mock.attach();
-    access.forgetStaleState(() => {
-        runtime.tabs.reset();
-        runtime.elements.reset();
-        runtime.frames.reset();
-        runtime.focus.reset();
-        runtime.capture.reset();
-        runtime.dialogs.reset();
-        void runtime.mock.reset();
-        runtime.emulation.reset();
-    });
+    runtime.attach();
     registerTools({ server, tools: options.tools ?? allTools, runtime });
 
     return runtime;
@@ -203,7 +200,14 @@ export async function runMcpServer(
         clientName: () => connectedClientName(server),
     });
 
-    registerServerTools(server, config, link);
+    const layout = currentLayout();
+
+    registerServerTools(server, config, link, {
+        artifacts: new DirectoryArtifactStore({
+            dir: artifactsDir(layout),
+            io : nodeArtifactIO(layout.platform, layout.uid),
+        }),
+    });
     let finish: () => void = () => undefined;
     const done = new Promise<void>((resolve) => {
         finish = resolve;

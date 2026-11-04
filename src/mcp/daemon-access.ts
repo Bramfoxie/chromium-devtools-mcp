@@ -1,52 +1,28 @@
 import { z } from "zod";
-import { describeError, logDaemon, quoted } from "../daemon/log.js";
+import {
+    createdSchema,
+    frameListSchema,
+    sessionListSchema,
+    tabListSchema,
+    type FrameSummary,
+    type SessionSummary,
+    type TabInfo,
+} from "../daemon/index.js";
+import { describeError, logDaemon, quoted } from "../util/log.js";
 import type { DaemonLink } from "./daemon-link.js";
+import { AppError } from "../util/app-error.js";
 
-export class SessionResetError extends Error {
+export type DaemonTab = TabInfo;
+
+export type DaemonFrame = FrameSummary;
+
+export type { SessionSummary };
+
+export class SessionResetError extends AppError {
     constructor() {
         super("The browser session was restarted and its tabs are gone. Open a new tab with new_tab.");
-        this.name = "SessionResetError";
     }
 }
-
-const tabSchema = z.strictObject({
-    targetId: z.string(),
-    url     : z.string(),
-    title   : z.string(),
-    owned   : z.boolean(),
-    created : z.boolean(),
-});
-
-export type DaemonTab = z.infer<typeof tabSchema>;
-
-const tabListSchema = z.strictObject({ tabs: z.array(tabSchema) });
-
-const createdSchema = z.strictObject({ targetId: z.string() });
-
-const frameSchema = z.strictObject({
-    frameId      : z.string(),
-    parentFrameId: z.string().optional(),
-    url          : z.string(),
-    name         : z.string(),
-    isolated     : z.boolean(),
-    truncated    : z.boolean().optional(),
-});
-
-export type DaemonFrame = z.infer<typeof frameSchema>;
-
-const frameListSchema = z.strictObject({ frames: z.array(frameSchema) });
-
-const sessionSummarySchema = z.strictObject({
-    sessionId : z.string(),
-    clientName: z.string(),
-    isolated  : z.boolean(),
-    tabs      : z.number(),
-    own       : z.boolean(),
-});
-
-export type SessionSummary = z.infer<typeof sessionSummarySchema>;
-
-const sessionListSchema = z.strictObject({ sessions: z.array(sessionSummarySchema) });
 
 function parse<T>(label: string, schema: z.ZodType<T>, value: unknown): T {
     const result = schema.safeParse(value);
@@ -54,6 +30,16 @@ function parse<T>(label: string, schema: z.ZodType<T>, value: unknown): T {
     if (result.success) return result.data;
 
     throw new Error(`The daemon answered ${label} with an unexpected result. Update both sides to the same version.`);
+}
+
+export interface CdpCommand {
+    targetId  : string;
+    method    : string;
+    params?   : Record<string, unknown>;
+    timeoutMs?: number;
+    frameId?  : string;
+    signal?   : AbortSignal;
+    confirmed?: boolean;
 }
 
 export type DaemonEventHandler = (params: unknown) => void;
@@ -145,26 +131,29 @@ export class DaemonAccess {
         return parse("frame.list", frameListSchema, result).frames;
     }
 
-    async send(
-        targetId  : string,
-        method    : string,
-        params?   : Record<string, unknown>,
-        timeoutMs?: number,
-        frameId?  : string,
-        options?  : { signal?: AbortSignal; confirmed?: boolean },
-    ): Promise<unknown> {
+    async send(command: CdpCommand): Promise<unknown> {
+        const { targetId, method, params, timeoutMs, frameId, signal, confirmed } = command;
+
         return this.request(
             "cdp.send",
             {
                 targetId,
                 method,
-                ...(options?.confirmed === true ? { confirmed: true } : {}),
+                ...(confirmed === true ? { confirmed: true } : {}),
                 ...(params === undefined ? {} : { params }),
                 ...(timeoutMs === undefined ? {} : { timeoutMs }),
                 ...(frameId === undefined ? {} : { frameId }),
             },
-            options?.signal === undefined ? undefined : { signal: options.signal },
+            signal === undefined ? undefined : { signal },
         );
+    }
+
+    async setPermission(request: {
+        name   : "geolocation";
+        setting: "granted" | "reset";
+        origin : string;
+    }): Promise<void> {
+        await this.request("permission.set", request);
     }
 
     async subscribe(targetId: string, event: string, frameId?: string): Promise<void> {

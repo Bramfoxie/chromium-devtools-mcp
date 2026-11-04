@@ -1,14 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-    acquireInstance,
-    Daemon,
-    ErrorCode,
-    generateToken,
-    IpcClient,
-    MAX_REQUEST_BYTES,
-    MAX_RESPONSE_BYTES,
-    RpcError,
-} from "../src/daemon/index.js";
+import { ErrorCode, IpcClient, MAX_RESPONSE_BYTES, RpcError } from "../src/daemon/index.js";
+import { acquireInstance } from "../src/daemon/lock.js";
+import { Daemon } from "../src/daemon/daemon.js";
+import { generateToken } from "../src/daemon/token.js";
+import { MAX_REQUEST_BYTES } from "../src/daemon/protocol.js";
 import { CdpProtocolError } from "../src/cdp/index.js";
 import { FakeBackend } from "./helpers/fake-backend.js";
 import { createSocketHarness } from "./helpers/daemon-socket.js";
@@ -97,7 +92,7 @@ describe("session handling", () => {
         expect((await failure(client.request("tab.create", { url: "https://evil.test/" }))).code).toBe(
             ErrorCode.forbiddenMethod,
         );
-        await expect(client.request("tab.create", { url: "https://example.com/" })).resolves.toBeDefined();
+        await expect(client.request("tab.create", { url: "https://example.com/" })).resolves.toEqual({ targetId: expect.stringMatching(/^tab/) });
     });
 
     it("rejects malformed safety options", async () => {
@@ -108,6 +103,28 @@ describe("session handling", () => {
             (await failure(client.request("session.open", { safety: { readOnly: true } }))).code,
         ).toBe(ErrorCode.badRequest);
     });
+
+    it.each(["*", "http://", "exa mple.com", "https://example.com/path"])(
+        "rejects the malformed allowedDomains entry %s",
+        async (entry) => {
+            const { connect } = await start();
+            const client = await connect();
+
+            expect(
+                (
+                    await failure(
+                        client.request("session.open", {
+                            safety: {
+                                readOnly        : false,
+                                allowedDomains  : [entry],
+                                confirmDangerous: false,
+                            },
+                        }),
+                    )
+                ).code,
+            ).toBe(ErrorCode.badRequest);
+        },
+    );
 
     it("opens a fresh session after the connection closed and reopened", async () => {
         const { backend, connect } = await start();
@@ -159,8 +176,10 @@ describe("session handling", () => {
 describe("parameter validation", () => {
     it.each([
         ["daemon.status", {}],
+        ["daemon.stop", {}],
         ["session.open", {}],
         ["session.list", {}],
+        ["permission.set", { name: "geolocation", setting: "granted", origin: "https://a.example" }],
         ["tab.create", {}],
         ["tab.list", {}],
         ["tab.claim", { targetId: "t" }],
@@ -430,7 +449,7 @@ describe("commands and events", () => {
 
         expect(error.code).toBe(ErrorCode.resultTooLarge);
         expect(error.message).toContain("32 MiB");
-        await expect(client.request("tab.list")).resolves.toBeDefined();
+        await expect(client.request("tab.list")).resolves.toEqual({ tabs: expect.any(Array) });
     });
 
     it("allows Page.bringToFront when the daemon runs with allowFocus", async () => {
@@ -442,7 +461,7 @@ describe("commands and events", () => {
 
         await expect(
             client.request("cdp.send", { targetId, method: "Page.bringToFront" }),
-        ).resolves.toBeDefined();
+        ).resolves.toMatchObject({ echoed: "Page.bringToFront" });
     });
 
     it("delivers subscribed events and tab.closed to the client", async () => {
@@ -491,7 +510,7 @@ describe("client lifetime", () => {
         await vi.waitFor(() => expect(backend.contexts.size).toBe(1));
         await expect(
             staying.request("cdp.send", { targetId, method: "Page.enable" }),
-        ).resolves.toBeDefined();
+        ).resolves.toMatchObject({ echoed: "Page.enable" });
     });
 
     it("closes every session on shutdown", async () => {
@@ -528,6 +547,17 @@ describe("frame addressing through the daemon", () => {
 
         return { ...started, client, targetId };
     }
+
+    it("bounds the frame tree request of frame.list", async () => {
+        const { client, targetId, backend } = await frameTab();
+        const session = backend.sessions.get(targetId);
+
+        if (session) session.sent.length = 0;
+
+        await client.request("frame.list", { targetId });
+
+        expect(session?.sent.find((call) => call.method === "Page.getFrameTree")?.timeoutMs).toBe(10_000);
+    });
 
     it("lists frames and rejects unknown fields", async () => {
         const { client, targetId } = await frameTab();
@@ -574,6 +604,6 @@ describe("frame addressing through the daemon", () => {
                 stranger.request("cdp.send", { targetId, method: "Page.enable", frameId: "cross" }),
             )).code,
         ).toBe(ErrorCode.notOwned);
-        await expect(client.request("frame.list", { targetId })).resolves.toBeDefined();
+        await expect(client.request("frame.list", { targetId })).resolves.toEqual({ frames: expect.any(Array) });
     });
 });

@@ -3,7 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { CdpClient } from "../../src/cdp/index.js";
 import type { Config } from "../../src/config/index.js";
-import type { BrowserConnector, DaemonLayout } from "../../src/daemon/index.js";
+import type { DaemonLayout } from "../../src/daemon/index.js";
+import type { BrowserConnector } from "../../src/daemon/runner.js";
 import { FakeBrowser } from "./fake-browser.js";
 import type { createSocketHarness } from "./daemon-socket.js";
 

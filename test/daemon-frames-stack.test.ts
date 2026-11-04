@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CdpClient } from "../src/cdp/index.js";
-import { CdpBackend, SessionRegistry } from "../src/daemon/index.js";
+import { CdpBackend } from "../src/daemon/cdp-backend.js";
+import { SessionRegistry } from "../src/daemon/sessions.js";
 import { FakeBrowser } from "./helpers/fake-browser.js";
 
 const stops: Array<() => Promise<void>> = [];
@@ -68,7 +69,7 @@ describe("frame listing through the CDP backend", () => {
         browser.attachNestedChild(outer, "inner", "https://c.example/");
         await vi.waitFor(async () => {
             await session.listFrames(tab);
-            await session.send(tab, "Runtime.evaluate", { expression: "1" }, undefined, "inner");
+            await session.send({ targetId: tab, method: "Runtime.evaluate", params: { expression: "1" }, frameId: "inner" });
         });
 
         const call = browser.calls.find((entry) => entry.method === "Runtime.evaluate");

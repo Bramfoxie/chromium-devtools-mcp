@@ -207,6 +207,15 @@ describe("runInstall", () => {
         expect(JSON.parse(t.store.get("/home/u/.cursor/mcp.json") ?? "").mcpServers).toEqual({});
     });
 
+    it("rejects an invalid allowed domain with exit code 2 and names the entry", () => {
+        const t = setup();
+
+        expect(t.run(["--client", "cursor", "--allowed-domains", "https://example.com"])).toBe(2);
+        expect(t.writes).toEqual([]);
+        expect(t.err.join("")).toContain('invalid entry "https://example.com"');
+        expect(t.err.join("")).toContain("*.example.com");
+    });
+
     it("rejects a bad server flag with exit code 2 and the usage", () => {
         const t = setup();
 

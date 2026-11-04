@@ -10,8 +10,9 @@ import {
     type ResolvedElement,
 } from "./element-target.js";
 import { ToolError } from "./errors.js";
-import { changedUrl, navigationOf, summarizeTarget, targetSummarySchema } from "./input-click.js";
+import { changedUrl, navigationOf, summarizeTarget, targetSummarySchema } from "./input-outcome.js";
 import { throwIfCancelled } from "./registry.js";
+import { resolveTab, tabSchema } from "./tab-target.js";
 
 export const SELECT_OPTIONS_LIMIT = 50;
 
@@ -21,7 +22,7 @@ export interface SelectOption {
     selected: boolean;
 }
 
-export const SELECT_READ_EXPRESSION = `function (element) {
+const SELECT_READ_EXPRESSION = `function (element) {
   if (!(element instanceof HTMLSelectElement)) return { select: false, options: [] };
   return {
     select: true,
@@ -49,7 +50,7 @@ const selectReadSchema = z.object({
     }),
 });
 
-export const SELECT_WRITE_EXPRESSION = `function (element, wanted) {
+const SELECT_WRITE_EXPRESSION = `function (element, wanted) {
   if (!(element instanceof HTMLSelectElement)) return { select: false, selected: [] };
   const indexes = new Set(wanted.map(Number));
   let at = 0;
@@ -78,7 +79,7 @@ const selectWriteSchema = z.object({
     }),
 });
 
-export type SelectBy = { values: string[] } | { labels: string[] } | { indexes: number[] };
+type SelectBy = { values: string[] } | { labels: string[] } | { indexes: number[] };
 
 export function matchSelectOptions(
     options : SelectOption[],
@@ -150,11 +151,15 @@ async function readSelect(
     element: ResolvedElement,
 ): Promise<{ multiple: boolean; options: SelectOption[] }> {
     const parsed = selectReadSchema.safeParse(
-        await access.send(tab, "Runtime.callFunctionOn", {
-            functionDeclaration: SELECT_READ_EXPRESSION,
-            objectId           : element.objectId,
-            arguments          : [{ objectId: element.objectId }],
-            returnByValue      : true,
+        await access.send({
+            targetId: tab,
+            method  : "Runtime.callFunctionOn",
+            params  : {
+                functionDeclaration: SELECT_READ_EXPRESSION,
+                objectId           : element.objectId,
+                arguments          : [{ objectId: element.objectId }],
+                returnByValue      : true,
+            },
         }),
     );
 
@@ -179,7 +184,7 @@ export const inputSelect = defineTool({
         "Choose options of a select element by value, label or index, firing input and change.",
     access: "mutate",
     input : z.strictObject({
-        tab    : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
+        tab    : tabSchema,
         target : elementTargetSchema.describe("Element uid from a snapshot or query, or a CSS selector. Must resolve to a select."),
         values : z.array(z.string().max(500)).max(100).optional().describe("Option values to select, exactly one of values, labels or indexes."),
         labels : z.array(z.string().max(500)).max(100).optional().describe("Visible option labels to select, exactly one of values, labels or indexes."),
@@ -207,11 +212,7 @@ export const inputSelect = defineTool({
         urlAfter: z.string().optional().describe("URL after the selection, present only when the page navigated."),
     }),
     handler: async (args, context) => {
-        const targetId = args.tab ?? context.state.selected;
-
-        if (targetId === undefined) {
-            throw new ToolError("No tab is selected. Open one with new_tab first.");
-        }
+        const targetId = resolveTab(args, context);
 
         throwIfCancelled(context.signal);
 
@@ -241,14 +242,18 @@ export const inputSelect = defineTool({
             if ("error" in matched) throw new ToolError(matched.error);
 
             const acted = await navigationOf(context.access, targetId, () =>
-                owner.send(targetId, "Runtime.callFunctionOn", {
-                    functionDeclaration: SELECT_WRITE_EXPRESSION,
-                    objectId           : element.objectId,
-                    arguments          : [
-                        { objectId: element.objectId },
-                        { value: matched.indexes },
-                    ],
-                    returnByValue: true,
+                owner.send({
+                    targetId,
+                    method: "Runtime.callFunctionOn",
+                    params: {
+                        functionDeclaration: SELECT_WRITE_EXPRESSION,
+                        objectId           : element.objectId,
+                        arguments          : [
+                            { objectId: element.objectId },
+                            { value: matched.indexes },
+                        ],
+                        returnByValue: true,
+                    },
                 }));
 
             const parsed = selectWriteSchema.safeParse(acted.value);

@@ -4,8 +4,7 @@ import { describeUrlHost, isRestricted, isUrlAllowed } from "../safety/index.js"
 export type SafetyAccess = "read" | "mutate";
 
 export interface SafetyTarget {
-    url?    : string;
-    pattern?: string;
+    url?: string;
 }
 
 export interface SafetyFrame {

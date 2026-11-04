@@ -2,7 +2,7 @@ import { z } from "zod";
 import { IpcCancelledError } from "../../daemon/index.js";
 import type { DaemonAccess } from "../../mcp/index.js";
 
-export const EMULATION_READ_TIMEOUT_MS = 5000;
+const EMULATION_READ_TIMEOUT_MS = 5000;
 
 export const DEVICE_READ_EXPRESSION = `(() => ({
   innerWidth: window.innerWidth,
@@ -56,7 +56,7 @@ const mediaReadSchema = z.strictObject({
     }),
 });
 
-export interface MediaRead {
+interface MediaRead {
     colorScheme  : string;
     reducedMotion: string;
     contrast     : string;
@@ -81,7 +81,7 @@ const localeReadSchema = z.strictObject({
     }),
 });
 
-export interface LocaleRead {
+interface LocaleRead {
     language : string;
     timezone?: string | undefined;
     formatted: string;
@@ -96,14 +96,13 @@ async function readValue<T>(
 ): Promise<T | undefined> {
     try {
         const parsed = schema.safeParse(
-            await access.send(
+            await access.send({
                 targetId,
-                "Runtime.evaluate",
-                { expression, returnByValue: true },
-                EMULATION_READ_TIMEOUT_MS,
-                undefined,
-                signal === undefined ? undefined : { signal },
-            ),
+                method   : "Runtime.evaluate",
+                params   : { expression, returnByValue: true },
+                timeoutMs: EMULATION_READ_TIMEOUT_MS,
+                ...signal === undefined ? undefined : { signal },
+            }),
         );
 
         if (!parsed.success || parsed.data.result.type === "undefined") return undefined;
@@ -138,4 +137,78 @@ export async function readLocale(
     signal? : AbortSignal,
 ): Promise<LocaleRead | undefined> {
     return readValue(access, targetId, LOCALE_READ_EXPRESSION, localeReadSchema, signal);
+}
+
+const GEOLOCATION_WAIT_MS = 2500;
+
+export function geolocationReadExpression(origin: string): string {
+    return `new Promise((resolve) => {
+  if (location.origin !== ${JSON.stringify(origin)}) return resolve(null);
+  if (!navigator.geolocation) return resolve({ ok: false, error: "navigator.geolocation is not available" });
+  const timer = setTimeout(
+    () => resolve({ ok: false, error: "No position arrived within ${GEOLOCATION_WAIT_MS} ms." }),
+    ${GEOLOCATION_WAIT_MS},
+  );
+  const finish = (value) => { clearTimeout(timer); resolve(value); };
+  navigator.geolocation.getCurrentPosition(
+    (position) => finish({
+      ok: true,
+      latitude: position.coords.latitude,
+      longitude: position.coords.longitude,
+      accuracy: position.coords.accuracy,
+    }),
+    (error) => finish({ ok: false, error: error.message }),
+    { timeout: ${GEOLOCATION_WAIT_MS - 500}, maximumAge: 0 },
+  );
+})`;
+}
+
+const geolocationReadSchema = z.strictObject({
+    result: z.strictObject({
+        type : z.string().optional(),
+        value: z.strictObject({
+            ok       : z.boolean(),
+            latitude : z.number().optional(),
+            longitude: z.number().optional(),
+            accuracy : z.number().optional(),
+            error    : z.string().optional(),
+        }).nullable().optional(),
+    }),
+});
+
+export interface GeolocationRead {
+    ok        : boolean;
+    latitude? : number | undefined;
+    longitude?: number | undefined;
+    accuracy? : number | undefined;
+    error?    : string | undefined;
+}
+
+export async function readGeolocation(
+    access  : DaemonAccess,
+    targetId: string,
+    origin  : string,
+    signal? : AbortSignal,
+): Promise<GeolocationRead | undefined> {
+    try {
+        const parsed = geolocationReadSchema.safeParse(
+            await access.send({
+                targetId,
+                method: "Runtime.evaluate",
+                params: {
+                    expression   : geolocationReadExpression(origin),
+                    returnByValue: true,
+                    awaitPromise : true,
+                },
+                timeoutMs: EMULATION_READ_TIMEOUT_MS,
+                ...signal === undefined ? undefined : { signal },
+            }),
+        );
+
+        return parsed.success ? (parsed.data.result.value ?? undefined) : undefined;
+    } catch (error) {
+        if (error instanceof IpcCancelledError || signal?.aborted === true) throw error;
+
+        return undefined;
+    }
 }

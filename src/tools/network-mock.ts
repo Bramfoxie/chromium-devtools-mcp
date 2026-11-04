@@ -10,18 +10,18 @@ import {
     MOCK_RULES_MAX,
     MOCK_TOTAL_BODY_MAX_BYTES,
     MOCK_URL_PATTERN_MAX_CHARS,
-    type FailReason,
     type InterceptionManager,
     type MockResponse,
     type RuleInput,
 } from "./mock/interception.js";
 import { throwIfCancelled } from "./registry.js";
+import { resolveTab, tabSchema } from "./tab-target.js";
 
-export const MOCK_METHOD_MAX_CHARS = 32;
+const MOCK_METHOD_MAX_CHARS = 32;
 
-export const MOCK_RESOURCE_TYPE_MAX_CHARS = 64;
+const MOCK_RESOURCE_TYPE_MAX_CHARS = 64;
 
-export const MOCK_TIMES_MAX = 1_000_000;
+const MOCK_TIMES_MAX = 1_000_000;
 
 const BASE64_CHARS_MAX = Math.ceil(MOCK_BODY_MAX_BYTES / 3) * 4;
 
@@ -70,7 +70,7 @@ const failSchema = z.strictObject({
 });
 
 const addSchema = z.strictObject({
-    urlPattern  : z.string().min(1).max(MOCK_URL_PATTERN_MAX_CHARS).describe("Fetch wildcard pattern with * and ?."),
+    urlPattern  : z.string().min(1).max(MOCK_URL_PATTERN_MAX_CHARS).describe("Fetch wildcard pattern with * and ?, where a backslash escapes the next character."),
     method      : z.string().min(1).max(MOCK_METHOD_MAX_CHARS).optional().describe("HTTP method filter, case insensitive."),
     resourceType: z.string().min(1).max(MOCK_RESOURCE_TYPE_MAX_CHARS).optional().describe("CDP resource type filter."),
     response    : responseSchema.optional().describe("Mocked response, exactly one of response and fail."),
@@ -79,7 +79,7 @@ const addSchema = z.strictObject({
     times       : z.number().int().min(1).max(MOCK_TIMES_MAX).optional().describe("Apply this many times, then expire."),
 });
 
-export type MockAddInput = z.infer<typeof addSchema>;
+type MockAddInput = z.infer<typeof addSchema>;
 
 const ruleSchema = z.strictObject({
     id          : z.string().describe("Rule id."),
@@ -155,7 +155,7 @@ export function ruleInputOf(args: MockAddInput): RuleInput {
         method      : args.method,
         resourceType: args.resourceType,
         response,
-        fail        : (args.fail?.reason ?? undefined) as FailReason | undefined,
+        fail        : args.fail?.reason,
         delayMs     : args.delayMs ?? 0,
         times       : args.times,
     };
@@ -168,7 +168,7 @@ export const networkMock = defineTool({
     access: (args: unknown) =>
         (args as { action?: unknown } | null)?.action === "list" ? "read" : "mutate",
     input: z.strictObject({
-        tab   : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
+        tab   : tabSchema,
         action: z.enum(["add", "remove", "list", "clear"]).describe("What to do."),
         rule  : addSchema.optional().describe("Rule to add, for the add action."),
         id    : z.string().min(1).max(64).optional().describe("Rule id, for the remove action."),
@@ -179,14 +179,8 @@ export const networkMock = defineTool({
         effect: z.string().describe("Short summary of what happened."),
         rules : z.array(ruleSchema).describe("Active rules in insertion order."),
     }),
-    target: (args) =>
-        args.action === "add" && args.rule !== undefined ? { pattern: args.rule.urlPattern } : undefined,
     handler: async (args, context) => {
-        const targetId = args.tab ?? context.state.selected;
-
-        if (targetId === undefined) {
-            throw new ToolError("No tab is selected. Open one with new_tab first.");
-        }
+        const targetId = resolveTab(args, context);
 
         throwIfCancelled(context.signal);
 

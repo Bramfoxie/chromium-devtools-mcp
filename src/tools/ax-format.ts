@@ -83,7 +83,7 @@ export interface AxDomInfo {
     attrs: Record<string, string>;
 }
 
-export interface AxFormatOptions {
+interface AxFormatOptions {
     interactiveOnly : boolean;
     includeHidden   : boolean;
     uidFor          : (backendNodeId: number) => string | undefined;
@@ -92,7 +92,7 @@ export interface AxFormatOptions {
     frameFor?       : (backendNodeId: number) => string | undefined;
 }
 
-export interface AxFormatResult {
+interface AxFormatResult {
     text     : string;
     nodeCount: number;
     omitted  : number;
@@ -118,8 +118,6 @@ const nodeSchema = z.object({
 });
 
 const treeSchema = z.object({ nodes: z.array(nodeSchema) });
-
-export type RawAxNode = z.infer<typeof nodeSchema>;
 
 function textOf(value: unknown): string {
     return typeof value === "string" ? value : "";
@@ -164,7 +162,7 @@ export function toAxNodes(raw: unknown): AxNode[] {
     });
 }
 
-export function clipAxText(value: string, limit: number = AX_NAME_CLIP): string {
+function clipAxText(value: string, limit: number = AX_NAME_CLIP): string {
     const single = value.replace(/\s+/g, " ");
 
     return single.length <= limit ? single : `${single.slice(0, limit)}...`;

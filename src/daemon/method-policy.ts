@@ -18,8 +18,31 @@ const ALLOWED_DOMAINS = new Set([
     "Page",
     "Performance",
     "Runtime",
+    "WebAuthn",
 ]);
-const ALLOWED_METHODS = new Set(["Browser.getVersion"]);
+const ALLOWED_METHODS = new Set([
+    "Browser.getVersion",
+    "Tracing.start",
+    "Tracing.end",
+    "HeapProfiler.takeHeapSnapshot",
+    "HeapProfiler.collectGarbage",
+]);
+const ALLOWED_EVENTS = new Set([
+    "Tracing.dataCollected",
+    "Tracing.tracingComplete",
+    "HeapProfiler.addHeapSnapshotChunk",
+]);
+const SNAPSHOT_FLAGS = ["treatGlobalObjectsAsRoots", "captureNumericValue"] as const;
+
+export const TRACE_CATEGORIES = [
+    "devtools.timeline",
+    "v8.execute",
+    "blink.user_timing",
+    "loading",
+    "latencyInfo",
+    "disabled-by-default-devtools.timeline",
+    "disabled-by-default-devtools.timeline.frame",
+] as const;
 const FOCUS_METHODS = new Set(["Page.bringToFront"]);
 const BLOCKED_METHODS = new Map([
     ["Page.setDownloadBehavior", "it would let a page write files to any directory"],
@@ -44,6 +67,67 @@ function forbidden(message: string): RpcError {
     return new RpcError(ErrorCode.forbiddenMethod, message);
 }
 
+function snapshotParams(params: Record<string, unknown> | undefined): Record<string, unknown> {
+    const given = params ?? {};
+    const allowed: readonly string[] = [...SNAPSHOT_FLAGS, "reportProgress"];
+    const unknown = Object.keys(given).filter((key) => !allowed.includes(key));
+
+    if (unknown.length > 0) {
+        throw new RpcError(
+            ErrorCode.badRequest,
+            `HeapProfiler.takeHeapSnapshot takes only ${SNAPSHOT_FLAGS.join(" and ")}, not ${unknown.join(", ")}.`,
+        );
+    }
+
+    const result: Record<string, unknown> = { reportProgress: false };
+
+    for (const flag of SNAPSHOT_FLAGS) {
+        const value = given[flag];
+
+        if (value === undefined) continue;
+
+        if (typeof value !== "boolean") {
+            throw new RpcError(ErrorCode.badRequest, `${flag} must be true or false.`);
+        }
+
+        result[flag] = value;
+    }
+
+    return result;
+}
+
+function traceParams(params: Record<string, unknown> | undefined): Record<string, unknown> {
+    const given = params ?? {};
+    const unknown = Object.keys(given).filter(
+        (key) => key !== "categories" && key !== "transferMode",
+    );
+
+    if (unknown.length > 0) {
+        throw new RpcError(
+            ErrorCode.badRequest,
+            `Tracing.start takes only categories and transferMode, not ${unknown.join(", ")}.`,
+        );
+    }
+
+    if (given.transferMode !== undefined && given.transferMode !== "ReportEvents") {
+        throw new RpcError(ErrorCode.badRequest, "Tracing.start supports only the ReportEvents transfer mode.");
+    }
+
+    const wanted = given.categories === undefined
+        ? [...TRACE_CATEGORIES]
+        : typeof given.categories === "string" ? given.categories.split(",") : [];
+    const allowed: readonly string[] = TRACE_CATEGORIES;
+    const refused = wanted.filter((category) => !allowed.includes(category));
+
+    if (wanted.length === 0 || refused.length > 0) {
+        throw forbidden(
+            `Tracing.start does not allow the categories ${refused.length > 0 ? refused.join(", ") : "given"}. Allowed: ${TRACE_CATEGORIES.join(", ")}.`,
+        );
+    }
+
+    return { categories: wanted.join(","), transferMode: "ReportEvents" };
+}
+
 export function normalizeUrl(url: string): string {
     if (url.toLowerCase() === "about:blank") return "about:blank";
 
@@ -66,6 +150,8 @@ export function normalizeUrl(url: string): string {
 }
 
 export function checkEvent(event: string): void {
+    if (ALLOWED_EVENTS.has(event)) return;
+
     const dot = event.indexOf(".");
     const domain = dot === -1 ? event : event.slice(0, dot);
 
@@ -92,6 +178,14 @@ export function checkCall(
         throw forbidden(
             `${method} would bring the window to the front. Enable allowFocus in the config to allow it.`,
         );
+    }
+
+    if (method === "Tracing.start") return traceParams(params);
+
+    if (method === "HeapProfiler.takeHeapSnapshot") return snapshotParams(params);
+
+    if (method === "HeapProfiler.collectGarbage" && params !== undefined && Object.keys(params).length > 0) {
+        throw new RpcError(ErrorCode.badRequest, "HeapProfiler.collectGarbage takes no parameters.");
     }
 
     if (method === "Page.navigate") {

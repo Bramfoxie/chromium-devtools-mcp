@@ -2,6 +2,7 @@
 
 Details of the `install` command that writes the server entry into MCP client configs.
 
+```sh
 npx chromium-devtools-mcp install --client claude-code
 npx chromium-devtools-mcp install --client all --dry-run
 npx chromium-devtools-mcp install --client cursor --read-only --allowed-domains example.com
@@ -33,13 +34,16 @@ Edits are conservative:
 
 Restart the client afterwards so it reads the new entry. If Claude Code is running while the installer edits `~/.claude.json`, it may rewrite the file and drop the entry, so install while it is closed.
 
-## Attach mode setup
+## Manual entry
 
-The manual entry for any other client that accepts a JSON `mcpServers` object:
+The entry for any other client that accepts a JSON `mcpServers` object:
 
+```json
 {
   "mcpServers": {
     "chromium-devtools": { "command": "npx", "args": ["-y", "chromium-devtools-mcp"] }
   }
 }
 ```
+
+Attach mode needs a one-time setup in the browser, described in [daemon.md](daemon.md).

@@ -1,11 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
+import { flushMicrotasks } from "./helpers/fake-clock.js";
 import { main } from "../src/cli-main.js";
 import { type Config, ConfigError, loadConfig } from "../src/config/index.js";
-import {
-    AlreadyRunningError,
-    type DaemonOutcome,
-    type RunningDaemon,
-} from "../src/daemon/index.js";
+import { AlreadyRunningError, type RunningDaemon } from "../src/daemon/index.js";
+import { type DaemonOutcome } from "../src/daemon/runner.js";
 
 function cannedConfig(patch: Partial<Config> = {}): Config {
     return {
@@ -150,7 +148,7 @@ describe("MCP server mode", () => {
             return code;
         });
 
-        await new Promise((resolve) => setTimeout(resolve, 20));
+        await flushMicrotasks();
         expect(returned).toBe(false);
         finish();
         expect(await pending).toBe(0);
@@ -318,5 +316,72 @@ describe("config file errors", () => {
         expect(await run([])).toBe(2);
         expect(output.join("")).toContain("/custom/config.json does not exist");
         expect(served).toEqual([]);
+    });
+});
+
+describe("daemon subcommands", () => {
+    it.each([
+        [["daemon", "status"], "status", []],
+        [["daemon", "stop"], "stop", []],
+        [["daemon", "logs", "--lines", "5"], "logs", ["--lines", "5"]],
+    ])("routes %j to the control command", async (argv, subcommand, rest) => {
+        const control = vi.fn(async () => 7);
+        const { run, served } = harness({ control });
+
+        expect(await run(argv)).toBe(7);
+        expect(control).toHaveBeenCalledWith(subcommand, rest);
+        expect(served).toEqual([]);
+    });
+
+    it("still runs the daemon for options", async () => {
+        const control = vi.fn(async () => 0);
+        const outcome: DaemonOutcome = { reason: "requested" };
+        const run = vi.fn(
+            async (): Promise<RunningDaemon> => ({
+                done: Promise.resolve(outcome),
+                stop: async () => outcome,
+            }),
+        );
+        const { run: invoke } = harness({ control, run });
+
+        expect(await invoke(["daemon", "--mode", "managed"])).toBe(0);
+        expect(control).not.toHaveBeenCalled();
+        expect(run).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe("doctor", () => {
+    it("runs the checks with the loaded config and returns their exit code", async () => {
+        const doctor = vi.fn(async () => 1);
+        const config = cannedConfig({ mode: "managed" });
+        const { run } = harness({ doctor, load: () => config });
+
+        expect(await run(["doctor", "--mode", "managed"])).toBe(1);
+        expect(doctor).toHaveBeenCalledWith(config);
+    });
+
+    it("explains a configuration error and exits with 2 without running the checks", async () => {
+        const doctor = vi.fn(async () => 0);
+        const { run, output } = harness({
+            doctor,
+            load: () => {
+                throw new ConfigError("invalid configuration: mode: bad");
+            },
+        });
+
+        expect(await run(["doctor", "--mode", "bad"])).toBe(2);
+        expect(doctor).not.toHaveBeenCalled();
+        expect(output.join("")).toContain("invalid configuration: mode: bad");
+    });
+
+    it("reports a failure of the checks themselves", async () => {
+        const { run, output } = harness({
+            doctor: async () => {
+                throw new Error("lookup exploded");
+            },
+        });
+
+        expect(await run(["doctor"])).toBe(1);
+        expect(output.join("")).toContain("lookup exploded");
     });
 });

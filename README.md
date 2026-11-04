@@ -10,8 +10,9 @@ An MCP server that lets AI agents drive Chrome through the DevTools Protocol, ei
 
 - Works with the browser you already use (attach) or with a persistent managed profile. No bundled browser, no fresh profile per run.
 - One per-user daemon serves several MCP clients at once, each in its own session, optionally in an isolated browser context.
-- Never steals focus: tabs open in the background and input does not raise windows.
+- Never steals focus: tabs open in the background and input does not raise windows. `bring_to_front` exists for the moment you ask to see a tab and works only with `allowFocus` on.
 - Reaches into shadow DOM and cross-site iframes from every element tool.
+- Performance traces, Core Web Vitals, heap snapshots, screen recording, Lighthouse audits, passkey testing and location emulation, each for the tab you point it at.
 - Safety options for agents: read-only mode, domain allowlist, confirmation of dangerous actions.
 
 ## Quick start
@@ -35,54 +36,65 @@ First run:
 - attach (default): the server connects to your running Chrome. If Chrome does not allow it yet, the server prints how to enable remote debugging at `chrome://inspect/#remote-debugging` and keeps waiting. It never falls back to another profile.
 - managed: pass `--mode managed`. The server launches Chrome with its own persistent profile, headed or with `--headless`.
 
+If something does not connect, run `npx chromium-devtools-mcp doctor` (add the same flags as in your client entry). It checks the setup and prints how to fix what it finds. `daemon status`, `daemon stop` and `daemon logs` show and control the background daemon, see [docs/daemon.md](docs/daemon.md).
+
 ## Compared with the official Chrome DevTools MCP
+
+✅ means the project has the capability, ❌ means it has none.
 
 | Capability                                                          | chromium-devtools-mcp | Chrome DevTools MCP |
 | ------------------------------------------------------------------- | :-------------------: | :-----------------: |
-| Attach to your running browser                                      |          ✅           |         ✅          |
-| Managed persistent profile                                          |          ✅           |         ✅          |
-| Isolated browser context per session                                |          ✅           |         ✅          |
 | One shared daemon, isolated sessions for several clients            |          ✅           |         ❌          |
 | Focus never stolen, tabs open in the background                     |          ✅           |         ❌          |
 | Trusted input events (CDP) and DOM-level click as separate tools    |          ✅           |         ❌          |
 | Shadow DOM and cross-site iframe piercing in every element tool     |          ✅           |         ❌          |
 | Network mocking and failing requests                                |          ✅           |         ❌          |
-| Response bodies with redaction of secrets in URLs and headers       |          ✅           |         ❌          |
+| Network records with redaction of secrets in URLs and headers       |          ✅           |         ❌          |
 | Storage read and write (local, session, cookies)                    |          ✅           |         ❌          |
 | PDF export                                                          |          ✅           |         ❌          |
 | Built-in device list, locale, timezone, media, network emulation    |          ✅           |         ❌          |
 | Read-only mode, domain allowlist, confirmation of dangerous actions |          ✅           |         ❌          |
 | Installer for several clients                                       |          ✅           |         ❌          |
+| Attach to your running browser                                      |          ✅           |         ✅          |
+| Managed persistent profile                                          |          ✅           |         ✅          |
+| Isolated browser context per session                                |          ✅           |         ✅          |
+| Performance traces and insights                                     |          ✅           |         ✅          |
+| Lighthouse audit                                                    |          ✅           |         ✅          |
+| Heap snapshots                                                      |          ✅           |         ✅          |
+| Screencast recording                                                |          ✅           |         ✅          |
+| WebAuthn virtual authenticators                                     |          ✅           |         ✅          |
+| PWA inspection (manifest, installability, service workers)          |          ✅           |         ✅          |
+| Geolocation emulation                                               |          ✅           |         ✅          |
+| PWA install and extension management                                |          ❌           |         ✅          |
 | Browsers other than Chrome                                          |          ❌           |         ❌          |
-| Performance traces and insights                                     |          ❌           |         ✅          |
-| Lighthouse audit                                                    |          ❌           |         ✅          |
-| Heap snapshots                                                      |          ❌           |         ✅          |
-| Screencast recording                                                |          ❌           |         ✅          |
-| Extensions, PWA and WebAuthn tools                                  |          ❌           |         ✅          |
-| Geolocation emulation                                               |          ❌           |         ✅          |
 
-Compared against Chrome DevTools MCP 1.12.0 (2026-10-22, [ChromeDevTools/chrome-devtools-mcp](https://github.com/ChromeDevTools/chrome-devtools-mcp)). A cross on its side means its tool reference lists no tool for that capability. Version 0.1.0 of this project supports Chrome only.
+Lighthouse audits and the video of a screencast use the `lighthouse` and `ffmpeg` programs when they are installed on your machine; `doctor` shows whether they are.
+
+Compared against Chrome DevTools MCP 1.12.0 (2026-10-22, [ChromeDevTools/chrome-devtools-mcp](https://github.com/ChromeDevTools/chrome-devtools-mcp)). A cross on its side means its tool reference lists no tool for that capability. Version 0.2.0 of this project supports Chrome only.
 
 ## Tools
 
-35 tools. Details and parameters are in [docs/tools.md](docs/tools.md).
+47 tools. Details and parameters are in [docs/tools.md](docs/tools.md).
 
-| Category    | Tools                                                                                                            |
-| ----------- | ---------------------------------------------------------------------------------------------------------------- |
-| Tabs        | `list_tabs`, `list_sessions`, `select_tab`, `new_tab`, `close_tab`                                               |
-| Pages       | `page_info`, `page_navigate`, `page_wait`, `page_dialogs`, `page_metrics`, `page_pdf`                            |
-| Inspection  | `dom_query`, `dom_snapshot`, `css_inspect`, `js_evaluate`, `screenshot`                                          |
-| Input       | `click`, `input_click`, `input_hover`, `input_type`, `input_key`, `input_scroll`, `input_select`, `input_upload` |
-| Observation | `console_logs`, `network_requests`, `network_response_body`                                                      |
-| Network     | `network_mock`                                                                                                   |
-| Storage     | `storage_read`, `storage_write`                                                                                  |
-| Emulation   | `list_devices`, `emulate_device`, `emulate_media`, `emulate_network`, `emulate_locale`                           |
+| Category    | Tools                                                                                                                                       |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| Tabs        | `list_tabs`, `list_sessions`, `select_tab`, `new_tab`, `close_tab`, `bring_to_front`                                                        |
+| Pages       | `page_info`, `page_navigate`, `page_wait`, `page_dialogs`, `page_metrics`, `page_pdf`                                                       |
+| Inspection  | `dom_query`, `dom_snapshot`, `css_inspect`, `js_evaluate`, `screenshot`                                                                     |
+| Input       | `click`, `input_click`, `input_hover`, `input_drag`, `input_type`, `input_key`, `input_scroll`, `input_select`, `input_upload`, `fill_form` |
+| Performance | `perf_trace_start`, `perf_trace_stop`, `heap_snapshot`, `screencast_start`, `screencast_stop`, `lighthouse_audit`                           |
+| Observation | `console_logs`, `network_requests`, `network_response_body`                                                                                 |
+| Network     | `network_mock`                                                                                                                              |
+| Storage     | `storage_read`, `storage_write`                                                                                                             |
+| Web auth    | `webauthn`                                                                                                                                  |
+| Web apps    | `pwa_info`                                                                                                                                  |
+| Emulation   | `list_devices`, `emulate_device`, `emulate_media`, `emulate_network`, `emulate_locale`, `emulate_geolocation`                               |
 
 ## Safety
 
 - `safety.readOnly` refuses every tool that changes page or browser state.
 - `safety.allowedDomains` limits where mutating tools may act; redirects are checked too.
-- `safety.confirmDangerous` asks the user through MCP elicitation before scripts, storage writes, cookie reads and file uploads.
+- `safety.confirmDangerous` asks the user through MCP elicitation before scripts, storage writes, cookie reads, file uploads, location emulation and heap snapshots that are saved.
 
 The daemon enforces these per session. Limits and exact rules: [docs/safety.md](docs/safety.md).
 
@@ -97,6 +109,7 @@ Sources from lowest to highest priority: defaults, JSON file, `CHROMIUM_DEVTOOLS
 | `headless`                | `--headless`          | false                   |
 | `profileDir`              | `--profile-dir`       | per-user data directory |
 | `debugPort`               | `--debug-port`        | 0 managed, 9222 attach  |
+| `wsEndpoint`              | `--ws-endpoint`       | unset, attach only      |
 | `allowFocus`              | `--allow-focus`       | false                   |
 | `isolated`                | `--isolated`          | false                   |
 | `safety.readOnly`         | `--read-only`         | false                   |
@@ -109,7 +122,7 @@ Env names, file paths and rules: [docs/configuration.md](docs/configuration.md).
 
 - Browser: Chrome.
 - OS: macOS, Linux, Windows.
-- Node.js 22 or newer. Transport: stdio.
+- Node.js 24 or newer. Transport: stdio.
 
 ## Documentation
 
@@ -120,6 +133,7 @@ Env names, file paths and rules: [docs/configuration.md](docs/configuration.md).
 - [Output limits](docs/output-limits.md)
 - [Daemon and sessions](docs/daemon.md)
 - [Installer](docs/install.md)
+- [Contributing](CONTRIBUTING.md), [security policy](SECURITY.md) and [code of conduct](CODE_OF_CONDUCT.md)
 
 ## License
 

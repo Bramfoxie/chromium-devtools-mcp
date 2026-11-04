@@ -5,7 +5,8 @@ import {
     CdpSessionDetachedError,
     CdpTimeoutError,
 } from "../src/cdp/index.js";
-import { ErrorCode, RpcError, SessionRegistry } from "../src/daemon/index.js";
+import { ErrorCode, RpcError } from "../src/daemon/index.js";
+import { SessionRegistry } from "../src/daemon/sessions.js";
 import { FakeBackend } from "./helpers/fake-backend.js";
 
 interface Emitted {
@@ -93,7 +94,7 @@ describe("opening sessions", () => {
 
         backend.failures.createContext = [new Error("denied")];
         expect(await code(open("a", true))).toBe("other");
-        await expect(open("a", true)).resolves.toBeDefined();
+        await expect(open("a", true)).resolves.toMatchObject({ isolated: true });
     });
 });
 
@@ -115,11 +116,11 @@ describe("tab ownership", () => {
         const b = await open("b");
         const tab = await a.createTab("about:blank");
 
-        expect(await code(b.send(tab, "Page.enable", undefined))).toBe(ErrorCode.notOwned);
+        expect(await code(b.send({ targetId: tab, method: "Page.enable" }))).toBe(ErrorCode.notOwned);
         expect(await code(b.closeTab(tab))).toBe(ErrorCode.notOwned);
         expect(await code(b.subscribe(tab, "Page.loadEventFired"))).toBe(ErrorCode.notOwned);
         expect(() => b.unsubscribe(tab, "Page.loadEventFired")).toThrow(RpcError);
-        expect(await code(b.send("nope", "Page.enable", undefined))).toBe(ErrorCode.notFound);
+        expect(await code(b.send({ targetId: "nope", method: "Page.enable" }))).toBe(ErrorCode.notFound);
     });
 
     it("lists only the tabs of the session as owned", async () => {
@@ -290,7 +291,7 @@ describe("tab ownership", () => {
         const first = a.closeTab(tab);
 
         expect(await code(a.closeTab(tab))).toBe(ErrorCode.notFound);
-        expect(await code(a.send(tab, "Page.enable", undefined))).toBe(ErrorCode.notFound);
+        expect(await code(a.send({ targetId: tab, method: "Page.enable" }))).toBe(ErrorCode.notFound);
         expect(await a.listTabs("owned")).toEqual([]);
         release();
         await first;
@@ -303,7 +304,7 @@ describe("tab ownership", () => {
 
         backend.failures.closeTarget = [new Error("nope")];
         expect(await code(a.closeTab(tab))).toBe("other");
-        await expect(a.send(tab, "Page.enable", undefined)).resolves.toBeDefined();
+        await expect(a.send({ targetId: tab, method: "Page.enable" })).resolves.toMatchObject({ echoed: "Page.enable" });
         await expect(a.closeTab(tab)).resolves.toBeUndefined();
     });
 
@@ -347,11 +348,11 @@ describe("tab ownership", () => {
         const a = await open("a");
         const tab = await a.createTab("about:blank");
 
-        await a.send(tab, "Page.enable", undefined);
+        await a.send({ targetId: tab, method: "Page.enable" });
         backend.destroyTarget(tab);
         expect(emitted.a).toEqual([{ event: "tab.closed", params: { targetId: tab } }]);
         expect(await a.listTabs("owned")).toEqual([]);
-        expect(await code(a.send(tab, "Page.enable", undefined))).toBe(ErrorCode.notFound);
+        expect(await code(a.send({ targetId: tab, method: "Page.enable" }))).toBe(ErrorCode.notFound);
         await vi.waitFor(() => expect(backend.sessions.get(tab)?.detached).toBe(true));
     });
 
@@ -371,7 +372,7 @@ describe("closing a session", () => {
         const b = await open("b");
         const tab = await a.createTab("about:blank");
 
-        await a.send(tab, "Page.enable", undefined);
+        await a.send({ targetId: tab, method: "Page.enable" });
         await registry.close("a");
         expect(backend.targets.has(tab)).toBe(false);
         expect(backend.sessions.get(tab)?.detached).toBe(true);
@@ -429,7 +430,7 @@ describe("closing a session", () => {
             const tab = await a.createTab("about:blank");
 
             backend.gates.attach = new Promise<void>(() => undefined);
-            void a.send(tab, "Page.enable", undefined).catch(() => undefined);
+            void a.send({ targetId: tab, method: "Page.enable" }).catch(() => undefined);
             await vi.advanceTimersByTimeAsync(0);
             const closing = registry.close("a");
 
@@ -538,8 +539,8 @@ describe("sending commands", () => {
         const tab = await a.createTab("about:blank");
 
         expect(backend.log.some((line) => line.startsWith("attach"))).toBe(false);
-        await a.send(tab, "Page.navigate", { url: "https://x.example/" }, 1234);
-        await a.send(tab, "Page.enable", undefined);
+        await a.send({ targetId: tab, method: "Page.navigate", params: { url: "https://x.example/" }, timeoutMs: 1234 });
+        await a.send({ targetId: tab, method: "Page.enable" });
         expect(backend.log.filter((line) => line.startsWith("attach"))).toEqual([`attach ${tab}`]);
         expect(backend.sessions.get(tab)?.sent).toEqual([
             { method: "Page.navigate", params: { url: "https://x.example/" }, timeoutMs: 1234 },
@@ -552,7 +553,7 @@ describe("sending commands", () => {
         const a = await open("a");
         const tab = await a.createTab("about:blank");
 
-        await a.send(tab, "Page.navigate", { url: " HTTPS://X.example " });
+        await a.send({ targetId: tab, method: "Page.navigate", params: { url: " HTTPS://X.example " } });
         expect(backend.sessions.get(tab)?.sent).toEqual([
             { method: "Page.navigate", params: { url: "https://x.example/" }, timeoutMs: undefined },
         ]);
@@ -564,8 +565,8 @@ describe("sending commands", () => {
         const tab = await a.createTab("about:blank");
 
         await Promise.all([
-            a.send(tab, "Page.enable", undefined),
-            a.send(tab, "Runtime.enable", undefined),
+            a.send({ targetId: tab, method: "Page.enable" }),
+            a.send({ targetId: tab, method: "Runtime.enable" }),
         ]);
         expect(backend.log.filter((line) => line.startsWith("attach"))).toHaveLength(1);
     });
@@ -576,8 +577,8 @@ describe("sending commands", () => {
         const tab = await a.createTab("about:blank");
 
         backend.failures.attach = [new Error("detached")];
-        expect(await code(a.send(tab, "Page.enable", undefined))).toBe("other");
-        await expect(a.send(tab, "Page.enable", undefined)).resolves.toBeDefined();
+        expect(await code(a.send({ targetId: tab, method: "Page.enable" }))).toBe("other");
+        await expect(a.send({ targetId: tab, method: "Page.enable" })).resolves.toMatchObject({ echoed: "Page.enable" });
     });
 
     it.each([
@@ -594,7 +595,7 @@ describe("sending commands", () => {
         const a = await open("a");
         const tab = await a.createTab("about:blank");
 
-        expect(await code(a.send(tab, method, undefined))).toBe(ErrorCode.forbiddenMethod);
+        expect(await code(a.send({ targetId: tab, method }))).toBe(ErrorCode.forbiddenMethod);
     });
 
     it.each([
@@ -609,7 +610,7 @@ describe("sending commands", () => {
         const a = await open("a");
         const tab = await a.createTab("about:blank");
 
-        await expect(a.send(tab, method, undefined)).resolves.toBeDefined();
+        await expect(a.send({ targetId: tab, method })).resolves.toMatchObject({ echoed: method });
     });
 
     it("refuses to bring the window to the front unless allowFocus is on", async () => {
@@ -617,12 +618,12 @@ describe("sending commands", () => {
         const a = await off.open("a");
         const tab = await a.createTab("about:blank");
 
-        expect(await code(a.send(tab, "Page.bringToFront", undefined))).toBe(ErrorCode.forbiddenMethod);
+        expect(await code(a.send({ targetId: tab, method: "Page.bringToFront" }))).toBe(ErrorCode.forbiddenMethod);
         const on = setup(true);
         const b = await on.open("b");
         const allowed = await b.createTab("about:blank");
 
-        await expect(b.send(allowed, "Page.bringToFront", undefined)).resolves.toBeDefined();
+        await expect(b.send({ targetId: allowed, method: "Page.bringToFront" })).resolves.toMatchObject({ echoed: "Page.bringToFront" });
     });
 });
 
@@ -634,7 +635,7 @@ describe("races with closing", () => {
         let release: () => void = () => undefined;
 
         backend.gates.attach = new Promise<void>((resolve) => (release = resolve));
-        const sending = a.send(tab, "Page.navigate", { url: "https://x.example/" });
+        const sending = a.send({ targetId: tab, method: "Page.navigate", params: { url: "https://x.example/" } });
 
         await Promise.resolve();
         const closing = registry.close("a");
@@ -670,7 +671,7 @@ describe("races with closing", () => {
     });
 
     it.each([
-        ["send", (a: ClientSessionLike, tab: string) => a.send(tab, "Page.enable", undefined)],
+        ["send", (a: ClientSessionLike, tab: string) => a.send({ targetId: tab, method: "Page.enable" })],
         ["subscribe", (a: ClientSessionLike, tab: string) => a.subscribe(tab, "Page.loadEventFired")],
         ["closeTab", (a: ClientSessionLike, tab: string) => a.closeTab(tab)],
         ["claimTab", (a: ClientSessionLike, tab: string) => a.claimTab(tab)],
@@ -696,12 +697,12 @@ describe("CDP failures", () => {
         const a = await open("a");
         const tab = await a.createTab("about:blank");
 
-        await a.send(tab, "Page.enable", undefined);
+        await a.send({ targetId: tab, method: "Page.enable" });
         const session = backend.sessions.get(tab);
 
         if (session) session.failure = failure;
 
-        const error = await a.send(tab, "Page.reload", undefined).catch((reason: unknown) => reason);
+        const error = await a.send({ targetId: tab, method: "Page.reload" }).catch((reason: unknown) => reason);
 
         expect(error).toBeInstanceOf(RpcError);
         expect((error as RpcError).code).toBe(expected);
@@ -714,7 +715,7 @@ describe("CDP failures", () => {
         const tab = await a.createTab("about:blank");
 
         backend.failures.attach = [new CdpClosedError("gone")];
-        expect(await code(a.send(tab, "Page.enable", undefined))).toBe(ErrorCode.browserClosed);
+        expect(await code(a.send({ targetId: tab, method: "Page.enable" }))).toBe(ErrorCode.browserClosed);
     });
 });
 
@@ -784,7 +785,7 @@ describe("subscriptions", () => {
         const a = await open("a");
         const tab = await a.createTab("about:blank");
 
-        await a.send(tab, "Page.enable", undefined);
+        await a.send({ targetId: tab, method: "Page.enable" });
         const session = backend.sessions.get(tab);
 
         if (session) {
@@ -949,7 +950,7 @@ describe("frame targets", () => {
         const a = await open("a");
         const tab = await a.createTab("https://a.example/");
 
-        await a.send(tab, "Page.enable", undefined);
+        await a.send({ targetId: tab, method: "Page.enable" });
         const session = backend.sessions.get(tab);
 
         if (session) session.reply = mainTree();
@@ -966,7 +967,7 @@ describe("frame targets", () => {
         const a = await open("a");
         const tab = await a.createTab("https://a.example/");
 
-        await a.send(tab, "Page.enable", undefined);
+        await a.send({ targetId: tab, method: "Page.enable" });
         const session = backend.sessions.get(tab);
 
         if (session) session.reply = mainTree();
@@ -979,12 +980,50 @@ describe("frame targets", () => {
         expect(frames.find((frame) => frame.frameId === "same")).toMatchObject({ isolated: false });
     });
 
+    it("lists frames within one child timeout when several children hang", async () => {
+        vi.useFakeTimers();
+
+        try {
+            const { backend, open } = setup();
+            const a = await open("a");
+            const tab = await a.createTab("https://a.example/");
+
+            await a.send({ targetId: tab, method: "Page.enable" });
+            const session = backend.sessions.get(tab);
+
+            if (session) session.reply = mainTree();
+
+            await a.listFrames(tab);
+
+            for (const key of ["h1", "h2", "h3"]) {
+                const child = backend.childHandles[0]?.addChild(key, true, CROSS);
+
+                if (child) {
+                    child.send = (_method, _params, timeoutMs) =>
+                        new Promise((_resolve, reject) => {
+                            setTimeout(() => reject(new Error("timed out")), timeoutMs ?? 30_000);
+                        });
+                }
+            }
+
+            let listed = false;
+            const listing = a.listFrames(tab).then(() => void (listed = true));
+
+            await vi.advanceTimersByTimeAsync(5000);
+            await listing;
+
+            expect(listed).toBe(true);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
     it("routes cdp.send with a frame id to the child session", async () => {
         const { backend, open } = setup();
         const a = await open("a");
         const tab = await a.createTab("https://a.example/");
 
-        await a.send(tab, "Page.enable", undefined);
+        await a.send({ targetId: tab, method: "Page.enable" });
         const session = backend.sessions.get(tab);
 
         if (session) session.reply = mainTree();
@@ -993,7 +1032,7 @@ describe("frame targets", () => {
         const child = backend.childHandles[0]?.addChild("cross", true, CROSS);
 
         await a.listFrames(tab);
-        await a.send(tab, "Runtime.evaluate", { expression: "1" }, undefined, "cross");
+        await a.send({ targetId: tab, method: "Runtime.evaluate", params: { expression: "1" }, frameId: "cross" });
 
         expect(child?.sent.filter((call) => call.method === "Runtime.evaluate")).toHaveLength(1);
         expect(session?.sent.map((call) => call.method)).not.toContain("Runtime.evaluate");
@@ -1004,16 +1043,16 @@ describe("frame targets", () => {
         const a = await open("a");
         const tab = await a.createTab("https://a.example/");
 
-        await a.send(tab, "Page.enable", undefined);
+        await a.send({ targetId: tab, method: "Page.enable" });
         const session = backend.sessions.get(tab);
 
         if (session) session.reply = mainTree();
 
         await a.listFrames(tab);
-        expect(await code(a.send(tab, "Page.enable", undefined, undefined, "nope"))).toBe(
+        expect(await code(a.send({ targetId: tab, method: "Page.enable", params: undefined, frameId: "nope" }))).toBe(
             ErrorCode.notFound,
         );
-        expect(await code(a.send(tab, "Page.enable", undefined, undefined, "same"))).toBe(
+        expect(await code(a.send({ targetId: tab, method: "Page.enable", params: undefined, frameId: "same" }))).toBe(
             ErrorCode.notFound,
         );
     });
@@ -1027,10 +1066,10 @@ describe("frame targets", () => {
             new Error("auto attach refused"),
             new Error("auto attach refused"),
         ];
-        await a.send(tab, "Page.enable", undefined);
+        await a.send({ targetId: tab, method: "Page.enable" });
 
         const error = await a
-            .send(tab, "Page.enable", undefined, undefined, "cross")
+            .send({ targetId: tab, method: "Page.enable", params: undefined, frameId: "cross" })
             .catch((caught: unknown) => caught);
 
         expect(String((error as Error).message)).toContain("auto attach refused");
@@ -1041,7 +1080,7 @@ describe("frame targets", () => {
         const a = await open("a");
         const tab = await a.createTab("https://a.example/");
 
-        await a.send(tab, "Page.enable", undefined);
+        await a.send({ targetId: tab, method: "Page.enable" });
         const session = backend.sessions.get(tab);
 
         if (session) session.reply = mainTree();
@@ -1049,7 +1088,7 @@ describe("frame targets", () => {
         await a.listFrames(tab);
         const child = backend.childHandles[0]?.addChild("cross", false);
 
-        await a.send(tab, "Runtime.evaluate", { expression: "1" }, undefined, "cross");
+        await a.send({ targetId: tab, method: "Runtime.evaluate", params: { expression: "1" }, frameId: "cross" });
 
         expect(child?.sent.map((call) => call.method)).toEqual([
             "Page.enable",
@@ -1064,7 +1103,7 @@ describe("frame targets", () => {
         const a = await open("a");
         const tab = await a.createTab("https://a.example/");
 
-        await a.send(tab, "Page.enable", undefined);
+        await a.send({ targetId: tab, method: "Page.enable" });
         const session = backend.sessions.get(tab);
 
         if (session) session.reply = mainTree();
@@ -1084,11 +1123,11 @@ describe("frame targets", () => {
         const a = await open("a");
         const tab = await a.createTab("https://a.example/");
 
-        await a.send(tab, "Page.enable", undefined);
+        await a.send({ targetId: tab, method: "Page.enable" });
         await a.listFrames(tab);
         const child = backend.childHandles[0]?.addChild("cross", false, CROSS);
 
-        await a.send(tab, "Runtime.evaluate", { expression: "1" }, undefined, "cross");
+        await a.send({ targetId: tab, method: "Runtime.evaluate", params: { expression: "1" }, frameId: "cross" });
 
         expect(child?.sent.filter((call) => call.method === "Runtime.evaluate")).toHaveLength(1);
     });
@@ -1098,7 +1137,7 @@ describe("frame targets", () => {
         const a = await open("a");
         const tab = await a.createTab("https://a.example/");
 
-        await a.send(tab, "Page.enable", undefined);
+        await a.send({ targetId: tab, method: "Page.enable" });
         await a.listFrames(tab);
         const child = backend.childHandles[0]?.addChild("cross", true, CROSS);
 
@@ -1127,7 +1166,7 @@ describe("frame targets", () => {
         const a = await open("a");
         const tab = await a.createTab("https://a.example/");
 
-        await a.send(tab, "Page.enable", undefined);
+        await a.send({ targetId: tab, method: "Page.enable" });
         const session = backend.sessions.get(tab);
 
         if (session) session.reply = mainTree();
@@ -1140,7 +1179,7 @@ describe("frame targets", () => {
 
         await a.listFrames(tab);
         expect(backend.childHandles[0]?.confirmed).toEqual([]);
-        expect(await code(a.send(tab, "Page.enable", undefined, undefined, "late"))).toBe(
+        expect(await code(a.send({ targetId: tab, method: "Page.enable", params: undefined, frameId: "late" }))).toBe(
             ErrorCode.notFound,
         );
 
@@ -1159,7 +1198,7 @@ describe("frame targets", () => {
         const b = await open("b");
         const tab = await a.createTab("https://a.example/");
 
-        await a.send(tab, "Page.enable", undefined);
+        await a.send({ targetId: tab, method: "Page.enable" });
         const session = backend.sessions.get(tab);
 
         if (session) session.reply = mainTree();
@@ -1167,7 +1206,7 @@ describe("frame targets", () => {
         await a.listFrames(tab);
         backend.childHandles[0]?.addChild("cross", true, CROSS);
         await a.listFrames(tab);
-        expect(await code(b.send(tab, "Page.enable", undefined, undefined, "cross"))).toBe(
+        expect(await code(b.send({ targetId: tab, method: "Page.enable", params: undefined, frameId: "cross" }))).toBe(
             ErrorCode.notOwned,
         );
         expect(await code(b.listFrames(tab))).toBe(ErrorCode.notOwned);
@@ -1178,7 +1217,7 @@ describe("frame targets", () => {
         const a = await open("a");
         const tab = await a.createTab("https://a.example/");
 
-        await a.send(tab, "Page.enable", undefined);
+        await a.send({ targetId: tab, method: "Page.enable" });
         const session = backend.sessions.get(tab);
 
         if (session) session.reply = mainTree();
@@ -1211,7 +1250,7 @@ describe("frame targets", () => {
         const a = await open("a");
         const tab = await a.createTab("https://a.example/");
 
-        await a.send(tab, "Page.enable", undefined);
+        await a.send({ targetId: tab, method: "Page.enable" });
         const session = backend.sessions.get(tab);
 
         if (session) session.reply = mainTree();
@@ -1223,7 +1262,7 @@ describe("frame targets", () => {
         const frames = await a.listFrames(tab);
 
         expect(frames.find((frame) => frame.frameId === "cross")).toBeUndefined();
-        expect(await code(a.send(tab, "Page.enable", undefined, undefined, "cross"))).toBe(
+        expect(await code(a.send({ targetId: tab, method: "Page.enable", params: undefined, frameId: "cross" }))).toBe(
             ErrorCode.notFound,
         );
     });
@@ -1233,7 +1272,7 @@ describe("frame targets", () => {
         const a = await open("a");
         const tab = await a.createTab("https://a.example/");
 
-        await a.send(tab, "Page.enable", undefined);
+        await a.send({ targetId: tab, method: "Page.enable" });
         const session = backend.sessions.get(tab);
 
         if (session) session.reply = mainTree();
@@ -1264,7 +1303,7 @@ describe("frame targets", () => {
         const a = await open("a");
         const tab = await a.createTab("https://a.example/");
 
-        await a.send(tab, "Page.enable", undefined);
+        await a.send({ targetId: tab, method: "Page.enable" });
         const session = backend.sessions.get(tab);
 
         if (session) session.reply = mainTree();
@@ -1284,7 +1323,7 @@ describe("state shared with cross site frame sessions", () => {
         const a = await made.open("a");
         const tab = await a.createTab("https://a.example/");
 
-        await a.send(tab, "Page.enable", undefined);
+        await a.send({ targetId: tab, method: "Page.enable" });
 
         return { ...made, a, tab, handle: made.backend.childHandles[0] };
     }
@@ -1295,8 +1334,8 @@ describe("state shared with cross site frame sessions", () => {
     it("applies capture and emulation commands to children that attach later", async () => {
         const { a, tab, handle } = await tabWithChild();
 
-        await a.send(tab, "Network.enable", {});
-        await a.send(tab, "Network.setBlockedURLs", { urls: ["*.png"] });
+        await a.send({ targetId: tab, method: "Network.enable", params: {} });
+        await a.send({ targetId: tab, method: "Network.setBlockedURLs", params: { urls: ["*.png"] } });
         const child = handle?.addChild("cross", true, CROSS);
 
         await handle?.settled();
@@ -1308,13 +1347,38 @@ describe("state shared with cross site frame sessions", () => {
         ]);
     });
 
+    it("gives a new child the geolocation override of the tab", async () => {
+        const { a, tab, handle } = await tabWithChild();
+        const position = { latitude: 52.52, longitude: 13.405, accuracy: 10 };
+
+        await a.send({ targetId: tab, method: "Emulation.setGeolocationOverride", params: position });
+        const child = handle?.addChild("cross", true, CROSS);
+
+        await handle?.settled();
+
+        expect(child?.sent).toContainEqual(
+            expect.objectContaining({ method: "Emulation.setGeolocationOverride", params: position }),
+        );
+    });
+
+    it("sends the replayed commands to a new child without waiting for each reply", async () => {
+        const { a, tab, handle } = await tabWithChild();
+
+        await a.send({ targetId: tab, method: "Network.enable", params: {} });
+        await a.send({ targetId: tab, method: "Network.setBlockedURLs", params: { urls: ["*.png"] } });
+        const child = handle?.addChild("cross", true, CROSS);
+
+        expect(sentMethods(child)).toEqual(["Page.enable", "Network.enable", "Network.setBlockedURLs"]);
+        await handle?.settled();
+    });
+
     it("applies a command to children that already exist and keeps only its latest value", async () => {
         const { a, tab, handle } = await tabWithChild();
         const child = handle?.addChild("cross", true, CROSS);
 
         await handle?.settled();
-        await a.send(tab, "Fetch.enable", { patterns: [{ urlPattern: "*/a" }] });
-        await a.send(tab, "Fetch.enable", { patterns: [{ urlPattern: "*/b" }] });
+        await a.send({ targetId: tab, method: "Fetch.enable", params: { patterns: [{ urlPattern: "*/a" }] } });
+        await a.send({ targetId: tab, method: "Fetch.enable", params: { patterns: [{ urlPattern: "*/b" }] } });
         const late = handle?.addChild("late", true, CROSS);
 
         await handle?.settled();
@@ -1330,8 +1394,8 @@ describe("state shared with cross site frame sessions", () => {
         const child = handle?.addChild("cross", true, CROSS);
 
         await handle?.settled();
-        await a.send(tab, "Fetch.enable", { patterns: [] });
-        await a.send(tab, "Fetch.disable", {});
+        await a.send({ targetId: tab, method: "Fetch.enable", params: { patterns: [] } });
+        await a.send({ targetId: tab, method: "Fetch.disable", params: {} });
         const late = handle?.addChild("late", true, CROSS);
 
         await handle?.settled();
@@ -1345,8 +1409,8 @@ describe("state shared with cross site frame sessions", () => {
         const child = handle?.addChild("cross", true, CROSS);
 
         await handle?.settled();
-        await a.send(tab, "Runtime.evaluate", { expression: "1" });
-        await a.send(tab, "Emulation.setDeviceMetricsOverride", { width: 1 });
+        await a.send({ targetId: tab, method: "Runtime.evaluate", params: { expression: "1" } });
+        await a.send({ targetId: tab, method: "Emulation.setDeviceMetricsOverride", params: { width: 1 } });
 
         expect(sentMethods(child)).not.toContain("Runtime.evaluate");
         expect(sentMethods(child)).not.toContain("Emulation.setDeviceMetricsOverride");
@@ -1393,8 +1457,8 @@ describe("state shared with cross site frame sessions", () => {
 
         await handle?.settled();
         child?.emit("Fetch.requestPaused", { requestId: "interception-1" });
-        await a.send(tab, "Fetch.fulfillRequest", { requestId: "interception-1", responseCode: 200 });
-        await a.send(tab, "Fetch.continueRequest", { requestId: "interception-main" });
+        await a.send({ targetId: tab, method: "Fetch.fulfillRequest", params: { requestId: "interception-1", responseCode: 200 } });
+        await a.send({ targetId: tab, method: "Fetch.continueRequest", params: { requestId: "interception-main" } });
 
         expect(child?.sent.filter((call) => call.method === "Fetch.fulfillRequest")).toHaveLength(1);
         expect(sentMethods(backend.sessions.get(tab))).toContain("Fetch.continueRequest");
@@ -1410,9 +1474,9 @@ describe("state shared with cross site frame sessions", () => {
 
         await handle?.settled();
         child?.emit("Page.javascriptDialogOpening", { message: "hi" });
-        await a.send(tab, "Page.handleJavaScriptDialog", { accept: true });
+        await a.send({ targetId: tab, method: "Page.handleJavaScriptDialog", params: { accept: true } });
         child?.emit("Page.javascriptDialogClosed", { result: true });
-        await a.send(tab, "Page.handleJavaScriptDialog", { accept: true });
+        await a.send({ targetId: tab, method: "Page.handleJavaScriptDialog", params: { accept: true } });
 
         expect(child?.sent.filter((call) => call.method === "Page.handleJavaScriptDialog")).toHaveLength(1);
         expect(
@@ -1429,7 +1493,7 @@ describe("state shared with cross site frame sessions", () => {
         await handle?.settled();
         child?.emit("Fetch.requestPaused", { requestId: "interception-1" });
         handle?.removeChild("cross");
-        await a.send(tab, "Fetch.continueRequest", { requestId: "interception-1" });
+        await a.send({ targetId: tab, method: "Fetch.continueRequest", params: { requestId: "interception-1" } });
 
         expect(sentMethods(backend.sessions.get(tab))).toContain("Fetch.continueRequest");
         expect(child?.listenerCount("Fetch.requestPaused")).toBe(0);
@@ -1441,6 +1505,96 @@ describe("state shared with cross site frame sessions", () => {
 
         if (child) child.failure = new Error("gone");
 
-        await expect(a.send(tab, "Network.enable", {})).resolves.toBeDefined();
+        await expect(a.send({ targetId: tab, method: "Network.enable", params: {} })).resolves.toMatchObject({ echoed: "Network.enable" });
     });
 });
+
+describe("trace lock", () => {
+    type Sender = { send: (call: { targetId: string; method: string }) => Promise<unknown> };
+
+    const start = (session: Sender, targetId: string) =>
+        session.send({ targetId, method: "Tracing.start" });
+    const end = (session: Sender, targetId: string) =>
+        session.send({ targetId, method: "Tracing.end" });
+
+    async function twoSessions() {
+        const made = setup();
+        const a = await made.open("a");
+        const b = await made.open("b");
+        const tabA = await a.createTab("https://a.example/");
+        const tabB = await b.createTab("https://b.example/");
+
+        return { ...made, a, b, tabA, tabB };
+    }
+
+    it("lets one session record at a time and frees the lock when the trace ends", async () => {
+        const { a, b, tabA, tabB } = await twoSessions();
+
+        await start(a, tabA);
+        expect(await code(start(b, tabB))).toBe(ErrorCode.busy);
+        await end(a, tabA);
+        await expect(start(b, tabB)).resolves.toBeDefined();
+    });
+
+    it("refuses a second trace in the same session", async () => {
+        const { a, tabA } = await twoSessions();
+        const second = await a.createTab("https://c.example/");
+
+        await start(a, tabA);
+
+        expect(await code(start(a, second))).toBe(ErrorCode.busy);
+    });
+
+    it("refuses to end a trace the tab did not start", async () => {
+        const { a, b, tabA, tabB } = await twoSessions();
+
+        await start(a, tabA);
+
+        expect(await code(end(b, tabB))).toBe(ErrorCode.forbiddenMethod);
+        expect(await code(end(a, tabA))).toBeUndefined();
+        expect(await code(end(a, tabA))).toBe(ErrorCode.forbiddenMethod);
+    });
+
+    it("frees the lock when the start fails", async () => {
+        const { a, b, backend, tabA, tabB } = await twoSessions();
+
+        await a.send({ targetId: tabA, method: "Page.enable" });
+        const session = backend.sessions.get(tabA);
+
+        if (session) session.failure = new Error("browser went away");
+
+        await expect(start(a, tabA)).rejects.toThrow();
+
+        if (session) session.failure = undefined;
+
+        await expect(start(b, tabB)).resolves.toBeDefined();
+    });
+
+    it("frees the lock when the tab closes or the session ends", async () => {
+        const { a, b, registry, tabA, tabB } = await twoSessions();
+
+        await start(a, tabA);
+        await a.closeTab(tabA);
+        await expect(start(b, tabB)).resolves.toBeDefined();
+        await end(b, tabB);
+
+        const c = await setupOpen(registry, "c");
+        const tabC = await c.createTab("https://c.example/");
+
+        await start(c, tabC);
+        await registry.close("c");
+        await expect(start(b, tabB)).resolves.toBeDefined();
+    });
+
+    it("frees the lock when the browser destroys the tab", async () => {
+        const { a, b, backend, tabA, tabB } = await twoSessions();
+
+        await start(a, tabA);
+        backend.destroyTarget(tabA);
+        await expect(start(b, tabB)).resolves.toBeDefined();
+    });
+});
+
+async function setupOpen(registry: SessionRegistry<string>, key: string) {
+    return registry.open(key, () => undefined, { isolated: false, clientName: key });
+}

@@ -7,6 +7,9 @@ import {
 } from "./errors.js";
 import { CdpSession } from "./session.js";
 import { type Transport, type TransportFactory, wsTransportFactory } from "./transport.js";
+import { isRecord } from "../util/is-record.js";
+import { messageOf } from "../util/message-of.js";
+import { writeLogLine } from "../util/stderr.js";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const MAX_TIMEOUT_MS = 2_147_483_647;
@@ -37,21 +40,13 @@ interface Pending {
     timer    : NodeJS.Timeout;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function messageOf(error: unknown): string {
-    return error instanceof Error ? error.message : String(error);
-}
-
 function closedError(): CdpClosedError {
     return new CdpClosedError("the client was closed or the browser disconnected");
 }
 
 function logError(message: string): void {
     try {
-        process.stderr.write(`chromium-devtools-mcp: ${message}\n`);
+        writeLogLine(message);
     } catch {
     }
 }

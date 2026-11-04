@@ -37,6 +37,7 @@ const MUTATING: Case[] = [
     ["new_tab", {}],
     ["select_tab", { tab: "tab1" }],
     ["close_tab", { tab: "tab1" }],
+    ["bring_to_front", { tab: "tab1" }],
     ["page_navigate", { url: "https://example.com/" }],
     ["js_evaluate", { expression: "1" }],
     ["page_wait", { expression: "true" }],
@@ -49,6 +50,7 @@ const MUTATING: Case[] = [
     ["emulate_media", { reducedMotion: "reduce" }],
     ["emulate_network", { preset: "slow-3g" }],
     ["emulate_locale", { locale: "de-DE" }],
+    ["emulate_geolocation", { latitude: 52.5, longitude: 13.4 }],
     ["click", { target: { selector: "body" } }],
     ["input_click", { target: { selector: "body" } }],
     ["input_hover", { target: { selector: "body" } }],
@@ -57,6 +59,11 @@ const MUTATING: Case[] = [
     ["input_scroll", { deltaY: 100 }],
     ["input_select", { target: { selector: "select" }, indexes: [0] }],
     ["input_upload", { target: { selector: "input" }, files: ["/tmp/a.png"] }],
+    ["fill_form", { fields: [{ target: { selector: "input" }, value: "x" }] }],
+    ["input_drag", { from: { selector: "body" }, to: { x: 1, y: 1 } }],
+    ["perf_trace_start", { reload: true }],
+    ["lighthouse_audit", { url: "https://example.com/" }],
+    ["webauthn", { action: "add_authenticator" }],
 ];
 
 const READING: Case[] = [
@@ -76,6 +83,13 @@ const READING: Case[] = [
     ["storage_read", {}],
     ["page_pdf", {}],
     ["page_metrics", {}],
+    ["perf_trace_start", {}],
+    ["perf_trace_stop", {}],
+    ["heap_snapshot", {}],
+    ["screencast_start", {}],
+    ["screencast_stop", {}],
+    ["webauthn", { action: "list_authenticators" }],
+    ["pwa_info", {}],
     ["screenshot", {}],
     ["list_devices", {}],
 ];

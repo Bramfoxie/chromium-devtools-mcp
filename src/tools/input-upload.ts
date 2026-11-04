@@ -10,15 +10,16 @@ import {
     type ResolvedElement,
 } from "./element-target.js";
 import { ToolError } from "./errors.js";
-import { changedUrl, navigationOf, summarizeTarget, targetSummarySchema } from "./input-click.js";
+import { changedUrl, navigationOf, summarizeTarget, targetSummarySchema } from "./input-outcome.js";
 import { throwIfCancelled } from "./registry.js";
 import type { UploadEnvironment } from "./upload-environment.js";
+import { resolveTab, tabSchema } from "./tab-target.js";
 
-export const UPLOAD_MAX_FILES = 20;
+const UPLOAD_MAX_FILES = 20;
 
 export const UPLOAD_MAX_BYTES = 100 * 1024 * 1024;
 
-export const UPLOAD_COUNT_EXPRESSION = `function (element) {
+const UPLOAD_COUNT_EXPRESSION = `function (element) {
   if (!(element instanceof HTMLInputElement) || element.type !== "file") return { files: -1 };
   return { files: element.files === null ? 0 : element.files.length };
 }`;
@@ -30,7 +31,7 @@ const uploadChangeSchema = z.object({
     }),
 });
 
-export interface ValidatedUpload {
+interface ValidatedUpload {
     path: string;
     name: string;
     size: number;
@@ -103,11 +104,15 @@ async function attachedCount(
     element: ResolvedElement,
 ): Promise<number> {
     const parsed = uploadChangeSchema.safeParse(
-        await access.send(tab, "Runtime.callFunctionOn", {
-            functionDeclaration: UPLOAD_COUNT_EXPRESSION,
-            objectId           : element.objectId,
-            arguments          : [{ objectId: element.objectId }],
-            returnByValue      : true,
+        await access.send({
+            targetId: tab,
+            method  : "Runtime.callFunctionOn",
+            params  : {
+                functionDeclaration: UPLOAD_COUNT_EXPRESSION,
+                objectId           : element.objectId,
+                arguments          : [{ objectId: element.objectId }],
+                returnByValue      : true,
+            },
         }),
     );
 
@@ -128,7 +133,7 @@ export const inputUpload = defineTool({
     dangerous: true,
     summarize: (args) => `It sends these local files to the page: ${args.files.slice(0, 5).join(", ")}${args.files.length > 5 ? ", ..." : ""}`,
     input    : z.strictObject({
-        tab   : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
+        tab   : tabSchema,
         target: elementTargetSchema.describe("Element uid from a snapshot or query, or a CSS selector. Must resolve to an input of type file."),
         files : z.array(z.string().min(1).max(4096)).min(1).max(UPLOAD_MAX_FILES).describe("Absolute local paths to attach, at most 20. Each must be a readable file under 100 MiB."),
     }),
@@ -143,11 +148,7 @@ export const inputUpload = defineTool({
         urlAfter: z.string().optional().describe("URL after the upload, present only when the page navigated."),
     }),
     handler: async (args, context) => {
-        const targetId = args.tab ?? context.state.selected;
-
-        if (targetId === undefined) {
-            throw new ToolError("No tab is selected. Open one with new_tab first.");
-        }
+        const targetId = resolveTab(args, context);
 
         throwIfCancelled(context.signal);
 
@@ -179,9 +180,13 @@ export const inputUpload = defineTool({
             throwIfCancelled(context.signal);
 
             const acted = await navigationOf(context.access, targetId, async () => {
-                await owner.send(targetId, "DOM.setFileInputFiles", {
-                    backendNodeId: element.backendNodeId,
-                    files        : validated.map((file) => file.path),
+                await owner.send({
+                    targetId,
+                    method: "DOM.setFileInputFiles",
+                    params: {
+                        backendNodeId: element.backendNodeId,
+                        files        : validated.map((file) => file.path),
+                    },
                 });
             });
             const changed = changedUrl(acted.urlBefore, acted.urlAfter);

@@ -1,12 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-    DaemonConfigMismatchError,
-    DaemonError,
-    ErrorCode,
-    IpcClosedError,
-    IpcTimeoutError,
-    RpcError,
-} from "../src/daemon/index.js";
+import { DaemonConfigMismatchError, DaemonError, ErrorCode, IpcClosedError, IpcTimeoutError, RpcError } from "../src/daemon/index.js";
 import { DaemonNotReadyError, SessionResetError } from "../src/mcp/index.js";
 import { ToolError, toToolMessage } from "../src/tools/index.js";
 

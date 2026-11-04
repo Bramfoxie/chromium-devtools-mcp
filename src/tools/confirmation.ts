@@ -1,5 +1,5 @@
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import type { DaemonAccess } from "../mcp/index.js";
+import type { CdpCommand, DaemonAccess } from "../mcp/index.js";
 
 export type ConfirmOutcome = "accepted" | "declined" | "unsupported" | "failed";
 
@@ -34,27 +34,15 @@ export function elicitationConfirmer(server: Server): Confirmer {
 }
 
 export function confirmedAccess(access: DaemonAccess): DaemonAccess {
+    const send = (command: CdpCommand) => access.send({ ...command, confirmed: true });
+
     return new Proxy(access, {
         get(target, property) {
-            if (property === "send") {
-                return (
-                    tab       : string,
-                    method    : string,
-                    params?   : Record<string, unknown>,
-                    timeoutMs?: number,
-                    frame?    : string,
-                    options?  : { signal?: AbortSignal },
-                ) => target.send(tab, method, params, timeoutMs, frame, {
-                    ...options,
-                    confirmed: true,
-                });
-            }
+            if (property === "send") return send;
 
             const value: unknown = Reflect.get(target, property, target);
 
-            return typeof value === "function"
-                ? (value as (...args: unknown[]) => unknown).bind(target)
-                : value;
+            return typeof value === "function" ? value.bind(target) : value;
         },
     });
 }

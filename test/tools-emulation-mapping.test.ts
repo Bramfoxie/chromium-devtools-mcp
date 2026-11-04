@@ -92,7 +92,7 @@ describe("devices table", () => {
     it("exposes the swapped landscape size", () => {
         const phone = DEVICES.find((device) => device.name === "iPhone 14");
 
-        expect(phone).toBeDefined();
+        expect(phone?.name).toBe("iPhone 14");
 
         const landscape = asLandscape(phone as (typeof DEVICES)[number]);
 

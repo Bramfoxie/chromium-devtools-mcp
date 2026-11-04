@@ -1,0 +1,42 @@
+name: Bug report
+description: Report something that does not work as documented
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The chromium-devtools-mcp version from package.json or npm
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Platform, Node and browser versions
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Connection mode
+      options: [attach, managed]
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Server output from stderr. Remove secrets first.
+      render: text

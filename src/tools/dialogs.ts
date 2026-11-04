@@ -1,29 +1,29 @@
 import { parseEnvelope } from "./cdp-envelope.js";
 import { z } from "zod";
 import type { DaemonAccess } from "../mcp/index.js";
-import { describeError, logDaemon } from "../daemon/log.js";
+import { describeError, logDaemon } from "../util/log.js";
 import { ErrorCode, RpcError } from "../daemon/index.js";
 import type { ToolClock } from "./define-tool.js";
 import { ToolError } from "./errors.js";
 
-export const DIALOG_EVENTS = [
+const DIALOG_EVENTS = [
     "Page.javascriptDialogOpening",
     "Page.javascriptDialogClosed",
 ] as const;
 
-export const DIALOG_MESSAGE_CLIP = 2000;
+const DIALOG_MESSAGE_CLIP = 2000;
 
-export const DIALOG_HISTORY_MESSAGE_CLIP = 200;
+const DIALOG_HISTORY_MESSAGE_CLIP = 200;
 
 export const DIALOG_HISTORY_LIMIT = 50;
 
-export const DIALOG_ENABLE_TIMEOUT_MS = 3000;
+const DIALOG_ENABLE_TIMEOUT_MS = 3000;
 
-export type DialogPolicy = "none" | "accept" | "dismiss";
+type DialogPolicy = "none" | "accept" | "dismiss";
 
-export type DialogResolution = "accept" | "dismiss" | "policy" | "closed";
+type DialogResolution = "accept" | "dismiss" | "policy" | "closed";
 
-export interface OpenDialog {
+interface OpenDialog {
     type             : string;
     message          : string;
     defaultPrompt?   : string;
@@ -31,7 +31,7 @@ export interface OpenDialog {
     hasBrowserHandler: boolean;
 }
 
-export interface DialogHistoryEntry {
+interface DialogHistoryEntry {
     type    : string;
     message : string;
     url     : string;
@@ -49,12 +49,12 @@ interface TabDialogs {
     resolveOutcome: DialogResolution | undefined;
 }
 
-export interface DialogStateOptions {
+interface DialogStateOptions {
     access: DaemonAccess;
     clock : ToolClock;
 }
 
-export interface DialogResolveResult {
+interface DialogResolveResult {
     handled: boolean;
     stale  : boolean;
 }
@@ -124,11 +124,6 @@ export class DialogState {
 
         this.attached = true;
         this.access.on("cdp.event", (params) => this.handleCdpEvent(params));
-        this.access.on("tab.closed", (params) => {
-            const targetId = (params as { targetId?: unknown } | null)?.targetId;
-
-            if (typeof targetId === "string") this.forget(targetId);
-        });
     }
 
     pageEnabled(tab: string): boolean {
@@ -148,7 +143,12 @@ export class DialogState {
         if (state.pageEnabled) return;
 
         try {
-            await this.access.send(tab, "Page.enable", {}, DIALOG_ENABLE_TIMEOUT_MS);
+            await this.access.send({
+                targetId : tab,
+                method   : "Page.enable",
+                params   : {},
+                timeoutMs: DIALOG_ENABLE_TIMEOUT_MS,
+            });
         } catch (error) {
             if (error instanceof RpcError && error.code === ErrorCode.cdpTimeout) {
                 throw new ToolError(
@@ -195,9 +195,13 @@ export class DialogState {
         state.resolveOutcome = accept ? "accept" : "dismiss";
 
         try {
-            await this.access.send(tab, "Page.handleJavaScriptDialog", {
-                accept,
-                ...(promptText === undefined ? {} : { promptText }),
+            await this.access.send({
+                targetId: tab,
+                method  : "Page.handleJavaScriptDialog",
+                params  : {
+                    accept,
+                    ...(promptText === undefined ? {} : { promptText }),
+                },
             });
         } catch (error) {
             if (error instanceof RpcError && error.code === ErrorCode.cdpError) {
@@ -286,7 +290,11 @@ export class DialogState {
         state.resolving = dialog;
         state.resolveOutcome = "policy";
 
-        void this.access.send(tab, "Page.handleJavaScriptDialog", { accept })
+        void this.access.send({
+            targetId: tab,
+            method  : "Page.handleJavaScriptDialog",
+            params  : { accept },
+        })
             .then(() => {
                 if (state.open !== dialog) return;
 

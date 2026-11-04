@@ -1,6 +1,6 @@
 import { PassThrough } from "node:stream";
 import { describe, expect, it } from "vitest";
-import { ignoreStreamErrors } from "../src/daemon/log.js";
+import { ignoreStreamErrors } from "../src/util/log.js";
 
 describe("ignoreStreamErrors", () => {
     it("keeps a stream error from becoming an unhandled exception", () => {

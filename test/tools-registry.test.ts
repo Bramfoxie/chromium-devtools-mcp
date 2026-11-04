@@ -3,7 +3,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { RequestHandlerExtra } from "@modelcontextprotocol/sdk/shared/protocol.js";
 import type { ServerNotification, ServerRequest } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { Config } from "../src/config/index.js";
 import { ErrorCode, RpcError } from "../src/daemon/index.js";
 import { createMcpServer } from "../src/mcp/index.js";
@@ -65,6 +65,8 @@ function minimalArgs(name: string): Record<string, unknown> {
             return { preset: "slow-3g" };
         case "emulate_locale":
             return { locale: "de-DE" };
+        case "emulate_geolocation":
+            return { latitude: 52.5, longitude: 13.4 };
         case "click":
         case "input_click":
         case "input_hover":
@@ -79,6 +81,12 @@ function minimalArgs(name: string): Record<string, unknown> {
             return { target: { selector: "select" }, indexes: [0] };
         case "input_upload":
             return { target: { selector: "input" }, files: ["/tmp/a.png"] };
+        case "webauthn":
+            return { action: "add_authenticator" };
+        case "fill_form":
+            return { fields: [{ target: { selector: "input" }, value: "x" }] };
+        case "input_drag":
+            return { from: { selector: "body" }, to: { x: 1, y: 1 } };
         default:
             return {};
     }
@@ -94,13 +102,14 @@ const readOnly: Config = {
 };
 
 describe("tool declarations", () => {
-    it("declares thirty five tools with unique names, descriptions and access", () => {
+    it("declares forty seven tools with unique names, descriptions and access", () => {
         expect(allTools.map((tool) => tool.name)).toEqual([
             "list_tabs",
             "list_sessions",
             "select_tab",
             "new_tab",
             "close_tab",
+            "bring_to_front",
             "page_info",
             "page_navigate",
             "js_evaluate",
@@ -117,20 +126,31 @@ describe("tool declarations", () => {
             "storage_write",
             "page_pdf",
             "page_metrics",
+            "perf_trace_start",
+            "perf_trace_stop",
+            "heap_snapshot",
+            "screencast_start",
+            "screencast_stop",
+            "lighthouse_audit",
+            "webauthn",
+            "pwa_info",
             "screenshot",
             "list_devices",
             "emulate_device",
             "emulate_media",
             "emulate_network",
             "emulate_locale",
+            "emulate_geolocation",
             "click",
             "input_click",
             "input_hover",
+            "input_drag",
             "input_type",
             "input_key",
             "input_scroll",
             "input_select",
             "input_upload",
+            "fill_form",
         ]);
 
         for (const tool of allTools) {
@@ -146,13 +166,17 @@ describe("tool declarations", () => {
         const mutate = allTools.filter((tool) => tool.access === "mutate").map((tool) => tool.name);
 
         expect(mutate.sort()).toEqual([
+            "bring_to_front",
             "click",
             "close_tab",
             "emulate_device",
+            "emulate_geolocation",
             "emulate_locale",
             "emulate_media",
             "emulate_network",
+            "fill_form",
             "input_click",
+            "input_drag",
             "input_hover",
             "input_key",
             "input_scroll",
@@ -160,6 +184,7 @@ describe("tool declarations", () => {
             "input_type",
             "input_upload",
             "js_evaluate",
+            "lighthouse_audit",
             "new_tab",
             "page_navigate",
             "select_tab",
@@ -172,7 +197,13 @@ describe("tool declarations", () => {
             typeof tool.dangerous === "function" ? tool.dangerous({}) : (tool.dangerous ?? false),
         ).map((tool) => tool.name);
 
-        expect(dangerous.sort()).toEqual(["input_upload", "js_evaluate", "storage_write"]);
+        expect(dangerous.sort()).toEqual([
+            "emulate_geolocation",
+            "heap_snapshot",
+            "input_upload",
+            "js_evaluate",
+            "storage_write",
+        ]);
     });
 
     it("runs every real mutate tool through the safety gate", async () => {
@@ -322,16 +353,25 @@ describe("tool declarations", () => {
 
 describe("open world annotation", () => {
     const CLOSED = [
+        "bring_to_front",
         "close_tab",
         "emulate_device",
+        "emulate_geolocation",
         "emulate_locale",
         "emulate_media",
         "emulate_network",
+        "heap_snapshot",
         "list_devices",
         "list_sessions",
         "list_tabs",
         "page_dialogs",
+        "perf_trace_start",
+        "perf_trace_stop",
+        "pwa_info",
+        "screencast_start",
+        "screencast_stop",
         "select_tab",
+        "webauthn",
     ];
 
     it("is true for tools that reach pages and false for session, tab and emulation control", async () => {
@@ -486,13 +526,25 @@ describe("runTool", () => {
             description: "Returns the wrong shape.",
             access     : "read",
             input      : z.strictObject({}),
-            output     : z.strictObject({ text: z.string() }),
-            handler    : async () => ({ other: 1 }) as unknown as { text: string },
+            output     : z.strictObject({ nested: z.strictObject({ text: z.string() }) }),
+            handler    : async () =>
+                ({ nested: { text: 42 } }) as unknown as { nested: { text: string } },
+        });
+        const written: string[] = [];
+        const spy = vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
+            written.push(String(chunk));
+
+            return true;
         });
         const result = await runTool(broken, {}, extra(), runtime());
 
+        spy.mockRestore();
         expect(result.isError).toBe(true);
         expect(JSON.stringify(result.content)).toContain("invalid result");
+        expect(written.join("")).toContain(
+            "tool broken returned an invalid result at: nested.text",
+        );
+        expect(written.join("")).not.toContain("42");
     });
 
     it("refuses cancelled requests before the handler and stops a wait on cancel", async () => {
@@ -530,11 +582,34 @@ describe("runTool", () => {
 
         expect(after.isError).toBe(true);
         expect(JSON.stringify(after.content)).toContain("cancelled");
+        expect(JSON.stringify(after.content)).not.toContain("may already have been applied");
+    });
+
+    it("warns that a cancelled mutating call may have changed the page", async () => {
+        const controller = new AbortController();
+        const never = new Promise<never>(() => undefined);
+        const mutating = defineTool({
+            name       : "mutating",
+            description: "Changes state and never settles.",
+            access     : "mutate",
+            input      : z.strictObject({}),
+            output     : z.strictObject({}),
+            handler    : () => never,
+        });
+        const pending = runTool(mutating, {}, extra(controller.signal), runtime());
+
+        await Promise.resolve();
+        controller.abort();
+        const result = await pending;
+
+        expect(result.isError).toBe(true);
+        expect(JSON.stringify(result.content)).toContain("may already have been applied");
+        expect(JSON.stringify(result.content)).toContain("page_info");
     });
 });
 
 describe("tools/list", () => {
-    it("lists exactly the thirty five tools with their schemas", async () => {
+    it("lists exactly the forty seven tools with their schemas", async () => {
         const server = createMcpServer("1.0.0");
 
         registerTools({ server, tools: allTools, runtime: runtime() });
@@ -550,6 +625,7 @@ describe("tools/list", () => {
             "select_tab",
             "new_tab",
             "close_tab",
+            "bring_to_front",
             "page_info",
             "page_navigate",
             "js_evaluate",
@@ -566,20 +642,31 @@ describe("tools/list", () => {
             "storage_write",
             "page_pdf",
             "page_metrics",
+            "perf_trace_start",
+            "perf_trace_stop",
+            "heap_snapshot",
+            "screencast_start",
+            "screencast_stop",
+            "lighthouse_audit",
+            "webauthn",
+            "pwa_info",
             "screenshot",
             "list_devices",
             "emulate_device",
             "emulate_media",
             "emulate_network",
             "emulate_locale",
+            "emulate_geolocation",
             "click",
             "input_click",
             "input_hover",
+            "input_drag",
             "input_type",
             "input_key",
             "input_scroll",
             "input_select",
             "input_upload",
+            "fill_form",
         ]);
 
         for (const tool of listed.tools) {

@@ -3,12 +3,19 @@ import type { DaemonAccess } from "../mcp/index.js";
 import { toAxNodes, type AxDomInfo, type AxNode, formatAxTree } from "./ax-format.js";
 import { defineTool, type ToolContext } from "./define-tool.js";
 import { ensureNoDialog } from "./dialogs.js";
-import { elementAccess, elementTargetSchema, resolveElement } from "./element-target.js";
+import {
+    assertElementOriginAllowed,
+    elementAccess,
+    elementTargetSchema,
+    resolveElement,
+} from "./element-target.js";
 import { ToolError } from "./errors.js";
 import { bindAccess } from "./frame-scope.js";
 import { truncateText } from "./result.js";
+import { releaseQuietly } from "./remote-objects.js";
+import { resolveTab, tabSchema } from "./tab-target.js";
 
-export const SNAPSHOT_DEFAULT_CHARS = 50_000;
+const SNAPSHOT_DEFAULT_CHARS = 50_000;
 
 export const SNAPSHOT_MAX_CHARS = 200_000;
 
@@ -18,11 +25,11 @@ export const SNAPSHOT_MAX_AX_DEPTH = 50;
 
 export const SNAPSHOT_MAX_AX_NODES = 20_000;
 
-export const SNAPSHOT_DOM_ATTRS = ["href", "src", "type", "placeholder", "id"];
+const SNAPSHOT_DOM_ATTRS = ["href", "src", "type", "placeholder", "id"];
 
-export const SNAPSHOT_DEFAULT_MAX_FRAMES = 20;
+const SNAPSHOT_DEFAULT_MAX_FRAMES = 20;
 
-export const SNAPSHOT_MAX_FRAMES_LIMIT = 50;
+const SNAPSHOT_MAX_FRAMES_LIMIT = 50;
 
 interface DomNodeShape {
     backendNodeId?  : unknown;
@@ -118,7 +125,7 @@ export function iframeFrameMap(root: unknown): Map<number, string> {
     return map;
 }
 
-export function limitAxNodes(
+function limitAxNodes(
     nodes      : AxNode[],
     detectDepth: boolean,
 ): { nodes: AxNode[]; limited: boolean } {
@@ -135,7 +142,7 @@ export function limitAxNodes(
     return { nodes: kept, limited: cut };
 }
 
-export function domDepthLimited(root: unknown): boolean {
+function domDepthLimited(root: unknown): boolean {
     const parsed = documentSchema.safeParse(root);
 
     if (!parsed.success) return false;
@@ -194,9 +201,13 @@ async function domInfo(
     access  : DaemonAccess,
     targetId: string,
 ): Promise<{ info: Map<number, AxDomInfo>; root: unknown }> {
-    const root = await access.send(targetId, "DOM.getDocument", {
-        depth : SNAPSHOT_DOM_DEPTH,
-        pierce: true,
+    const root = await access.send({
+        targetId,
+        method: "DOM.getDocument",
+        params: {
+            depth : SNAPSHOT_DOM_DEPTH,
+            pierce: true,
+        },
     });
 
     return { info: domInfoMap(root), root };
@@ -208,7 +219,7 @@ export const domSnapshot = defineTool({
         "Read a compact text snapshot of the page with element ids for later calls. Take a new snapshot after the page changes. It reads at most 20000 accessibility nodes, at most 50 levels deep, and the DOM to 10 levels; truncated reports when a cap applied.",
     access: "read",
     input : z.strictObject({
-        tab            : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
+        tab            : tabSchema,
         maxChars       : z.number().int().min(1).max(SNAPSHOT_MAX_CHARS).optional().describe("Maximum characters of the snapshot text. Defaults to 50000."),
         interactiveOnly: z.boolean().optional().describe("List only interactive elements. Defaults to false."),
         root           : elementTargetSchema.optional().describe("Limit the snapshot to the subtree of this element."),
@@ -220,7 +231,7 @@ export const domSnapshot = defineTool({
         generation: z.number().describe("Uid generation of the tab. Uids of older generations are stale."),
         nodeCount : z.number().describe("Nodes in the snapshot text."),
         omitted   : z.number().describe("Tree nodes left out of the text."),
-        truncated : z.boolean().describe("Whether the text was truncated at maxChars, the DOM was deeper than 10 levels, or the accessibility tree exceeded 20000 nodes or 50 levels."),
+        truncated : z.boolean().describe(`Whether the text was truncated at maxChars, the DOM was deeper than ${SNAPSHOT_DOM_DEPTH} levels, or the accessibility tree exceeded ${SNAPSHOT_MAX_AX_NODES} nodes or ${SNAPSHOT_MAX_AX_DEPTH} levels.`),
         frames    : z.array(z.strictObject({
             frameId  : z.string().describe("Frame id for the frame argument of element targets."),
             parent   : z.string().optional().describe("Parent frame id, absent for the main frame."),
@@ -231,11 +242,7 @@ export const domSnapshot = defineTool({
         })).describe("Frames of the tab in tree order, starting with the main frame."),
     }),
     handler: async (args, context) => {
-        const targetId = args.tab ?? context.state.selected;
-
-        if (targetId === undefined) {
-            throw new ToolError("No tab is selected. Open one with new_tab first.");
-        }
+        const targetId = resolveTab(args, context);
 
         await ensureNoDialog(context.dialogs, targetId);
 
@@ -264,18 +271,34 @@ export const domSnapshot = defineTool({
                 rootFrame = { frameId: root.frameId };
             }
 
-            await scoped.send(targetId, "Runtime.releaseObject", {
-                objectId: root.objectId,
-            }).catch(() => undefined);
+            try {
+                if (root.frameId !== undefined) {
+                    await assertElementOriginAllowed(
+                        { config: context.config, access: context.access },
+                        targetId,
+                        root,
+                    );
+                }
+            } finally {
+                await releaseQuietly(scoped, targetId, [root.objectId]);
+            }
         }
 
         const tree: unknown = backendNodeId === undefined
-            ? await scoped.send(targetId, "Accessibility.getFullAXTree", {
-                depth: SNAPSHOT_MAX_AX_DEPTH,
+            ? await scoped.send({
+                targetId,
+                method: "Accessibility.getFullAXTree",
+                params: {
+                    depth: SNAPSHOT_MAX_AX_DEPTH,
+                },
             })
-            : await scoped.send(targetId, "Accessibility.getPartialAXTree", {
-                backendNodeId,
-                fetchRelatives: true,
+            : await scoped.send({
+                targetId,
+                method: "Accessibility.getPartialAXTree",
+                params: {
+                    backendNodeId,
+                    fetchRelatives: true,
+                },
             });
         const limitedTree = limitAxNodes(toAxNodes(tree), backendNodeId === undefined);
         const nodes = limitedTree.nodes;
@@ -454,9 +477,13 @@ async function frameTreeSection(
 ): Promise<
     { text: string; count: number; limited: boolean; domLimited: boolean } | undefined
 > {
-    const tree: unknown = await access.send(targetId, "Accessibility.getFullAXTree", {
-        depth: SNAPSHOT_MAX_AX_DEPTH,
-        frameId,
+    const tree: unknown = await access.send({
+        targetId,
+        method: "Accessibility.getFullAXTree",
+        params: {
+            depth: SNAPSHOT_MAX_AX_DEPTH,
+            frameId,
+        },
     }).catch(() => undefined);
 
     if (tree === undefined) return undefined;

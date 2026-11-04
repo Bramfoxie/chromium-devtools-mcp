@@ -6,12 +6,12 @@ export interface ClickPoint {
     y: number;
 }
 
-export interface ElementOffset {
+interface ElementOffset {
     x: number;
     y: number;
 }
 
-export interface FrameOrigin {
+interface FrameOrigin {
     x: number;
     y: number;
 }

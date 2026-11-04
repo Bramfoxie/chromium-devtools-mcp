@@ -2,15 +2,22 @@ import { z } from "zod";
 import type { DaemonAccess } from "../mcp/index.js";
 import { defineTool, type ToolContext } from "./define-tool.js";
 import { ensureNoDialog } from "./dialogs.js";
-import { elementAccess, elementTargetSchema, resolveElement } from "./element-target.js";
+import {
+    assertElementOriginAllowed,
+    elementAccess,
+    elementTargetSchema,
+    resolveElement,
+} from "./element-target.js";
 import { ToolError } from "./errors.js";
 import { frameChain, mapRect, measureChain } from "./frame-geometry.js";
+import { releaseQuietly } from "./remote-objects.js";
+import { resolveTab, tabSchema } from "./tab-target.js";
 
-export const CSS_MAX_RULES_DEFAULT = 30;
+const CSS_MAX_RULES_DEFAULT = 30;
 
-export const CSS_MAX_RULES_LIMIT = 100;
+const CSS_MAX_RULES_LIMIT = 100;
 
-export const CSS_VALUE_CLIP = 200;
+const CSS_VALUE_CLIP = 200;
 
 export const DEFAULT_CSS_PROPERTIES = [
     "display",
@@ -117,21 +124,21 @@ const boxModelSchema = z.object({
     }),
 });
 
-export interface CssDeclaration {
+interface CssDeclaration {
     name     : string;
     value    : string;
     important: boolean;
     winning  : boolean;
 }
 
-export interface CssRule {
+interface CssRule {
     selector    : string;
     origin      : string;
     styleSheetId: string | undefined;
     declarations: CssDeclaration[];
 }
 
-export interface InheritedStyle {
+interface InheritedStyle {
     property: string;
     value   : string;
     selector: string;
@@ -255,7 +262,7 @@ export function shapeInherited(
     return shaped.reverse();
 }
 
-export interface CssRect {
+interface CssRect {
     x     : number;
     y     : number;
     width : number;
@@ -288,7 +295,7 @@ export const cssInspect = defineTool({
     description: "Read the computed style, matched CSS rules and box of an element. The box is null for an element without a rendered box, such as display none.",
     access     : "read",
     input      : z.strictObject({
-        tab                : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
+        tab                : tabSchema,
         target             : elementTargetSchema.describe("Element uid from a snapshot or query, or a CSS selector."),
         properties         : z.array(z.string().min(1).max(64)).max(100).optional().describe("Computed style properties to return. Defaults to a curated layout and typography list."),
         includeMatchedRules: z.boolean().optional().describe("Include the matched CSS rules. Defaults to true."),
@@ -303,7 +310,7 @@ export const cssInspect = defineTool({
             styleSheetId: z.string().optional().describe("Style sheet id, when the rule comes from one."),
             declarations: z.array(z.strictObject({
                 name     : z.string().describe("Property name."),
-                value    : z.string().describe("Property value, clipped to 200 characters."),
+                value    : z.string().describe(`Property value, clipped to ${CSS_VALUE_CLIP} characters.`),
                 important: z.boolean().describe("Whether the declaration is important."),
                 winning  : z.boolean().describe("Whether this is the last declaration of its property in response order, which wins the cascade."),
             })).describe("Declarations of the rule in source order."),
@@ -324,11 +331,7 @@ export const cssInspect = defineTool({
         droppedWinners: z.array(z.string()).describe("Properties whose winning declaration is in a rule dropped by maxRules."),
     }),
     handler: async (args, context) => {
-        const targetId = args.tab ?? context.state.selected;
-
-        if (targetId === undefined) {
-            throw new ToolError("No tab is selected. Open one with new_tab first.");
-        }
+        const targetId = resolveTab(args, context);
 
         await ensureNoDialog(context.dialogs, targetId);
 
@@ -341,9 +344,21 @@ export const cssInspect = defineTool({
         );
         const owner = elementAccess(context.access, element);
 
-        await owner.send(targetId, "Runtime.releaseObject", {
-            objectId: element.objectId,
-        }).catch(() => undefined);
+        try {
+            if (element.frameId !== undefined) {
+                await assertElementOriginAllowed(
+                    { config: context.config, access: context.access },
+                    targetId,
+                    element,
+                );
+            }
+        } catch (error) {
+            await releaseQuietly(owner, targetId, [element.objectId]);
+
+            throw error;
+        }
+
+        await releaseQuietly(owner, targetId, [element.objectId]);
 
         const wanted = args.properties ?? DEFAULT_CSS_PROPERTIES;
         const includeMatchedRules = args.includeMatchedRules ?? true;
@@ -351,9 +366,13 @@ export const cssInspect = defineTool({
         const includeBox = args.includeBox ?? true;
 
         const described = describedSchema.safeParse(
-            await owner.send(targetId, "DOM.describeNode", {
-                backendNodeId: element.backendNodeId,
-                depth        : 0,
+            await owner.send({
+                targetId,
+                method: "DOM.describeNode",
+                params: {
+                    backendNodeId: element.backendNodeId,
+                    depth        : 0,
+                },
             }),
         );
 
@@ -365,12 +384,24 @@ export const cssInspect = defineTool({
 
         const nodeId = described.data.node.nodeId;
 
-        await owner.send(targetId, "DOM.enable", {});
-        await owner.send(targetId, "CSS.enable", {});
+        await owner.send({
+            targetId,
+            method: "DOM.enable",
+            params: {},
+        });
+        await owner.send({
+            targetId,
+            method: "CSS.enable",
+            params: {},
+        });
 
         try {
             const computed = computedSchema.safeParse(
-                await owner.send(targetId, "CSS.getComputedStyleForNode", { nodeId }),
+                await owner.send({
+                    targetId,
+                    method: "CSS.getComputedStyleForNode",
+                    params: { nodeId },
+                }),
             );
 
             if (!computed.success) {
@@ -387,7 +418,11 @@ export const cssInspect = defineTool({
 
             if (includeMatchedRules) {
                 const matched = matchedSchema.safeParse(
-                    await owner.send(targetId, "CSS.getMatchedStylesForNode", { nodeId }),
+                    await owner.send({
+                        targetId,
+                        method: "CSS.getMatchedStylesForNode",
+                        params: { nodeId },
+                    }),
                 );
 
                 if (!matched.success) {
@@ -420,12 +455,16 @@ export const cssInspect = defineTool({
                 droppedWinners: dropped,
             };
         } finally {
-            await owner.send(targetId, "CSS.disable", {}).catch(() => undefined);
+            await owner.send({
+                targetId,
+                method: "CSS.disable",
+                params: {},
+            }).catch(() => undefined);
         }
     },
 });
 
-export interface CssBox {
+interface CssBox {
     content: CssRect;
     padding: CssRect;
     border : CssRect;
@@ -457,7 +496,11 @@ async function readBox(
     let result: unknown;
 
     try {
-        result = await access.send(targetId, "DOM.getBoxModel", { nodeId });
+        result = await access.send({
+            targetId,
+            method: "DOM.getBoxModel",
+            params: { nodeId },
+        });
     } catch {
         return null;
     }

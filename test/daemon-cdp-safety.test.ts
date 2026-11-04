@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { ErrorCode, RpcError, SessionRegistry } from "../src/daemon/index.js";
-import { checkGuardedCall, isGuarded, NO_SAFETY, type SessionSafety } from "../src/daemon/cdp-safety.js";
+import { ErrorCode, RpcError } from "../src/daemon/index.js";
+import { SessionRegistry } from "../src/daemon/sessions.js";
+import { checkGuardedCall, NO_SAFETY, type SessionSafety } from "../src/daemon/cdp-safety.js";
 import { FakeBackend } from "./helpers/fake-backend.js";
 
 const safe = (patch: Partial<SessionSafety>): SessionSafety => ({ ...NO_SAFETY, ...patch });
@@ -21,17 +22,17 @@ describe("guarded CDP methods", () => {
     it.each([
         "Network.getCookies",
         "Network.setCookie",
-        "Network.setCookies",
         "Network.deleteCookies",
-        "Storage.getCookies",
-        "Storage.setCookies",
         "DOM.setFileInputFiles",
     ])("guards %s", (method) => {
-        expect(isGuarded(method)).toBe(true);
+        const safety = safe({ confirmDangerous: true });
+
+        expect(refusal(() =>
+            checkGuardedCall({ method, params: {}, safety, confirmed: false }),
+        )).toContain("confirmation");
     });
 
     it("does not guard ordinary methods", () => {
-        expect(isGuarded("Runtime.evaluate")).toBe(false);
         expect(refusal(() =>
             checkGuardedCall({ method: "Runtime.evaluate", params: {}, safety: safe({ readOnly: true }), confirmed: false }),
         )).toBeUndefined();
@@ -70,15 +71,6 @@ describe("guarded CDP methods", () => {
         expect(refusal(write({ domain: "evil.test" }, "https://example.com/"))).toContain("evil.test");
         expect(refusal(write({ url: "https://example.com/" }, "https://evil.test/"))).toContain("evil.test");
         expect(refusal(write({ url: "https://example.com/" }, undefined))).toContain("tab URL is unknown");
-    });
-
-    it("checks every cookie of setCookies", () => {
-        const safety = safe({ allowedDomains: ["example.com"] });
-        const cookies = [{ url: "https://example.com/" }, { domain: "evil.test" }];
-
-        expect(refusal(() =>
-            checkGuardedCall({ method: "Network.setCookies", params: { cookies }, safety, confirmed: false, tabUrl: "https://example.com/" }),
-        )).toContain("evil.test");
     });
 
     it("checks the tab and frame of a file attachment but leaves cookie reads alone", () => {
@@ -130,27 +122,27 @@ describe("session safety in the daemon", () => {
         const { backend, session } = await open(safe({ allowedDomains: ["example.com"] }));
         const tab = await session.createTab("about:blank");
 
-        const error = await failure(session.send(tab, "Page.navigate", { url: "https://evil.test/" }));
+        const error = await failure(session.send({ targetId: tab, method: "Page.navigate", params: { url: "https://evil.test/" } }));
 
         expect(error?.code).toBe(ErrorCode.forbiddenMethod);
         expect(backend.log.join("\n")).not.toContain("attach");
-        await expect(session.send(tab, "Page.navigate", { url: "https://example.com/" })).resolves.toBeDefined();
+        await expect(session.send({ targetId: tab, method: "Page.navigate", params: { url: "https://example.com/" } })).resolves.toMatchObject({ echoed: "Page.navigate" });
     });
 
     it("enforces the cookie and file policy with the real tab URL", async () => {
         const { session, backend } = await open(safe({ allowedDomains: ["example.com"], confirmDangerous: true }));
         const tab = await session.createTab("https://example.com/");
 
-        const unconfirmed = await failure(session.send(tab, "Network.setCookie", { name: "a", value: "b", url: "https://example.com/" }));
+        const unconfirmed = await failure(session.send({ targetId: tab, method: "Network.setCookie", params: { name: "a", value: "b", url: "https://example.com/" } }));
 
         expect(unconfirmed?.message).toContain("confirmation");
 
         await expect(
-            session.send(tab, "Network.setCookie", { name: "a", value: "b", url: "https://example.com/" }, undefined, undefined, true),
-        ).resolves.toBeDefined();
+            session.send({ targetId: tab, method: "Network.setCookie", params: { name: "a", value: "b", url: "https://example.com/" }, confirmed: true }),
+        ).resolves.toMatchObject({ echoed: "Network.setCookie" });
 
         const stranger = await failure(
-            session.send(tab, "Network.setCookie", { name: "a", value: "b", domain: "evil.test" }, undefined, undefined, true),
+            session.send({ targetId: tab, method: "Network.setCookie", params: { name: "a", value: "b", domain: "evil.test" }, confirmed: true }),
         );
 
         expect(stranger?.message).toContain("evil.test");
@@ -163,7 +155,7 @@ describe("session safety in the daemon", () => {
         entry.url = "https://evil.test/";
 
         const moved = await failure(
-            session.send(tab, "DOM.setFileInputFiles", { files: ["/tmp/x"], nodeId: 1 }, undefined, undefined, true),
+            session.send({ targetId: tab, method: "DOM.setFileInputFiles", params: { files: ["/tmp/x"], nodeId: 1 }, confirmed: true }),
         );
 
         expect(moved?.message).toContain("evil.test");

@@ -1,16 +1,21 @@
-import { lstat, readFile } from "node:fs/promises";
+import { lstat } from "node:fs/promises";
+import http from "node:http";
 import net from "node:net";
 import os from "node:os";
-import { pathFor, type Config } from "../config/index.js";
+import { BROWSER_PATH_PREFIX, LOOPBACK_HOSTS, pathFor, type Config } from "../config/index.js";
 import { BROWSERS, type BrowserName, type DiscoveryContext } from "./browsers.js";
+import { readIfExists } from "../util/read-if-exists.js";
+import { writeLogLine } from "../util/stderr.js";
+import { abortableSleep } from "../util/sleep.js";
+import { AppError } from "../util/app-error.js";
 
 const PORT_FILE_NAME = "DevToolsActivePort";
-const BROWSER_PATH_PREFIX = "/devtools/browser/";
-const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
 const MAX_VERSION_BYTES = 64 * 1024;
 const VERSION_TIMEOUT_MS = 1000;
+const PORT_PROBE_TIMEOUT_MS = 500;
+const DEFAULT_POLL_INTERVAL_MS = 1000;
 
-export type EndpointSource = "port-file" | "debug-port";
+export type EndpointSource = "port-file" | "debug-port" | "ws-endpoint";
 
 export interface AttachEndpoint {
     port        : number;
@@ -32,12 +37,7 @@ export interface AttachDeps {
     pollIntervalMs: number;
 }
 
-export class AttachError extends Error {
-    constructor(message: string) {
-        super(message);
-        this.name = "AttachError";
-    }
-}
+export class AttachError extends AppError {}
 
 export function browserUserDataDir(browser: BrowserName, context: DiscoveryContext): string {
     return BROWSERS[browser].userDataDir(context);
@@ -164,6 +164,21 @@ export async function resolveAttachEndpoint(
     return undefined;
 }
 
+export function findAttachEndpoint(
+    config   : AttachConfig,
+    overrides: Partial<AttachDeps> = {},
+): Promise<AttachEndpoint | undefined> {
+    return resolveAttachEndpoint(config, { ...defaultAttachDeps(), ...overrides });
+}
+
+export function explicitEndpoint(webSocketUrl: string): AttachEndpoint {
+    return { port: Number(new URL(webSocketUrl).port), webSocketUrl, source: "ws-endpoint" };
+}
+
+export function endpointUnreachableMessage(webSocketUrl: string): string {
+    return `Cannot connect to ${webSocketUrl} yet. Check that the browser is running with remote debugging and that wsEndpoint is its current address, which changes when the browser restarts. Waiting until it answers.`;
+}
+
 export function setupInstructions(config: AttachConfig): string {
     const spec = BROWSERS[config.browser];
 
@@ -204,16 +219,6 @@ export async function attachBrowser(
     throw new AttachError("Attach was cancelled before the browser allowed remote debugging.");
 }
 
-export async function readIfExists(file: string): Promise<string | undefined> {
-    try {
-        return await readFile(file, "utf8");
-    } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
-
-        throw error;
-    }
-}
-
 export async function fileExists(file: string): Promise<boolean> {
     try {
         await lstat(file);
@@ -251,81 +256,79 @@ export function probePort(port: number, signal?: AbortSignal): Promise<boolean> 
         const onAbort = () => finish(false);
 
         signal?.addEventListener("abort", onAbort, { once: true });
-        socket.setTimeout(500, () => finish(false));
+        socket.setTimeout(PORT_PROBE_TIMEOUT_MS, () => finish(false));
         socket.once("connect", () => finish(true));
         socket.once("error", () => finish(false));
     });
 }
 
-async function readCapped(response: Response, maxBytes: number): Promise<string | undefined> {
-    if (response.body === null) return "";
-
-    const reader = response.body.getReader();
-    const chunks: Uint8Array[] = [];
-    let total = 0;
-
-    for (;;) {
-        const { done, value } = await reader.read();
-
-        if (done) break;
-
-        total += value.byteLength;
-
-        if (total > maxBytes) {
-            await reader.cancel().catch(() => undefined);
-
-            return undefined;
-        }
-
-        chunks.push(value);
-    }
-
-    return Buffer.concat(chunks).toString("utf8");
-}
-
-export async function fetchVersion(
+// Resolves to the parsed JSON, or undefined on any failure; the socket is always destroyed.
+export function fetchVersion(
     port   : number,
     signal?: AbortSignal,
     timeoutMs = VERSION_TIMEOUT_MS,
 ): Promise<unknown> {
-    const timeout = AbortSignal.timeout(timeoutMs);
-
-    try {
-        const response = await fetch(`http://127.0.0.1:${port}/json/version`, {
-            signal  : signal ? AbortSignal.any([timeout, signal]) : timeout,
-            redirect: "error",
-        });
-
-        if (!response.ok) return undefined;
-
-        const declared = Number(response.headers.get("content-length"));
-
-        if (Number.isFinite(declared) && declared > MAX_VERSION_BYTES) return undefined;
-
-        const text = await readCapped(response, MAX_VERSION_BYTES);
-
-        return text === undefined ? undefined : JSON.parse(text);
-    } catch {
-        return undefined;
-    }
-}
-
-export function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
     return new Promise((resolve) => {
-        if (signal?.aborted) {
-            resolve();
+        const chunks: Buffer[] = [];
+        let total = 0;
+        let settled = false;
+        let request: http.ClientRequest | undefined;
+        const finish = (value: unknown) => {
+            if (settled) return;
 
-            return;
-        }
-
-        const done = () => {
+            settled = true;
             clearTimeout(timer);
-            signal?.removeEventListener("abort", done);
-            resolve();
+            signal?.removeEventListener("abort", onAbort);
+            request?.destroy();
+            resolve(value);
         };
-        const timer = setTimeout(done, ms);
+        const onAbort = () => finish(undefined);
+        const timer = setTimeout(() => finish(undefined), timeoutMs);
 
-        signal?.addEventListener("abort", done, { once: true });
+        if (signal?.aborted) return finish(undefined);
+
+        signal?.addEventListener("abort", onAbort, { once: true });
+
+        try {
+            request = http.get(
+                {
+                    host   : "127.0.0.1",
+                    port,
+                    path   : "/json/version",
+                    agent  : false,
+                    headers: { connection: "close" },
+                },
+                (response) => {
+                    const declared = Number(response.headers["content-length"]);
+
+                    const tooLarge = Number.isFinite(declared) && declared > MAX_VERSION_BYTES;
+
+                    if (response.statusCode !== 200 || tooLarge) {
+                        finish(undefined);
+
+                        return;
+                    }
+
+                    response.on("data", (chunk: Buffer) => {
+                        total += chunk.byteLength;
+
+                        if (total > MAX_VERSION_BYTES) finish(undefined);
+                        else chunks.push(chunk);
+                    });
+                    response.on("end", () => {
+                        try {
+                            finish(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+                        } catch {
+                            finish(undefined);
+                        }
+                    });
+                    response.on("error", () => finish(undefined));
+                },
+            );
+            request.on("error", () => finish(undefined));
+        } catch {
+            finish(undefined);
+        }
     });
 }
 
@@ -337,8 +340,8 @@ function defaultAttachDeps(): AttachDeps {
         isPortOpen    : probePort,
         fetchVersion,
         sleep         : abortableSleep,
-        log           : (message) => process.stderr.write(`chromium-devtools-mcp: ${message}\n`),
+        log           : writeLogLine,
         onWaiting     : () => undefined,
-        pollIntervalMs: 1000,
+        pollIntervalMs: DEFAULT_POLL_INTERVAL_MS,
     };
 }

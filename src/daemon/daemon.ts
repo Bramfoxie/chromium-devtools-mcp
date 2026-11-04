@@ -3,7 +3,7 @@ import type { BrowserBackend } from "./browser-backend.js";
 import { createRequestHandler, type DaemonStatus } from "./handler.js";
 import type { DaemonIdentity } from "./identity.js";
 import { boundedFailureMessage, DaemonEvent } from "./protocol.js";
-import { describeError, logDaemon } from "./log.js";
+import { describeError, logDaemon } from "../util/log.js";
 import {
     acceptConnection,
     type ClientConnection,
@@ -21,6 +21,7 @@ export interface DaemonOptions {
     helloTimeoutMs?: number;
     idleTimeoutMs? : number;
     onIdle?        : () => void;
+    onStop?        : () => void;
 }
 
 export class Daemon {
@@ -39,6 +40,7 @@ export class Daemon {
         this.handler = createRequestHandler({
             registry: () => this.registry,
             status  : () => this.status(),
+            stop    : () => this.requestStop(),
         });
     }
 
@@ -49,6 +51,16 @@ export class Daemon {
             mode   : this.options.identity.mode,
             ...(this.message === undefined ? {} : { message: this.message }),
         };
+    }
+
+    private requestStop(): void {
+        setImmediate(() => {
+            try {
+                this.options.onStop?.();
+            } catch (error) {
+                logDaemon(`onStop failed: ${describeError(error)}`);
+            }
+        });
     }
 
     setWaiting(message: string): void {

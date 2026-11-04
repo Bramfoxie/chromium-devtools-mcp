@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CdpClient, CdpProtocolError, CdpTimeoutError } from "../src/cdp/index.js";
-import { CdpBackend, DaemonError } from "../src/daemon/index.js";
+import { DaemonError } from "../src/daemon/index.js";
+import { CdpBackend } from "../src/daemon/cdp-backend.js";
 import { FakeBrowser } from "./helpers/fake-browser.js";
 
 const stops: Array<() => Promise<void>> = [];
@@ -76,6 +77,40 @@ describe("contexts and targets", () => {
             method: "Target.disposeBrowserContext",
             params: { browserContextId: id },
         });
+    });
+
+    it("sets and resets a permission for one origin in the default or an isolated context", async () => {
+        const { browser, backend } = await setup();
+        const context = await backend.createContext();
+
+        await backend.setPermission({
+            name     : "geolocation",
+            origin   : "https://a.example",
+            contextId: undefined,
+        });
+        expect(browser.calls.at(-1)).toMatchObject({
+            method: "Browser.setPermission",
+            params: {
+                permission: { name: "geolocation" },
+                setting   : "granted",
+                origin    : "https://a.example",
+            },
+        });
+        expect(browser.calls.at(-1)?.params).not.toHaveProperty("browserContextId");
+
+        await backend.setPermission({
+            name     : "geolocation",
+            origin   : "https://a.example",
+            contextId: context,
+        });
+        expect(browser.calls.at(-1)?.params).toMatchObject({ browserContextId: context });
+
+        await backend.resetPermissions(undefined);
+        expect(browser.calls.at(-1)).toMatchObject({ method: "Browser.resetPermissions" });
+        expect(browser.calls.at(-1)?.params).not.toHaveProperty("browserContextId");
+
+        await backend.resetPermissions(context);
+        expect(browser.calls.at(-1)?.params).toMatchObject({ browserContextId: context });
     });
 
     it("opens every tab in the background", async () => {

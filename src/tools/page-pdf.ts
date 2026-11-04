@@ -4,18 +4,19 @@ import { defineTool } from "./define-tool.js";
 import { ToolError } from "./errors.js";
 import { binaryResult, resourceBlock } from "./result.js";
 import { formatByteLimit } from "./screenshot.js";
+import { resolveTab, tabSchema } from "./tab-target.js";
 
-export const PDF_DEFAULT_MAX_BYTES = 8 * 1024 * 1024;
+const PDF_DEFAULT_MAX_BYTES = 8 * 1024 * 1024;
 
-export const PDF_MAX_BYTES_LIMIT = 24 * 1024 * 1024;
+const PDF_MAX_BYTES_LIMIT = 24 * 1024 * 1024;
 
-export const PDF_A4_WIDTH_INCHES = 8.27;
+const PDF_A4_WIDTH_INCHES = 8.27;
 
-export const PDF_A4_HEIGHT_INCHES = 11.69;
+const PDF_A4_HEIGHT_INCHES = 11.69;
 
-export const PDF_DEFAULT_MARGIN_INCHES = 0.4;
+const PDF_DEFAULT_MARGIN_INCHES = 0.4;
 
-export const PDF_PAGE_RANGES_MAX_CHARS = 100;
+const PDF_PAGE_RANGES_MAX_CHARS = 100;
 
 const PAGE_RANGES_PATTERN = /^\d+(-\d+)?(,\d+(-\d+)?)*$/;
 
@@ -67,7 +68,7 @@ export const pagePdf = defineTool({
         "Print a tab to PDF. Needs a headless managed browser when the headed browser refuses to print.",
     access: "read",
     input : z.strictObject({
-        tab              : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
+        tab              : tabSchema,
         landscape        : z.boolean().optional().describe("Use landscape orientation. Defaults to false."),
         printBackground  : z.boolean().optional().describe("Print background graphics. Defaults to true."),
         scale            : z.number().min(0.1).max(2).optional().describe("Scale factor. Defaults to 1."),
@@ -90,11 +91,7 @@ export const pagePdf = defineTool({
         return binaryResult({ ...small, uri }, resourceBlock(uri, { data, mimeType }));
     },
     handler: async (args, context) => {
-        const targetId = args.tab ?? context.state.selected;
-
-        if (targetId === undefined) {
-            throw new ToolError("No tab is selected. Open one with new_tab first.");
-        }
+        const targetId = resolveTab(args, context);
 
         const maxBytes = args.maxBytes ?? PDF_DEFAULT_MAX_BYTES;
         const margins = {
@@ -107,18 +104,22 @@ export const pagePdf = defineTool({
         let printed: unknown;
 
         try {
-            printed = await context.access.send(targetId, "Page.printToPDF", {
-                landscape        : args.landscape ?? false,
-                printBackground  : args.printBackground ?? true,
-                scale            : args.scale ?? 1,
-                paperWidth       : args.paperWidth ?? PDF_A4_WIDTH_INCHES,
-                paperHeight      : args.paperHeight ?? PDF_A4_HEIGHT_INCHES,
-                marginTop        : margins.top,
-                marginBottom     : margins.bottom,
-                marginLeft       : margins.left,
-                marginRight      : margins.right,
-                ...(args.pageRanges === undefined ? {} : { pageRanges: args.pageRanges }),
-                preferCSSPageSize: args.preferCSSPageSize ?? false,
+            printed = await context.access.send({
+                targetId,
+                method: "Page.printToPDF",
+                params: {
+                    landscape        : args.landscape ?? false,
+                    printBackground  : args.printBackground ?? true,
+                    scale            : args.scale ?? 1,
+                    paperWidth       : args.paperWidth ?? PDF_A4_WIDTH_INCHES,
+                    paperHeight      : args.paperHeight ?? PDF_A4_HEIGHT_INCHES,
+                    marginTop        : margins.top,
+                    marginBottom     : margins.bottom,
+                    marginLeft       : margins.left,
+                    marginRight      : margins.right,
+                    ...(args.pageRanges === undefined ? {} : { pageRanges: args.pageRanges }),
+                    preferCSSPageSize: args.preferCSSPageSize ?? false,
+                },
             });
         } catch (error) {
             if (!(error instanceof RpcError) || error.code !== ErrorCode.cdpError) throw error;

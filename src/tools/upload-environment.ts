@@ -8,14 +8,14 @@ export interface UploadFileSystem {
     realpath(path: string): Promise<string>;
 }
 
-export type UploadPath = Pick<typeof posix, "basename" | "isAbsolute" | "resolve">;
+type UploadPath = Pick<typeof posix, "basename" | "isAbsolute" | "resolve">;
 
 export interface UploadEnvironment {
     fs  : UploadFileSystem;
     path: UploadPath;
 }
 
-export function nodeUploadFs(): UploadFileSystem {
+function nodeUploadFs(): UploadFileSystem {
     return {
         stat    : async (path) => stat(path),
         access  : async (path) => access(path, constants.R_OK),

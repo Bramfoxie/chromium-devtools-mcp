@@ -12,24 +12,25 @@ import {
 } from "./element-target.js";
 import { ToolError } from "./errors.js";
 import { frameChain, revealChain } from "./frame-geometry.js";
-import { summarizeTarget, targetSummarySchema } from "./input-click.js";
+import { summarizeTarget, targetSummarySchema } from "./input-outcome.js";
 import { throwIfCancelled } from "./registry.js";
+import { resolveTab, tabSchema } from "./tab-target.js";
 
-export const SCROLL_DELTA_MAX = 20000;
+const SCROLL_DELTA_MAX = 20000;
 
-export const WHEEL_SETTLE_MS = 350;
+const WHEEL_SETTLE_MS = 350;
 
-export const EDGE_WHEEL_LIMIT = 50;
+const EDGE_WHEEL_LIMIT = 50;
 
-export const EDGE_STALL_MS = 5000;
+const EDGE_STALL_MS = 5000;
 
-export const SCROLL_BLOCKS = ["start", "center", "end", "nearest"] as const;
+const SCROLL_BLOCKS = ["start", "center", "end", "nearest"] as const;
 
-export type ScrollBlock = (typeof SCROLL_BLOCKS)[number];
+type ScrollBlock = (typeof SCROLL_BLOCKS)[number];
 
-export const SCROLL_EDGES = ["top", "bottom"] as const;
+const SCROLL_EDGES = ["top", "bottom"] as const;
 
-export type ScrollEdge = (typeof SCROLL_EDGES)[number];
+type ScrollEdge = (typeof SCROLL_EDGES)[number];
 
 export interface ScrollPosition {
     x     : number;
@@ -40,7 +41,7 @@ export interface ScrollPosition {
     height: number;
 }
 
-export const SCROLL_STATE_EXPRESSION = `(() => ({
+const SCROLL_STATE_EXPRESSION = `(() => ({
   x: Math.round(window.scrollX),
   y: Math.round(window.scrollY),
   maxX: Math.max(0, document.documentElement.scrollWidth - window.innerWidth),
@@ -65,9 +66,13 @@ const scrollStateSchema = z.object({
 
 async function scrollState(access: DaemonAccess, tab: string): Promise<ScrollPosition> {
     const parsed = scrollStateSchema.safeParse(
-        await access.send(tab, "Runtime.evaluate", {
-            expression   : SCROLL_STATE_EXPRESSION,
-            returnByValue: true,
+        await access.send({
+            targetId: tab,
+            method  : "Runtime.evaluate",
+            params  : {
+                expression   : SCROLL_STATE_EXPRESSION,
+                returnByValue: true,
+            },
         }),
     );
 
@@ -98,7 +103,7 @@ export function wheelParams(
     };
 }
 
-export interface WheelScrollResult {
+interface WheelScrollResult {
     position: ScrollPosition;
     method  : "wheel";
 }
@@ -115,7 +120,11 @@ async function wheelScroll(
     deltaX  : number,
     deltaY  : number,
 ): Promise<WheelScrollResult> {
-    await context.access.send(targetId, "Input.dispatchMouseEvent", wheelParams(point, deltaX, deltaY));
+    await context.access.send({
+        targetId,
+        method: "Input.dispatchMouseEvent",
+        params: wheelParams(point, deltaX, deltaY),
+    });
 
     const after = await settleScroll(context, targetId);
 
@@ -164,7 +173,7 @@ export const inputScroll = defineTool({
         "Scroll the page by wheel deltas, to an edge, or an element into view, with trusted wheel events.",
     access: "mutate",
     input : z.strictObject({
-        tab   : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
+        tab   : tabSchema,
         target: elementTargetSchema.optional().describe("Element uid from a snapshot or query, or a CSS selector. Scrolls it into view; combine with block."),
         block : z.enum(SCROLL_BLOCKS).optional().describe("Vertical alignment inside the viewport when scrolling to an element. Defaults to center."),
         deltaX: z.number().int().min(-SCROLL_DELTA_MAX).max(SCROLL_DELTA_MAX).optional().describe("Horizontal pixels to scroll, negative scrolls left."),
@@ -207,11 +216,7 @@ export const inputScroll = defineTool({
         maxY  : z.number().describe("Maximum vertical scroll position."),
     }),
     handler: async (args, context) => {
-        const targetId = args.tab ?? context.state.selected;
-
-        if (targetId === undefined) {
-            throw new ToolError("No tab is selected. Open one with new_tab first.");
-        }
+        const targetId = resolveTab(args, context);
 
         throwIfCancelled(context.signal);
 
@@ -261,7 +266,7 @@ export const inputScroll = defineTool({
     },
 });
 
-export const SCROLL_INTO_VIEW_EXPRESSION = "function (element, block) { element.scrollIntoView({ block: String(block), inline: \"nearest\" }); }";
+const SCROLL_INTO_VIEW_EXPRESSION = "function (element, block) { element.scrollIntoView({ block: String(block), inline: \"nearest\" }); }";
 
 async function scrollToElement(
     context : ToolContext,
@@ -284,11 +289,15 @@ async function scrollToElement(
             checkDisabled: false,
         });
 
-        await owner.send(targetId, "Runtime.callFunctionOn", {
-            functionDeclaration: SCROLL_INTO_VIEW_EXPRESSION,
-            objectId           : element.objectId,
-            arguments          : [{ objectId: element.objectId }, { value: block }],
-            returnByValue      : true,
+        await owner.send({
+            targetId,
+            method: "Runtime.callFunctionOn",
+            params: {
+                functionDeclaration: SCROLL_INTO_VIEW_EXPRESSION,
+                objectId           : element.objectId,
+                arguments          : [{ objectId: element.objectId }, { value: block }],
+                returnByValue      : true,
+            },
         });
 
         if (element.isolated === true && element.frameId !== undefined) {

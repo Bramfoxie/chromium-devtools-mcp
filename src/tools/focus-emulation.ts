@@ -10,7 +10,11 @@ export class FocusEmulation {
     async ensure(access: DaemonAccess, tab: string): Promise<void> {
         if (this.tabs.has(tab)) return;
 
-        await access.send(tab, "Emulation.setFocusEmulationEnabled", { enabled: true });
+        await access.send({
+            targetId: tab,
+            method  : "Emulation.setFocusEmulationEnabled",
+            params  : { enabled: true },
+        });
         this.tabs.add(tab);
     }
 

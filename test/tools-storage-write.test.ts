@@ -79,6 +79,37 @@ describe("storage_write", () => {
         expect(found?.dangerous).toBe(true);
     });
 
+    it("refuses when the page URL read at execution time is outside the allowlist", async () => {
+        const { fake } = setup();
+        const config = {
+            ...managedConfig,
+            safety: { ...managedConfig.safety, allowedDomains: ["a.example"] },
+        };
+        const runtime = new ToolRuntime({ access: fake.asAccess(), config });
+
+        runtime.tabs.refresh(
+            [{ targetId: "tab1", url: "https://a.example/page", title: "a", owned: true, created: true }],
+            "tab1",
+        );
+
+        fake.respond = (tab, method) => {
+            if (method === "Runtime.evaluate") return { result: { value: "https://evil.example/" } };
+
+            return {};
+        };
+
+        const result = await runTool(
+            storageWrite,
+            { kind: "local", action: "set", entries: { theme: "x" } },
+            extra(),
+            runtime,
+        );
+
+        expect(result.isError).toBe(true);
+        expect(textOf(result)).toContain("outside safety.allowedDomains");
+        expect(fake.sent.some((call) => call.method.startsWith("DOMStorage"))).toBe(false);
+    });
+
     it("sets local storage entries without echoing values", async () => {
         const { fake, runtime } = setup();
 

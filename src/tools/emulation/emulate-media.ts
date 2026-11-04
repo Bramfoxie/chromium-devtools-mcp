@@ -13,8 +13,9 @@ import {
 import { readMedia } from "./reads.js";
 import { runSteps } from "./steps.js";
 import { emulationSummarySchema, summarizeEmulation } from "./summary.js";
+import { resolveTab, tabSchema } from "../tab-target.js";
 
-export function checkMediaSelection(
+function checkMediaSelection(
     selection: Partial<MediaSelection> & { reset: boolean },
 ): void {
     if (selection.reset && hasMediaSelection({ ...selection, reset: false })) {
@@ -45,7 +46,7 @@ export const emulateMedia = defineTool({
     description: "Emulate a media type and media features on a tab. Only the given fields change; reset removes every media override.",
     access     : "mutate",
     input      : z.strictObject({
-        tab          : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
+        tab          : tabSchema,
         media        : z.enum(["screen", "print", ""]).optional().describe("Media type to emulate, empty clears the type."),
         colorScheme  : z.enum(["light", "dark", "no-preference"]).optional().describe("Emulated prefers-color-scheme."),
         reducedMotion: z.enum(["reduce", "no-preference"]).optional().describe("Emulated prefers-reduced-motion."),
@@ -59,11 +60,7 @@ export const emulateMedia = defineTool({
         reported : reportedSchema.optional().describe("Media features the page reports, when it answers."),
     }),
     handler: async (args, context) => {
-        const targetId = args.tab ?? context.state.selected;
-
-        if (targetId === undefined) {
-            throw new ToolError("No tab is selected. Open one with new_tab first.");
-        }
+        const targetId = resolveTab(args, context);
 
         const selection: MediaSelection & { reset: boolean } = {
             media        : args.media,

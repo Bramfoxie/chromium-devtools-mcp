@@ -1,4 +1,4 @@
-export interface CdpEnvelope {
+interface CdpEnvelope {
     targetId: string;
     event   : string;
     params  : unknown;

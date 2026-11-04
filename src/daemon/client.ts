@@ -1,6 +1,7 @@
 import net from "node:net";
 import { IpcCancelledError, IpcClosedError, IpcTimeoutError, RpcError } from "./errors.js";
-import { describeError, logDaemon, quoted } from "./log.js";
+import { declaredTimeoutMs, timeoutClassOf } from "./request-timeouts.js";
+import { describeError, logDaemon, quoted } from "../util/log.js";
 import {
     encodeMessage,
     LineDecoder,
@@ -16,8 +17,6 @@ const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 const DEFAULT_CONNECT_TIMEOUT_MS = 5000;
 const DECLARED_TIMEOUT_MARGIN_MS = 5000;
 const MULTI_STEP_TIMEOUT_MARGIN_MS = 30_000;
-const CDP_BOUND_METHODS = new Set(["cdp.send", "tab.create"]);
-const MULTI_STEP_METHODS = new Set(["frame.list", "tab.list"]);
 
 export interface IpcConnectOptions {
     socketPath       : string;
@@ -119,51 +118,48 @@ export class IpcClient {
         }
 
         return new Promise<unknown>((resolve, reject) => {
+            const detach = (): void => options.signal?.removeEventListener("abort", onAbort);
+            const settle = {
+                resolve: (value: unknown): void => {
+                    detach();
+                    resolve(value);
+                },
+                reject: (error: Error): void => {
+                    detach();
+                    reject(error);
+                },
+            };
             const timer = setTimeout(() => {
                 this.pending.delete(id);
-                options.signal?.removeEventListener("abort", onAbort);
-                reject(new IpcTimeoutError(method, timeoutMs));
+                settle.reject(new IpcTimeoutError(method, timeoutMs));
             }, timeoutMs);
-            const onAbort = () => {
+            const onAbort = (): void => {
                 clearTimeout(timer);
                 this.pending.delete(id);
-                reject(new IpcCancelledError(method));
+                settle.reject(new IpcCancelledError(method));
             };
 
             options.signal?.addEventListener("abort", onAbort, { once: true });
-            const pending = { method, resolve, reject, timer };
-            const originalResolve = pending.resolve;
-            const originalReject = pending.reject;
-
-            pending.resolve = (value) => {
-                options.signal?.removeEventListener("abort", onAbort);
-                originalResolve(value);
-            };
-
-            pending.reject = (error: Error) => {
-                options.signal?.removeEventListener("abort", onAbort);
-                originalReject(error);
-            };
-
-            this.pending.set(id, pending);
+            this.pending.set(id, { method, ...settle, timer });
             this.socket.write(line);
         });
     }
 
     private timeoutFor(method: string, params: unknown): number {
-        const declared = (params as { timeoutMs?: unknown } | null | undefined)?.timeoutMs;
+        const declared = declaredTimeoutMs(params);
+        const timeoutClass = timeoutClassOf(method);
 
-        if (MULTI_STEP_METHODS.has(method)) {
-            return typeof declared === "number" && Number.isFinite(declared)
-                ? declared + MULTI_STEP_TIMEOUT_MARGIN_MS
-                : this.requestTimeoutMs + MULTI_STEP_TIMEOUT_MARGIN_MS;
+        if (timeoutClass === "multi-step") {
+            return (declared ?? this.requestTimeoutMs) + MULTI_STEP_TIMEOUT_MARGIN_MS;
         }
 
-        return typeof declared === "number" && Number.isFinite(declared)
-            ? Math.max(this.requestTimeoutMs, declared + DECLARED_TIMEOUT_MARGIN_MS)
-            : CDP_BOUND_METHODS.has(method)
-                ? this.requestTimeoutMs + DECLARED_TIMEOUT_MARGIN_MS
-                : this.requestTimeoutMs;
+        if (declared !== undefined) {
+            return Math.max(this.requestTimeoutMs, declared + DECLARED_TIMEOUT_MARGIN_MS);
+        }
+
+        return timeoutClass === "cdp-bound"
+            ? this.requestTimeoutMs + DECLARED_TIMEOUT_MARGIN_MS
+            : this.requestTimeoutMs;
     }
 
     on(event: string, handler: IpcEventHandler): () => void {

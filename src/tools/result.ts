@@ -5,7 +5,7 @@ import type {
     TextContent,
 } from "@modelcontextprotocol/sdk/types.js";
 
-export interface TruncatedText {
+interface TruncatedText {
     text       : string;
     truncated  : boolean;
     totalLength: number;
@@ -33,7 +33,7 @@ export function truncateText(text: string, limit: number): TruncatedText {
     };
 }
 
-export interface BinaryContent {
+interface BinaryContent {
     data    : string;
     mimeType: string;
 }

@@ -4,12 +4,7 @@ import { ToolError } from "./errors.js";
 
 const PARK_TIMEOUT_MS = 5000;
 
-export class DomainRefusal extends ToolError {
-    constructor(message: string) {
-        super(message);
-        this.name = "DomainRefusal";
-    }
-}
+export class DomainRefusal extends ToolError {}
 
 async function committedUrl(context: ToolContext, targetId: string, reported: string) {
     if (reported !== "") return reported;
@@ -35,7 +30,12 @@ export async function parkIfForbidden(
 
     const host = url === "" ? "an unknown page" : describeUrlHost(url);
     const parked = await context.access
-        .send(targetId, "Page.navigate", { url: "about:blank" }, PARK_TIMEOUT_MS)
+        .send({
+            targetId,
+            method   : "Page.navigate",
+            params   : { url: "about:blank" },
+            timeoutMs: PARK_TIMEOUT_MS,
+        })
         .then(() => true, () => false);
     const state = parked
         ? "The tab was moved to about:blank."

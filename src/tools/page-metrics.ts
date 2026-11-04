@@ -2,8 +2,9 @@ import { z } from "zod";
 import { defineTool, type ToolContext } from "./define-tool.js";
 import { ensureNoDialog } from "./dialogs.js";
 import { ToolError } from "./errors.js";
+import { resolveTab, tabSchema } from "./tab-target.js";
 
-export const METRICS_TIMEOUT_MS = 5000;
+const METRICS_TIMEOUT_MS = 5000;
 
 const KEEP_ZERO = new Set([
     "Documents",
@@ -137,7 +138,7 @@ export const pageMetrics = defineTool({
     description: "Read performance counters, layout metrics and navigation timing of a tab.",
     access     : "read",
     input      : z.strictObject({
-        tab: z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
+        tab: tabSchema,
     }),
     output: z.strictObject({
         tab        : z.string().describe("Tab id."),
@@ -146,19 +147,23 @@ export const pageMetrics = defineTool({
         navigation : navigationOutput.optional().describe("Navigation timing, when the page reports it."),
     }),
     handler: async (args, context) => {
-        const targetId = args.tab ?? context.state.selected;
-
-        if (targetId === undefined) {
-            throw new ToolError("No tab is selected. Open one with new_tab first.");
-        }
+        const targetId = resolveTab(args, context);
 
         await ensureNoDialog(context.dialogs, targetId);
 
-        await context.access.send(targetId, "Performance.enable", {});
+        await context.access.send({
+            targetId,
+            method: "Performance.enable",
+            params: {},
+        });
 
         try {
             const metrics = metricsSchema.safeParse(
-                await context.access.send(targetId, "Performance.getMetrics", {}),
+                await context.access.send({
+                    targetId,
+                    method: "Performance.getMetrics",
+                    params: {},
+                }),
             );
 
             if (!metrics.success) {
@@ -168,7 +173,11 @@ export const pageMetrics = defineTool({
             }
 
             const layout = layoutSchema.safeParse(
-                await context.access.send(targetId, "Page.getLayoutMetrics", {}),
+                await context.access.send({
+                    targetId,
+                    method: "Page.getLayoutMetrics",
+                    params: {},
+                }),
             );
 
             if (!layout.success) {
@@ -199,7 +208,11 @@ export const pageMetrics = defineTool({
                 ...(navigation === undefined ? {} : { navigation }),
             };
         } finally {
-            await context.access.send(targetId, "Performance.disable", {}).catch(() => undefined);
+            await context.access.send({
+                targetId,
+                method: "Performance.disable",
+                params: {},
+            }).catch(() => undefined);
         }
     },
 });
@@ -210,12 +223,12 @@ async function readNavigation(
 ): Promise<z.infer<typeof navigationOutput> | undefined> {
     try {
         const parsed = navigationSchema.safeParse(
-            await context.access.send(
+            await context.access.send({
                 targetId,
-                "Runtime.evaluate",
-                { expression: NAVIGATION_TIMING_EXPRESSION, returnByValue: true },
-                METRICS_TIMEOUT_MS,
-            ),
+                method   : "Runtime.evaluate",
+                params   : { expression: NAVIGATION_TIMING_EXPRESSION, returnByValue: true },
+                timeoutMs: METRICS_TIMEOUT_MS,
+            }),
         );
 
         if (!parsed.success || parsed.data.result.type === "undefined") return undefined;

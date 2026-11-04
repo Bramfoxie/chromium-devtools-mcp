@@ -1,5 +1,11 @@
 import { ErrorCode, IpcCancelledError, RpcError } from "../../src/daemon/index.js";
-import type { DaemonAccess, DaemonFrame, DaemonTab, SessionSummary } from "../../src/mcp/index.js";
+import {
+    type CdpCommand,
+    type DaemonAccess,
+    type DaemonFrame,
+    type DaemonTab,
+    type SessionSummary,
+} from "../../src/mcp/index.js";
 
 export interface FakeAccessOptions {
     tabs?    : DaemonTab[];
@@ -23,6 +29,8 @@ export class FakeAccess {
         frameId?  : string;
         confirmed?: boolean;
     }> = [];
+    readonly permissions : Array<{ name: string; setting: string; origin: string }> = [];
+    failPermission?      : Error;
     readonly order       : string[] = [];
     readonly subscribed  : Array<{ targetId: string; event: string; frameId?: string }> = [];
     readonly unsubscribed: Array<{ targetId: string; event: string; frameId?: string }> = [];
@@ -111,6 +119,18 @@ export class FakeAccess {
         this.claimed.push(targetId);
     }
 
+    async setPermission(request: {
+        name   : "geolocation";
+        setting: "granted" | "reset";
+        origin : string;
+    }): Promise<void> {
+        this.order.push(`permission ${request.setting}`);
+
+        if (this.failPermission) throw this.failPermission;
+
+        this.permissions.push({ ...request });
+    }
+
     async closeTab(targetId: string): Promise<void> {
         const tab = this.tabs.find((known) => known.targetId === targetId);
 
@@ -139,21 +159,16 @@ export class FakeAccess {
         return this.frames.map((frame) => ({ ...frame }));
     }
 
-    async send(
-        targetId  : string,
-        method    : string,
-        params?   : Record<string, unknown>,
-        timeoutMs?: number,
-        frameId?  : string,
-        options?  : { signal?: AbortSignal; confirmed?: boolean },
-    ): Promise<unknown> {
+    async send(command: CdpCommand): Promise<unknown> {
+        const { targetId, method, params, timeoutMs, frameId, signal, confirmed } = command;
+
         this.sent.push({
             targetId,
             method,
             params,
             timeoutMs,
             frameId,
-            ...(options?.confirmed === true ? { confirmed: true } : {}),
+            ...(confirmed === true ? { confirmed: true } : {}),
         });
         this.order.push(`send ${method}`);
         const failure = this.failSend?.(targetId, method);
@@ -166,9 +181,9 @@ export class FakeAccess {
             result: { type: "undefined" },
         };
 
-        if (options?.signal === undefined) return answer;
+        if (signal === undefined) return answer;
 
-        return abortable(Promise.resolve(answer), options.signal);
+        return abortable(Promise.resolve(answer), signal);
     }
 
     async subscribe(targetId: string, event: string, frameId?: string): Promise<void> {

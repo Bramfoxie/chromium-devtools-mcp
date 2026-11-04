@@ -1,5 +1,6 @@
 import WebSocket from "ws";
 import { CdpClosedError } from "./errors.js";
+import { messageOf } from "../util/message-of.js";
 
 const MAX_PAYLOAD_BYTES = 256 * 1024 * 1024;
 const CLOSE_GRACE_MS = 1000;
@@ -97,16 +98,23 @@ function connectSocket(
                 handshakeTimeout : handshakeTimeoutMs,
             });
         } catch (error) {
-            fail(error instanceof Error ? error.message : String(error));
+            fail(messageOf(error));
 
             return;
         }
 
+        const budget = setTimeout(() => {
+            signal?.removeEventListener("abort", onAbort);
+            fail(`opening handshake did not finish within ${handshakeTimeoutMs} ms`);
+            socket.terminate();
+        }, handshakeTimeoutMs);
         const onAbort = () => {
+            clearTimeout(budget);
             fail("the connection attempt was cancelled");
             socket.terminate();
         };
         const onError = (error: Error) => {
+            clearTimeout(budget);
             signal?.removeEventListener("abort", onAbort);
             fail(error.message);
             socket.terminate();
@@ -122,6 +130,7 @@ function connectSocket(
 
         signal?.addEventListener("abort", onAbort, { once: true });
         socket.once("open", () => {
+            clearTimeout(budget);
             signal?.removeEventListener("abort", onAbort);
             socket.off("error", onError);
             resolve(wrap(socket));

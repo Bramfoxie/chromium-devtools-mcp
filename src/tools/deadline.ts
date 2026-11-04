@@ -43,7 +43,11 @@ export function sendWithin(
     method  : string,
     params? : Record<string, unknown>,
 ): Promise<unknown> {
-    return access.send(targetId, method, params, deadline.remainingMs(), undefined, {
-        signal: deadline.signal,
+    return access.send({
+        targetId,
+        method,
+        params,
+        timeoutMs: deadline.remainingMs(),
+        signal   : deadline.signal,
     });
 }

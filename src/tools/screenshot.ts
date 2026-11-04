@@ -15,20 +15,21 @@ import { holdRendering } from "./hold-rendering.js";
 import { frameChain, mapRect, measureChain, revealChain, settleRendering } from "./frame-geometry.js";
 import { type ImageSize, imageSize } from "./image-size.js";
 import { binaryResult, imageBlock } from "./result.js";
+import { resolveTab, tabSchema } from "./tab-target.js";
 
-export const SCREENSHOT_DEFAULT_QUALITY = 80;
+const SCREENSHOT_DEFAULT_QUALITY = 80;
 
-export const SCREENSHOT_RETRY_QUALITY = 30;
+const SCREENSHOT_RETRY_QUALITY = 30;
 
-export const SCREENSHOT_FIRST_ATTEMPT_MS = 5000;
+const SCREENSHOT_FIRST_ATTEMPT_MS = 5000;
 
-export const SCREENSHOT_DEFAULT_MAX_BYTES = 4 * 1024 * 1024;
+const SCREENSHOT_DEFAULT_MAX_BYTES = 4 * 1024 * 1024;
 
-export const SCREENSHOT_MAX_BYTES_LIMIT = 16 * 1024 * 1024;
+const SCREENSHOT_MAX_BYTES_LIMIT = 16 * 1024 * 1024;
 
-export const SCREENSHOT_DEFAULT_MAX_DIMENSION = 4096;
+const SCREENSHOT_DEFAULT_MAX_DIMENSION = 4096;
 
-export type ScreenshotFormat = "png" | "jpeg" | "webp";
+type ScreenshotFormat = "png" | "jpeg" | "webp";
 
 const MIME_OF: Record<ScreenshotFormat, string> = {
     png : "image/png",
@@ -36,14 +37,14 @@ const MIME_OF: Record<ScreenshotFormat, string> = {
     webp: "image/webp",
 };
 
-export interface ScreenshotClip {
+interface ScreenshotClip {
     x     : number;
     y     : number;
     width : number;
     height: number;
 }
 
-export interface ScreenshotPlan {
+interface ScreenshotPlan {
     clip      : ScreenshotClip | undefined;
     scale     : number | undefined;
     clipped   : boolean;
@@ -156,7 +157,11 @@ export function retryQuality(quality: number): number {
 
 async function layoutOf(access: DaemonAccess, tab: string): Promise<PageLayout> {
     try {
-        const layout = layoutSchema.safeParse(await access.send(tab, "Page.getLayoutMetrics", {}));
+        const layout = layoutSchema.safeParse(await access.send({
+            targetId: tab,
+            method  : "Page.getLayoutMetrics",
+            params  : {},
+        }));
 
         if (!layout.success) return {};
 
@@ -248,11 +253,20 @@ async function sendCapture(
     params: Record<string, unknown>,
 ): Promise<unknown> {
     try {
-        return await access.send(tab, "Page.captureScreenshot", params, SCREENSHOT_FIRST_ATTEMPT_MS);
+        return await access.send({
+            targetId : tab,
+            method   : "Page.captureScreenshot",
+            params,
+            timeoutMs: SCREENSHOT_FIRST_ATTEMPT_MS,
+        });
     } catch (error) {
         if (!(error instanceof RpcError) || error.code !== ErrorCode.cdpTimeout) throw error;
 
-        return access.send(tab, "Page.captureScreenshot", params);
+        return access.send({
+            targetId: tab,
+            method  : "Page.captureScreenshot",
+            params,
+        });
     }
 }
 
@@ -272,6 +286,7 @@ function oversizeError(maxBytes: number): ToolError {
 const screenshotSmall = z.strictObject({
     width     : z.number().describe("Image width in pixels."),
     height    : z.number().describe("Image height in pixels."),
+    pixelRatio: z.number().optional().describe("Pixels of the image per CSS pixel of the page. A pixel of a viewport shot is (x, y) divided by this in the CSS pixels that input_click takes. Absent when the size of the page is unknown."),
     bytes     : z.number().describe("Image size in bytes."),
     format    : z.enum(["png", "jpeg", "webp"]).describe("Image format."),
     clipped   : z.boolean().describe("Whether the shot is clipped to an element or a rectangle."),
@@ -290,7 +305,7 @@ export const screenshot = defineTool({
     access: (args: unknown) =>
         (args as { target?: unknown } | null)?.target === undefined ? "read" : "mutate",
     input: z.strictObject({
-        tab         : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
+        tab         : tabSchema,
         format      : z.enum(["png", "jpeg", "webp"]).optional().describe("Image format. Defaults to jpeg."),
         quality     : z.number().int().min(1).max(100).optional().describe("Quality for jpeg and webp. Defaults to 80."),
         fullPage    : z.boolean().optional().describe("Capture beyond the viewport. Defaults to false."),
@@ -316,11 +331,7 @@ export const screenshot = defineTool({
         return binaryResult(small, imageBlock({ data, mimeType }));
     },
     handler: async (args, context) => {
-        const targetId = args.tab ?? context.state.selected;
-
-        if (targetId === undefined) {
-            throw new ToolError("No tab is selected. Open one with new_tab first.");
-        }
+        const targetId = resolveTab(args, context);
 
         return holdRendering(context.access, targetId, async () => {
             const format = args.format ?? "jpeg";
@@ -361,9 +372,18 @@ export const screenshot = defineTool({
             const bytes = Buffer.from(shot, "base64");
             const size = imageSize(format, bytes);
 
+            const wholePage = args.fullPage === true
+                ? layout.content?.width
+                : layout.viewport?.width;
+            const cssWidth = plan.clip?.width ?? wholePage;
+            const pixelRatio = size === undefined || cssWidth === undefined || cssWidth <= 0
+                ? undefined
+                : Math.round((size.width / (cssWidth * (plan.scale ?? 1))) * 1000) / 1000;
+
             return {
                 width     : size?.width ?? 0,
                 height    : size?.height ?? 0,
+                ...(pixelRatio === undefined ? {} : { pixelRatio }),
                 bytes     : bytes.byteLength,
                 format,
                 clipped   : plan.clipped,

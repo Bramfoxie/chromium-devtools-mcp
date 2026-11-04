@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { DaemonAccess } from "../mcp/index.js";
+import type { CdpCommand, DaemonAccess } from "../mcp/index.js";
 
 interface DocumentNode {
     nodeId          : number;
@@ -26,14 +26,8 @@ export function bindAccess(access: DaemonAccess, frameId: string): DaemonAccess 
     return new Proxy(access, {
         get(target, property) {
             if (property === "send") {
-                return (
-                    tab       : string,
-                    method    : string,
-                    params?   : Record<string, unknown>,
-                    timeoutMs?: number,
-                    frame?    : string,
-                    options?  : { signal?: AbortSignal },
-                ) => target.send(tab, method, params, timeoutMs, frame ?? frameId, options);
+                return (command: CdpCommand) =>
+                    target.send({ ...command, frameId: command.frameId ?? frameId });
             }
 
             const value: unknown = Reflect.get(target, property, target);
@@ -72,9 +66,17 @@ export async function isolatedDocumentNode(
     tab    : string,
     frameId: string,
 ): Promise<number | undefined> {
-    const tree = frameTreeSchema.safeParse(await bound.send(tab, "Page.getFrameTree", {}));
+    const tree = frameTreeSchema.safeParse(await bound.send({
+        targetId: tab,
+        method  : "Page.getFrameTree",
+        params  : {},
+    }));
     const document = documentSchema.safeParse(
-        await bound.send(tab, "DOM.getDocument", { depth: -1, pierce: true }),
+        await bound.send({
+            targetId: tab,
+            method  : "DOM.getDocument",
+            params  : { depth: -1, pierce: true },
+        }),
     );
 
     if (!document.success) return undefined;

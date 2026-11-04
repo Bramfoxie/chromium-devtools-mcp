@@ -1,3 +1,4 @@
+import type { PermissionGrant } from "./permissions.js";
 export interface TargetInfo {
     targetId : string;
     url      : string;
@@ -49,6 +50,8 @@ export interface BrowserBackend {
     // page targets only
     listTargets(): Promise<TargetInfo[]>;
     attach(targetId: string): Promise<BackendSession>;
+    setPermission(grant: PermissionGrant): Promise<void>;
+    resetPermissions(contextId: string | undefined): Promise<void>;
     attachChildren(
         session: BackendSession,
         options: ChildSessionOptions,

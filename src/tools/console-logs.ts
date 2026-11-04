@@ -1,10 +1,10 @@
 import { z } from "zod";
 import { defineTool } from "./define-tool.js";
-import { ToolError } from "./errors.js";
+import { resolveTab, tabSchema } from "./tab-target.js";
 
-export const CONSOLE_LOGS_DEFAULT_LIMIT = 100;
+const CONSOLE_LOGS_DEFAULT_LIMIT = 100;
 
-export const CONSOLE_LOGS_MAX_LIMIT = 500;
+const CONSOLE_LOGS_MAX_LIMIT = 500;
 
 const levelSchema = z.enum(["debug", "info", "warning", "error"]);
 
@@ -26,7 +26,7 @@ export const consoleLogs = defineTool({
         "Read console messages, uncaught exceptions and browser messages of a tab. Only messages since capture started, plus what the browser replays.",
     access: "read",
     input : z.strictObject({
-        tab         : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
+        tab         : tabSchema,
         levels      : z.array(levelSchema).max(4).optional().describe("Keep only these severities."),
         textContains: z.string().min(1).max(1024).optional().describe("Keep only messages containing this text."),
         afterId     : z.number().int().min(0).optional().describe("Return entries after this id for paging."),
@@ -43,11 +43,7 @@ export const consoleLogs = defineTool({
         totalBuffered: z.number().describe("Entries currently buffered for the tab."),
     }),
     handler: async (args, context) => {
-        const targetId = args.tab ?? context.state.selected;
-
-        if (targetId === undefined) {
-            throw new ToolError("No tab is selected. Open one with new_tab first.");
-        }
+        const targetId = resolveTab(args, context);
 
         await context.capture.ensureConsole(targetId);
 

@@ -66,8 +66,17 @@ describe("bindAccess", () => {
         const fake = crossFake();
         const bound = bindAccess(fake.asAccess(), "cross");
 
-        await bound.send("tab1", "Page.getFrameTree", {});
-        await bound.send("tab1", "Page.getFrameTree", {}, undefined, "other");
+        await bound.send({
+            targetId: "tab1",
+            method  : "Page.getFrameTree",
+            params  : {},
+        });
+        await bound.send({
+            targetId: "tab1",
+            method  : "Page.getFrameTree",
+            params  : {},
+            frameId : "other",
+        });
 
         expect(fake.sent.map((call) => call.frameId)).toEqual(["cross", "other"]);
     });

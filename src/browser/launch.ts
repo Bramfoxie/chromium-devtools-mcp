@@ -2,9 +2,14 @@ import { spawn as nodeSpawn } from "node:child_process";
 import type { Socket } from "node:net";
 import type { Config } from "../config/index.js";
 import { type BrowserName, findBrowserExecutable } from "./discovery.js";
+import { messageOf } from "../util/message-of.js";
+import { AppError } from "../util/app-error.js";
 
 const LISTENING_PATTERN = /DevTools listening on (ws:\/\/\S+)\r?\n/;
 const MAX_BUFFERED_STDERR = 64 * 1024;
+const DEFAULT_START_TIMEOUT_MS = 45_000;
+const DEFAULT_STOP_GRACE_MS = 5_000;
+const CANCELLED_LAUNCH = "The browser launch was cancelled before remote debugging was ready.";
 
 export type ManagedConfig = Pick<Config, "browser" | "headless" | "profileDir" | "debugPort">;
 
@@ -30,12 +35,7 @@ export interface ManagedBrowser {
     release(): void;
 }
 
-export class BrowserLaunchError extends Error {
-    constructor(message: string) {
-        super(message);
-        this.name = "BrowserLaunchError";
-    }
-}
+export class BrowserLaunchError extends AppError {}
 
 export function buildLaunchArgs(config: ManagedConfig): string[] {
     const args = [
@@ -93,19 +93,19 @@ export function spawnProcess(command: string, args: string[]): ChildHandle {
 const defaultDeps: LaunchDeps = {
     findExecutable: (browser) => findBrowserExecutable(browser),
     spawn         : spawnProcess,
-    startTimeoutMs: 45_000,
-    stopGraceMs   : 5_000,
+    startTimeoutMs: DEFAULT_START_TIMEOUT_MS,
+    stopGraceMs   : DEFAULT_STOP_GRACE_MS,
 };
-
-function messageOf(error: unknown): string {
-    return error instanceof Error ? error.message : String(error);
-}
 
 export async function launchManaged(
     config   : ManagedConfig,
     overrides: Partial<LaunchDeps> = {},
+    signal?  : AbortSignal,
 ): Promise<ManagedBrowser> {
     const deps: LaunchDeps = { ...defaultDeps, ...overrides };
+
+    if (signal?.aborted) throw new BrowserLaunchError(CANCELLED_LAUNCH);
+
     const executable = deps.findExecutable(config.browser);
     const startFailure = (detail: string) =>
         new BrowserLaunchError(
@@ -143,6 +143,21 @@ export async function launchManaged(
                 ),
             );
         }, deps.startTimeoutMs);
+
+        signal?.addEventListener(
+            "abort",
+            () => {
+                if (settled) return;
+
+                settled = true;
+                clearTimeout(timer);
+                child.kill("SIGTERM");
+                void terminate(child, exited, deps.stopGraceMs).then(() =>
+                    reject(new BrowserLaunchError(CANCELLED_LAUNCH)),
+                );
+            },
+            { once: true },
+        );
 
         const stop = () =>
             (stopping ??= (async () => {

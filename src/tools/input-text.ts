@@ -10,7 +10,7 @@ import {
     type ResolvedElement,
 } from "./element-target.js";
 import { ToolError } from "./errors.js";
-import { changedUrl, navigationOf, summarizeTarget, targetSummarySchema } from "./input-click.js";
+import { changedUrl, navigationOf, summarizeTarget, targetSummarySchema } from "./input-outcome.js";
 import {
     type KeyEventPlan,
     planKeyPress,
@@ -18,18 +18,19 @@ import {
     parseKeyChord,
 } from "./keys.js";
 import { throwIfCancelled } from "./registry.js";
+import { resolveTab, tabSchema } from "./tab-target.js";
 
-export const TYPE_MAX_CHARS = 20000;
+const TYPE_MAX_CHARS = 20000;
 
-export const TYPE_DELAY_MAX_MS = 200;
+const TYPE_DELAY_MAX_MS = 200;
 
-export const TYPE_BUDGET_MS = 60000;
+const TYPE_BUDGET_MS = 60000;
 
-export const TYPE_ECHO_CHARS = 50;
+const TYPE_ECHO_CHARS = 50;
 
-export const KEY_REPEAT_MAX = 20;
+const KEY_REPEAT_MAX = 20;
 
-export const PLATFORM_EXPRESSION = "navigator.platform ?? ''";
+const PLATFORM_EXPRESSION = "navigator.platform ?? ''";
 
 const platformSchema = z.object({
     result: z.object({
@@ -38,7 +39,7 @@ const platformSchema = z.object({
     }),
 });
 
-export const VALUE_EXPRESSION = `function (element) {
+const VALUE_EXPRESSION = `function (element) {
   if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
     return { length: element.value.length, text: element.value };
   }
@@ -59,7 +60,7 @@ const CONTEXT_GONE = /Cannot find context|Could not find object|Cannot find obje
 
 const editableCache = new Map<string, string>();
 
-export function platformCacheKey(tab: string, generation: number): string {
+function platformCacheKey(tab: string, generation: number): string {
     return `${generation}:${tab}`;
 }
 
@@ -74,9 +75,13 @@ export async function browserPlatform(
     if (cached !== undefined) return cached;
 
     const parsed = platformSchema.safeParse(
-        await access.send(tab, "Runtime.evaluate", {
-            expression   : PLATFORM_EXPRESSION,
-            returnByValue: true,
+        await access.send({
+            targetId: tab,
+            method  : "Runtime.evaluate",
+            params  : {
+                expression   : PLATFORM_EXPRESSION,
+                returnByValue: true,
+            },
         }),
     );
 
@@ -112,7 +117,11 @@ async function dispatchKeyEvents(
 
             const { type, ...rest } = event;
 
-            await access.send(tab, "Input.dispatchKeyEvent", { type, ...rest });
+            await access.send({
+                targetId: tab,
+                method  : "Input.dispatchKeyEvent",
+                params  : { type, ...rest },
+            });
 
             if (event.type === "rawKeyDown") downs.push(event);
             if (event.type === "keyUp") downs.pop();
@@ -122,13 +131,17 @@ async function dispatchKeyEvents(
     } finally {
         if (!completed) {
             for (const down of [...downs].reverse()) {
-                await access.send(tab, "Input.dispatchKeyEvent", {
-                    type                 : "keyUp",
-                    key                  : down.key,
-                    code                 : down.code,
-                    windowsVirtualKeyCode: down.windowsVirtualKeyCode,
-                    modifiers            : 0,
-                    ...(down.location === undefined ? {} : { location: down.location }),
+                await access.send({
+                    targetId: tab,
+                    method  : "Input.dispatchKeyEvent",
+                    params  : {
+                        type                 : "keyUp",
+                        key                  : down.key,
+                        code                 : down.code,
+                        windowsVirtualKeyCode: down.windowsVirtualKeyCode,
+                        modifiers            : 0,
+                        ...(down.location === undefined ? {} : { location: down.location }),
+                    },
                 }).catch(() => undefined);
             }
         }
@@ -143,11 +156,15 @@ async function readValue(
     let response: unknown;
 
     try {
-        response = await access.send(tab, "Runtime.callFunctionOn", {
-            functionDeclaration: VALUE_EXPRESSION,
-            objectId           : element.objectId,
-            arguments          : [{ objectId: element.objectId }],
-            returnByValue      : true,
+        response = await access.send({
+            targetId: tab,
+            method  : "Runtime.callFunctionOn",
+            params  : {
+                functionDeclaration: VALUE_EXPRESSION,
+                objectId           : element.objectId,
+                arguments          : [{ objectId: element.objectId }],
+                returnByValue      : true,
+            },
         });
     } catch (error) {
         if (error instanceof Error && CONTEXT_GONE.test(error.message)) return undefined;
@@ -173,7 +190,11 @@ async function focusElement(
 ): Promise<void> {
     const backendNodeId = element.backendNodeId;
 
-    await access.send(tab, "DOM.focus", { backendNodeId });
+    await access.send({
+        targetId: tab,
+        method  : "DOM.focus",
+        params  : { backendNodeId },
+    });
 }
 
 export function echoOf(text: string, password: boolean): string | undefined {
@@ -188,28 +209,24 @@ export const inputType = defineTool({
         "Type text into a field with trusted input events, focusing it first without clicking.",
     access: "mutate",
     input : z.strictObject({
-        tab    : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
-        text   : z.string().min(1).max(TYPE_MAX_CHARS).describe("Text to type, up to 20000 characters."),
+        tab    : tabSchema,
+        text   : z.string().min(1).max(TYPE_MAX_CHARS).describe(`Text to type, up to ${TYPE_MAX_CHARS} characters.`),
         target : elementTargetSchema.optional().describe("Element uid from a snapshot or query, or a CSS selector. Omit to type into the focused element."),
         clear  : z.boolean().optional().describe("Select all and delete in the field first. Defaults to false."),
         submit : z.boolean().optional().describe("Press Enter after typing. Defaults to false."),
-        delayMs: z.number().int().min(0).max(TYPE_DELAY_MAX_MS).optional().describe("Delay between characters in ms, 0 to 200. With 0 the text is inserted at once. delayMs times the text length must not exceed 60000 ms. Defaults to 0."),
+        delayMs: z.number().int().min(0).max(TYPE_DELAY_MAX_MS).optional().describe(`Delay between characters in ms, 0 to 200. With 0 the text is inserted at once. delayMs times the text length must not exceed ${TYPE_BUDGET_MS} ms. Defaults to 0.`),
     }),
     output: z.strictObject({
         ok         : z.boolean().describe("Whether the field now contains the text."),
         target     : targetSummarySchema.optional().describe("The element that was typed into, when a target was given."),
         effect     : z.string().describe("Short summary of what happened."),
         valueLength: z.number().describe("Length of the field value after typing."),
-        typed      : z.string().optional().describe("First 50 characters of the typed text, never present for password fields."),
+        typed      : z.string().optional().describe(`First ${TYPE_ECHO_CHARS} characters of the typed text, never present for password fields.`),
         contains   : z.boolean().describe("Whether the field value contains the typed text."),
         urlAfter   : z.string().optional().describe("URL after typing, present only when the page navigated, for example after submit."),
     }),
     handler: async (args, context) => {
-        const targetId = args.tab ?? context.state.selected;
-
-        if (targetId === undefined) {
-            throw new ToolError("No tab is selected. Open one with new_tab first.");
-        }
+        const targetId = resolveTab(args, context);
 
         throwIfCancelled(context.signal);
 
@@ -262,7 +279,11 @@ export const inputType = defineTool({
 
                 if (delayMs === 0) {
                     throwIfCancelled(context.signal);
-                    await context.access.send(targetId, "Input.insertText", { text: args.text });
+                    await context.access.send({
+                        targetId,
+                        method: "Input.insertText",
+                        params: { text: args.text },
+                    });
                 } else {
                     await typeSlowly(context, targetId, args.text, delayMs);
                 }
@@ -321,6 +342,15 @@ export const inputType = defineTool({
     },
 });
 
+export async function clearText(
+    context : ToolContext,
+    targetId: string,
+    element : ResolvedElement,
+): Promise<void> {
+    await focusElement(elementAccess(context.access, element), targetId, element);
+    await clearField(context, targetId);
+}
+
 async function clearField(context: ToolContext, targetId: string): Promise<void> {
     const platform = await browserPlatform(context.access, context.elements, targetId);
 
@@ -349,7 +379,11 @@ async function typeSlowly(
         const planned = planTypedChar(char);
 
         if (planned === undefined) {
-            await context.access.send(targetId, "Input.insertText", { text: char });
+            await context.access.send({
+                targetId,
+                method: "Input.insertText",
+                params: { text: char },
+            });
         } else {
             await dispatchKeyEvents(context.access, targetId, planned, context.signal);
         }
@@ -374,7 +408,7 @@ export const inputKey = defineTool({
         "Press a key or chord like Enter or ControlOrMeta+C with trusted CDP key events.",
     access: "mutate",
     input : z.strictObject({
-        tab   : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
+        tab   : tabSchema,
         key   : z.string().min(1).max(64).describe("Key or chord, for example Enter, Tab, Control+A, ControlOrMeta+C, Shift++ (a trailing plus names the plus key)."),
         target: elementTargetSchema.optional().describe("Element uid from a snapshot or query, or a CSS selector. The element is focused first; omit to press into the focused element."),
         repeat: z.number().int().min(1).max(KEY_REPEAT_MAX).optional().describe("How many times to press, 1 to 20. Modifiers are held across repeats. Defaults to 1."),
@@ -387,11 +421,7 @@ export const inputKey = defineTool({
         urlAfter: z.string().optional().describe("URL after the press, present only when the press navigated."),
     }),
     handler: async (args, context) => {
-        const targetId = args.tab ?? context.state.selected;
-
-        if (targetId === undefined) {
-            throw new ToolError("No tab is selected. Open one with new_tab first.");
-        }
+        const targetId = resolveTab(args, context);
 
         const parsed = parseKeyChord(args.key);
         const repeat = args.repeat ?? 1;

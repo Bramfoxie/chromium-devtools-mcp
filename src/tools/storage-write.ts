@@ -3,20 +3,22 @@ import type { DaemonAccess } from "../mcp/index.js";
 import { defineTool } from "./define-tool.js";
 import { ensureNoDialog } from "./dialogs.js";
 import { ToolError } from "./errors.js";
+import { assertPageAllowed } from "./page-allowed.js";
 import { throwIfCancelled } from "./registry.js";
-import { pageLocation } from "./storage-read.js";
+import { itemsSchema, pageLocation } from "./storage-read.js";
+import { resolveTab, tabSchema } from "./tab-target.js";
 
-export const WRITE_MAX_ENTRIES = 100;
+const WRITE_MAX_ENTRIES = 100;
 
-export const WRITE_MAX_KEY_CHARS = 200;
+const WRITE_MAX_KEY_CHARS = 200;
 
-export const WRITE_MAX_VALUE_CHARS = 100_000;
+const WRITE_MAX_VALUE_CHARS = 100_000;
 
-export const WRITE_MAX_KEYS = 1000;
+const WRITE_MAX_KEYS = 1000;
 
-export const WRITE_MAX_COOKIES = 100;
+const WRITE_MAX_COOKIES = 100;
 
-export const WRITE_MAX_COOKIE_NAME_CHARS = 4096;
+const WRITE_MAX_COOKIE_NAME_CHARS = 4096;
 
 const setCookieSchema = z.strictObject({
     name    : z.string().min(1).max(WRITE_MAX_COOKIE_NAME_CHARS).describe("Cookie name."),
@@ -54,7 +56,7 @@ export function cookieDomainAllowed(cookieDomain: string | undefined, pageHost: 
     return true;
 }
 
-export function checkCookieDomain(
+function checkCookieDomain(
     cookieDomain: string | undefined,
     pageHost    : string,
 ): void {
@@ -65,7 +67,7 @@ export function checkCookieDomain(
     );
 }
 
-export function pageHostOf(origin: string): string {
+function pageHostOf(origin: string): string {
     return new URL(origin).hostname;
 }
 
@@ -87,9 +89,13 @@ async function storageCount(
     origin  : string,
     local   : boolean,
 ): Promise<number> {
-    const parsed = z.object({ entries: z.array(z.tuple([z.string(), z.string()])) }).safeParse(
-        await access.send(targetId, "DOMStorage.getDOMStorageItems", {
-            storageId: { securityOrigin: origin, isLocalStorage: local },
+    const parsed = itemsSchema.safeParse(
+        await access.send({
+            targetId,
+            method: "DOMStorage.getDOMStorageItems",
+            params: {
+                storageId: { securityOrigin: origin, isLocalStorage: local },
+            },
         }),
     );
 
@@ -100,7 +106,10 @@ async function storageCount(
 
 async function cookieCount(access: DaemonAccess, targetId: string): Promise<number> {
     const parsed = z.object({ cookies: z.array(z.object({ name: z.string() }).passthrough()) })
-        .safeParse(await access.send(targetId, "Network.getCookies"));
+        .safeParse(await access.send({
+            targetId,
+            method: "Network.getCookies",
+        }));
 
     if (!parsed.success) throw unexpected("Network.getCookies");
 
@@ -115,7 +124,7 @@ export const storageWrite = defineTool({
     dangerous: true,
     summarize: (args) => `It will ${args.action} ${args.kind} of the page origin.`,
     input    : z.strictObject({
-        tab    : z.string().min(1).max(128).optional().describe("Tab id. Defaults to the selected tab."),
+        tab    : tabSchema,
         kind   : z.enum(["local", "session", "cookies"]).describe("What to write."),
         action : z.enum(["set", "remove", "clear"]).describe("What to do."),
         entries: z.record(z.string().min(1).max(WRITE_MAX_KEY_CHARS), z.string().max(WRITE_MAX_VALUE_CHARS)).optional().describe("Entries to set, for local and session. At most 100."),
@@ -134,11 +143,7 @@ export const storageWrite = defineTool({
         effect   : z.string().describe("Short summary of what happened. Never carries values."),
     }),
     handler: async (args, context) => {
-        const targetId = args.tab ?? context.state.selected;
-
-        if (targetId === undefined) {
-            throw new ToolError("No tab is selected. Open one with new_tab first.");
-        }
+        const targetId = resolveTab(args, context);
 
         if (args.kind === "cookies") {
             if (args.entries !== undefined || args.keys !== undefined) {
@@ -160,6 +165,9 @@ export const storageWrite = defineTool({
         throwIfCancelled(context.signal);
 
         const { href: pageUrl, origin } = await pageLocation(context.access, targetId);
+
+        assertPageAllowed(context, pageUrl);
+
         const host = pageHostOf(origin);
 
         if (args.kind === "cookies") {
@@ -210,7 +218,11 @@ async function writeDomStorage(
 }> {
     const kind = local ? "local" as const : "session" as const;
 
-    await access.send(targetId, "DOMStorage.enable", {});
+    await access.send({
+        targetId,
+        method: "DOMStorage.enable",
+        params: {},
+    });
 
     if (args.action === "set") {
         const entries = Object.entries(args.entries ?? {});
@@ -227,10 +239,14 @@ async function writeDomStorage(
 
         for (const [key, value] of entries) {
             throwIfCancelled(signal);
-            await access.send(targetId, "DOMStorage.setDOMStorageItem", {
-                storageId: { securityOrigin: origin, isLocalStorage: local },
-                key,
-                value,
+            await access.send({
+                targetId,
+                method: "DOMStorage.setDOMStorageItem",
+                params: {
+                    storageId: { securityOrigin: origin, isLocalStorage: local },
+                    key,
+                    value,
+                },
             }).catch((error: unknown) => {
                 throw partialFailure("set", applied, entries.length, error);
             });
@@ -263,9 +279,13 @@ async function writeDomStorage(
 
         for (const key of keys) {
             throwIfCancelled(signal);
-            await access.send(targetId, "DOMStorage.removeDOMStorageItem", {
-                storageId: { securityOrigin: origin, isLocalStorage: local },
-                key,
+            await access.send({
+                targetId,
+                method: "DOMStorage.removeDOMStorageItem",
+                params: {
+                    storageId: { securityOrigin: origin, isLocalStorage: local },
+                    key,
+                },
             }).catch((error: unknown) => {
                 throw partialFailure("remove", applied, keys.length, error);
             });
@@ -289,8 +309,12 @@ async function writeDomStorage(
 
     const before = await storageCount(access, targetId, origin, local);
 
-    await access.send(targetId, "DOMStorage.clear", {
-        storageId: { securityOrigin: origin, isLocalStorage: local },
+    await access.send({
+        targetId,
+        method: "DOMStorage.clear",
+        params: {
+            storageId: { securityOrigin: origin, isLocalStorage: local },
+        },
     });
 
     return {
@@ -344,16 +368,20 @@ async function writeCookies(
         for (const cookie of cookies) {
             throwIfCancelled(signal);
             const ok = z.object({ success: z.boolean() }).safeParse(
-                await access.send(targetId, "Network.setCookie", {
-                    name : cookie.name,
-                    value: cookie.value,
-                    url  : pageUrl,
-                    ...(cookie.domain === undefined ? {} : { domain: cookie.domain }),
-                    ...(cookie.path === undefined ? {} : { path: cookie.path }),
-                    ...(cookie.expires === undefined ? {} : { expires: cookie.expires }),
-                    ...(cookie.secure === undefined ? {} : { secure: cookie.secure }),
-                    ...(cookie.httpOnly === undefined ? {} : { httpOnly: cookie.httpOnly }),
-                    ...(cookie.sameSite === undefined ? {} : { sameSite: cookie.sameSite }),
+                await access.send({
+                    targetId,
+                    method: "Network.setCookie",
+                    params: {
+                        name : cookie.name,
+                        value: cookie.value,
+                        url  : pageUrl,
+                        ...(cookie.domain === undefined ? {} : { domain: cookie.domain }),
+                        ...(cookie.path === undefined ? {} : { path: cookie.path }),
+                        ...(cookie.expires === undefined ? {} : { expires: cookie.expires }),
+                        ...(cookie.secure === undefined ? {} : { secure: cookie.secure }),
+                        ...(cookie.httpOnly === undefined ? {} : { httpOnly: cookie.httpOnly }),
+                        ...(cookie.sameSite === undefined ? {} : { sameSite: cookie.sameSite }),
+                    },
                 }),
             );
 
@@ -390,11 +418,15 @@ async function writeCookies(
 
         for (const cookie of cookies) {
             throwIfCancelled(signal);
-            await access.send(targetId, "Network.deleteCookies", {
-                name: cookie.name,
-                url : pageUrl,
-                ...(cookie.domain === undefined ? {} : { domain: cookie.domain }),
-                ...(cookie.path === undefined ? {} : { path: cookie.path }),
+            await access.send({
+                targetId,
+                method: "Network.deleteCookies",
+                params: {
+                    name: cookie.name,
+                    url : pageUrl,
+                    ...(cookie.domain === undefined ? {} : { domain: cookie.domain }),
+                    ...(cookie.path === undefined ? {} : { path: cookie.path }),
+                },
             });
         }
 
@@ -420,7 +452,10 @@ async function writeCookies(
             domain: z.string(),
             path  : z.string(),
         }).passthrough()),
-    }).safeParse(await access.send(targetId, "Network.getCookies"));
+    }).safeParse(await access.send({
+        targetId,
+        method: "Network.getCookies",
+    }));
 
     if (!parsed.success) throw unexpected("Network.getCookies");
 
@@ -428,11 +463,15 @@ async function writeCookies(
 
     for (const cookie of scoped) {
         throwIfCancelled(signal);
-        await access.send(targetId, "Network.deleteCookies", {
-            name  : cookie.name,
-            url   : pageUrl,
-            domain: cookie.domain,
-            path  : cookie.path,
+        await access.send({
+            targetId,
+            method: "Network.deleteCookies",
+            params: {
+                name  : cookie.name,
+                url   : pageUrl,
+                domain: cookie.domain,
+                path  : cookie.path,
+            },
         });
     }
 

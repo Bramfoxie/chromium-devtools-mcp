@@ -26,6 +26,15 @@ describe("matchWildcard", () => {
         expect(matchWildcard("*.example/file?.json", "https://a.example/file12.json")).toBe(false);
     });
 
+    it("honors the backslash escape of wildcard characters", () => {
+        expect(matchWildcard("https://a.example/a\\*b", "https://a.example/a*b")).toBe(true);
+        expect(matchWildcard("https://a.example/a\\*b", "https://a.example/axxb")).toBe(false);
+        expect(matchWildcard("https://a.example/a\\?b", "https://a.example/a?b")).toBe(true);
+        expect(matchWildcard("https://a.example/a\\?b", "https://a.example/axb")).toBe(false);
+        expect(matchWildcard("a\\\\b", "a\\b")).toBe(true);
+        expect(matchWildcard("a\\", "a\\")).toBe(true);
+    });
+
     it("treats regex characters as literals", () => {
         expect(matchWildcard("https://a.example/a+b", "https://a.example/a+b")).toBe(true);
         expect(matchWildcard("https://a.example/a+b", "https://a.example/aab")).toBe(false);
@@ -67,6 +76,10 @@ describe("ruleMatches", () => {
     it("expires a rule after times applications", () => {
         expect(ruleMatches(rule({ times: 1, applications: 0 }), "u", "GET", "XHR")).toBe(true);
         expect(ruleMatches(rule({ times: 1, applications: 1 }), "u", "GET", "XHR")).toBe(false);
+    });
+
+    it("gives the budget back for an application that failed", () => {
+        expect(ruleMatches(rule({ times: 1, applications: 1, errors: 1 }), "u", "GET", "XHR")).toBe(true);
     });
 });
 
@@ -411,6 +424,29 @@ describe("InterceptionManager", () => {
             expect(fake.sent.map((call) => call.method)).not.toContain("Fetch.fulfillRequest");
         });
 
+        it("continues only the requests of a removed rule while other rules stay", async () => {
+            const { fake, manager, handled } = await pausedDelayed();
+            const other = manager.add("tab1", { ...delayedRule, urlPattern: "https://other.example/*" });
+
+            expect(other.id).toBe("mock2");
+            manager.remove("tab1", "mock1");
+            await handled;
+
+            expect(continued(fake)).toEqual([{ requestId: "slow1" }]);
+            expect(fake.sent.map((call) => call.method)).not.toContain("Fetch.fulfillRequest");
+            expect(manager.rulesOf("tab1").map((rule) => rule.id)).toEqual(["mock2"]);
+        });
+
+        it("keeps a request held by a rule that was not removed", async () => {
+            const { fake, manager } = await pausedDelayed();
+
+            manager.add("tab1", { ...delayedRule, urlPattern: "https://other.example/*" });
+            manager.remove("tab1", "mock2");
+            await Promise.resolve();
+
+            expect(continued(fake)).toEqual([]);
+        });
+
         it("continues a delayed request before Fetch.disable", async () => {
             const { fake, manager, handled } = await pausedDelayed();
 
@@ -421,6 +457,79 @@ describe("InterceptionManager", () => {
             const methods = fake.sent.map((call) => call.method);
 
             expect(methods.indexOf("Fetch.continueRequest")).toBeLessThan(methods.indexOf("Fetch.disable"));
+        });
+    });
+
+    describe("times budget", () => {
+        const ruleOf = (times: number, delayMs = 0) => ({
+            urlPattern  : "*",
+            method      : undefined,
+            resourceType: undefined,
+            response    : {
+                status     : 200,
+                headers    : [],
+                bodyBase64 : undefined,
+                contentType: undefined,
+            },
+            fail: undefined,
+            delayMs,
+            times,
+        });
+        const paused = (requestId: string) => ({
+            targetId: "tab1",
+            event   : "Fetch.requestPaused",
+            params  : {
+                requestId,
+                request     : { url: "https://a.example/x", method: "GET" },
+                resourceType: "XHR",
+            },
+        });
+
+        it("keeps a rule whose application failed and removes it after a good one", async () => {
+            const { fake, manager } = interception();
+
+            manager.add("tab1", ruleOf(1));
+            await manager.sync("tab1");
+            fake.failSend = (_tab, method) =>
+                method === "Fetch.fulfillRequest" ? new Error("boom") : undefined;
+
+            await manager.handleCdpEvent(paused("r1"));
+            expect(manager.rulesOf("tab1")).toHaveLength(1);
+
+            fake.failSend = undefined;
+            await manager.handleCdpEvent(paused("r2"));
+
+            expect(manager.rulesOf("tab1")).toEqual([]);
+            expect(fake.sent.filter((call) => call.method === "Fetch.fulfillRequest")).toHaveLength(2);
+        });
+
+        it("removes an exhausted rule once its delayed request is answered", async () => {
+            const fake = new FakeAccess();
+            let wake: () => void = () => undefined;
+            const manager = new InterceptionManager({
+                access: fake.asAccess(),
+                clock : {
+                    now  : () => 1_700_000_000_000,
+                    sleep: () => new Promise<void>((resolve) => void (wake = resolve)),
+                },
+            });
+
+            manager.attach();
+            manager.add("tab1", ruleOf(1, 1000));
+            await manager.sync("tab1");
+
+            const first = manager.handleCdpEvent(paused("slow1"));
+
+            await Promise.resolve();
+            await manager.handleCdpEvent(paused("other"));
+            expect(fake.sent.filter((call) => call.method === "Fetch.continueRequest")).toHaveLength(1);
+            expect(manager.rulesOf("tab1")).toHaveLength(1);
+
+            wake();
+            await first;
+
+            expect(manager.rulesOf("tab1")).toEqual([]);
+            expect(fake.sent.some((call) => call.method === "Fetch.fulfillRequest")).toBe(true);
         });
     });
 
@@ -444,7 +553,7 @@ describe("InterceptionManager", () => {
         await manager.sync("tab1");
         fake.sent.length = 0;
         fake.failSend = (tab, method) =>
-            method === "Fetch.fulfillRequest" ? new Error("boom") : undefined as never;
+            method === "Fetch.fulfillRequest" ? new Error("boom") : undefined;
 
         await manager.handleCdpEvent({
             targetId: "tab1",
@@ -510,8 +619,7 @@ describe("InterceptionManager", () => {
             times       : undefined,
         });
         await manager.sync("tab1");
-        fake.emit("tab.closed", { targetId: "tab1" });
-        await Promise.resolve();
+        await manager.forget("tab1");
         await manager.reset();
 
         expect(fake.sent.map((call) => call.method)).toContain("Fetch.disable");

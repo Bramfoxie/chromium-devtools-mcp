@@ -8,14 +8,14 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { findBrowserExecutable } from "../../src/browser/discovery.js";
 import { connectBrowser } from "../../src/daemon/runner.js";
 import type { Config } from "../../src/config/index.js";
-import {
-    connectToDaemon,
-    daemonIdentity,
-    type DaemonLayout,
-    runDaemon,
-    type RunningDaemon,
-} from "../../src/daemon/index.js";
+import { connectToDaemon, daemonIdentity, type DaemonLayout, runDaemon, type RunningDaemon } from "../../src/daemon/index.js";
 import { createMcpServer, DaemonLink, registerServerTools } from "../../src/mcp/index.js";
+import {
+    DirectoryArtifactStore,
+    type LighthouseTools,
+    nodeArtifactIO,
+    type VideoTools,
+} from "../../src/tools/index.js";
 import { createSocketHarness } from "../helpers/daemon-socket.js";
 
 export function chromeAvailable(): boolean {
@@ -34,7 +34,12 @@ export interface Fixture {
     origin: string;
     pages : Map<
         string,
-        { body: string; status: number; type: string; headers?: Record<string, string> }
+        {
+            body    : string | Uint8Array;
+            status  : number;
+            type    : string;
+            headers?: Record<string, string>;
+        }
     >;
     hits: Map<string, number>;
     close(): Promise<void>;
@@ -110,8 +115,9 @@ function tail(text: string): string {
 }
 
 export interface Env {
-    fixture: Fixture;
-    other  : Fixture;
+    fixture     : Fixture;
+    other       : Fixture;
+    artifactsDir: string;
     tools(): Promise<unknown>;
     call(name: string, args?: Record<string, unknown>): Promise<ToolOutcome>;
     ok(name: string, args?: Record<string, unknown>): Promise<Record<string, unknown>>;
@@ -119,7 +125,12 @@ export interface Env {
     stop(): Promise<void>;
 }
 
-export async function startEnv(safety?: Config["safety"]): Promise<Env> {
+export async function startEnv(
+    safety?    : Config["safety"],
+    allowFocus = false,
+    video?     : VideoTools,
+    lighthouse?: LighthouseTools,
+): Promise<Env> {
     const harness = createSocketHarness();
     const home = await mkdtemp(path.join(os.tmpdir(), "cdm-it-home-"));
     const profile = await mkdtemp(path.join(os.tmpdir(), "cdm-it-profile-"));
@@ -129,10 +140,10 @@ export async function startEnv(safety?: Config["safety"]): Promise<Env> {
     const config: Config = {
         browser   : "chrome",
         mode      : "managed",
-        headless  : true,
+        headless  : process.env.CDM_IT_HEADED !== "1",
         profileDir: profile,
         debugPort : port,
-        allowFocus: false,
+        allowFocus,
         isolated  : true,
         safety    : safety ?? { readOnly: false, allowedDomains: [], confirmDangerous: false },
     };
@@ -154,7 +165,7 @@ export async function startEnv(safety?: Config["safety"]): Promise<Env> {
         stderrLog = tail(stderrLog + String(chunk));
 
         return (realWrite as (...args: unknown[]) => boolean).call(process.stderr, chunk, ...rest);
-    }) as typeof process.stderr.write;
+    });
     const diagnostics = () =>
         `\n--- daemon outcome ---\n${daemonOutcome}\n--- daemon and browser messages (last ${LOG_TAIL_CHARS} chars) ---\n${tail(stderrLog)}`;
     const link = new DaemonLink(
@@ -179,13 +190,22 @@ export async function startEnv(safety?: Config["safety"]): Promise<Env> {
             sleep         : (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
             now           : () => Date.now(),
             logFile       : path.join(home, "daemon.log"),
-            startTimeoutMs: 30_000,
+            startTimeoutMs: 50_000,
             pollIntervalMs: 100,
         },
     );
     const server = createMcpServer("0.0.0");
 
-    registerServerTools(server, config, link);
+    const artifactsDir = path.join(home, "artifacts");
+
+    registerServerTools(server, config, link, {
+        artifacts: new DirectoryArtifactStore({
+            dir: artifactsDir,
+            io : nodeArtifactIO(options.platform, options.uid),
+        }),
+        ...(video === undefined ? {} : { video }),
+        ...(lighthouse === undefined ? {} : { lighthouse }),
+    });
     const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
     const client = new Client({ name: "it", version: "0.0.0" });
 
@@ -224,6 +244,7 @@ export async function startEnv(safety?: Config["safety"]): Promise<Env> {
     return {
         fixture,
         other,
+        artifactsDir,
         tools: async () => (await client.listTools()).tools,
         call,
         ok,
