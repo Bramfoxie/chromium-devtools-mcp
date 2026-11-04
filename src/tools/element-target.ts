@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { Config } from "../config/index.js";
 import type { DaemonAccess } from "../mcp/index.js";
 import { isPolicyActive } from "../safety/index.js";
-import { ToolError } from "./errors.js";
+import { ToolError, TransientRefusal } from "./errors.js";
 import { bindAccess } from "./frame-scope.js";
 import type { FrameState } from "./frames.js";
 import { assertPageAllowed } from "./page-allowed.js";
@@ -310,7 +310,9 @@ export async function revealElement(
         });
     } catch (error) {
         if (isCdpError(error)) {
-            throw new ToolError("The element is not visible on the page and cannot be scrolled into view.");
+            throw new TransientRefusal(
+                "The element is not visible on the page and cannot be scrolled into view.",
+            );
         }
 
         throw error;

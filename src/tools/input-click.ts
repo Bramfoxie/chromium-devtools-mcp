@@ -1,7 +1,12 @@
 import { z } from "zod";
 import { changedUrl, navigationOf, summarizeTarget, targetSummarySchema } from "./input-outcome.js";
 import { mousePoint } from "./input-point.js";
-import { ensureActionable } from "./actionability.js";
+import {
+    actionWaitOf,
+    actionWaitSchema,
+    ensureActionable,
+    retryWhileRefused,
+} from "./actionability.js";
 import { elementAtPoint, ensureInsideViewport, ensurePointAllowed, pointSchema } from "./point-target.js";
 import { defineTool, type ToolContext } from "./define-tool.js";
 import { ensureNoDialog } from "./dialogs.js";
@@ -55,6 +60,7 @@ export const click = defineTool({
         tab           : tabSchema,
         target        : elementTargetSchema.describe("Element uid from a snapshot or query, or a CSS selector."),
         scrollIntoView: z.boolean().optional().describe("Scroll the element into view first. Defaults to true."),
+        timeoutMs     : actionWaitSchema,
     }),
     output: z.strictObject({
         ok      : z.boolean().describe("Whether the click handler ran without exception."),
@@ -71,9 +77,10 @@ export const click = defineTool({
 
         return withElement(context, targetId, args.target, async (element) => {
             const owner = elementAccess(context.access, element);
-            const checked = await ensureActionable(owner, targetId, element, {
-                checkDisabled: true,
-            });
+            const checked = await retryWhileRefused(
+                actionWaitOf(args.timeoutMs, context.clock),
+                () => ensureActionable(owner, targetId, element, { checkDisabled: true }),
+            );
             const uid = args.target.uid;
 
             if (checked.state.fileInput) {
@@ -227,15 +234,18 @@ export const inputClick = defineTool({
         modifiers : z.array(z.enum(KEY_MODIFIERS)).max(4).optional().describe("Held modifiers, for example Control for a control click."),
         position  : positionSchema.optional().describe("With target: offset in CSS pixels from the top left corner of the element. Defaults to the center."),
         force     : z.boolean().optional().describe("With target: skip the hit test and click through a covering element. Defaults to false."),
+        timeoutMs : actionWaitSchema,
     }).superRefine((value, ctx) => {
         if ((value.target === undefined) === (value.point === undefined)) {
             ctx.addIssue({ code: "custom", message: "Pass exactly one of target or point." });
         }
 
-        const targetOnly = value.position !== undefined || value.force !== undefined;
+        const targetOnly = value.position !== undefined
+            || value.force !== undefined
+            || value.timeoutMs !== undefined;
 
         if (value.point !== undefined && targetOnly) {
-            ctx.addIssue({ code: "custom", message: "position and force apply to target only." });
+            ctx.addIssue({ code: "custom", message: "position, force and timeoutMs apply to target only." });
         }
     }),
     output: z.strictObject({
@@ -290,6 +300,7 @@ export const inputClick = defineTool({
                 args.position,
                 "click",
                 args.force ?? false,
+                actionWaitOf(args.timeoutMs, context.clock),
             );
             const acted = await dispatchClick(context, targetId, route, point, plan);
 
@@ -318,10 +329,11 @@ export const inputHover = defineTool({
         "Hover an element with trusted CDP mouse events, so hover styles and menus react.",
     access: "mutate",
     input : z.strictObject({
-        tab     : tabSchema,
-        target  : elementTargetSchema.describe("Element uid from a snapshot or query, or a CSS selector."),
-        position: positionSchema.optional().describe("Offset in CSS pixels from the top left corner of the element. Defaults to the center."),
-        force   : z.boolean().optional().describe("Skip the hit test and hover through a covering element. Defaults to false."),
+        tab      : tabSchema,
+        target   : elementTargetSchema.describe("Element uid from a snapshot or query, or a CSS selector."),
+        position : positionSchema.optional().describe("Offset in CSS pixels from the top left corner of the element. Defaults to the center."),
+        force    : z.boolean().optional().describe("Skip the hit test and hover through a covering element. Defaults to false."),
+        timeoutMs: actionWaitSchema,
     }),
     output: z.strictObject({
         ok     : z.boolean().describe("Whether the element matches :hover now."),
@@ -345,6 +357,7 @@ export const inputHover = defineTool({
                 args.position,
                 "hover",
                 args.force ?? false,
+                actionWaitOf(args.timeoutMs, context.clock),
             );
 
             const moveTo = async (via: PointerTarget["via"], x: number, y: number): Promise<void> => {

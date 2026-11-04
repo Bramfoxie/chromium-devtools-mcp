@@ -1,6 +1,11 @@
 import { z } from "zod";
 import type { DaemonAccess } from "../mcp/index.js";
-import { ensureActionable } from "./actionability.js";
+import {
+    actionWaitOf,
+    actionWaitSchema,
+    ensureActionable,
+    retryWhileRefused,
+} from "./actionability.js";
 import { defineTool } from "./define-tool.js";
 import { ensureNoDialog } from "./dialogs.js";
 import {
@@ -184,11 +189,12 @@ export const inputSelect = defineTool({
         "Choose options of a select element by value, label or index, firing input and change.",
     access: "mutate",
     input : z.strictObject({
-        tab    : tabSchema,
-        target : elementTargetSchema.describe("Element uid from a snapshot or query, or a CSS selector. Must resolve to a select."),
-        values : z.array(z.string().max(500)).max(100).optional().describe("Option values to select, exactly one of values, labels or indexes."),
-        labels : z.array(z.string().max(500)).max(100).optional().describe("Visible option labels to select, exactly one of values, labels or indexes."),
-        indexes: z.array(z.number().int().min(0).max(10000)).max(100).optional().describe("Option indexes to select, exactly one of values, labels or indexes."),
+        tab      : tabSchema,
+        target   : elementTargetSchema.describe("Element uid from a snapshot or query, or a CSS selector. Must resolve to a select."),
+        values   : z.array(z.string().max(500)).max(100).optional().describe("Option values to select, exactly one of values, labels or indexes."),
+        labels   : z.array(z.string().max(500)).max(100).optional().describe("Visible option labels to select, exactly one of values, labels or indexes."),
+        indexes  : z.array(z.number().int().min(0).max(10000)).max(100).optional().describe("Option indexes to select, exactly one of values, labels or indexes."),
+        timeoutMs: actionWaitSchema,
     }).superRefine((value, ctx) => {
         const modes = [value.values, value.labels, value.indexes].filter(
             (entry) => entry !== undefined,
@@ -221,9 +227,10 @@ export const inputSelect = defineTool({
 
         return withElement(context, targetId, args.target, async (element) => {
             const owner = elementAccess(context.access, element);
-            const checked = await ensureActionable(owner, targetId, element, {
-                checkDisabled: true,
-            });
+            const checked = await retryWhileRefused(
+                actionWaitOf(args.timeoutMs, context.clock),
+                () => ensureActionable(owner, targetId, element, { checkDisabled: true }),
+            );
 
             if (!checked.state.selectable) {
                 throw new ToolError(

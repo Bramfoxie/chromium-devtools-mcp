@@ -116,6 +116,8 @@ export { compileUrlPattern, testUrlPattern } from "./capture/url-pattern.js";
 
 export { redactHeaders, redactUrl } from "./capture/redact.js";
 
+export { actionWaitOf, actionWaitSchema, DEFAULT_ACTION_WAIT_MS, retryWhileRefused, TransientRefusal } from "./actionability.js";
+
 export { coveredMessage, describeTarget, elementState, ensureActionable, HIT_EXPRESSION, hitTest } from "./actionability.js";
 
 export { centerOf, clickPointOf } from "./coordinates.js";

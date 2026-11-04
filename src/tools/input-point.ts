@@ -4,6 +4,9 @@ import {
     type ElementState,
     ensureActionable,
     hitTest,
+    retryWhileRefused,
+    TransientRefusal,
+    type ActionWait,
 } from "./actionability.js";
 import { clickPointOf, type ClickPoint, TOP_LEVEL_ORIGIN } from "./coordinates.js";
 import { type ToolContext } from "./define-tool.js";
@@ -14,6 +17,19 @@ import { type Rect, elementAccess, revealElement, type ResolvedElement } from ".
 import { ToolError } from "./errors.js";
 
 export async function mousePoint(
+    context : ToolContext,
+    targetId: string,
+    element : ResolvedElement,
+    position: { x: number; y: number } | undefined,
+    verb    : string,
+    force   : boolean,
+    wait?   : ActionWait,
+): Promise<{ point: ClickPoint; state: ElementState; box: Rect; route?: PointerRoute }> {
+    return retryWhileRefused(wait, () =>
+        mousePointOnce(context, targetId, element, position, verb, force));
+}
+
+async function mousePointOnce(
     context : ToolContext,
     targetId: string,
     element : ResolvedElement,
@@ -43,7 +59,7 @@ export async function mousePoint(
 
     const hit = await hitTest(context.access, targetId, element, local);
 
-    if (hit.kind === "covered") throw new ToolError(coveredMessage(hit.by, verb));
+    if (hit.kind === "covered") throw new TransientRefusal(coveredMessage(hit.by, verb));
 
     if (hit.kind === "outside") {
         throw new ToolError(
@@ -135,7 +151,7 @@ async function measuredPoint(
 
     const inner = await hitTest(request.owner, targetId, request.element, local, true);
 
-    if (inner.kind === "covered") throw new ToolError(coveredMessage(inner.by, request.verb));
+    if (inner.kind === "covered") throw new TransientRefusal(coveredMessage(inner.by, request.verb));
 
     if (inner.kind === "outside") {
         throw new ToolError(
@@ -145,7 +161,7 @@ async function measuredPoint(
 
     const outer = await outerHitTest(chain, measured, targetId, local);
 
-    if (outer.kind === "covered") throw new ToolError(coveredMessage(outer.by, request.verb));
+    if (outer.kind === "covered") throw new TransientRefusal(coveredMessage(outer.by, request.verb));
 
     if (outer.kind === "outside") {
         throw new ToolError(

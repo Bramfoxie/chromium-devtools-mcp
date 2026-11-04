@@ -2,7 +2,7 @@ import { z } from "zod";
 import { ErrorCode, RpcError } from "../daemon/index.js";
 import type { DaemonAccess } from "../mcp/index.js";
 import type { Rect } from "./element-target.js";
-import { ToolError } from "./errors.js";
+import { ToolError, TransientRefusal } from "./errors.js";
 import { bindAccess } from "./frame-scope.js";
 import type { FrameInfo, FrameState } from "./frames.js";
 import { quadSchema } from "./cdp-schemas.js";
@@ -290,7 +290,7 @@ export async function revealChain(chain: FrameChain, tab: string, rect: Rect): P
             });
         } catch (error) {
             if (isCdpError(error)) {
-                throw new ToolError(
+                throw new TransientRefusal(
                     "The iframe that holds the element is not visible on the page and cannot be scrolled into view.",
                 );
             }
