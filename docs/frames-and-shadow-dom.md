@@ -6,6 +6,15 @@ How element targets work across shadow roots, iframes and cross-site frames.
 
 `dom_query` and `dom_snapshot` assign every element they report an id like `2_1`: the tab generation, then a counter. Pass the id as `{ "uid": "2_1" }` to target that element, or use `{ "selector": "..." }` with a CSS selector instead, never both. `pierce` and `frame` combine only with `selector`, not with `uid`. A new `dom_snapshot`, a `page_navigate` call and a navigation of the main frame start a new generation, which makes every earlier id stale. An id in a frame also goes stale when that frame navigates or is removed, while ids of other frames keep working. Using a stale id is an explicit error that asks for a new `dom_snapshot` or `dom_query`, never a wrong element. A tab keeps at most 5000 ids; the oldest are dropped first.
 
+## Locators
+
+A target can also be a `locator`, which finds an element the way a person describes it. Use exactly one of `uid`, `selector` or `locator`.
+
+- `{ "locator": { "role": "button", "name": "Save" } }` finds an element by its accessibility role and accessible name, as `dom_snapshot` shows them. A text field is found by its label, `aria-label` or placeholder through its name: `{ "role": "textbox", "name": "Email" }`. The name matches a part of the accessible name and ignores case and extra spaces; pass `"exact": true` to match the whole name. Elements that are not in the accessibility tree, such as hidden ones, are not found.
+- `{ "locator": { "text": "Order confirmed" } }` finds the smallest visible element whose own text contains that text, with the same matching and `exact`.
+- Several matches are an error that gives the count, never a guess. Pass `nth` (counted from 0 in document order) to pick one, or make the locator more specific. No match is an error that points to `dom_snapshot`.
+- `frame` combines with a locator and selects the frame to search, a locator sees open shadow roots on its own, and `pierce` does not combine with it. `name` only combines with `role`, and a locator takes `role` or `text`, not both.
+
 ## Shadow DOM and iframes
 
 `dom_snapshot` renders the composed tree: shadow content appears inline, and every iframe shows as `[uid] iframe "name" frame=<id>` with its content as a following section; the full accessibility tree of each frame is read with the same caps, for a cross-site frame from its own session. The `frames` array of the result lists every frame with its parent, URL, `isolated` flag (true when the frame runs in its own process) and node count. At most `maxFrames` frame contents are included (default 20, maximum 50); frames beyond the limit are listed with `omitted: true`. `dom_snapshot` reads the DOM to 10 levels and the accessibility tree to 50 levels and 20000 nodes (the same node cap applies to each frame section); when a cap applies the text ends with a `[truncated: ...]` marker and `truncated` is true. Element ids inside a frame go stale when that frame navigates or is removed, while ids of other frames keep working.

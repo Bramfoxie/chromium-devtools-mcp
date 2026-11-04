@@ -15,6 +15,8 @@ import {
     type ElementNode,
     type ResolvedElement,
 } from "./element-registry.js";
+import { resolveByLocator } from "./element-locator.js";
+import { elementLocatorSchema } from "./locator-schema.js";
 import { MAX_FRAME_LENGTH, resolveBySelector, type ResolverFrames } from "./element-selector.js";
 
 export { ElementRegistry, MAX_UIDS_PER_TAB, STALE_UID_MESSAGE } from "./element-registry.js";
@@ -29,21 +31,33 @@ export const elementTargetSchema = z
     .strictObject({
         uid     : z.string().min(1).max(64).optional(),
         selector: z.string().min(1).max(MAX_SELECTOR_LENGTH).optional(),
+        locator : elementLocatorSchema.optional(),
         pierce  : z.boolean().optional(),
         frame   : z.string().min(1).max(MAX_FRAME_LENGTH).optional(),
     })
     .superRefine((value, ctx) => {
-        if ((value.uid !== undefined) === (value.selector !== undefined)) {
+        const given = [value.uid, value.selector, value.locator].filter(
+            (form) => form !== undefined,
+        );
+
+        if (given.length !== 1) {
             ctx.addIssue({
                 code   : "custom",
-                message: "Provide exactly one of uid or selector, not both and not neither.",
+                message: "Provide exactly one of uid, selector or locator, not several and not none.",
             });
         }
 
         if (value.uid !== undefined && (value.pierce !== undefined || value.frame !== undefined)) {
             ctx.addIssue({
                 code   : "custom",
-                message: "pierce and frame only combine with selector, not with uid.",
+                message: "pierce and frame only combine with selector or locator, not with uid.",
+            });
+        }
+
+        if (value.locator !== undefined && value.pierce !== undefined) {
+            ctx.addIssue({
+                code   : "custom",
+                message: "pierce does not combine with locator, a locator already sees open shadow roots.",
             });
         }
     });
@@ -152,8 +166,25 @@ export async function resolveElement(
         return { ...node, objectId: await resolveByUid(owner, tab, node) };
     }
 
+    if (target.locator !== undefined) {
+        const found = await resolveByLocator(
+            access,
+            tab,
+            target.locator,
+            { ...(target.frame === undefined ? {} : { frame: target.frame }) },
+            frames,
+        );
+
+        return {
+            backendNodeId: found.backendNodeId,
+            objectId     : found.objectId,
+            ...(found.frameId === undefined ? {} : { frameId: found.frameId }),
+            ...(found.isolated === true ? { isolated: true } : {}),
+        };
+    }
+
     if (target.selector === undefined) {
-        throw new ToolError("Provide exactly one of uid or selector, not both and not neither.");
+        throw new ToolError("Provide exactly one of uid, selector or locator, not several and not none.");
     }
 
     const resolved = await resolveBySelector(

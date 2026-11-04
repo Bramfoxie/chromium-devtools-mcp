@@ -82,7 +82,11 @@ interface Probe {
 }
 
 function describeTarget(target: ElementTarget): string {
-    return target.uid === undefined ? `selector ${JSON.stringify(target.selector)}` : `uid ${target.uid}`;
+    if (target.uid !== undefined) return `uid ${target.uid}`;
+
+    if (target.locator !== undefined) return `locator ${JSON.stringify(target.locator)}`;
+
+    return `selector ${JSON.stringify(target.selector)}`;
 }
 
 function wrongValue(kind: string, expected: string): ToolError {

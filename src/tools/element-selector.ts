@@ -210,7 +210,7 @@ async function resolveNodeId(
     return { objectId, backendNodeId };
 }
 
-async function scopeNode(
+export async function scopeNode(
     access: DaemonAccess,
     tab   : string,
     rootId: number,
