@@ -1,5 +1,6 @@
 import type { RequestHandlerExtra } from "@modelcontextprotocol/sdk/shared/protocol.js";
 import type { ServerNotification, ServerRequest } from "@modelcontextprotocol/sdk/types.js";
+import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
     type ArtifactStore,
@@ -256,7 +257,7 @@ describe("screencast_stop", () => {
             note? : string;
         };
 
-        expect(output).toMatchObject({ format: "mp4", path: `${DIR}/recording.mp4`, bytes: 4096 });
+        expect(output).toMatchObject({ format: "mp4", path: path.join(DIR, "recording.mp4"), bytes: 4096 });
         expect(output.note).toBeUndefined();
         expect(removed).toEqual([
             "frame-00001.jpg",

@@ -1,5 +1,6 @@
 import type { RequestHandlerExtra } from "@modelcontextprotocol/sdk/shared/protocol.js";
 import type { ServerNotification, ServerRequest } from "@modelcontextprotocol/sdk/types.js";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { Config } from "../src/config/index.js";
 import {
@@ -108,7 +109,7 @@ describe("lighthouse_audit", () => {
             "https://a.example/page",
             "--output=json",
             "--output=html",
-            `--output-path=${DIR}/report`,
+            `--output-path=${path.join(DIR, "report")}`,
             "--quiet",
             "--chrome-flags=--headless=new",
             "--only-categories=accessibility,best-practices,seo",
@@ -122,7 +123,7 @@ describe("lighthouse_audit", () => {
             url        : "https://a.example/page",
             scores     : [{ category: "accessibility", score: 50 }],
             failedCount: 1,
-            reports    : { json: `${DIR}/report.report.json`, html: `${DIR}/report.report.html` },
+            reports    : { json: path.join(DIR, "report.report.json"), html: path.join(DIR, "report.report.html") },
         });
         expect((result.structuredContent as { failed: Array<{ id: string }> }).failed[0]?.id).toBe(
             "image-alt",

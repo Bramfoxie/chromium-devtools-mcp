@@ -42,7 +42,7 @@ describe("childEnvironment", () => {
 describe("findOnPath", () => {
     it("finds an executable file and skips relative directories", async () => {
         const dir = await scratch();
-        const file = path.join(dir, "tool");
+        const file = path.join(dir, process.platform === "win32" ? "tool.exe" : "tool");
 
         await writeFile(file, "#!/bin/sh\n");
         await chmod(file, 0o755);
