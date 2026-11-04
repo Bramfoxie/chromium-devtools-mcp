@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile, chmod } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile, chmod } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -85,12 +85,38 @@ describe.skipIf(process.platform === "win32")("runProgram", () => {
         expect((await pending).ok).toBe(false);
     });
 
+    it("stops the grandchildren of a program with it", async () => {
+        const dir = await scratch();
+        const pidFile = path.join(dir, "pid");
+        const pending = runProgram("/bin/sh", ["-c", `sleep 30 & echo $! > ${pidFile}; wait`], {
+            cwd      : dir,
+            timeoutMs: 400,
+        });
+
+        const result = await pending;
+        const pid = Number((await readFile(pidFile, "utf8")).trim());
+        const alive = (): boolean => {
+            try {
+                process.kill(pid, 0);
+
+                return true;
+            } catch {
+                return false;
+            }
+        };
+
+        for (let i = 0; i < 20 && alive(); i++) await new Promise((r) => setTimeout(r, 100));
+
+        expect(result.error).toContain("did not finish");
+        expect(alive()).toBe(false);
+    });
+
     it("passes only the given environment", async () => {
         const dir = await scratch();
         const result = await runProgram("/bin/sh", ["-c", 'test -z "$LEAK"'], {
             cwd      : dir,
             timeoutMs: 5000,
-            env      : { PATH: "/usr/bin:/bin" },
+            env      : childEnvironment({ PATH: "/usr/bin:/bin", LEAK: "1" }),
         });
 
         expect(result.ok).toBe(true);

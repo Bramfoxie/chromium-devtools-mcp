@@ -3,7 +3,12 @@ import type { DaemonAccess } from "../mcp/index.js";
 import { toAxNodes, type AxDomInfo, type AxNode, formatAxTree } from "./ax-format.js";
 import { defineTool, type ToolContext } from "./define-tool.js";
 import { ensureNoDialog } from "./dialogs.js";
-import { elementAccess, elementTargetSchema, resolveElement } from "./element-target.js";
+import {
+    assertElementOriginAllowed,
+    elementAccess,
+    elementTargetSchema,
+    resolveElement,
+} from "./element-target.js";
 import { ToolError } from "./errors.js";
 import { bindAccess } from "./frame-scope.js";
 import { truncateText } from "./result.js";
@@ -266,7 +271,17 @@ export const domSnapshot = defineTool({
                 rootFrame = { frameId: root.frameId };
             }
 
-            await releaseQuietly(scoped, targetId, [root.objectId]);
+            try {
+                if (root.frameId !== undefined) {
+                    await assertElementOriginAllowed(
+                        { config: context.config, access: context.access },
+                        targetId,
+                        root,
+                    );
+                }
+            } finally {
+                await releaseQuietly(scoped, targetId, [root.objectId]);
+            }
         }
 
         const tree: unknown = backendNodeId === undefined

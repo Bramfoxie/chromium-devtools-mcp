@@ -2,7 +2,12 @@ import { z } from "zod";
 import type { DaemonAccess } from "../mcp/index.js";
 import { defineTool, type ToolContext } from "./define-tool.js";
 import { ensureNoDialog } from "./dialogs.js";
-import { elementAccess, elementTargetSchema, resolveElement } from "./element-target.js";
+import {
+    assertElementOriginAllowed,
+    elementAccess,
+    elementTargetSchema,
+    resolveElement,
+} from "./element-target.js";
 import { ToolError } from "./errors.js";
 import { frameChain, mapRect, measureChain } from "./frame-geometry.js";
 import { releaseQuietly } from "./remote-objects.js";
@@ -338,6 +343,20 @@ export const cssInspect = defineTool({
             { frames: context.frames },
         );
         const owner = elementAccess(context.access, element);
+
+        try {
+            if (element.frameId !== undefined) {
+                await assertElementOriginAllowed(
+                    { config: context.config, access: context.access },
+                    targetId,
+                    element,
+                );
+            }
+        } catch (error) {
+            await releaseQuietly(owner, targetId, [element.objectId]);
+
+            throw error;
+        }
 
         await releaseQuietly(owner, targetId, [element.objectId]);
 

@@ -149,4 +149,17 @@ describe.skipIf(!present)("frames under an allowlist in a real browser", () => {
         expect(result.isError).toBe(true);
         expect(result.text).toContain("localhost");
     });
+
+    it("refuses to read the style or the snapshot of an element in a frame that is not allowed", async () => {
+        const tab = await env.open("/nested");
+
+        await eventually(async () => ((await framesOf(tab)).length >= 3 ? true : undefined));
+
+        const target = { selector: "iframe", frame: "iframe[name=wrap]" };
+        const style = await env.call("css_inspect", { tab, target });
+        const snapshot = await env.call("dom_snapshot", { tab, root: target });
+
+        expect(style.isError).toBe(true);
+        expect(snapshot.isError).toBe(true);
+    });
 });

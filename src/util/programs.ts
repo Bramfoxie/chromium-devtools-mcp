@@ -27,6 +27,17 @@ const KEPT_VARIABLES = new Set([
     "HTTPS_PROXY",
     "NO_PROXY",
     "NODE_EXTRA_CA_CERTS",
+    "ALL_PROXY",
+    "SSL_CERT_FILE",
+    "PATHEXT",
+    "COMSPEC",
+    "WINDIR",
+    "PROGRAMFILES",
+    "WAYLAND_DISPLAY",
+    "XAUTHORITY",
+    "DBUS_SESSION_BUS_ADDRESS",
+    "USER",
+    "LOGNAME",
 ]);
 
 export interface RunResult {
@@ -162,10 +173,13 @@ export function runProgram(
             tail = (tail + chunk.toString("utf8")).slice(-STDERR_TAIL_CHARS);
         });
         child.once("error", (error) => finish({ ok: false, error: error.message }));
-        child.once("close", (code) =>
+        child.once("close", (code) => {
+            if (stopping !== undefined) signalGroup(child, "SIGKILL");
+
             finish({
                 ok   : code === 0 && stopping === undefined,
                 error: stopping ?? (tail.trim() || `${path.basename(program)} exited with code ${code}`),
-            }));
+            });
+        });
     });
 }

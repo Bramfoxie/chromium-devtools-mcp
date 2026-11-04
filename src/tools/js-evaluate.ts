@@ -475,7 +475,13 @@ async function evaluate(
         const { config } = request;
         const checked = config === undefined ? { access } : { access, config };
 
-        await assertElementOriginAllowed(checked, targetId, element);
+        try {
+            await assertElementOriginAllowed(checked, targetId, element);
+        } catch (error) {
+            await releaseQuietly(owner, targetId, [element.objectId]);
+
+            throw error;
+        }
     }
 
     request.scope.access = owner;
