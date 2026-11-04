@@ -202,7 +202,7 @@ export async function startEnv(
     );
     const server = createMcpServer("0.0.0");
 
-    const artifactsDir = path.join(home, "artifacts");
+    const artifactsDir = path.join(tokenDir, "artifacts");
 
     registerServerTools(server, config, link, {
         artifacts: new DirectoryArtifactStore({

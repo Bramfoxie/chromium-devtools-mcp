@@ -74,7 +74,7 @@ Compared against Chrome DevTools MCP 1.12.0 (2026-10-22, [ChromeDevTools/chrome-
 
 ## Tools
 
-50 tools. Details and parameters are in [docs/tools.md](docs/tools.md).
+51 tools. Details and parameters are in [docs/tools.md](docs/tools.md).
 
 | Category    | Tools                                                                                                                                       |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -85,7 +85,7 @@ Compared against Chrome DevTools MCP 1.12.0 (2026-10-22, [ChromeDevTools/chrome-
 | Performance | `perf_trace_start`, `perf_trace_stop`, `heap_snapshot`, `screencast_start`, `screencast_stop`, `lighthouse_audit`                           |
 | Observation | `console_logs`, `network_requests`, `network_har`, `network_response_body`                                                                  |
 | Network     | `network_mock`                                                                                                                              |
-| Storage     | `storage_read`, `storage_write`                                                                                                             |
+| Storage     | `storage_read`, `storage_write`, `downloads`                                                                                                |
 | Web auth    | `webauthn`                                                                                                                                  |
 | Web apps    | `pwa_info`                                                                                                                                  |
 | Emulation   | `list_devices`, `emulate_device`, `emulate_media`, `emulate_network`, `emulate_locale`, `emulate_geolocation`                               |

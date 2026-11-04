@@ -27,6 +27,7 @@ import {
     type DaemonLayout,
     type IpcClient,
 } from "../daemon/index.js";
+import { artifactsDir } from "../daemon/layout.js";
 import { describeError, logDaemon } from "../util/log.js";
 import { DaemonLink, type LinkDeps } from "./daemon-link.js";
 import { spawnDaemonProcess } from "./spawn-daemon.js";
@@ -68,12 +69,6 @@ export function daemonLogFile(layout: DaemonLayout): string {
     const p = pathFor(layout.platform);
 
     return p.join(p.dirname(layout.tokenFile), "daemon.log");
-}
-
-export function artifactsDir(layout: DaemonLayout): string {
-    const p = pathFor(layout.platform);
-
-    return p.join(p.dirname(layout.tokenFile), "artifacts");
 }
 
 export function daemonScriptPath(here: string = import.meta.url): string {

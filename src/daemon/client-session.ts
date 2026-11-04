@@ -23,7 +23,9 @@ import { type OwnedTab, type Subscription, TabFrames } from "./tab-frames.js";
 const DETACH_GRACE_MS = 2000;
 
 export interface SessionOptions {
-    allowFocus: boolean;
+    allowFocus    : boolean;
+    downloadsRoot?: string;
+    platform?     : NodeJS.Platform;
 }
 
 export type TabScope = "owned" | "available";

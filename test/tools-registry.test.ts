@@ -109,7 +109,7 @@ const readOnly: Config = {
 };
 
 describe("tool declarations", () => {
-    it("declares fifty tools with unique names, descriptions and access", () => {
+    it("declares fifty one tools with unique names, descriptions and access", () => {
         expect(allTools.map((tool) => tool.name)).toEqual([
             "list_tabs",
             "list_sessions",
@@ -128,6 +128,7 @@ describe("tool declarations", () => {
             "console_logs",
             "network_requests",
             "network_har",
+            "downloads",
             "network_response_body",
             "network_mock",
             "page_dialogs",
@@ -678,7 +679,7 @@ describe("runTool", () => {
 });
 
 describe("tools/list", () => {
-    it("lists exactly the fifty tools with their schemas", async () => {
+    it("lists exactly the fifty one tools with their schemas", async () => {
         const server = createMcpServer("1.0.0");
 
         registerTools({ server, tools: allTools, runtime: runtime() });
@@ -706,6 +707,7 @@ describe("tools/list", () => {
             "console_logs",
             "network_requests",
             "network_har",
+            "downloads",
             "network_response_body",
             "network_mock",
             "page_dialogs",

@@ -66,6 +66,8 @@ const MUTATING: Case[] = [
     ["perf_trace_start", { reload: true }],
     ["lighthouse_audit", { url: "https://example.com/" }],
     ["webauthn", { action: "add_authenticator" }],
+    ["downloads", { action: "allow" }],
+    ["downloads", { action: "deny" }],
 ];
 
 const READING: Case[] = [
@@ -78,6 +80,8 @@ const READING: Case[] = [
     ["console_logs", {}],
     ["network_requests", {}],
     ["network_har", {}],
+    ["downloads", { action: "list" }],
+    ["downloads", { action: "wait", timeoutMs: 0 }],
     ["network_response_body", {}],
     ["network_mock", { action: "list" }],
     ["page_dialogs", {}],

@@ -11,6 +11,7 @@ import type { EmulationState } from "./emulation/state.js";
 import type { ScreencastRecorder } from "./perf/screencast-recorder.js";
 import type { TraceRecorder } from "./perf/trace-recorder.js";
 import type { WebAuthnState } from "./webauthn-state.js";
+import type { DownloadState } from "./download-state.js";
 import type { LighthouseTools } from "./perf/lighthouse-tools.js";
 import type { VideoTools } from "./perf/video.js";
 import type { FocusEmulation } from "./focus-emulation.js";
@@ -46,26 +47,27 @@ interface TabSelection {
 }
 
 export interface ToolContext {
-    access    : DaemonAccess;
-    state     : SessionState;
-    tabs      : TabSelection;
-    elements  : ElementRegistry;
-    frames    : FrameState;
-    focus     : FocusEmulation;
-    capture   : CaptureManager;
-    dialogs   : DialogState;
-    mock      : InterceptionManager;
-    emulation : EmulationState;
-    upload    : UploadEnvironment;
-    trace     : TraceRecorder;
-    screencast: ScreencastRecorder;
-    video     : VideoTools;
-    lighthouse: LighthouseTools;
-    webauthn  : WebAuthnState;
-    artifacts : ArtifactStore;
-    config    : Config;
-    clock     : ToolClock;
-    signal    : AbortSignal;
+    access       : DaemonAccess;
+    state        : SessionState;
+    tabs         : TabSelection;
+    elements     : ElementRegistry;
+    frames       : FrameState;
+    focus        : FocusEmulation;
+    capture      : CaptureManager;
+    dialogs      : DialogState;
+    mock         : InterceptionManager;
+    emulation    : EmulationState;
+    upload       : UploadEnvironment;
+    trace        : TraceRecorder;
+    screencast   : ScreencastRecorder;
+    video        : VideoTools;
+    lighthouse   : LighthouseTools;
+    webauthn     : WebAuthnState;
+    downloadState: DownloadState;
+    artifacts    : ArtifactStore;
+    config       : Config;
+    clock        : ToolClock;
+    signal       : AbortSignal;
     forgetTab(targetId: string): Promise<void>;
 }
 

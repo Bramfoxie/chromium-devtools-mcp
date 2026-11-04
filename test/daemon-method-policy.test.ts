@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { ErrorCode, normalizeUrl, RpcError } from "../src/daemon/index.js";
-import { checkCall, checkEvent, TRACE_CATEGORIES } from "../src/daemon/method-policy.js";
+import {
+    checkCall,
+    checkEvent,
+    type PolicyOptions,
+    TRACE_CATEGORIES,
+} from "../src/daemon/method-policy.js";
 
 const off = { allowFocus: false };
 
@@ -53,7 +58,6 @@ describe("checkCall", () => {
     );
 
     it.each([
-        "Page.setDownloadBehavior",
         "Page.close",
         "Page.crash",
         "Page.setInterceptFileChooserDialog",
@@ -68,6 +72,72 @@ describe("checkCall", () => {
         expect(codeOf(() => checkCall(method, undefined, { allowFocus: true }))).toBe(
             ErrorCode.forbiddenMethod,
         );
+    });
+
+    describe("Page.setDownloadBehavior", () => {
+        const posix = { allowFocus: false, downloadsRoot: "/data/artifacts", platform: "linux" } as const;
+        const win = {
+            allowFocus   : false,
+            downloadsRoot: "C:\\Users\\u\\AppData\\Local\\app\\artifacts",
+            platform     : "win32",
+        } as const;
+        const call = (
+            params : Record<string, unknown> | undefined,
+            options: PolicyOptions = posix,
+        ) =>
+            checkCall("Page.setDownloadBehavior", params, options);
+
+        it("allows a download into a directory inside the artifacts directory", () => {
+            expect(call({ behavior: "allow", downloadPath: "/data/artifacts/downloads-1" })).toEqual({
+                behavior    : "allow",
+                downloadPath: "/data/artifacts/downloads-1",
+            });
+            expect(
+                call(
+                    { behavior: "allow", downloadPath: "C:\\Users\\u\\AppData\\Local\\app\\artifacts\\d-1" },
+                    win,
+                ),
+            ).toMatchObject({ behavior: "allow" });
+        });
+
+        it("allows turning downloads off or back to the default, without a path", () => {
+            expect(call({ behavior: "deny" })).toEqual({ behavior: "deny" });
+            expect(call({ behavior: "default" })).toEqual({ behavior: "default" });
+            expect(codeOf(() => call({ behavior: "deny", downloadPath: "/data/artifacts/x" })))
+                .toBe(ErrorCode.badRequest);
+        });
+
+        it.each([
+            "/etc",
+            "/data/artifacts",
+            "/data/artifacts/../secret",
+            "/data/artifacts-other/x",
+            "/data/artifactsx",
+            "relative/dir",
+            "/",
+        ])("refuses the path %s", (downloadPath) => {
+            expect(codeOf(() => call({ behavior: "allow", downloadPath }))).toBe(
+                ErrorCode.forbiddenMethod,
+            );
+        });
+
+        it("refuses a Windows path on another drive or outside the root", () => {
+            for (const downloadPath of ["D:\\artifacts\\x", "C:\\Users\\u\\Desktop"]) {
+                expect(codeOf(() => call({ behavior: "allow", downloadPath }, win))).toBe(
+                    ErrorCode.forbiddenMethod,
+                );
+            }
+        });
+
+        it("refuses allow when the daemon has no directory, and unknown or missing parameters", () => {
+            expect(codeOf(() => call({ behavior: "allow", downloadPath: "/data/artifacts/x" }, off as never)))
+                .toBe(ErrorCode.forbiddenMethod);
+            expect(codeOf(() => call({ behavior: "allow" }))).toBe(ErrorCode.badRequest);
+            expect(codeOf(() => call({ behavior: "allowAndName", downloadPath: "/data/artifacts/x" })))
+                .toBe(ErrorCode.badRequest);
+            expect(codeOf(() => call({ behavior: "deny", eventsEnabled: true }))).toBe(ErrorCode.badRequest);
+            expect(codeOf(() => call(undefined))).toBe(ErrorCode.badRequest);
+        });
     });
 
     it("refuses bringing the window to the front unless allowFocus is on", () => {

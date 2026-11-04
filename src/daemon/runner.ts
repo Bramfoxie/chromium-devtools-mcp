@@ -12,7 +12,7 @@ import { CdpBackend } from "./cdp-backend.js";
 import { Daemon } from "./daemon.js";
 import { AlreadyRunningError } from "./errors.js";
 import { daemonIdentity } from "./identity.js";
-import { currentLayout, type DaemonLayout } from "./layout.js";
+import { artifactsDir, currentLayout, type DaemonLayout } from "./layout.js";
 import { acquireInstance } from "./lock.js";
 import { describeError, logDaemon } from "../util/log.js";
 import { realInstanceIO } from "./socket-io.js";
@@ -284,6 +284,8 @@ export async function runDaemon(
     const daemon = new Daemon({
         token,
         allowFocus    : config.allowFocus,
+        downloadsRoot : artifactsDir(layout),
+        platform      : layout.platform,
         identity      : daemonIdentity(config),
         helloTimeoutMs: deps.helloTimeoutMs,
         idleTimeoutMs : deps.idleTimeoutMs,

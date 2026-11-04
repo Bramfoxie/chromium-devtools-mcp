@@ -17,6 +17,8 @@ const FAILURE_FLUSH_TIMEOUT_MS = 1000;
 export interface DaemonOptions {
     token          : string;
     allowFocus     : boolean;
+    downloadsRoot? : string;
+    platform?      : NodeJS.Platform;
     identity       : DaemonIdentity;
     helloTimeoutMs?: number;
     idleTimeoutMs? : number;
@@ -73,6 +75,10 @@ export class Daemon {
     setBackend(backend: BrowserBackend): void {
         this.registry = new SessionRegistry<ClientConnection>(backend, {
             allowFocus: this.options.allowFocus,
+            ...(this.options.downloadsRoot === undefined
+                ? {}
+                : { downloadsRoot: this.options.downloadsRoot }),
+            ...(this.options.platform === undefined ? {} : { platform: this.options.platform }),
         });
         this.state = "ready";
         this.message = undefined;

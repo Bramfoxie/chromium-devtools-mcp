@@ -32,6 +32,10 @@ export { buildDomEditRequest, domEdit, domEditEffect, isDangerousDomEdit, isVali
 
 export { consoleLogs } from "./console-logs.js";
 
+export { downloads } from "./downloads.js";
+
+export { DownloadState, safeFilename, type DownloadItem } from "./download-state.js";
+
 export { networkHar } from "./network-har.js";
 
 export { networkFilterOf, networkRequests } from "./network-requests.js";

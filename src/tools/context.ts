@@ -4,6 +4,7 @@ import { confirmedAccess, type Confirmer } from "./confirmation.js";
 import { CaptureManager } from "./capture/manager.js";
 import type { KnownTab, ToolClock, ToolContext } from "./define-tool.js";
 import { DialogState } from "./dialogs.js";
+import { DownloadState } from "./download-state.js";
 import { ElementRegistry } from "./element-target.js";
 import { type ArtifactStore, noArtifacts } from "./artifacts.js";
 import { WebAuthnState } from "./webauthn-state.js";
@@ -73,25 +74,26 @@ interface ToolRuntimeOptions {
 }
 
 export class ToolRuntime {
-    readonly access    : DaemonAccess;
-    readonly config    : Config;
-    readonly clock     : ToolClock;
-    readonly tabs      : SessionTabs;
-    readonly elements  : ElementRegistry;
-    readonly frames    : FrameState;
-    readonly focus     : FocusEmulation;
-    readonly capture   : CaptureManager;
-    readonly dialogs   : DialogState;
-    readonly mock      : InterceptionManager;
-    readonly emulation : EmulationState;
-    readonly upload    : UploadEnvironment;
-    readonly trace     : TraceRecorder;
-    readonly screencast: ScreencastRecorder;
-    readonly video     : VideoTools;
-    readonly lighthouse: LighthouseTools;
-    readonly webauthn  : WebAuthnState;
-    readonly artifacts : ArtifactStore;
-    readonly confirm   : Confirmer | undefined;
+    readonly access       : DaemonAccess;
+    readonly config       : Config;
+    readonly clock        : ToolClock;
+    readonly tabs         : SessionTabs;
+    readonly elements     : ElementRegistry;
+    readonly frames       : FrameState;
+    readonly focus        : FocusEmulation;
+    readonly capture      : CaptureManager;
+    readonly dialogs      : DialogState;
+    readonly mock         : InterceptionManager;
+    readonly emulation    : EmulationState;
+    readonly upload       : UploadEnvironment;
+    readonly trace        : TraceRecorder;
+    readonly screencast   : ScreencastRecorder;
+    readonly video        : VideoTools;
+    readonly lighthouse   : LighthouseTools;
+    readonly webauthn     : WebAuthnState;
+    readonly downloadState: DownloadState;
+    readonly artifacts    : ArtifactStore;
+    readonly confirm      : Confirmer | undefined;
 
     constructor(options: ToolRuntimeOptions) {
         this.access = options.access;
@@ -120,6 +122,7 @@ export class ToolRuntime {
         this.trace = new TraceRecorder(options.access, this.clock);
         this.screencast = new ScreencastRecorder(options.access, this.clock);
         this.webauthn = new WebAuthnState();
+        this.downloadState = new DownloadState(options.access);
         this.video = options.video ?? nodeVideoTools(process.env, process.platform);
         this.lighthouse = options.lighthouse ??
             nodeLighthouseTools(process.env, process.platform, () => {
@@ -144,6 +147,7 @@ export class ToolRuntime {
         this.mock.attach();
         this.trace.attach();
         this.screencast.attach();
+        this.downloadState.attach();
         this.access.forgetStaleState(() => void this.resetAll());
     }
 
@@ -159,6 +163,7 @@ export class ToolRuntime {
         const screencast = this.screencast.forget(targetId);
 
         this.webauthn.forget(targetId);
+        this.downloadState.forget(targetId);
         const origin = this.emulation.snapshot(targetId).geolocation?.origin;
 
         this.emulation.forget(targetId);
@@ -183,6 +188,7 @@ export class ToolRuntime {
         const screencast = this.screencast.reset();
 
         this.webauthn.reset();
+        this.downloadState.reset();
 
         this.emulation.reset();
         await mock;
@@ -194,27 +200,28 @@ export class ToolRuntime {
         const tabs = this.tabs;
 
         return {
-            access    : confirmed ? confirmedAccess(this.access) : this.access,
+            access       : confirmed ? confirmedAccess(this.access) : this.access,
             tabs,
-            elements  : this.elements,
-            frames    : this.frames,
-            focus     : this.focus,
-            capture   : this.capture,
-            dialogs   : this.dialogs,
-            mock      : this.mock,
-            emulation : this.emulation,
-            upload    : this.upload,
-            trace     : this.trace,
-            screencast: this.screencast,
-            video     : this.video,
-            lighthouse: this.lighthouse,
-            webauthn  : this.webauthn,
-            artifacts : this.artifacts,
-            config    : this.config,
-            clock     : this.clock,
+            elements     : this.elements,
+            frames       : this.frames,
+            focus        : this.focus,
+            capture      : this.capture,
+            dialogs      : this.dialogs,
+            mock         : this.mock,
+            emulation    : this.emulation,
+            upload       : this.upload,
+            trace        : this.trace,
+            screencast   : this.screencast,
+            video        : this.video,
+            lighthouse   : this.lighthouse,
+            webauthn     : this.webauthn,
+            downloadState: this.downloadState,
+            artifacts    : this.artifacts,
+            config       : this.config,
+            clock        : this.clock,
             signal,
-            forgetTab : (targetId) => this.forgetTab(targetId),
-            state     : {
+            forgetTab    : (targetId) => this.forgetTab(targetId),
+            state        : {
                 get tabs() {
                     return tabs.knownTabs();
                 },
