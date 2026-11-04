@@ -126,3 +126,35 @@ export function expressionScript(expression: string, pollMs: number, timeoutMs: 
   }
 })()`;
 }
+
+export function domQuietScript(
+    quietMs  : number,
+    pollMs   : number,
+    timeoutMs: number,
+    token    : string = "wait",
+): string {
+    return `(async () => {
+  ${waitPrelude(token)}
+  const quietMs = ${JSON.stringify(quietMs)};
+  const deadline = Date.now() + ${JSON.stringify(timeoutMs)};
+  let last = Date.now();
+  let mutations = 0;
+  const observer = new MutationObserver((records) => {
+    last = Date.now();
+    mutations += records.length;
+  });
+  observer.observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
+  try {
+    for (;;) {
+      const quiet = Date.now() - last;
+      if (quiet >= quietMs) return { met: true, detail: { quietMs: quiet, mutations } };
+      if (cancelled || Date.now() >= deadline) return { met: false, detail: { quietMs: quiet, mutations } };
+      await nap(Math.max(10, Math.min(${JSON.stringify(pollMs)}, quietMs - quiet)));
+    }
+  } finally {
+    observer.disconnect();
+    clearTimeout(timer);
+    waits.delete(${JSON.stringify(token)});
+  }
+})()`;
+}

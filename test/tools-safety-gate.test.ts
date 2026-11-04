@@ -82,6 +82,8 @@ const READING: Case[] = [
     ["console_logs", {}],
     ["network_requests", {}],
     ["network_har", {}],
+    ["page_wait", { domQuietMs: 100 }],
+    ["page_wait", { responseUrl: "/api" }],
     ["downloads", { action: "list" }],
     ["downloads", { action: "wait", timeoutMs: 0 }],
     ["network_response_body", {}],

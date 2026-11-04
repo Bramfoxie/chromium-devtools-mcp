@@ -65,6 +65,9 @@ describe("checkConditions", () => {
         expect(checkConditions({ selector: ".x", text: "hi" })).toBe("text");
         expect(checkConditions({ url: "a" })).toBe("url");
         expect(checkConditions({ urlRegex: "a+" })).toBe("urlRegex");
+        expect(checkConditions({ domQuietMs: 300 })).toBe("domQuiet");
+        expect(checkConditions({ responseUrl: "/api" })).toBe("response");
+        expect(checkConditions({ responseUrlRegex: "api" })).toBe("response");
         expect(checkConditions({ loadState: "load" })).toBe("loadState");
         expect(checkConditions({ expression: "true" })).toBe("expression");
         expect(checkConditions({ ms: 10 })).toBe("ms");
@@ -73,6 +76,8 @@ describe("checkConditions", () => {
     it("rejects none and several", () => {
         expect(() => checkConditions({})).toThrow("exactly one wait condition");
         expect(() => checkConditions({ url: "a", ms: 5 })).toThrow("not several");
+        expect(() => checkConditions({ domQuietMs: 100, responseUrl: "/a" })).toThrow("not several");
+        expect(() => checkConditions({ responseUrl: "/a", responseUrlRegex: "a" })).not.toThrow();
     });
 });
 

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { NetworkFilter } from "./capture/network-log.js";
 import type { DaemonAccess } from "../mcp/index.js";
 import type { ToolContext } from "./define-tool.js";
 import { ToolError } from "./errors.js";
@@ -282,4 +283,53 @@ export async function cancellableSleep(context: ToolContext, ms: number): Promis
             context.signal.addEventListener("abort", () => resolve(), { once: true });
         }),
     ]);
+}
+
+export async function waitForResponse(
+    context : ToolContext,
+    targetId: string,
+    filter  : NetworkFilter,
+    options : { includePrevious: boolean; timeoutMs: number; pollMs: number; started: number },
+): Promise<{ met: boolean; elapsedMs: number; detail: unknown }> {
+    await context.capture.ensureNetwork(targetId);
+
+    const baseline = options.includePrevious
+        ? 0
+        : context.capture.readNetwork(targetId, {
+            filter : {},
+            afterId: 0,
+            limit  : Number.MAX_SAFE_INTEGER,
+            clear  : false,
+        }).nextAfterId;
+
+    for (;;) {
+        throwIfCancelled(context.signal);
+
+        const read = context.capture.readNetwork(targetId, {
+            filter : filter,
+            afterId: baseline,
+            limit  : Number.MAX_SAFE_INTEGER,
+            clear  : false,
+        });
+        const found = read.records.find(({ record }) => record.status !== undefined);
+
+        if (found !== undefined) {
+            return {
+                met      : true,
+                elapsedMs: context.clock.now() - options.started,
+                detail   : {
+                    id    : found.id,
+                    url   : found.record.url,
+                    method: found.record.method,
+                    status: found.record.status,
+                },
+            };
+        }
+
+        if (context.clock.now() - options.started >= options.timeoutMs) {
+            return { met: false, elapsedMs: context.clock.now() - options.started, detail: {} };
+        }
+
+        await context.clock.sleep(options.pollMs);
+    }
 }
