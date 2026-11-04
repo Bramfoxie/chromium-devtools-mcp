@@ -52,12 +52,17 @@ export function nodeArtifactIO(platform: NodeJS.Platform, uid: number | undefine
         list     : async (dir) => {
             const names = await readdir(dir);
 
-            return Promise.all(
-                names.map(async (name) => ({
-                    name,
-                    modifiedMs: (await stat(path.join(dir, name))).mtimeMs,
-                })),
+            const found = await Promise.all(
+                names.map(async (name) => {
+                    try {
+                        return { name, modifiedMs: (await stat(path.join(dir, name))).mtimeMs };
+                    } catch {
+                        return undefined;
+                    }
+                }),
             );
+
+            return found.filter((entry) => entry !== undefined);
         },
         remove: (file) => rm(file, { recursive: true, force: true }),
     };
@@ -159,8 +164,9 @@ export class DirectoryArtifactStore implements ArtifactStore {
     private async prepare(): Promise<void> {
         await this.io.ensureDir(this.options.dir);
         const cutoff = this.now() - this.maxAgeMs;
+        const entries = await this.io.list(this.options.dir).catch(() => []);
 
-        for (const entry of await this.io.list(this.options.dir)) {
+        for (const entry of entries) {
             if (OWN_ENTRY.test(entry.name) && entry.modifiedMs < cutoff) {
                 const file = path.join(this.options.dir, entry.name);
 

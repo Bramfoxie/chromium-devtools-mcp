@@ -87,6 +87,18 @@ describe("DirectoryArtifactStore", () => {
         expect(written).toEqual([]);
     });
 
+    it("still writes when the old files cannot be listed", async () => {
+        const { io, written } = fakeIO();
+
+        io.list = async () => {
+            throw new Error("EACCES");
+        };
+
+        await storeWith(io).write("trace", "json", "x");
+
+        expect(written).toHaveLength(1);
+    });
+
     it("explains a directory that cannot be prepared and tries again next time", async () => {
         let attempts = 0;
         const { io } = fakeIO();
