@@ -4,6 +4,7 @@ import type { ClickPoint } from "./coordinates.js";
 import type { ToolContext } from "./define-tool.js";
 import { ToolError } from "./errors.js";
 import { checkSafety } from "./safety.js";
+import { safetyFrameOf } from "./safety-frame.js";
 
 const POINT_READ_TIMEOUT_MS = 5000;
 
@@ -158,30 +159,11 @@ export async function ensurePointAllowed(
 
     if (frameId === context.frames.mainFrame(targetId)) return;
 
-    const info = context.frames.frameOf(targetId, frameId);
+    const frame = safetyFrameOf(context.frames, targetId, frameId);
 
-    if (info === undefined) throw unverifiable();
+    if (frame === undefined) throw unverifiable();
 
-    let origin: string | undefined;
-
-    try {
-        const parsed = new URL(info.url).origin;
-
-        origin = parsed === "null" ? undefined : parsed;
-    } catch {
-        origin = undefined;
-    }
-
-    const decision = checkSafety({
-        tool,
-        access: "mutate",
-        config: context.config,
-        frame : {
-            frameId: info.frameId,
-            url    : info.url,
-            ...(origin === undefined ? {} : { origin }),
-        },
-    });
+    const decision = checkSafety({ tool, access: "mutate", config: context.config, frame });
 
     if (!decision.allowed) throw new ToolError(`${decision.reason} ${decision.hint}`);
 }

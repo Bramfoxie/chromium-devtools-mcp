@@ -9,7 +9,7 @@ export function assertPageAllowed(
 ): void {
     const domains = context.config.safety.allowedDomains;
 
-    if (!isRestricted(domains) || href === "about:srcdoc" || isUrlAllowed(href, domains)) return;
+    if (!isRestricted(domains) || isUrlAllowed(href, domains)) return;
 
     throw new ToolError(
         `${subject} ${describeUrlHost(href)}, which is outside safety.allowedDomains. Use an allowed domain, or ask the owner to add it to safety.allowedDomains.`,

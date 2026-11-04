@@ -6,3 +6,5 @@ export {
     isUrlAllowed,
     isValidDomainRule,
 } from "./allowlist.js";
+
+export { originOfUrl, webOrigin } from "./origin.js";

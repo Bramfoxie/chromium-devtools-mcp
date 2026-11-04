@@ -1,6 +1,7 @@
 import { ChildSync, isMirroredEvent, isReplicated } from "./child-sync.js";
 import type { FrameSummary } from "./frames.js";
 import type { BrowserBackend, TargetInfo } from "./browser-backend.js";
+import { webOrigin } from "../safety/index.js";
 import { RpcError } from "./errors.js";
 import { describeError, logDaemon } from "../util/log.js";
 import {
@@ -62,24 +63,16 @@ function describe(target: TargetInfo, owned: boolean, created: boolean): TabInfo
 }
 
 function permissionOrigin(value: string): string {
-    let parsed: URL | undefined;
+    const origin = webOrigin(value);
 
-    try {
-        parsed = new URL(value);
-    } catch {
-        parsed = undefined;
-    }
-
-    const isWeb = parsed?.protocol === "http:" || parsed?.protocol === "https:";
-
-    if (parsed === undefined || !isWeb || parsed.origin !== value) {
+    if (origin === undefined) {
         throw new RpcError(
             ErrorCode.badRequest,
             "The origin must be an http or https origin without a path, such as https://example.com.",
         );
     }
 
-    return parsed.origin;
+    return origin;
 }
 
 async function within(promise: Promise<unknown>, ms: number): Promise<void> {

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { Config } from "../config/index.js";
 import { ErrorCode, RESULT_TOO_LARGE_MESSAGE, RpcError } from "../daemon/index.js";
 import type { DaemonAccess } from "../mcp/index.js";
 import { defineTool } from "./define-tool.js";
@@ -10,6 +11,7 @@ import {
     type ElementTarget,
     elementTargetSchema,
     resolveElement,
+    assertElementOriginAllowed,
 } from "./element-target.js";
 import { ToolError } from "./errors.js";
 import { truncateText } from "./result.js";
@@ -213,6 +215,7 @@ export const jsEvaluate = defineTool({
                 target    : args.target,
                 frames    : context.frames,
                 scope,
+                config    : context.config,
             });
 
             result = outcome.response;
@@ -322,6 +325,7 @@ interface EvaluateRequest {
     target      : ElementTarget | undefined;
     frames?     : import("./frames.js").FrameState;
     scope       : { access: DaemonAccess };
+    config?     : Config;
 }
 
 interface EvaluateOutcome {
@@ -466,6 +470,13 @@ async function evaluate(
         frames: request.frames,
     });
     const owner = elementAccess(access, element);
+
+    if (element.frameId !== undefined) {
+        const { config } = request;
+        const checked = config === undefined ? { access } : { access, config };
+
+        await assertElementOriginAllowed(checked, targetId, element);
+    }
 
     request.scope.access = owner;
 

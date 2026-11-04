@@ -2,6 +2,7 @@ import { z } from "zod";
 import { defineTool, type ToolContext } from "../define-tool.js";
 import { ensureNoDialog } from "../dialogs.js";
 import { ToolError } from "../errors.js";
+import { webOrigin } from "../../safety/index.js";
 import { throwIfCancelled } from "../registry.js";
 import { resolveTab, tabSchema } from "../tab-target.js";
 import { buildGeolocationCommands, buildGeolocationResetCommands } from "./commands.js";
@@ -22,23 +23,15 @@ const reportedSchema = z.strictObject({
 });
 
 function explicitOrigin(value: string): string {
-    let parsed: URL | undefined;
+    const origin = webOrigin(value);
 
-    try {
-        parsed = new URL(value);
-    } catch {
-        parsed = undefined;
-    }
-
-    const isWeb = parsed?.protocol === "http:" || parsed?.protocol === "https:";
-
-    if (parsed === undefined || !isWeb || parsed.origin !== value) {
+    if (origin === undefined) {
         throw new ToolError(
             "origin must be an http or https origin without a path, such as https://example.com.",
         );
     }
 
-    return parsed.origin;
+    return origin;
 }
 
 async function tabOrigin(

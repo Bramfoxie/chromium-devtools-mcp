@@ -179,14 +179,16 @@ interface ElementScope {
     frames  : FrameState;
 }
 
-async function assertElementDocumentAllowed(
-    scope  : ElementScope,
+// The origin of the document of the element is read in the page, so a frame that inherits it
+// (about:blank, about:srcdoc) is judged by the origin it inherited.
+export async function assertElementOriginAllowed(
+    scope  : { config?: Config; access: DaemonAccess },
     tab    : string,
     element: ResolvedElement,
 ): Promise<void> {
     if (scope.config === undefined || !isRestricted(scope.config.safety.allowedDomains)) return;
 
-    let href: unknown;
+    let origin: unknown;
 
     try {
         const reply = await elementAccess(scope.access, element).send({
@@ -194,23 +196,29 @@ async function assertElementDocumentAllowed(
             method  : "Runtime.callFunctionOn",
             params  : {
                 objectId           : element.objectId,
-                functionDeclaration: "function () { return this.ownerDocument.location.href; }",
+                functionDeclaration: "function () { return this.ownerDocument.defaultView ? this.ownerDocument.defaultView.origin : null; }",
                 returnByValue      : true,
             },
         }) as { result?: { value?: unknown } } | null;
 
-        href = reply?.result?.value;
+        origin = reply?.result?.value;
     } catch {
-        href = undefined;
+        origin = undefined;
     }
 
-    if (typeof href !== "string") {
+    if (typeof origin !== "string") {
         throw new ToolError(
             "The document of the element could not be checked against safety.allowedDomains. Call the tool again.",
         );
     }
 
-    assertPageAllowed({ config: scope.config }, href, "The element is in a document from");
+    if (origin === "null") {
+        throw new ToolError(
+            "The element is in a frame with no origin of its own, such as a sandboxed frame, which cannot be checked against safety.allowedDomains.",
+        );
+    }
+
+    assertPageAllowed({ config: scope.config }, origin, "The element is in a frame from");
 }
 
 export async function withElement<T>(
@@ -224,7 +232,9 @@ export async function withElement<T>(
     });
 
     try {
-        if (target.pierce === true) await assertElementDocumentAllowed(scope, tab, element);
+        if (target.pierce === true || element.frameId !== undefined) {
+            await assertElementOriginAllowed(scope, tab, element);
+        }
 
         return await use(element);
     } finally {

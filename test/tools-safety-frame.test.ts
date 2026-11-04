@@ -61,7 +61,7 @@ describe("safetyFramesOf", () => {
         ]);
     });
 
-    it("finds the frame of a uid and omits the origin of about:blank", async () => {
+    it("judges an about:blank frame by the nearest ancestor with an address of its own", async () => {
         const access = framedAccess();
         const frames = new FrameState({ access: access.asAccess() });
         const elements = new ElementRegistry();
@@ -69,7 +69,9 @@ describe("safetyFramesOf", () => {
 
         await expect(
             tools.safetyFramesOf({ target: { uid } }, "tab1", elements, frames),
-        ).resolves.toEqual([{ frameId: "blank", url: "about:blank" }]);
+        ).resolves.toEqual([
+            { frameId: "blank", url: "https://a.example/", origin: "https://a.example" },
+        ]);
     });
 
     it("returns nothing without a frame reference or for an unknown frame", async () => {
@@ -82,12 +84,45 @@ describe("safetyFramesOf", () => {
         ).resolves.toEqual([]);
     });
 
-    it("rejects a frame that the tab does not have", async () => {
+    it("leaves a frame that the tab does not list to the check of the resolved element", async () => {
         const frames = new FrameState({ access: framedAccess().asAccess() });
 
         await expect(
-            tools.safetyFramesOf({ frame: "nope" }, "tab1", new ElementRegistry(), frames),
-        ).rejects.toThrow("not known");
+            tools.safetyFramesOf({ frame: "iframe[name=pay]" }, "tab1", new ElementRegistry(), frames),
+        ).resolves.toEqual([]);
+    });
+
+    it("walks up from nested frames that inherit their origin", async () => {
+        const access = new FakeAccess({
+            tabs  : [{ targetId: "tab1", url: "https://a.example/", title: "a", owned: true, created: true }],
+            frames: [
+                { frameId: "main", url: "https://a.example/", name: "", isolated: false },
+                { frameId: "wrap", parentFrameId: "main", url: "https://b.example/wrap", name: "", isolated: false },
+                { frameId: "doc", parentFrameId: "wrap", url: "about:srcdoc", name: "", isolated: false },
+                { frameId: "deep", parentFrameId: "doc", url: "about:blank", name: "", isolated: false },
+            ],
+        });
+        const frames = new FrameState({ access: access.asAccess() });
+        const found = await tools.safetyFramesOf({ frame: "deep" }, "tab1", new ElementRegistry(), frames);
+
+        expect(found).toEqual([
+            { frameId: "deep", url: "https://b.example/wrap", origin: "https://b.example" },
+        ]);
+    });
+
+    it("gives up on frames that inherit in a loop", async () => {
+        const access = new FakeAccess({
+            tabs  : [{ targetId: "tab1", url: "https://a.example/", title: "a", owned: true, created: true }],
+            frames: [
+                { frameId: "x", parentFrameId: "y", url: "about:blank", name: "", isolated: false },
+                { frameId: "y", parentFrameId: "x", url: "about:blank", name: "", isolated: false },
+            ],
+        });
+        const frames = new FrameState({ access: access.asAccess() });
+
+        await expect(
+            tools.safetyFramesOf({ frame: "x" }, "tab1", new ElementRegistry(), frames),
+        ).rejects.toThrow("could not be placed");
     });
 
     it("collects the frames of every target of a call once", async () => {
@@ -136,32 +171,6 @@ describe("runTool safety request", () => {
             tool : "input_click",
             frame: { frameId: "pay", origin: "https://pay.example:8443" },
         });
-    });
-
-    it("refuses under an allowlist when the frame cannot be checked", async () => {
-        const access = framedAccess();
-        const config = {
-            ...managedConfig,
-            safety: { ...managedConfig.safety, allowedDomains: ["a.example"] },
-        };
-        const runtime = new tools.ToolRuntime({ access: access.asAccess(), config });
-        const respond = vi.fn(() => {
-            throw new Error("handler must not run");
-        });
-
-        access.respond = respond;
-        access.listFrames = () => Promise.reject(new Error("timed out"));
-
-        const result = await tools.runTool(
-            tools.inputClick,
-            { tab: "tab1", target: { selector: "#pay", frame: "pay" } },
-            extra(),
-            runtime,
-        );
-
-        expect(result.isError).toBe(true);
-        expect(JSON.stringify(result.content)).toContain("could not be checked");
-        expect(respond).not.toHaveBeenCalled();
     });
 
     it("leaves the frame out when the call names none", async () => {
@@ -225,5 +234,43 @@ describe("runTool safety request", () => {
 
         expect(refused.isError).toBe(true);
         expect(JSON.stringify(refused.content)).toContain("pay.example");
+    });
+});
+
+describe("assertElementOriginAllowed", () => {
+    const restricted = {
+        ...managedConfig,
+        safety: { ...managedConfig.safety, allowedDomains: ["a.example"] },
+    };
+    const element = { objectId: "o1", backendNodeId: 1, frameId: "f1" };
+
+    async function check(reply: unknown, config = restricted) {
+        const access = new FakeAccess();
+
+        access.respond = () => {
+            if (reply instanceof Error) throw reply;
+
+            return { result: { value: reply } };
+        };
+
+        return tools.assertElementOriginAllowed({ config, access: access.asAccess() }, "tab1", element);
+    }
+
+    it("allows an element whose document has an allowed origin", async () => {
+        await expect(check("https://a.example")).resolves.toBeUndefined();
+    });
+
+    it("refuses an element in a frame whose inherited origin is not allowed", async () => {
+        await expect(check("https://b.example")).rejects.toThrow("b.example");
+    });
+
+    it("refuses a frame with no origin of its own and one it cannot read", async () => {
+        await expect(check("null")).rejects.toThrow("no origin of its own");
+        await expect(check(null)).rejects.toThrow("could not be checked");
+        await expect(check(new Error("gone"))).rejects.toThrow("could not be checked");
+    });
+
+    it("checks nothing without an allowlist", async () => {
+        await expect(check("https://b.example", managedConfig)).resolves.toBeUndefined();
     });
 });

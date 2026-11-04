@@ -12,7 +12,7 @@ export { binaryResult, errorResult, imageBlock, jsonResult, resourceBlock, textB
 
 export { checkSafety, type SafetyRequest } from "./safety.js";
 
-export { safetyFramesOf } from "./safety-frame.js";
+export { safetyFrameOf, safetyFramesOf } from "./safety-frame.js";
 
 export { domQuery } from "./dom-query.js";
 
@@ -92,7 +92,7 @@ export { inputDrag } from "./input-drag.js";
 
 export { closeTab, listSessions, listTabs, newTab, selectTab } from "./tabs.js";
 
-export { boxOf, ElementRegistry, elementTargetSchema, MAX_UIDS_PER_TAB, rectOfQuad, resolveElement, revealElement, splitPierceChain, STALE_UID_MESSAGE, withElement } from "./element-target.js";
+export { assertElementOriginAllowed, boxOf, ElementRegistry, elementTargetSchema, MAX_UIDS_PER_TAB, rectOfQuad, resolveElement, revealElement, splitPierceChain, STALE_UID_MESSAGE, withElement } from "./element-target.js";
 
 export { FRAME_EVENTS, FrameState } from "./frames.js";
 

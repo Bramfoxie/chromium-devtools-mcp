@@ -1,5 +1,6 @@
 import type { ElementRegistry } from "./element-target.js";
 import type { FrameState } from "./frames.js";
+import { originOfUrl } from "../safety/index.js";
 import type { SafetyFrame } from "./safety.js";
 
 interface FrameBearer {
@@ -36,14 +37,29 @@ function frameRefOf(
     return undefined;
 }
 
-function originOf(url: string): string | undefined {
-    try {
-        const origin = new URL(url).origin;
+const INHERITING = new Set(["about:blank", "about:srcdoc"]);
 
-        return origin === "null" ? undefined : origin;
-    } catch {
-        return undefined;
+// A frame that inherits its origin is judged by the nearest ancestor with an address of its own.
+export function safetyFrameOf(
+    frames : Pick<FrameState, "frameOf">,
+    tab    : string,
+    frameId: string,
+): SafetyFrame | undefined {
+    let info = frames.frameOf(tab, frameId);
+    const seen = new Set<string>();
+
+    while (info !== undefined && INHERITING.has(info.url) && info.parentFrameId !== undefined) {
+        if (seen.has(info.frameId)) return undefined;
+
+        seen.add(info.frameId);
+        info = frames.frameOf(tab, info.parentFrameId);
     }
+
+    if (info === undefined) return undefined;
+
+    const origin = originOfUrl(info.url);
+
+    return { frameId, url: info.url, ...(origin === undefined ? {} : { origin }) };
 }
 
 export async function safetyFramesOf(
@@ -64,17 +80,13 @@ export async function safetyFramesOf(
 
     if (!frames.ensured(tab)) await frames.ensure(tab);
 
-    return refs.map((ref) => {
-        const info = frames.frameOf(tab, ref);
+    return refs.flatMap((ref) => {
+        if (frames.frameOf(tab, ref) === undefined) return [];
 
-        if (info === undefined) throw new Error(`Frame ${ref} is not known.`);
+        const frame = safetyFrameOf(frames, tab, ref);
 
-        const origin = originOf(info.url);
+        if (frame === undefined) throw new Error(`Frame ${ref} could not be placed.`);
 
-        return {
-            frameId: info.frameId,
-            url    : info.url,
-            ...(origin === undefined ? {} : { origin }),
-        };
+        return [frame];
     });
 }
