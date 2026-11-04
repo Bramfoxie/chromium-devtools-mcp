@@ -3,7 +3,7 @@ import type { ServerNotification, ServerRequest } from "@modelcontextprotocol/sd
 import { describe, expect, it } from "vitest";
 import type { Config } from "../src/config/index.js";
 import { runTool, ToolRuntime } from "../src/tools/index.js";
-import { cssEdit, splitImportant } from "../src/tools/css-edit.js";
+import { cssEdit, isDangerousCssEdit, splitImportant } from "../src/tools/css-edit.js";
 import { dangerousFor } from "../src/tools/tool-traits.js";
 import { FakeAccess } from "./helpers/fake-access.js";
 import { managedConfig } from "./helpers/daemon-env.js";
@@ -183,7 +183,7 @@ describe("css_edit", () => {
     });
 
     it("adds a rule into a tagged style element and returns its id", async () => {
-        const fake = editFake({ value: { ruleId: "cdm-1", selector: ".x" } });
+        const fake = editFake({ value: { ruleId: "cdm-1", selector: ".x", applied: { color: "red" } } });
         const result = await runTool(
             cssEdit,
             { target: { selector: "#a" }, action: "add_rule", selector: ".x", declarations: { color: "red" } },
@@ -204,10 +204,10 @@ describe("css_edit", () => {
             (call?.params as { functionDeclaration?: unknown })?.functionDeclaration ?? "",
         );
         const request = (call?.params as { arguments?: Array<{ value?: unknown }> })
-            ?.arguments?.[1]?.value as { rule?: string; ruleId?: string };
+            ?.arguments?.[1]?.value as { selector?: string; ruleId?: string };
 
-        expect(declaration).toContain("style[data-cdm]");
-        expect(request?.rule).toContain(".x");
+        expect(declaration).toContain("insertRule");
+        expect(request?.selector).toBe(".x");
         expect(typeof request?.ruleId).toBe("string");
 
         const second = await runTool(
@@ -292,17 +292,71 @@ describe("css_edit", () => {
     });
 
     it("reports an invalid selector without leaking page content", async () => {
-        const fake = editFake({ exception: true });
+        const fake = editFake({ value: { error: "selector" } });
         const result = await runTool(
             cssEdit,
-            { target: { selector: "#a" }, action: "add_rule", selector: "???", declarations: { color: "red" } },
+            { target: { selector: "#a" }, action: "add_rule", selector: "@media print", declarations: { color: "red" } },
             extra(),
             runtimeOf(fake),
         );
 
         expect(result.isError).toBe(true);
-        expect(TEXT(result)).toContain("is invalid");
+        expect(TEXT(result)).toContain("not a style rule selector");
+        expect(TEXT(result)).toContain("Nothing was added");
         expect(TEXT(result)).not.toContain("innerHTML");
+    });
+
+    it("names the declarations the browser did not accept and says nothing was added", async () => {
+        const fake = editFake({ value: { error: "declaration", rejected: ["colr"] } });
+        const result = await runTool(
+            cssEdit,
+            { target: { selector: "#a" }, action: "add_rule", selector: ".x", declarations: { colr: "red" } },
+            extra(),
+            runtimeOf(fake),
+        );
+
+        expect(result.isError).toBe(true);
+        expect(TEXT(result)).toContain("did not accept colr");
+        expect(TEXT(result)).toContain("Nothing was added");
+    });
+
+    it("explains a page that does not take a style tag", async () => {
+        const fake = editFake({ value: { error: "sheet" } });
+        const result = await runTool(
+            cssEdit,
+            { target: { selector: "#a" }, action: "add_rule", selector: ".x", declarations: { color: "red" } },
+            extra(),
+            runtimeOf(fake),
+        );
+
+        expect(result.isError).toBe(true);
+        expect(TEXT(result)).toContain("Content-Security-Policy");
+    });
+
+    it("reports a style the browser did not accept and changed nothing", async () => {
+        const fake = editFake({ value: { rejected: ["foo"] } });
+        const result = await runTool(
+            cssEdit,
+            { target: { selector: "#a" }, action: "set_style", declarations: { foo: "bar" } },
+            extra(),
+            runtimeOf(fake),
+        );
+
+        expect(result.isError).toBe(true);
+        expect(TEXT(result)).toContain("did not accept foo");
+        expect(TEXT(result)).toContain("Nothing was changed");
+    });
+
+    it("refuses a property named twice with different case", async () => {
+        const result = await runTool(
+            cssEdit,
+            { target: { selector: "#a" }, action: "set_style", declarations: { Color: "red", color: "blue" } },
+            extra(),
+            runtimeOf(editFake()),
+        );
+
+        expect(result.isError).toBe(true);
+        expect(TEXT(result)).toContain("Each property may appear once");
     });
 
     it("is refused in read-only mode before touching the page", async () => {
@@ -344,5 +398,14 @@ describe("css_edit", () => {
 
         expect(result.isError).toBe(true);
         expect(TEXT(result)).toContain("outside safety.allowedDomains");
+    });
+});
+
+describe("isDangerousCssEdit", () => {
+    it("is dangerous only when a value makes the page fetch an address", () => {
+        expect(isDangerousCssEdit({ declarations: { color: "red" } })).toBe(false);
+        expect(isDangerousCssEdit({ declarations: { background: "url(//x.test/y)" } })).toBe(true);
+        expect(isDangerousCssEdit({ declarations: { "border-image": "image-set(\"a\" 1x)" } })).toBe(true);
+        expect(isDangerousCssEdit({})).toBe(false);
     });
 });

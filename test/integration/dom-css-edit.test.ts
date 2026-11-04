@@ -102,6 +102,30 @@ describe.skipIf(!present)("dom_edit in a real browser", () => {
         expect(toggled).toMatchObject({ ok: true, had: true, has: false });
     });
 
+    it("gives a revertible previous for set_text on markup and a position for remove", async () => {
+        const tab = await env.open("/edit");
+        const text = (await env.ok("dom_edit", {
+            tab,
+            target: { selector: "#card" },
+            action: "set_text",
+            text  : "plain",
+        })) as { previous?: string; previousIsHtml?: boolean };
+
+        expect(text).toMatchObject({ previous: "hello <b>world</b>", previousIsHtml: true });
+
+        const before = await read(
+            tab,
+            "Array.prototype.indexOf.call(document.body.childNodes, document.getElementById('gone'))",
+        );
+        const removed = (await env.ok("dom_edit", {
+            tab,
+            target: { selector: "#gone" },
+            action: "remove",
+        })) as { index?: number };
+
+        expect(removed.index).toBe(before);
+    });
+
     it("replaces HTML and removes an element", async () => {
         const tab = await env.open("/edit");
 
@@ -324,6 +348,113 @@ describe.skipIf(!present)("css_edit in a real browser", () => {
         expect(await read(tab, "document.querySelectorAll('style[data-cdm]').length")).toBe(0);
     });
 
+    it("leaves nothing behind for a rule that is not a style rule or has a bad declaration", async () => {
+        const tab = await env.open("/edit");
+        const sheets = "document.querySelectorAll('style[data-cdm]').length";
+
+        for (const selector of ["@media print", "@font-face", "a {} b"]) {
+            const refused = await env.call("css_edit", {
+                tab,
+                target      : { selector: "#card" },
+                action      : "add_rule",
+                selector,
+                declarations: { color: "red" },
+            });
+
+            expect(refused.isError).toBe(true);
+            expect(refused.text).toContain("not a style rule selector");
+        }
+
+        const bad = await env.call("css_edit", {
+            tab,
+            target      : { selector: "#card" },
+            action      : "add_rule",
+            selector    : "#card",
+            declarations: { colr: "red" },
+        });
+
+        expect(bad.isError).toBe(true);
+        expect(bad.text).toContain("did not accept colr");
+        expect(await read(tab, sheets)).toBe(0);
+    });
+
+    it("accepts a selector with a brace in a string and reports the declarations the browser kept", async () => {
+        const tab = await env.open("/edit");
+        const added = (await env.ok("css_edit", {
+            tab,
+            target      : { selector: "#card" },
+            action      : "add_rule",
+            selector    : '#card[title="{"], #card',
+            declarations: { color: "rgb(1, 2, 3)", "Margin-Top": "4px !important" },
+        })) as { declarations?: Record<string, string> };
+
+        expect(added.declarations).toEqual({ color: "rgb(1, 2, 3)", "margin-top": "4px !important" });
+        expect(await read(tab, "getComputedStyle(document.getElementById('card')).color")).toContain("1, 2, 3");
+    });
+
+    it("keeps the priority in previous and refuses an unknown property without a change", async () => {
+        const tab = await env.open("/edit");
+
+        await read(tab, "document.getElementById('card').style.setProperty('color', 'red', 'important')");
+
+        const edited = (await env.ok("css_edit", {
+            tab,
+            target      : { selector: "#card" },
+            action      : "set_style",
+            declarations: { color: "blue" },
+        })) as { previous?: Record<string, string> };
+
+        expect(edited.previous).toEqual({ color: "red !important" });
+
+        const unknown = await env.call("css_edit", {
+            tab,
+            target      : { selector: "#card" },
+            action      : "set_style",
+            declarations: { "font-size": "20px", foo: "bar" },
+        });
+
+        expect(unknown.isError).toBe(true);
+        expect(unknown.text).toContain("did not accept foo");
+        expect(await read(tab, "document.getElementById('card').style.fontSize")).toBe("14px");
+    });
+
+    it("does not reuse a style tag of the page and puts a rule of a shadow target into its root", async () => {
+        const tab = await env.open("/edit");
+
+        await read(
+            tab,
+            `document.head.insertAdjacentHTML("beforeend", '<style data-cdm>#gone { color: rgb(9, 9, 9) }</style>')`,
+        );
+
+        const added = (await env.ok("css_edit", {
+            tab,
+            target      : { selector: "#host >>> #deep" },
+            action      : "add_rule",
+            selector    : "#deep",
+            declarations: { color: "rgb(0, 0, 255)" },
+        })) as { ruleId?: string };
+
+        expect(await read(tab, "document.getElementById('host').shadowRoot.querySelectorAll('style').length")).toBe(1);
+        expect(await read(tab, "getComputedStyle(document.getElementById('host').shadowRoot.getElementById('deep')).color"))
+            .toContain("0, 0, 255");
+
+        await env.ok("css_edit", { tab, target: { selector: "#host >>> #deep" }, action: "remove_rule", ruleId: added.ruleId });
+
+        expect(await read(tab, "document.getElementById('host').shadowRoot.querySelectorAll('style').length")).toBe(0);
+        expect(await read(tab, "document.querySelectorAll('style[data-cdm]').length")).toBe(1);
+        expect(await read(tab, "getComputedStyle(document.getElementById('gone')).color")).toContain("9, 9, 9");
+
+        const forged = await env.ok("css_edit", {
+            tab,
+            target: { selector: "#card" },
+            action: "remove_rule",
+            ruleId: "cdm-forged",
+        });
+
+        expect(forged).toMatchObject({ ok: false });
+        expect(await read(tab, "document.querySelectorAll('style[data-cdm]').length")).toBe(1);
+    });
+
     it("rejects an invalid selector and bad property names", async () => {
         const tab = await env.open("/edit");
 
@@ -336,7 +467,7 @@ describe.skipIf(!present)("css_edit in a real browser", () => {
         });
 
         expect(bad.isError).toBe(true);
-        expect(bad.text).toContain("is invalid");
+        expect(bad.text).toContain("not a style rule selector");
         expect(await read(tab, "document.querySelectorAll('style[data-cdm]').length")).toBe(0);
 
         const property = await env.call("css_edit", {

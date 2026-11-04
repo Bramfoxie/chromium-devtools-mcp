@@ -59,9 +59,10 @@ export const DOM_EDIT_EXPRESSION = `function (element, request) {
     return { previous };
   }
   if (action === "set_text") {
-    const previous = element.textContent ?? "";
+    const withMarkup = element.children.length > 0;
+    const previous = withMarkup ? element.innerHTML : (element.textContent ?? "");
     element.textContent = request.text;
-    return { previous };
+    return { previous, previousIsHtml: withMarkup };
   }
   if (action === "set_html") {
     const previous = element.innerHTML;
@@ -70,8 +71,10 @@ export const DOM_EDIT_EXPRESSION = `function (element, request) {
   }
   if (action === "remove") {
     const previous = element.outerHTML;
+    const parent = element.parentNode;
+    const index = parent === null ? -1 : Array.prototype.indexOf.call(parent.childNodes, element);
     element.remove();
-    return { previous };
+    return { previous, index };
   }
   if (action === "add_class") {
     const had = element.classList.contains(request.className);
@@ -95,18 +98,22 @@ const domEditResultSchema = z.object({
     result: z.object({
         type : z.string().optional(),
         value: z.object({
-            previous: z.string().nullable().optional(),
-            had     : z.boolean().optional(),
-            has     : z.boolean().optional(),
+            previous      : z.string().nullable().optional(),
+            had           : z.boolean().optional(),
+            has           : z.boolean().optional(),
+            previousIsHtml: z.boolean().optional(),
+            index         : z.number().optional(),
         }).optional(),
     }),
     exceptionDetails: z.unknown().optional(),
 });
 
 type DomEditResult = {
-    previous?: string | null;
-    had?     : boolean;
-    has?     : boolean;
+    previousIsHtml?: boolean;
+    index?         : number;
+    previous?      : string | null;
+    had?           : boolean;
+    has?           : boolean;
 };
 
 export function buildDomEditRequest(args: {
@@ -183,8 +190,26 @@ export function domEditEffect(
     }
 }
 
-export function isDangerousDomEdit(action: DomEditAction): boolean {
-    return action === "set_html" || action === "remove";
+const SCRIPT_ATTRIBUTE = /^(?:on|srcdoc$)/i;
+
+const SCRIPT_VALUE = /^(?:javascript|data|vbscript):/i;
+
+// Browsers ignore control characters and spaces inside a scheme, so they are dropped before matching.
+function withoutScriptNoise(value: string): string {
+    return value.replace(/[\u0000-\u0020]/g, "");
+}
+
+export function isDangerousDomEdit(args: {
+    action: DomEditAction;
+    name? : string | undefined;
+    value?: string | undefined;
+}): boolean {
+    if (args.action === "set_html" || args.action === "remove") return true;
+
+    if (args.action !== "set_attribute") return false;
+
+    return SCRIPT_ATTRIBUTE.test(args.name ?? "")
+        || SCRIPT_VALUE.test(withoutScriptNoise(args.value ?? ""));
 }
 
 const FIELDS: Record<DomEditAction, readonly string[]> = {
@@ -216,11 +241,14 @@ export const domEdit = defineTool({
     description:
         "Edit one element without JavaScript: attributes, text, HTML, removal or classes. Returns the previous value for a revert.",
     access   : "mutate",
-    dangerous: (args) => isDangerousDomEdit(args.action),
-    summarize: (args) =>
-        (args.action) === "remove"
-            ? "It removes the element from the page."
-            : "It replaces the HTML inside the element.",
+    dangerous: (args) => isDangerousDomEdit(args),
+    summarize: (args) => {
+        if (args.action === "remove") return "It removes the element from the page.";
+
+        if (args.action === "set_attribute") return "It sets an attribute that can run script in the page.";
+
+        return "It replaces the HTML inside the element.";
+    },
     input: z.strictObject({
         tab   : tabSchema,
         target: elementTargetSchema.describe("Element uid from a snapshot or query, or a CSS selector."),
@@ -251,17 +279,19 @@ export const domEdit = defineTool({
         }
     }),
     output: z.strictObject({
-        ok         : z.boolean().describe("Whether the edit was applied."),
-        action     : z.enum(DOM_EDIT_ACTIONS).describe("What ran."),
-        target     : targetSummarySchema.describe("The element that was edited, before the edit."),
-        effect     : z.string().describe("Short summary of what happened."),
-        attribute  : z.string().optional().describe("Attribute name, for attribute actions."),
-        className  : z.string().optional().describe("Class token, for class actions."),
-        previous   : z.string().nullable().optional().describe(`Previous value for a revert: the attribute value or null when absent, the text, the HTML or the outer HTML. Truncated with a marker over ${DOM_EDIT_PREVIOUS_MAX} characters.`),
-        had        : z.boolean().optional().describe("Whether the class was present before, for class actions."),
-        has        : z.boolean().optional().describe("Whether the class is present now, for class actions."),
-        truncated  : z.boolean().optional().describe("Whether previous was truncated."),
-        totalLength: z.number().optional().describe("Full length of previous in characters, when truncated."),
+        ok            : z.boolean().describe("Whether the edit was applied."),
+        action        : z.enum(DOM_EDIT_ACTIONS).describe("What ran."),
+        target        : targetSummarySchema.describe("The element that was edited, before the edit."),
+        effect        : z.string().describe("Short summary of what happened."),
+        attribute     : z.string().optional().describe("Attribute name, for attribute actions."),
+        className     : z.string().optional().describe("Class token, for class actions."),
+        previous      : z.string().nullable().optional().describe(`Previous value for a revert: the attribute value or null when absent, the text, the HTML or the outer HTML. Truncated with a marker over ${DOM_EDIT_PREVIOUS_MAX} characters.`),
+        previousIsHtml: z.boolean().optional().describe("For set_text: true when previous is the inner HTML because the element had child elements. Revert it with set_html."),
+        index         : z.number().optional().describe("For remove: position of the element among the child nodes of its parent, or -1 when it had none."),
+        had           : z.boolean().optional().describe("Whether the class was present before, for class actions."),
+        has           : z.boolean().optional().describe("Whether the class is present now, for class actions."),
+        truncated     : z.boolean().optional().describe("Whether previous was truncated."),
+        totalLength   : z.number().optional().describe("Full length of previous in characters, when truncated."),
     }),
     handler: async (args, context) => {
         const targetId = resolveTab(args, context);
@@ -311,6 +341,12 @@ export const domEdit = defineTool({
             }
 
             const shaped = shapePrevious(result.previous);
+            const extra = {
+                ...(result.previousIsHtml === undefined
+                    ? {}
+                    : { previousIsHtml: result.previousIsHtml }),
+                ...(result.index === undefined ? {} : { index: result.index }),
+            };
             const attribute = args.action === "set_attribute" || args.action === "remove_attribute"
                 ? { attribute: args.name as string }
                 : {};
@@ -326,6 +362,7 @@ export const domEdit = defineTool({
                 ...attribute,
                 ...classField,
                 ...shaped,
+                ...extra,
                 ...had,
                 ...has,
             };

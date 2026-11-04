@@ -3,7 +3,7 @@ import type { ServerNotification, ServerRequest } from "@modelcontextprotocol/sd
 import { describe, expect, it } from "vitest";
 import type { Config } from "../src/config/index.js";
 import { runTool, ToolRuntime } from "../src/tools/index.js";
-import { domEdit } from "../src/tools/dom-edit.js";
+import { domEdit, isDangerousDomEdit } from "../src/tools/dom-edit.js";
 import { dangerousFor } from "../src/tools/tool-traits.js";
 import { FakeAccess } from "./helpers/fake-access.js";
 import { managedConfig } from "./helpers/daemon-env.js";
@@ -285,5 +285,33 @@ describe("dom_edit", () => {
 
         expect(result.isError).toBe(true);
         expect(TEXT(result)).toContain("outside safety.allowedDomains");
+    });
+});
+
+describe("isDangerousDomEdit", () => {
+    const set = (name: string, value: string) =>
+        isDangerousDomEdit({ action: "set_attribute", name, value });
+
+    it("treats html replacement and removal as dangerous", () => {
+        expect(isDangerousDomEdit({ action: "set_html" })).toBe(true);
+        expect(isDangerousDomEdit({ action: "remove" })).toBe(true);
+        expect(isDangerousDomEdit({ action: "set_text" })).toBe(false);
+        expect(isDangerousDomEdit({ action: "toggle_class" })).toBe(false);
+    });
+
+    it("treats an attribute that can run script as dangerous", () => {
+        expect(set("onerror", "alert(1)")).toBe(true);
+        expect(set("ONCLICK", "x()")).toBe(true);
+        expect(set("srcdoc", "<p>x</p>")).toBe(true);
+        expect(set("href", "javascript:alert(1)")).toBe(true);
+        expect(set("src", " Java\tScript:alert(1)")).toBe(true);
+        expect(set("src", "data:text/html,<p>x</p>")).toBe(true);
+    });
+
+    it("leaves ordinary attributes alone", () => {
+        expect(set("title", "hello")).toBe(false);
+        expect(set("href", "https://example.test/")).toBe(false);
+        expect(set("data-onion", "1")).toBe(false);
+        expect(set("aria-label", "javascript is fun")).toBe(false);
     });
 });
