@@ -36,6 +36,10 @@ export { consoleLogs } from "./console-logs.js";
 
 export { a11ySnapshot } from "./a11y-snapshot.js";
 
+export { domSelector } from "./dom-selector.js";
+
+export { pickLocator } from "./locator-suggest.js";
+
 export { a11yEntries, summarize as summarizeA11y } from "./a11y-tree.js";
 
 export { AuditLog, auditLine, fileAuditSink, summarizeArgs, type AuditEntry, type AuditSink } from "./audit-log.js";

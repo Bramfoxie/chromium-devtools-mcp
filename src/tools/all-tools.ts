@@ -6,6 +6,7 @@ import { domEdit } from "./dom-edit.js";
 import type { AnyTool } from "./define-tool.js";
 import { domQuery } from "./dom-query.js";
 import { a11ySnapshot } from "./a11y-snapshot.js";
+import { domSelector } from "./dom-selector.js";
 import { domSnapshot } from "./dom-snapshot.js";
 import { emulateDevice } from "./emulation/emulate-device.js";
 import { emulateGeolocation } from "./emulation/emulate-geolocation.js";
@@ -56,6 +57,7 @@ export const allTools: AnyTool[] = [
     domQuery,
     domSnapshot,
     a11ySnapshot,
+    domSelector,
     domEdit,
     cssInspect,
     cssEdit,
