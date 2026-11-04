@@ -95,7 +95,13 @@ export class DirectoryArtifactStore implements ArtifactStore {
         const file = path.join(await this.ready(), this.entryName(kind, `.${extension}`));
 
         try {
-            await this.io.write(file, data);
+            await this.io.write(file, data).catch(async (error: unknown) => {
+                if (!isMissing(error)) throw error;
+
+                this.prepared = undefined;
+                await this.ready();
+                await this.io.write(file, data);
+            });
         } catch (error) {
             throw new ToolError(`Could not write ${file}: ${reason(error)}`);
         }
@@ -174,6 +180,10 @@ export class DirectoryArtifactStore implements ArtifactStore {
             }
         }
     }
+}
+
+function isMissing(error: unknown): boolean {
+    return error instanceof Error && "code" in error && error.code === "ENOENT";
 }
 
 function reason(error: unknown): string {

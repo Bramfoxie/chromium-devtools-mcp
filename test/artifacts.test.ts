@@ -99,6 +99,27 @@ describe("DirectoryArtifactStore", () => {
         expect(written).toHaveLength(1);
     });
 
+    it("prepares the directory again when it was removed while running", async () => {
+        const { io, written, calls } = fakeIO();
+        let first = true;
+        const write = io.write;
+
+        io.write = async (file, data) => {
+            if (first) {
+                first = false;
+
+                throw Object.assign(new Error("gone"), { code: "ENOENT" });
+            }
+
+            await write(file, data);
+        };
+
+        await storeWith(io).write("trace", "json", "x");
+
+        expect(written).toHaveLength(1);
+        expect(calls.filter((call) => call.startsWith("ensure"))).toHaveLength(2);
+    });
+
     it("explains a directory that cannot be prepared and tries again next time", async () => {
         let attempts = 0;
         const { io } = fakeIO();
