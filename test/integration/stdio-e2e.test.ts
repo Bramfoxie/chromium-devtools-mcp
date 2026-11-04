@@ -22,15 +22,17 @@ function isolatedEnv(root: string): Record<string, string> {
         if (value !== undefined) inherited[name] = value;
     }
 
+    // On Windows the browser needs the real profile folders, and the daemon keeps its files under LOCALAPPDATA.
+    if (process.platform === "win32") {
+        return { ...inherited, LOCALAPPDATA: path.join(root, "local") };
+    }
+
     return {
         ...inherited,
         HOME           : root,
-        USERPROFILE    : root,
         XDG_CONFIG_HOME: path.join(root, "config"),
         XDG_DATA_HOME  : path.join(root, "data"),
         XDG_RUNTIME_DIR: root,
-        LOCALAPPDATA   : path.join(root, "local"),
-        APPDATA        : path.join(root, "roaming"),
         TMPDIR         : root,
     };
 }
