@@ -14,7 +14,7 @@ import {
 } from "./cli-daemon.js";
 
 const USAGE =
-    "Usage: chromium-devtools-mcp [options]        run the MCP server on stdio\n       chromium-devtools-mcp daemon [options] run the browser daemon\n       chromium-devtools-mcp daemon status|stop|logs [--lines <count>]\n       chromium-devtools-mcp doctor [options]  check the setup and print how to fix it\n       chromium-devtools-mcp install --client <name|all> [--dry-run] [--remove] [options]\nOptions: --browser chrome, --mode attach|managed, --headless, --profile-dir, --debug-port, --ws-endpoint, --allow-focus, --isolated, --read-only, --allowed-domains, --confirm-dangerous, --help\nBoolean flags also accept a --no- form, for example --no-headless.";
+    "Usage: chromium-devtools-mcp [options]        run the MCP server on stdio\n       chromium-devtools-mcp daemon [options] run the browser daemon\n       chromium-devtools-mcp daemon status|stop|logs [--lines <count>]\n       chromium-devtools-mcp doctor [options]  check the setup and print how to fix it\n       chromium-devtools-mcp install --client <name|all> [--dry-run] [--remove] [options]\nOptions: --browser chrome, --mode attach|managed, --headless, --profile-dir, --debug-port, --ws-endpoint, --allow-focus, --isolated, --read-only, --allowed-domains, --denied-domains, --allow-private-networks, --confirm-dangerous, --help\nBoolean flags also accept a --no- form, for example --no-headless.";
 
 export interface CliDeps {
     run     : (config: Config) => Promise<RunningDaemon>;
