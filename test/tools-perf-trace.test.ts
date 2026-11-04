@@ -133,8 +133,8 @@ describe("perf_trace_start", () => {
         expect(methods(fake)).toContain("Tracing.start");
     });
 
-    it("drops the trace when the reload fails", async () => {
-        const { runtime } = setup();
+    it("ends the trace when the reload fails, so the next one can start", async () => {
+        const { fake, runtime } = setup();
 
         vi.spyOn(pageNavigate, "handler").mockRejectedValue(new Error("tab went away"));
 
@@ -142,6 +142,8 @@ describe("perf_trace_start", () => {
 
         expect(failed.isError).toBe(true);
         expect(runtime.trace.recording("tab1")).toBe(false);
+        expect(methods(fake)).toContain("Tracing.end");
+        expect(methods(fake)).toContain("Page.stopScreencast");
     });
 
     it("refuses a second start on the tab", async () => {

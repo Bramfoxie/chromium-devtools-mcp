@@ -171,3 +171,45 @@ describe("network", () => {
         expect(summary.network.requests).toBe(1);
     });
 });
+
+describe("summarizeTrace on large and edge case traces", () => {
+    it("summarizes a trace of 300000 events without running out of stack", () => {
+        const events: TraceEvent[] = Array.from({ length: 300_000 }, (_, index) =>
+            ev({ name: "RunTask", ts: base + index, dur: 1, args: {} }));
+        const summary = summarizeTrace(events, MAIN);
+
+        expect(summary.durationMs).toBeGreaterThan(0);
+    });
+
+    it("starts a new layout shift window after a window that scored nothing", () => {
+        const shift = (at: number, score: number): TraceEvent =>
+            ev({ ph: "I", name: "LayoutShift", ts: base + at * MS, args: { frame: MAIN, data: { score } } });
+        const summary = summarizeTrace([shift(0, 0), shift(100, 0.3), shift(200, 0.2)], MAIN);
+
+        expect(summary.vitals.cls).toBe(0.5);
+    });
+
+    it("counts only the part of a task after the first paint as blocking", () => {
+        const events = [
+            { pid: PID, tid: TID, ph: "M", name: "thread_name", args: { name: "CrRendererMain" } },
+            ev({ ph: "R", name: "navigationStart", ts: base, args: { frame: MAIN } }),
+            ev({ ph: "R", name: "firstContentfulPaint", ts: base + 500 * MS, args: { frame: MAIN } }),
+            ev({ name: "RunTask", ts: base + 400 * MS, dur: 200 * MS, args: {} }),
+        ];
+
+        expect(summarizeTrace(events, MAIN).vitals.tbtMs).toBe(50);
+    });
+
+    it("forgets an interaction start once its end was seen", () => {
+        const pair = (id: string): TraceEvent[] => [
+            ev({ ph: "b", id, name: "EventTiming", ts: base, args: { data: { interactionId: 5 } } }),
+            ev({ ph: "e", id, name: "EventTiming", ts: base + 100 * MS, args: {} }),
+        ];
+        const summary = summarizeTrace(
+            [...pair("1"), ev({ ph: "e", id: "1", name: "EventTiming", ts: base + 900 * MS, args: {} })],
+            MAIN,
+        );
+
+        expect(summary.vitals.inpMs).toBe(100);
+    });
+});

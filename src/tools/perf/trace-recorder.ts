@@ -11,7 +11,7 @@ const COMPLETE_EVENT = "Tracing.tracingComplete";
 
 const STOP_WAIT_MS = 30_000;
 
-const MAX_EVENTS = 1_500_000;
+const MAX_EVENTS = 800_000;
 
 const chunkSchema = z.object({ value: z.array(z.unknown()) });
 

@@ -5,6 +5,7 @@ import { ToolError } from "../errors.js";
 import { pageNavigate } from "../page-navigate.js";
 import { throwIfCancelled } from "../registry.js";
 import { resolveTab, tabSchema } from "../tab-target.js";
+import { traceFile } from "./trace-file.js";
 import { filterTrace } from "./trace-filter.js";
 import { summarizeTrace } from "./trace-summary.js";
 
@@ -48,7 +49,7 @@ export const perfTraceStart = defineTool({
                 context,
             );
         } catch (error) {
-            await context.trace.forget(targetId);
+            await context.trace.stop(targetId).catch(() => undefined);
 
             throw error;
         }
@@ -130,11 +131,7 @@ export const perfTraceStop = defineTool({
         const tabFrames = new Set(frames.map((frame) => frame.frameId));
         const filtered = filterTrace(recorded.events, tabFrames);
         const summary = summarizeTrace(filtered.events, mainFrame);
-        const file = await context.artifacts.write(
-            "perf-trace",
-            "json",
-            JSON.stringify({ traceEvents: filtered.events, metadata: { source: "chromium-devtools-mcp" } }),
-        );
+        const file = await context.artifacts.write("perf-trace", "json", traceFile(filtered.events));
 
         return {
             tab   : targetId,

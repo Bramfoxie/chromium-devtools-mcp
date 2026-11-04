@@ -178,6 +178,18 @@ function selfTimes(tasks: TraceEvent[]): Record<Activity, number> {
     return totals;
 }
 
+function earliest(events: readonly TraceEvent[]): number {
+    let first = Number.POSITIVE_INFINITY;
+
+    for (const event of events) {
+        const stamp = event.ts ?? 0;
+
+        if (stamp > 0 && stamp < first) first = stamp;
+    }
+
+    return Number.isFinite(first) ? first : 0;
+}
+
 function shiftScore(events: readonly TraceEvent[]): { cls: number; count: number } {
     const shifts = events
         .filter((event) => event.name === "LayoutShift" && data(event).had_recent_input !== true)
@@ -187,14 +199,16 @@ function shiftScore(events: readonly TraceEvent[]): { cls: number; count: number
     let windowSum = 0;
     let windowStart = 0;
     let last = 0;
+    let open = false;
 
     for (const shift of shifts) {
-        const fresh = windowSum === 0 ||
+        const fresh = !open ||
             shift.ts - last > CLS_WINDOW_GAP_US || shift.ts - windowStart > CLS_WINDOW_MAX_US;
 
         if (fresh) {
             windowSum = 0;
             windowStart = shift.ts;
+            open = true;
         }
 
         windowSum += shift.score;
@@ -216,6 +230,8 @@ function interactionDelay(events: readonly TraceEvent[]): { inpMs?: number; coun
             begins.set(event.id, event);
         } else if (event.ph === "e") {
             const begin = begins.get(event.id);
+
+            begins.delete(event.id);
             const interaction = Number(begin === undefined ? 0 : data(begin).interactionId ?? 0);
 
             if (begin !== undefined && interaction > 0) {
@@ -354,8 +370,7 @@ function insightsOf(summary: Omit<TraceSummary, "insights">): Insight[] {
 }
 
 export function summarizeTrace(events: readonly TraceEvent[], mainFrame: string): TraceSummary {
-    const stamps = events.map((event) => event.ts ?? 0).filter((ts) => ts > 0);
-    const first = stamps.length === 0 ? 0 : Math.min(...stamps);
+    const first = earliest(events);
     const last = events.reduce(
         (end, event) => Math.max(end, (event.ts ?? 0) + (event.dur ?? 0)),
         first,
@@ -379,9 +394,12 @@ export function summarizeTrace(events: readonly TraceEvent[], mainFrame: string)
     const afterPaint = fcp?.ts ?? base;
     const runTasks = tasks.filter((task) => task.name === "RunTask");
     const longTasks = runTasks.filter((task) => (task.dur ?? 0) > LONG_TASK_US);
-    const blocking = longTasks
-        .filter((task) => (task.ts ?? 0) + (task.dur ?? 0) > afterPaint)
-        .reduce((sum, task) => sum + ((task.dur ?? 0) - LONG_TASK_US), 0);
+    const blocking = longTasks.reduce((sum, task) => {
+        const start = Math.max(task.ts ?? 0, afterPaint);
+        const inside = (task.ts ?? 0) + (task.dur ?? 0) - start;
+
+        return sum + Math.max(0, inside - LONG_TASK_US);
+    }, 0);
     const shift = shiftScore(events.filter((event) => frameOf(event) === mainFrame || event.name !== "LayoutShift"));
     const interactions = interactionDelay(events);
     const totals = selfTimes(tasks);
