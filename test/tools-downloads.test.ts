@@ -1,5 +1,6 @@
 import type { RequestHandlerExtra } from "@modelcontextprotocol/sdk/shared/protocol.js";
 import type { ServerNotification, ServerRequest } from "@modelcontextprotocol/sdk/types.js";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
     type ArtifactStore,
@@ -238,18 +239,19 @@ describe("DownloadState file lookup", () => {
     }
 
     it("finds the file by its suggested name and reads its size", async () => {
-        const { fake, value } = state(["a.txt", "a.txt.crdownload"], { "/d/a.txt": 4096 });
+        const file = path.join("/d", "a.txt");
+        const { fake, value } = state(["a.txt", "a.txt.crdownload"], { [file]: 4096 });
 
         await finish(fake, "g1", "a.txt");
 
-        expect(value.list("tab1")[0]).toMatchObject({ path: "/d/a.txt", receivedBytes: 4096 });
+        expect(value.list("tab1")[0]).toMatchObject({ path: file, receivedBytes: 4096 });
     });
 
     it("takes the only unclaimed file when the browser renamed it, and none when it is unsure", async () => {
         const one = state(["a (1).txt"]);
 
         await finish(one.fake, "g1", "a.txt");
-        expect(one.value.list("tab1")[0]?.path).toBe("/d/a (1).txt");
+        expect(one.value.list("tab1")[0]?.path).toBe(path.join("/d", "a (1).txt"));
 
         const many = state(["x", "y"]);
 
