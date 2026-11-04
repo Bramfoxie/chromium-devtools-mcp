@@ -23,6 +23,7 @@ export const configSchema = z.strictObject({
     isolated    : z.boolean(),
     tools       : z.array(z.string().min(1).max(64)).max(100).optional(),
     excludeTools: z.array(z.string().min(1).max(64)).max(100).optional(),
+    auditLog    : z.string().min(1).max(1024).optional(),
     safety      : z.strictObject({
         readOnly      : z.boolean(),
         allowedDomains: z.array(

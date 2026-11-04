@@ -80,6 +80,7 @@ function envLayer(env: NodeJS.ProcessEnv): Layer {
     const denied = get("DENIED_DOMAINS");
     const tools = get("TOOLS");
     const excluded = get("EXCLUDE_TOOLS");
+    const auditLog = get("AUDIT_LOG");
 
     return compact({
         browser     : get("BROWSER"),
@@ -92,6 +93,7 @@ function envLayer(env: NodeJS.ProcessEnv): Layer {
         isolated    : bool("ISOLATED"),
         tools       : tools === undefined ? undefined : toList(tools),
         excludeTools: excluded === undefined ? undefined : toList(excluded),
+        auditLog    : auditLog,
         safety      : {
             readOnly            : bool("READ_ONLY"),
             allowedDomains      : domains === undefined ? undefined : toList(domains),
@@ -124,6 +126,7 @@ function parseFlags(argv: string[]) {
                 "allow-private-networks": { type: "boolean" },
                 tools                   : { type: "string" },
                 "exclude-tools"         : { type: "string" },
+                "audit-log"             : { type: "string" },
                 "confirm-dangerous"     : { type: "boolean" },
             },
         });
@@ -141,6 +144,7 @@ function argvLayer(argv: string[]): Layer {
     const denied = values["denied-domains"];
     const tools = values.tools;
     const excluded = values["exclude-tools"];
+    const auditLog = values["audit-log"];
 
     return compact({
         browser     : values.browser,
@@ -153,6 +157,7 @@ function argvLayer(argv: string[]): Layer {
         isolated    : values.isolated,
         tools       : typeof tools === "string" ? toList(tools) : tools,
         excludeTools: typeof excluded === "string" ? toList(excluded) : excluded,
+        auditLog    : auditLog,
         safety      : {
             readOnly            : values["read-only"],
             allowedDomains      : typeof domains === "string" ? toList(domains) : domains,
@@ -257,6 +262,15 @@ function validate(resolved: Resolved): Config {
             );
         }
 
+        if (
+            result.data.auditLog !== undefined
+            && !pathFor(resolved.platform).isAbsolute(result.data.auditLog)
+        ) {
+            throw new ConfigError(
+                `invalid configuration: auditLog: must be an absolute path, got ${JSON.stringify(result.data.auditLog)}`,
+            );
+        }
+
         return result.data;
     }
 
@@ -289,6 +303,7 @@ const FIELDS = [
     "isolated",
     "tools",
     "excludeTools",
+    "auditLog",
 ] as const;
 
 const SAFETY_FIELDS = [

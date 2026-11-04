@@ -4,6 +4,7 @@ import { confirmedAccess, type Confirmer } from "./confirmation.js";
 import { CaptureManager } from "./capture/manager.js";
 import type { KnownTab, ToolClock, ToolContext } from "./define-tool.js";
 import { DialogState } from "./dialogs.js";
+import type { AuditLog } from "./audit-log.js";
 import { DownloadState } from "./download-state.js";
 import { ElementRegistry } from "./element-target.js";
 import { type ArtifactStore, noArtifacts } from "./artifacts.js";
@@ -71,6 +72,7 @@ interface ToolRuntimeOptions {
     video?     : VideoTools;
     lighthouse?: LighthouseTools;
     confirm?   : Confirmer;
+    audit?     : AuditLog;
 }
 
 export class ToolRuntime {
@@ -94,6 +96,7 @@ export class ToolRuntime {
     readonly downloadState: DownloadState;
     readonly artifacts    : ArtifactStore;
     readonly confirm      : Confirmer | undefined;
+    readonly audit        : AuditLog | undefined;
 
     constructor(options: ToolRuntimeOptions) {
         this.access = options.access;
@@ -133,6 +136,7 @@ export class ToolRuntime {
                 }
             });
         this.confirm = options.confirm;
+        this.audit = options.audit;
     }
 
     attach(): void {

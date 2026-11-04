@@ -21,6 +21,7 @@ export function formatConfigReport(report: ConfigReport): string {
         ["isolated", config.isolated],
         ["tools", config.tools === undefined || config.tools.length === 0 ? "(all)" : config.tools],
         ["excludeTools", config.excludeTools],
+        ["auditLog", config.auditLog],
         ["safety.readOnly", config.safety.readOnly],
         ["safety.allowedDomains", config.safety.allowedDomains],
         ["safety.deniedDomains", config.safety.deniedDomains],

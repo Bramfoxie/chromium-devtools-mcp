@@ -13,6 +13,8 @@ import { elicitationConfirmer } from "../tools/confirmation.js";
 import {
     allTools,
     type LighthouseTools,
+    AuditLog,
+    fileAuditSink,
     registerResources,
     registerTools,
     selectTools,
@@ -164,6 +166,7 @@ export interface ToolServerOptions {
     artifacts? : ArtifactStore;
     video?     : VideoTools;
     lighthouse?: LighthouseTools;
+    audit?     : AuditLog;
 }
 
 export function registerServerTools(
@@ -173,10 +176,14 @@ export function registerServerTools(
     options: ToolServerOptions = {},
 ): ToolRuntime {
     const access = options.access ?? new DaemonAccess({ link });
+    const audit = options.audit ?? (config.auditLog === undefined
+        ? undefined
+        : new AuditLog(fileAuditSink(config.auditLog), logDaemon));
     const runtime = new ToolRuntime({
         access,
         config,
         confirm: elicitationConfirmer(server.server),
+        ...(audit === undefined ? {} : { audit }),
         ...(options.artifacts === undefined ? {} : { artifacts: options.artifacts }),
         ...(options.video === undefined ? {} : { video: options.video }),
         ...(options.lighthouse === undefined ? {} : { lighthouse: options.lighthouse }),

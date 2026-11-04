@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -53,6 +53,7 @@ beforeAll(async () => {
             "--headless",
             `--profile-dir=${path.join(home, "profile")}`,
             "--allow-private-networks",
+            `--audit-log=${path.join(home, "audit.jsonl")}`,
         ],
         env,
         stderr: "pipe",
@@ -120,6 +121,29 @@ describe.skipIf(!ready)("the built server over stdio", () => {
         const closed = await call("close_tab", { tab });
 
         expect(closed.isError).toBe(false);
+    });
+
+    it("writes an audit log line for each call without the typed or evaluated content", async () => {
+        const opened = await call("new_tab", { url: "about:blank" });
+        const tab = String((opened.data.tab as { tab: string }).tab);
+
+        await call("js_evaluate", { tab, expression: "'SECRET-' + 'MARKER'" });
+        await call("close_tab", { tab });
+
+        const log = await readFile(path.join(home, "audit.jsonl"), "utf8");
+        const entries = log.split("\n").filter(Boolean).map((line) => JSON.parse(line) as {
+            tool   : string;
+            outcome: string;
+            args   : Record<string, string>;
+        });
+        const evaluated = entries.find((entry) => entry.tool === "js_evaluate");
+
+        expect(entries.map((entry) => entry.tool)).toEqual(
+            expect.arrayContaining(["new_tab", "js_evaluate", "close_tab"]),
+        );
+        expect(evaluated?.outcome).toBe("ok");
+        expect(evaluated?.args.expression).toMatch(/^<\d+ chars, sha256 [0-9a-f]{12}>$/);
+        expect(log).not.toContain("SECRET-");
     });
 
     it("answers a bad call with an error result instead of dying", async () => {
