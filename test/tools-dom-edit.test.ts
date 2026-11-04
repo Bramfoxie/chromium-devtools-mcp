@@ -292,6 +292,12 @@ describe("isDangerousDomEdit", () => {
     const set = (name: string, value: string) =>
         isDangerousDomEdit({ action: "set_attribute", name, value });
 
+    it("treats a style attribute that fetches an address as dangerous", () => {
+        expect(set("style", "background:url(//x.test/a)")).toBe(true);
+        expect(set("STYLE", "background:\\75rl(//x.test/a)")).toBe(true);
+        expect(set("style", "color:red")).toBe(false);
+    });
+
     it("treats html replacement and removal as dangerous", () => {
         expect(isDangerousDomEdit({ action: "set_html" })).toBe(true);
         expect(isDangerousDomEdit({ action: "remove" })).toBe(true);

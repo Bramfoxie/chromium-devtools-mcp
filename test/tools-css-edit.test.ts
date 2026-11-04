@@ -408,4 +408,10 @@ describe("isDangerousCssEdit", () => {
         expect(isDangerousCssEdit({ declarations: { "border-image": "image-set(\"a\" 1x)" } })).toBe(true);
         expect(isDangerousCssEdit({})).toBe(false);
     });
+
+    it("sees a fetching function written with CSS escapes", () => {
+        expect(isDangerousCssEdit({ declarations: { background: "\\75rl(http://x.test/a)" } })).toBe(true);
+        expect(isDangerousCssEdit({ declarations: { background: "u\\72l(http://x.test/a)" } })).toBe(true);
+        expect(isDangerousCssEdit({ declarations: { content: "\\201C" } })).toBe(false);
+    });
 });

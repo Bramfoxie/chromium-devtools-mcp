@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { elementState } from "./actionability.js";
+import { isFetchingCssValue } from "./css-value.js";
 import { defineTool } from "./define-tool.js";
 import { ensureNoDialog } from "./dialogs.js";
 import {
@@ -186,12 +187,10 @@ export function buildRuleRequest(
     return { selector, declarations: toDeclarations(declarations), ruleId };
 }
 
-const FETCHING_VALUE = /\b(?:url|image-set|src)\s*\(|@import/i;
-
 export function isDangerousCssEdit(args: {
     declarations?: Record<string, string> | undefined;
 }): boolean {
-    return Object.values(args.declarations ?? {}).some((value) => FETCHING_VALUE.test(value));
+    return Object.values(args.declarations ?? {}).some(isFetchingCssValue);
 }
 
 const setStyleResultSchema = z.object({

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { elementState } from "./actionability.js";
+import { isFetchingCssValue } from "./css-value.js";
 import { defineTool } from "./define-tool.js";
 import { ensureNoDialog } from "./dialogs.js";
 import {
@@ -209,7 +210,8 @@ export function isDangerousDomEdit(args: {
     if (args.action !== "set_attribute") return false;
 
     return SCRIPT_ATTRIBUTE.test(args.name ?? "")
-        || SCRIPT_VALUE.test(withoutScriptNoise(args.value ?? ""));
+        || SCRIPT_VALUE.test(withoutScriptNoise(args.value ?? ""))
+        || (args.name?.toLowerCase() === "style" && isFetchingCssValue(args.value ?? ""));
 }
 
 const FIELDS: Record<DomEditAction, readonly string[]> = {
@@ -245,7 +247,7 @@ export const domEdit = defineTool({
     summarize: (args) => {
         if (args.action === "remove") return "It removes the element from the page.";
 
-        if (args.action === "set_attribute") return "It sets an attribute that can run script in the page.";
+        if (args.action === "set_attribute") return "It sets an attribute that can run script or load a resource in the page.";
 
         return "It replaces the HTML inside the element.";
     },
