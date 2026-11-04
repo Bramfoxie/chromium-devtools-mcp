@@ -60,6 +60,7 @@ const MUTATING: Case[] = [
     ["input_select", { target: { selector: "select" }, indexes: [0] }],
     ["input_upload", { target: { selector: "input" }, files: ["/tmp/a.png"] }],
     ["fill_form", { fields: [{ target: { selector: "input" }, value: "x" }] }],
+    ["dom_edit", { target: { selector: "body" }, action: "set_text", text: "hi" }],
     ["input_drag", { from: { selector: "body" }, to: { x: 1, y: 1 } }],
     ["perf_trace_start", { reload: true }],
     ["lighthouse_audit", { url: "https://example.com/" }],

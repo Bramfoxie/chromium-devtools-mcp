@@ -18,6 +18,7 @@ Every tool with its behavior. Element targeting is in [frames-and-shadow-dom.md]
 - `js_evaluate`: run JavaScript in a tab. Page exceptions come back as data, not as tool errors. The exception text and the value are cut at `maxResultChars` with a marker; a value that cannot be serialized within the 32 MiB protocol limit is reported as its description with `truncated: true`.
 - `dom_query`: find elements by a CSS selector and read their text, attributes and boxes.
 - `dom_snapshot`: read a compact text snapshot of the page with element ids.
+- `dom_edit`: edit one element without JavaScript: set or remove an attribute, replace its text or HTML, remove it, or add, remove or toggle one class. One action per call. The result carries the previous value for a revert (`previous`, the class tokens aside, which carry `had` and `has`): the attribute value or null when it was absent, the text, the HTML or the outer HTML, truncated with a marker over 20000 characters. Editing a detached element is an error. `set_html` and `remove` are dangerous calls: with `safety.confirmDangerous` the user is asked first.
 - `css_inspect`: read the computed style, matched CSS rules and box of an element. The result carries `totalRules`, `truncated` and `droppedWinners`, the properties whose winning declaration is in a rule that `maxRules` dropped.
 - `click`: click an element at the DOM level with `element.click()` semantics. Works on covered elements and background tabs; the event is not trusted.
 

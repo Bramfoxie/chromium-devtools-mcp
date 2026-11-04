@@ -85,6 +85,8 @@ function minimalArgs(name: string): Record<string, unknown> {
             return { action: "add_authenticator" };
         case "fill_form":
             return { fields: [{ target: { selector: "input" }, value: "x" }] };
+        case "dom_edit":
+            return { target: { selector: "body" }, action: "set_text", text: "hi" };
         case "input_drag":
             return { from: { selector: "body" }, to: { x: 1, y: 1 } };
         default:
@@ -102,7 +104,7 @@ const readOnly: Config = {
 };
 
 describe("tool declarations", () => {
-    it("declares forty seven tools with unique names, descriptions and access", () => {
+    it("declares forty eight tools with unique names, descriptions and access", () => {
         expect(allTools.map((tool) => tool.name)).toEqual([
             "list_tabs",
             "list_sessions",
@@ -115,6 +117,7 @@ describe("tool declarations", () => {
             "js_evaluate",
             "dom_query",
             "dom_snapshot",
+            "dom_edit",
             "css_inspect",
             "console_logs",
             "network_requests",
@@ -169,6 +172,7 @@ describe("tool declarations", () => {
             "bring_to_front",
             "click",
             "close_tab",
+            "dom_edit",
             "emulate_device",
             "emulate_geolocation",
             "emulate_locale",
@@ -609,7 +613,7 @@ describe("runTool", () => {
 });
 
 describe("tools/list", () => {
-    it("lists exactly the forty seven tools with their schemas", async () => {
+    it("lists exactly the forty eight tools with their schemas", async () => {
         const server = createMcpServer("1.0.0");
 
         registerTools({ server, tools: allTools, runtime: runtime() });
@@ -631,6 +635,7 @@ describe("tools/list", () => {
             "js_evaluate",
             "dom_query",
             "dom_snapshot",
+            "dom_edit",
             "css_inspect",
             "console_logs",
             "network_requests",
