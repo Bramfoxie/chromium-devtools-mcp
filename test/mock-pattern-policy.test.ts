@@ -36,6 +36,14 @@ describe("checkMockPattern", () => {
         expect(checkMockPattern("https://www.example.com/*", policy)).toEqual({ ok: true });
     });
 
+    it("refuses a wildcard host that covers a denied host", () => {
+        const policy = { allowedDomains: [], deniedDomains: ["secret.example.com", "*.internal.test:8443"] };
+
+        expect(checkMockPattern("https://*.example.com/*", policy)).toMatchObject({ ok: false, block: "denied" });
+        expect(checkMockPattern("https://*.test/*", policy)).toMatchObject({ ok: false, block: "denied" });
+        expect(checkMockPattern("https://*.other.com/*", policy)).toEqual({ ok: true });
+    });
+
     it("refuses a pattern that does not name a host", () => {
         for (const pattern of [
             "*",
