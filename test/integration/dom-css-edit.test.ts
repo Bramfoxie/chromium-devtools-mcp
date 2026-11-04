@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { chromeAvailable, html, startEnv, type Env } from "./browser-env.js";
+import { chromeAvailable, eventually, html, startEnv, type Env } from "./browser-env.js";
 
 const present = chromeAvailable();
 let env: Env;
@@ -348,5 +348,122 @@ describe.skipIf(!present)("css_edit in a real browser", () => {
 
         expect(property.isError).toBe(true);
         expect(property.text).toContain("Property names");
+    });
+});
+
+describe.skipIf(!present)("dom and css edits under safety options in a real browser", () => {
+    it("refuses both tools in read-only mode", async () => {
+        const locked = await startEnv({
+            readOnly        : true,
+            allowedDomains  : [],
+            confirmDangerous: false,
+        });
+
+        try {
+            const dom = await locked.call("dom_edit", {
+                target: { selector: "#card" },
+                action: "set_text",
+                text  : "x",
+            });
+            const css = await locked.call("css_edit", {
+                target      : { selector: "#card" },
+                action      : "set_style",
+                declarations: { color: "red" },
+            });
+
+            expect(dom.isError).toBe(true);
+            expect(dom.text).toContain("read-only mode");
+            expect(css.isError).toBe(true);
+            expect(css.text).toContain("read-only mode");
+        } finally {
+            await locked.stop();
+        }
+    });
+
+    it("refuses edits on a tab outside the allowlist", async () => {
+        const guarded = await startEnv({
+            readOnly        : false,
+            allowedDomains  : ["127.0.0.1"],
+            confirmDangerous: false,
+        });
+
+        try {
+            guarded.fixture.pages.set("/edit-jump", html(
+                `<script>setTimeout(() => { location.href = ${JSON.stringify(`${guarded.other.origin}/edit-cross`)}; }, 100);</script>`,
+            ));
+            guarded.other.pages.set("/edit-cross", html(`<p id="cross">cross text</p>`));
+            const opened = await guarded.ok("new_tab", { url: `${guarded.fixture.origin}/edit-jump` });
+            const tab = String((opened.tab as { tab: string }).tab);
+
+            await eventually(async () => {
+                const info = (await guarded.ok("page_info", { tab })) as { url?: string };
+
+                return info.url?.includes("localhost") === true ? true : undefined;
+            });
+
+            const dom = await guarded.call("dom_edit", {
+                tab,
+                target: { selector: "#cross" },
+                action: "set_text",
+                text  : "x",
+            });
+            const css = await guarded.call("css_edit", {
+                tab,
+                target      : { selector: "#cross" },
+                action      : "set_style",
+                declarations: { color: "red" },
+            });
+
+            expect(dom.isError).toBe(true);
+            expect(dom.text).toContain("outside safety.allowedDomains");
+            expect(css.isError).toBe(true);
+            expect(css.text).toContain("outside safety.allowedDomains");
+        } finally {
+            await guarded.stop();
+        }
+    });
+
+    it("refuses an edit inside a frame from another origin", async () => {
+        const guarded = await startEnv({
+            readOnly        : false,
+            allowedDomains  : ["127.0.0.1"],
+            confirmDangerous: false,
+        });
+
+        try {
+            guarded.fixture.pages.set("/edit", html(EDIT_PAGE));
+            guarded.fixture.pages.set("/edit-inner", html(INNER));
+            guarded.other.pages.set("/edit-cross", html(`<p id="cross">cross text</p>`));
+            guarded.fixture.pages.set(
+                "/edit-xframe",
+                html(`<iframe name="cross" src="${guarded.other.origin}/edit-cross"></iframe>`),
+            );
+            const opened = await guarded.ok("new_tab", { url: `${guarded.fixture.origin}/edit-xframe` });
+            const tab = String((opened.tab as { tab: string }).tab);
+            const snap = (await guarded.ok("dom_snapshot", { tab })) as { frames: Row[] };
+            const frame = String(
+                snap.frames.find((entry) => String(entry.url).endsWith("/edit-cross"))?.frameId,
+            );
+
+            const dom = await guarded.call("dom_edit", {
+                tab,
+                target: { selector: "#cross", frame },
+                action: "set_text",
+                text  : "x",
+            });
+            const css = await guarded.call("css_edit", {
+                tab,
+                target      : { selector: "#cross", frame },
+                action      : "set_style",
+                declarations: { color: "red" },
+            });
+
+            expect(dom.isError).toBe(true);
+            expect(dom.text).toContain("outside safety.allowedDomains");
+            expect(css.isError).toBe(true);
+            expect(css.text).toContain("outside safety.allowedDomains");
+        } finally {
+            await guarded.stop();
+        }
     });
 });
