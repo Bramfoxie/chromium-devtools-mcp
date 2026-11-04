@@ -106,7 +106,8 @@ export function textScript(
 export function expressionScript(expression: string, pollMs: number, timeoutMs: number, token: string = "wait"): string {
     return `(async () => {
   ${waitPrelude(token)}
-  const check = () => (${expression});
+  const check = () => (${expression}
+  );
   const deadline = Date.now() + ${JSON.stringify(timeoutMs)};
   let last = undefined;
   try {

@@ -164,9 +164,11 @@ describe("wait scripts", () => {
     });
 
     it("wraps expressions so statements become values and awaits promises", () => {
+        expect(expressionScript("a // note", 100, 1000)).toContain("a // note\n  );");
+
         const script = expressionScript("window.ready", 100, 1000);
 
-        expect(script).toContain("check = () => (window.ready)");
+        expect(script).toContain("check = () => (window.ready\n  )");
         expect(script).toContain("await check()");
     });
 
