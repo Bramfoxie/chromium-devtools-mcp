@@ -26,10 +26,31 @@ function keyOf(grant: PermissionGrant): string {
 // one are counted here and the override is removed only when the last of them lets go.
 export class PermissionLedger {
     private readonly entries = new Map<string, Entry>();
+    private queue: Promise<unknown> = Promise.resolve();
 
     constructor(private readonly backend: PermissionBackend) {}
 
-    async grant(holder: object, grant: PermissionGrant): Promise<void> {
+    private serial<T>(work: () => Promise<T>): Promise<T> {
+        const run = this.queue.then(work, work);
+
+        this.queue = run.catch(() => undefined);
+
+        return run;
+    }
+
+    grant(holder: object, grant: PermissionGrant): Promise<void> {
+        return this.serial(() => this.doGrant(holder, grant));
+    }
+
+    release(holder: object, grant: PermissionGrant): Promise<void> {
+        return this.serial(() => this.doRelease(holder, grant));
+    }
+
+    releaseAll(holder: object, disposedContextId?: string): Promise<void> {
+        return this.serial(() => this.doReleaseAll(holder, disposedContextId));
+    }
+
+    private async doGrant(holder: object, grant: PermissionGrant): Promise<void> {
         await this.backend.setPermission(grant);
         const key = keyOf(grant);
         const entry = this.entries.get(key) ?? { grant, holders: new Set() };
@@ -38,7 +59,7 @@ export class PermissionLedger {
         this.entries.set(key, entry);
     }
 
-    async release(holder: object, grant: PermissionGrant): Promise<void> {
+    private async doRelease(holder: object, grant: PermissionGrant): Promise<void> {
         const key = keyOf(grant);
         const entry = this.entries.get(key);
 
@@ -51,7 +72,7 @@ export class PermissionLedger {
     }
 
     // A disposed context takes its overrides with it, so it needs no reset.
-    async releaseAll(holder: object, disposedContextId?: string): Promise<void> {
+    private async doReleaseAll(holder: object, disposedContextId?: string): Promise<void> {
         const contexts = new Set<string | undefined>();
 
         for (const [key, entry] of [...this.entries]) {

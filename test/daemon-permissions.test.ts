@@ -38,6 +38,36 @@ async function code(promise: Promise<unknown>): Promise<string | undefined> {
 }
 
 describe("PermissionLedger", () => {
+    it("keeps a grant that is made while another holder lets go of the same origin", async () => {
+        const calls: string[] = [];
+        let open: (() => void) | undefined;
+        const gate = new Promise<void>((resolve) => {
+            open = resolve;
+        });
+        const ledger = new PermissionLedger({
+            setPermission: async (entry) => {
+                calls.push(`set ${entry.origin}`);
+                await gate;
+            },
+            resetPermissions: async () => {
+                calls.push("reset");
+            },
+        });
+        const first = {};
+        const second = {};
+        const entry = { name: "geolocation", origin: SITE, contextId: undefined } as const;
+
+        open?.();
+        await ledger.grant(first, entry);
+
+        const release = ledger.release(first, entry);
+        const regrant = ledger.grant(second, entry);
+
+        await Promise.all([release, regrant]);
+
+        expect(calls).toEqual(["set " + SITE, "reset", "set " + SITE]);
+    });
+
     it("removes an override only when the last holder lets go and keeps the others", async () => {
         const backend = new FakeBackend();
         const ledger = new PermissionLedger(backend);
