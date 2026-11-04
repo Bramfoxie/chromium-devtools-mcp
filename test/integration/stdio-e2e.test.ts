@@ -43,20 +43,21 @@ beforeAll(async () => {
     home = await mkdtemp(path.join(base, "cdme-"));
     env = isolatedEnv(home);
     client = new Client({ name: "e2e", version: "0.0.0" });
-    await client.connect(
-        new StdioClientTransport({
-            command: process.execPath,
-            args   : [
-                CLI,
-                "--mode=managed",
-                "--headless",
-                `--profile-dir=${path.join(home, "profile")}`,
-                "--allow-private-networks",
-            ],
-            env,
-            stderr: "pipe",
-        }),
-    );
+    const transport = new StdioClientTransport({
+        command: process.execPath,
+        args   : [
+            CLI,
+            "--mode=managed",
+            "--headless",
+            `--profile-dir=${path.join(home, "profile")}`,
+            "--allow-private-networks",
+        ],
+        env,
+        stderr: "pipe",
+    });
+
+    transport.stderr?.on("data", () => undefined);
+    await client.connect(transport);
 });
 
 afterAll(async () => {
