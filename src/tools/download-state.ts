@@ -69,6 +69,7 @@ export class DownloadState {
     private readonly tabs = new Map<string, TabDownloads>();
     private readonly subscribed = new Map<string, Set<string>>();
     private attached = false;
+    private locating: Promise<void> = Promise.resolve();
 
     constructor(
         private readonly access: DaemonAccess,
@@ -131,16 +132,25 @@ export class DownloadState {
         let found = ready();
 
         if (found === undefined && timeoutMs > 0) {
-            await new Promise<void>((resolve) => {
-                const wake = (): void => {
-                    state.waiters.delete(wake);
-                    resolve();
-                };
+            let expired = false;
 
-                state.waiters.add(wake);
-                void sleep(timeoutMs).then(wake);
+            void sleep(timeoutMs).then(() => {
+                expired = true;
+
+                for (const wake of [...state.waiters]) wake();
             });
-            found = ready();
+
+            while (found === undefined && !expired) {
+                await new Promise<void>((resolve) => {
+                    const wake = (): void => {
+                        state.waiters.delete(wake);
+                        resolve();
+                    };
+
+                    state.waiters.add(wake);
+                });
+                found = ready();
+            }
         }
 
         if (found === undefined) return undefined;
@@ -206,7 +216,12 @@ export class DownloadState {
 
         if (parsed.data.totalBytes > 0) entry.totalBytes = parsed.data.totalBytes;
 
-        if (entry.state === "completed") await this.locate(state, entry);
+        if (entry.state === "completed") {
+            const turn = this.locating.then(() => this.locate(state, entry));
+
+            this.locating = turn.catch(() => undefined);
+            await turn;
+        }
 
         if (entry.state !== "inProgress") for (const wake of [...state.waiters]) wake();
     }

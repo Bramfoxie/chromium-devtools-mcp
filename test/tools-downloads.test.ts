@@ -271,6 +271,58 @@ describe("DownloadState file lookup", () => {
     });
 });
 
+describe("DownloadState concurrency", () => {
+    it("gives two downloads that finish together two different files", async () => {
+        const fake = new FakeAccess();
+        const value = new DownloadState(fake.asAccess(), {
+            list: async () => {
+                await tick();
+
+                return ["one.txt"];
+            },
+            size: async () => 1,
+        });
+
+        value.attach();
+        value.allow("tab1", "/d");
+        begin(fake, "a", "x.txt");
+        begin(fake, "b", "y.txt");
+        progress(fake, "a", "completed", 1, 1);
+        progress(fake, "b", "completed", 1, 1);
+        await new Promise((resolve) => setTimeout(resolve, 20));
+
+        const paths = value.list("tab1").map((item) => item.path).filter((item) => item !== undefined);
+
+        expect(paths).toEqual([path.join("/d", "one.txt")]);
+    });
+
+    it("keeps waiting for the wanted download when another one ends first", async () => {
+        const fake = new FakeAccess();
+        const files = { list: async () => [], size: async () => undefined };
+        const value = new DownloadState(fake.asAccess(), files);
+
+        value.attach();
+        value.allow("tab1", "/d");
+        begin(fake, "wanted", "w.txt");
+        begin(fake, "other", "o.txt");
+        await tick();
+
+        let settled = false;
+        const pending = value.next("tab1", 10_000, () => new Promise<void>(() => undefined), "wanted")
+            .then((item) => { settled = true;
+
+                return item; });
+
+        progress(fake, "other", "canceled", 0);
+        await tick();
+        expect(settled).toBe(false);
+
+        progress(fake, "wanted", "completed", 1, 1);
+
+        expect((await pending)?.id).toBe("wanted");
+    });
+});
+
 describe("safeFilename", () => {
     it("keeps the last segment and drops control characters", () => {
         expect(safeFilename("../../etc/passwd")).toBe("passwd");
