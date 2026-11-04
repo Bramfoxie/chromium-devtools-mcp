@@ -101,3 +101,13 @@ Dialog capture starts when a tab is created or selected: while a dialog is open,
 Storage tools only touch the page origin. Cookie reads never leave the page URL: no `urls` parameter is sent and `Network.getAllCookies` is never used. Cookie writes always carry the page URL, and the domain must equal the page host or be its parent domain. Values are never logged; values of local storage, session storage and cookies are only returned with `includeValues: true`.
 
 Mock rules live per tab in the MCP process: at most 100 rules, bodies up to 10 MiB each and 64 MiB in total, delays up to 30 seconds. Requests that match no rule continue untouched. Rules survive navigation and are removed on tab close, session reset and `clear`. A `times` limit expires the rule after that many applications that were answered with the mock; a request that failed or was released unmocked does not use up the limit, and an exhausted rule is removed once its last held request is done. A request delayed by `delayMs` stays held until the delay ends. `remove` releases the requests held by the removed rule so they continue to the network unmocked, and leaves requests held by other rules alone; when the removed rule was the last one, interception is disabled. `clear` and any other disabling of interception release held requests the same way, unmocked.
+
+## Resources
+
+Besides tools, the server offers MCP resources for each tab the session owns (the same tabs `list_tabs` shows). A client lists them with `resources/list` and reads one with `resources/read`; the URI template of each kind is also listed.
+
+- `browser://tab/{tab}/text`: JSON with the address (redacted like other output), the title and the visible text of the page (`document.body.innerText`, at most 100000 characters, with a `[truncated: ...]` marker and `truncated: true` when it is longer). The `untrusted` notice is the first key.
+- `browser://tab/{tab}/screenshot`: a PNG of the visible area of the tab, taken like `screenshot` with default options, so its size limits apply.
+- `browser://tab/{tab}/console`: the same JSON as `console_logs` with default options, `untrusted` notice first. It starts the capture of the tab when it is not running, so only messages since the first read, plus what the browser replays, are there.
+
+A tab id that contains characters such as a space is percent encoded in the URI. Reading a resource only reads: it changes nothing, and it works in read-only mode and outside `safety.allowedDomains`, like the reading tools. A tab the session does not own cannot be read. Subscriptions to changes are not offered.

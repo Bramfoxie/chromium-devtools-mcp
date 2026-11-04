@@ -119,6 +119,7 @@ export interface Env {
     other       : Fixture;
     artifactsDir: string;
     tools(): Promise<unknown>;
+    client      : Client;
     call(name: string, args?: Record<string, unknown>): Promise<ToolOutcome>;
     ok(name: string, args?: Record<string, unknown>): Promise<Record<string, unknown>>;
     open(path: string): Promise<string>;
@@ -251,6 +252,7 @@ export async function startEnv(
         fixture,
         other,
         artifactsDir,
+        client,
         tools: async () => (await client.listTools()).tools,
         call,
         ok,
