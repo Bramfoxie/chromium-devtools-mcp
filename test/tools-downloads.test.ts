@@ -224,7 +224,7 @@ describe("DownloadState file lookup", () => {
         const value = new DownloadState(fake.asAccess(), {
             list: async () => files,
             size: async (file) => sizes[file],
-        });
+        }, async () => undefined);
 
         value.attach();
         value.allow("tab1", "/d");
@@ -281,7 +281,7 @@ describe("DownloadState concurrency", () => {
                 return ["one.txt"];
             },
             size: async () => 1,
-        });
+        }, async () => undefined);
 
         value.attach();
         value.allow("tab1", "/d");
@@ -299,7 +299,7 @@ describe("DownloadState concurrency", () => {
     it("keeps waiting for the wanted download when another one ends first", async () => {
         const fake = new FakeAccess();
         const files = { list: async () => [], size: async () => undefined };
-        const value = new DownloadState(fake.asAccess(), files);
+        const value = new DownloadState(fake.asAccess(), files, async () => undefined);
 
         value.attach();
         value.allow("tab1", "/d");
@@ -320,6 +320,25 @@ describe("DownloadState concurrency", () => {
         progress(fake, "wanted", "completed", 1, 1);
 
         expect((await pending)?.id).toBe("wanted");
+    });
+});
+
+describe("DownloadState late files", () => {
+    it("finds a file that shows up in the directory after the completed event", async () => {
+        const fake = new FakeAccess();
+        let calls = 0;
+        const value = new DownloadState(fake.asAccess(), {
+            list: async () => (calls++ < 3 ? ["a.txt.crdownload"] : ["a.txt"]),
+            size: async () => 5,
+        }, async () => undefined);
+
+        value.attach();
+        value.allow("tab1", "/d");
+        begin(fake, "g1", "a.txt");
+        progress(fake, "g1", "completed", 5, 5);
+        await tick();
+
+        expect(value.list("tab1")[0]?.path).toBe(path.join("/d", "a.txt"));
     });
 });
 

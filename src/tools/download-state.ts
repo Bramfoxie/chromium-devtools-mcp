@@ -65,6 +65,12 @@ export function safeFilename(name: string): string {
     return last.replace(/[\u0000-\u001f]/g, "").slice(0, 255);
 }
 
+const LOCATE_ATTEMPTS = 10;
+
+const LOCATE_PAUSE_MS = 50;
+
+const realPause = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
 export class DownloadState {
     private readonly tabs = new Map<string, TabDownloads>();
     private readonly subscribed = new Map<string, Set<string>>();
@@ -74,6 +80,7 @@ export class DownloadState {
     constructor(
         private readonly access: DaemonAccess,
         private readonly files : DownloadFiles = nodeDownloadFiles,
+        private readonly pause : (ms: number) => Promise<void> = realPause,
     ) {}
 
     attach(): void {
@@ -226,20 +233,36 @@ export class DownloadState {
         if (entry.state !== "inProgress") for (const wake of [...state.waiters]) wake();
     }
 
-    private async locate(state: TabDownloads, entry: Entry): Promise<void> {
-        if (state.directory === undefined) return;
-
+    private async choose(
+        state    : TabDownloads,
+        directory: string,
+        entry    : Entry,
+    ): Promise<string | undefined> {
         const claimed = new Set(
             [...state.entries.values()].flatMap((other) =>
                 other.path === undefined ? [] : [other.path]),
         );
-        const names = await this.files.list(state.directory).catch(() => [] as string[]);
+        const names = await this.files.list(directory).catch(() => [] as string[]);
         const free = names
             .filter((name) => !name.endsWith(".crdownload"))
-            .map((name) => path.join(state.directory as string, name))
+            .map((name) => path.join(directory, name))
             .filter((file) => !claimed.has(file));
-        const exact = path.join(state.directory, entry.filename);
-        const chosen = free.includes(exact) ? exact : free.length === 1 ? free[0] : undefined;
+        const exact = path.join(directory, entry.filename);
+
+        return free.includes(exact) ? exact : free.length === 1 ? free[0] : undefined;
+    }
+
+    private async locate(state: TabDownloads, entry: Entry): Promise<void> {
+        if (state.directory === undefined) return;
+
+        const directory = state.directory;
+        let chosen: string | undefined;
+
+        for (let attempt = 0; chosen === undefined && attempt < LOCATE_ATTEMPTS; attempt += 1) {
+            if (attempt > 0) await this.pause(LOCATE_PAUSE_MS);
+
+            chosen = await this.choose(state, directory, entry);
+        }
 
         if (chosen === undefined) return;
 
