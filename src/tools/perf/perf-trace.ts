@@ -18,6 +18,7 @@ const insightSchema = z.strictObject({
 
 export const perfTraceStart = defineTool({
     name       : "perf_trace_start",
+    untrusted  : false,
     closedWorld: true,
     description:
         "Start recording a performance trace of a tab. Optionally reload the page so the whole load is recorded. Interact with the page, then call perf_trace_stop. Only one trace can record at a time in the browser.",

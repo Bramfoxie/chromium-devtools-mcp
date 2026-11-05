@@ -19,9 +19,12 @@ export const configSchema = z.strictObject({
             error: () => `invalid endpoint, accepted form: ${WS_ENDPOINT_FORM}`,
         })
         .optional(),
-    allowFocus: z.boolean(),
-    isolated  : z.boolean(),
-    safety    : z.strictObject({
+    allowFocus  : z.boolean(),
+    isolated    : z.boolean(),
+    tools       : z.array(z.string().min(1).max(64)).max(100).optional(),
+    excludeTools: z.array(z.string().min(1).max(64)).max(100).optional(),
+    auditLog    : z.string().min(1).max(1024).optional(),
+    safety      : z.strictObject({
         readOnly      : z.boolean(),
         allowedDomains: z.array(
             z.string().refine(isValidDomainRule, {
@@ -29,7 +32,14 @@ export const configSchema = z.strictObject({
                     `invalid entry ${JSON.stringify(issue.input)}, accepted forms: ${DOMAIN_RULE_FORMS}`,
             }),
         ),
-        confirmDangerous: z.boolean(),
+        deniedDomains: z.array(
+            z.string().refine(isValidDomainRule, {
+                error: (issue) =>
+                    `invalid entry ${JSON.stringify(issue.input)}, accepted forms: ${DOMAIN_RULE_FORMS}`,
+            }),
+        ),
+        allowPrivateNetworks: z.boolean(),
+        confirmDangerous    : z.boolean(),
     }),
 }).refine((config) => config.wsEndpoint === undefined || config.mode === "attach", {
     path   : ["wsEndpoint"],

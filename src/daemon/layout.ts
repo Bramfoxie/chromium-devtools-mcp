@@ -1,3 +1,4 @@
+import { pathFor } from "../config/index.js";
 import type { InstanceOptions } from "./lock.js";
 import {
     currentPathContext,
@@ -13,6 +14,12 @@ export interface DaemonLayout {
     uid      : number | undefined;
     socketPath(token: string): string;
     instance(token: string): InstanceOptions;
+}
+
+export function artifactsDir(layout: Pick<DaemonLayout, "tokenFile" | "platform">): string {
+    const p = pathFor(layout.platform);
+
+    return p.join(p.dirname(layout.tokenFile), "artifacts");
 }
 
 export function currentLayout(context: DaemonPathContext = currentPathContext()): DaemonLayout {

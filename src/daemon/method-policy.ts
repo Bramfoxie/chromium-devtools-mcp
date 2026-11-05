@@ -1,3 +1,4 @@
+import path from "node:path";
 import { RpcError } from "./errors.js";
 import { ErrorCode } from "./protocol.js";
 
@@ -45,7 +46,6 @@ export const TRACE_CATEGORIES = [
 ] as const;
 const FOCUS_METHODS = new Set(["Page.bringToFront"]);
 const BLOCKED_METHODS = new Map([
-    ["Page.setDownloadBehavior", "it would let a page write files to any directory"],
     ["Page.close", "it would close tabs owned by other sessions"],
     ["Page.crash", "it would crash the tab for every session using it"],
     ["Page.setInterceptFileChooserDialog", "it would change file chooser handling for the whole tab"],
@@ -60,7 +60,9 @@ const BLOCKED_METHODS = new Map([
 const SAFE_URL_PROTOCOLS = new Set(["http:", "https:"]);
 
 export interface PolicyOptions {
-    allowFocus: boolean;
+    allowFocus    : boolean;
+    downloadsRoot?: string | undefined;
+    platform?     : NodeJS.Platform | undefined;
 }
 
 function forbidden(message: string): RpcError {
@@ -128,6 +130,58 @@ function traceParams(params: Record<string, unknown> | undefined): Record<string
     return { categories: wanted.join(","), transferMode: "ReportEvents" };
 }
 
+function downloadParams(
+    params : Record<string, unknown> | undefined,
+    options: PolicyOptions,
+): Record<string, unknown> {
+    const given = params ?? {};
+    const unknown = Object.keys(given).filter((key) => key !== "behavior" && key !== "downloadPath");
+
+    if (unknown.length > 0) {
+        throw new RpcError(
+            ErrorCode.badRequest,
+            `Page.setDownloadBehavior takes only behavior and downloadPath, not ${unknown.join(", ")}.`,
+        );
+    }
+
+    const { behavior, downloadPath } = given;
+
+    if (behavior === "deny" || behavior === "default") {
+        if (downloadPath !== undefined) {
+            throw new RpcError(ErrorCode.badRequest, `A ${behavior} download behavior takes no downloadPath.`);
+        }
+
+        return { behavior };
+    }
+
+    if (behavior !== "allow" || typeof downloadPath !== "string") {
+        throw new RpcError(
+            ErrorCode.badRequest,
+            "Page.setDownloadBehavior needs behavior deny, default, or allow with a downloadPath.",
+        );
+    }
+
+    const root = options.downloadsRoot;
+
+    if (root === undefined) {
+        throw forbidden("Page.setDownloadBehavior allow is not available because the daemon has no directory for files.");
+    }
+
+    const p = options.platform === "win32" ? path.win32 : path.posix;
+    const resolved = p.resolve(downloadPath);
+    const inside = p.relative(root, resolved);
+
+    const escapes = inside === ".." || inside.startsWith(`..${p.sep}`) || p.isAbsolute(inside);
+
+    if (!p.isAbsolute(downloadPath) || inside === "" || escapes) {
+        throw forbidden(
+            "Page.setDownloadBehavior allow is limited to a new directory inside the artifacts directory of the daemon.",
+        );
+    }
+
+    return { behavior: "allow", downloadPath: resolved };
+}
+
 export function normalizeUrl(url: string): string {
     if (url.toLowerCase() === "about:blank") return "about:blank";
 
@@ -179,6 +233,8 @@ export function checkCall(
             `${method} would bring the window to the front. Enable allowFocus in the config to allow it.`,
         );
     }
+
+    if (method === "Page.setDownloadBehavior") return downloadParams(params, options);
 
     if (method === "Tracing.start") return traceParams(params);
 

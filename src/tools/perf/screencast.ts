@@ -56,6 +56,7 @@ function concatList(frames: ScreencastFrame[]): string {
 
 export const screencastStart = defineTool({
     name       : "screencast_start",
+    untrusted  : false,
     closedWorld: true,
     description:
         "Start recording what a tab shows as a series of frames. The tab keeps rendering in the background, no window is raised. Call screencast_stop to get the recording. A static page produces few frames because a frame is made only when the page changes.",

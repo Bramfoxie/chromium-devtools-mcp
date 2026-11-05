@@ -314,6 +314,96 @@ describe("css_inspect", () => {
         ]);
     });
 
+    it("forces the pseudo classes while it reads and removes them again", async () => {
+        const fake = inspectFake();
+        const { runtime } = setup(fake);
+
+        await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+
+        runtime.elements.nextGeneration("tab1");
+
+        const [uid] = runtime.elements.assign("tab1", [{ backendNodeId: 7 }]);
+        const result = await runTool(
+            cssInspect,
+            { target: { uid }, forceStates: ["hover", "focus", "hover"], includeBox: false },
+            extra(),
+            runtime,
+        );
+        const methods = fake.sent.map((call) => call.method);
+        const forces = fake.sent.filter((call) => call.method === "CSS.forcePseudoState");
+
+        expect(result.structuredContent).toMatchObject({ forcedStates: ["hover", "focus"] });
+        expect(forces.map((call) => call.params)).toEqual([
+            { nodeId: 41, forcedPseudoClasses: ["hover", "focus"] },
+            { nodeId: 41, forcedPseudoClasses: [] },
+        ]);
+        expect(methods.indexOf("CSS.forcePseudoState")).toBeLessThan(
+            methods.indexOf("CSS.getComputedStyleForNode"),
+        );
+        expect(methods.lastIndexOf("CSS.forcePseudoState")).toBeGreaterThan(
+            methods.indexOf("CSS.getMatchedStylesForNode"),
+        );
+        expect(methods.at(-1)).toBe("CSS.disable");
+    });
+
+    it("removes the forced states also when reading fails", async () => {
+        const fake = inspectFake();
+        const { runtime } = setup(fake);
+        const original = fake.respond;
+
+        fake.respond = (targetId, method, params) => {
+            if (method === "CSS.getComputedStyleForNode") throw new Error("boom");
+
+            return original?.(targetId, method, params) ?? {};
+        };
+
+        await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+
+        runtime.elements.nextGeneration("tab1");
+
+        const [uid] = runtime.elements.assign("tab1", [{ backendNodeId: 7 }]);
+        const result = await runTool(
+            cssInspect,
+            { target: { uid }, forceStates: ["active"] },
+            extra(),
+            runtime,
+        );
+        const forces = fake.sent.filter((call) => call.method === "CSS.forcePseudoState");
+
+        expect(result.isError).toBe(true);
+        expect(forces.at(-1)?.params).toEqual({ nodeId: 41, forcedPseudoClasses: [] });
+    });
+
+    it("sends nothing about pseudo classes when none are asked for", async () => {
+        const fake = inspectFake();
+        const { runtime } = setup(fake);
+
+        await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+
+        runtime.elements.nextGeneration("tab1");
+
+        const [uid] = runtime.elements.assign("tab1", [{ backendNodeId: 7 }]);
+        const result = await runTool(cssInspect, { target: { uid } }, extra(), runtime);
+
+        expect(fake.sent.map((call) => call.method)).not.toContain("CSS.forcePseudoState");
+        expect(result.structuredContent).not.toHaveProperty("forcedStates");
+    });
+
+    it("refuses a pseudo class that cannot be forced", async () => {
+        const { runtime } = setup(inspectFake());
+        const result = await runTool(
+            cssInspect,
+            { target: { selector: "a" }, forceStates: ["first-child"] },
+            extra(),
+            runtime,
+        );
+
+        expect(result.isError).toBe(true);
+    });
+
     it("honors custom properties and skips rules and box on request", async () => {
         const fake = inspectFake();
         const { runtime } = setup(fake);

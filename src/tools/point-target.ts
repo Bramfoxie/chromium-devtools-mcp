@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { isRestricted } from "../safety/index.js";
+import { isPolicyActive } from "../safety/index.js";
 import type { ClickPoint } from "./coordinates.js";
 import type { ToolContext } from "./define-tool.js";
 import { ToolError } from "./errors.js";
@@ -104,7 +104,7 @@ export async function elementAtPoint(
 
 function unverifiable(): ToolError {
     return new ToolError(
-        "The frame under the point could not be checked against safety.allowedDomains. Call the tool again.",
+        "The frame under the point could not be checked against the domain rules in safety. Call the tool again.",
     );
 }
 
@@ -115,7 +115,7 @@ export async function ensurePointAllowed(
     targetId: string,
     point   : ClickPoint,
 ): Promise<void> {
-    if (!isRestricted(context.config.safety.allowedDomains)) return;
+    if (!isPolicyActive(context.config.safety)) return;
 
     let frameId: string | undefined;
 

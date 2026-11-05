@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { normalizeUrl } from "../daemon/index.js";
 import { type ToolContext } from "./define-tool.js";
-import { describeUrlHost, isRestricted, isUrlAllowed } from "../safety/index.js";
+import { describeBlock, describeUrlHost, navigationBlock } from "../safety/index.js";
 import { ToolError } from "./errors.js";
 
 const historyEntry = z.object({ id: z.number(), url: z.string(), title: z.string() });
@@ -119,11 +119,14 @@ export async function historyEntryId(
         );
     }
 
-    const domains = context.config.safety.allowedDomains;
+    const block = navigationBlock(entry.url, context.config.safety);
 
-    if (isRestricted(domains) && !isUrlAllowed(entry.url, domains)) {
+    if (block !== undefined) {
+        const described = describeBlock(block);
+        const which = direction === "back" ? "previous" : "next";
+
         throw new ToolError(
-            `The ${direction === "back" ? "previous" : "next"} history entry is on ${describeUrlHost(entry.url)}, which is outside safety.allowedDomains. Navigate to an allowed domain instead, or ask the owner to add it to safety.allowedDomains.`,
+            `The ${which} history entry is on ${describeUrlHost(entry.url)}, ${described.reason}. ${described.hint}`,
         );
     }
 

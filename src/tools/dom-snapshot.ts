@@ -125,7 +125,7 @@ export function iframeFrameMap(root: unknown): Map<number, string> {
     return map;
 }
 
-function limitAxNodes(
+export function limitAxNodes(
     nodes      : AxNode[],
     detectDepth: boolean,
 ): { nodes: AxNode[]; limited: boolean } {
@@ -197,7 +197,7 @@ export function frameDocBackends(root: unknown): Array<{ frameId: string; backen
     return found;
 }
 
-async function domInfo(
+export async function domInfo(
     access  : DaemonAccess,
     targetId: string,
 ): Promise<{ info: Map<number, AxDomInfo>; root: unknown }> {

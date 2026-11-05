@@ -24,9 +24,9 @@ beforeAll(async () => {
         nodeLighthouseTools({ PATH: "" }, process.platform, () => undefined),
     );
     guarded = await startEnv({
-        readOnly        : false,
-        allowedDomains  : ["127.0.0.1"],
-        confirmDangerous: false,
+        readOnly            : false,
+        allowedDomains      : ["127.0.0.1"],
+        deniedDomains       : [], allowPrivateNetworks: true, confirmDangerous    : false,
     });
 
     for (const target of [env, bare, guarded]) {

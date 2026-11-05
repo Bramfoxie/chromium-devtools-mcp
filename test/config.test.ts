@@ -18,7 +18,13 @@ describe("defaults", () => {
             debugPort : 9222,
             allowFocus: false,
             isolated  : false,
-            safety    : { readOnly: false, allowedDomains: [], confirmDangerous: false },
+            safety    : {
+                readOnly            : false,
+                allowedDomains      : [],
+                deniedDomains       : [],
+                allowPrivateNetworks: false,
+                confirmDangerous    : false,
+            },
         });
     });
 });
@@ -97,16 +103,20 @@ describe("sources and precedence", () => {
         const config = loadConfig({
             ...withFile(undefined),
             env: {
-                CHROMIUM_DEVTOOLS_MCP_ALLOWED_DOMAINS: "a.com, b.com",
-                CHROMIUM_DEVTOOLS_MCP_READ_ONLY      : "1",
+                CHROMIUM_DEVTOOLS_MCP_ALLOWED_DOMAINS       : "a.com, b.com",
+                CHROMIUM_DEVTOOLS_MCP_READ_ONLY             : "1",
+                CHROMIUM_DEVTOOLS_MCP_DENIED_DOMAINS        : "x.com, y.com",
+                CHROMIUM_DEVTOOLS_MCP_ALLOW_PRIVATE_NETWORKS: "true",
             },
             argv: ["--confirm-dangerous", "--allowed-domains", "c.com"],
         });
 
         expect(config.safety).toEqual({
-            readOnly        : true,
-            allowedDomains  : ["c.com"],
-            confirmDangerous: true,
+            readOnly            : true,
+            allowedDomains      : ["c.com"],
+            deniedDomains       : ["x.com", "y.com"],
+            allowPrivateNetworks: true,
+            confirmDangerous    : true,
         });
     });
 
@@ -148,6 +158,8 @@ describe("sources and precedence", () => {
                 "--isolated",
                 "--read-only",
                 "--allowed-domains=a.com,b.com",
+                "--denied-domains=x.com",
+                "--allow-private-networks",
                 "--confirm-dangerous",
             ],
         });
@@ -160,12 +172,33 @@ describe("sources and precedence", () => {
             debugPort : 9333,
             allowFocus: true,
             isolated  : true,
-            safety    : { readOnly: true, allowedDomains: ["a.com", "b.com"], confirmDangerous: true },
+            safety    : {
+                readOnly            : true,
+                allowedDomains      : ["a.com", "b.com"],
+                deniedDomains       : ["x.com"],
+                allowPrivateNetworks: true,
+                confirmDangerous    : true,
+            },
         });
     });
 });
 
 describe("validation", () => {
+    it("rejects a malformed deniedDomains entry with the accepted forms", () => {
+        expect(() =>
+            loadConfig({ ...withFile(undefined), argv: ["--denied-domains=http://x.com/path"] }),
+        ).toThrow(/safety.deniedDomains.*accepted forms/);
+    });
+
+    it("lets a command line turn private networks off again", () => {
+        const config = loadConfig({
+            ...withFile(JSON.stringify({ safety: { allowPrivateNetworks: true } })),
+            argv: ["--no-allow-private-networks"],
+        });
+
+        expect(config.safety.allowPrivateNetworks).toBe(false);
+    });
+
     it("rejects an unknown browser with the field name", () => {
         expect(() => loadConfig({ ...withFile(undefined), argv: ["--browser=firefox"] })).toThrow(
             /browser/,

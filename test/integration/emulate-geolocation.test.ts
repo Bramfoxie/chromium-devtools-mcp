@@ -17,9 +17,9 @@ beforeAll(async () => {
 
     env = await startEnv();
     guarded = await startEnv({
-        readOnly        : false,
-        allowedDomains  : ["127.0.0.1"],
-        confirmDangerous: false,
+        readOnly            : false,
+        allowedDomains      : ["127.0.0.1"],
+        deniedDomains       : [], allowPrivateNetworks: true, confirmDangerous    : false,
     });
     env.fixture.pages.set("/page", html("<p>page</p>"));
     guarded.fixture.pages.set("/page", html("<p>page</p>"));

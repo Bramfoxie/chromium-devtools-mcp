@@ -1,6 +1,11 @@
 import { z } from "zod";
 import type { DaemonAccess } from "../mcp/index.js";
-import { ensureActionable } from "./actionability.js";
+import {
+    actionWaitOf,
+    actionWaitSchema,
+    ensureActionable,
+    retryWhileRefused,
+} from "./actionability.js";
 import { defineTool, type ToolContext } from "./define-tool.js";
 import { ensureNoDialog } from "./dialogs.js";
 import {
@@ -209,12 +214,13 @@ export const inputType = defineTool({
         "Type text into a field with trusted input events, focusing it first without clicking.",
     access: "mutate",
     input : z.strictObject({
-        tab    : tabSchema,
-        text   : z.string().min(1).max(TYPE_MAX_CHARS).describe(`Text to type, up to ${TYPE_MAX_CHARS} characters.`),
-        target : elementTargetSchema.optional().describe("Element uid from a snapshot or query, or a CSS selector. Omit to type into the focused element."),
-        clear  : z.boolean().optional().describe("Select all and delete in the field first. Defaults to false."),
-        submit : z.boolean().optional().describe("Press Enter after typing. Defaults to false."),
-        delayMs: z.number().int().min(0).max(TYPE_DELAY_MAX_MS).optional().describe(`Delay between characters in ms, 0 to 200. With 0 the text is inserted at once. delayMs times the text length must not exceed ${TYPE_BUDGET_MS} ms. Defaults to 0.`),
+        tab      : tabSchema,
+        text     : z.string().min(1).max(TYPE_MAX_CHARS).describe(`Text to type, up to ${TYPE_MAX_CHARS} characters.`),
+        target   : elementTargetSchema.optional().describe("Element uid from a snapshot or query, or a CSS selector. Omit to type into the focused element."),
+        clear    : z.boolean().optional().describe("Select all and delete in the field first. Defaults to false."),
+        submit   : z.boolean().optional().describe("Press Enter after typing. Defaults to false."),
+        timeoutMs: actionWaitSchema,
+        delayMs  : z.number().int().min(0).max(TYPE_DELAY_MAX_MS).optional().describe(`Delay between characters in ms, 0 to 200. With 0 the text is inserted at once. delayMs times the text length must not exceed ${TYPE_BUDGET_MS} ms. Defaults to 0.`),
     }),
     output: z.strictObject({
         ok         : z.boolean().describe("Whether the field now contains the text."),
@@ -239,11 +245,14 @@ export const inputType = defineTool({
             let summary: ReturnType<typeof summarizeTarget> | undefined;
 
             if (element !== undefined && target !== undefined) {
-                const checked = await ensureActionable(
-                    elementAccess(context.access, element),
-                    targetId,
-                    element,
-                    { checkDisabled: true },
+                const checked = await retryWhileRefused(
+                    actionWaitOf(args.timeoutMs, context.clock),
+                    () => ensureActionable(
+                        elementAccess(context.access, element),
+                        targetId,
+                        element,
+                        { checkDisabled: true },
+                    ),
                 );
 
                 if (checked.state.fileInput) {
@@ -408,10 +417,11 @@ export const inputKey = defineTool({
         "Press a key or chord like Enter or ControlOrMeta+C with trusted CDP key events.",
     access: "mutate",
     input : z.strictObject({
-        tab   : tabSchema,
-        key   : z.string().min(1).max(64).describe("Key or chord, for example Enter, Tab, Control+A, ControlOrMeta+C, Shift++ (a trailing plus names the plus key)."),
-        target: elementTargetSchema.optional().describe("Element uid from a snapshot or query, or a CSS selector. The element is focused first; omit to press into the focused element."),
-        repeat: z.number().int().min(1).max(KEY_REPEAT_MAX).optional().describe("How many times to press, 1 to 20. Modifiers are held across repeats. Defaults to 1."),
+        tab      : tabSchema,
+        key      : z.string().min(1).max(64).describe("Key or chord, for example Enter, Tab, Control+A, ControlOrMeta+C, Shift++ (a trailing plus names the plus key)."),
+        target   : elementTargetSchema.optional().describe("Element uid from a snapshot or query, or a CSS selector. The element is focused first; omit to press into the focused element."),
+        repeat   : z.number().int().min(1).max(KEY_REPEAT_MAX).optional().describe("How many times to press, 1 to 20. Modifiers are held across repeats. Defaults to 1."),
+        timeoutMs: actionWaitSchema,
     }),
     output: z.strictObject({
         ok      : z.boolean().describe("Whether the key events were dispatched."),
@@ -440,9 +450,10 @@ export const inputKey = defineTool({
 
             if (resolved !== undefined && target !== undefined) {
                 const owner = elementAccess(context.access, resolved);
-                const checked = await ensureActionable(owner, targetId, resolved, {
-                    checkDisabled: true,
-                });
+                const checked = await retryWhileRefused(
+                    actionWaitOf(args.timeoutMs, context.clock),
+                    () => ensureActionable(owner, targetId, resolved, { checkDisabled: true }),
+                );
 
                 summary = summarizeTarget(target.uid, checked.state);
                 await focusElement(owner, targetId, resolved);

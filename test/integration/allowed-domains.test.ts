@@ -7,7 +7,7 @@ let env: Env;
 beforeAll(async () => {
     if (!present) return;
 
-    env = await startEnv({ readOnly: false, allowedDomains: ["127.0.0.1"], confirmDangerous: false });
+    env = await startEnv({ readOnly: false, allowedDomains: ["127.0.0.1"], deniedDomains: [], allowPrivateNetworks: true, confirmDangerous: false });
     env.fixture.pages.set("/a", html("<p id=a>a</p>"));
     env.fixture.pages.set(
         "/nested",
@@ -32,7 +32,7 @@ beforeAll(async () => {
     });
     env.fixture.pages.set(
         "/jump",
-        html(`<script>setTimeout(() => { location.href = ${JSON.stringify(`${env.other.origin}/forbidden`)}; }, 300);</script>`),
+        html(`<script>setTimeout(() => { location.href = ${JSON.stringify(`${env.other.origin}/forbidden`)}; }, 2000);</script>`),
     );
 });
 
@@ -83,6 +83,35 @@ describe.skipIf(!present)("allowed domains in a real browser", () => {
         expect(refused.isError).toBe(true);
         expect(refused.text).toContain("localhost");
         expect(read.isError).toBe(false);
+    });
+
+    it("refuses to read the cookies of a tab that left the list, and to mock for a host outside it", async () => {
+        const tab = await env.open("/jump");
+
+        await settled(tab);
+
+        const cookies = await env.call("storage_read", { tab, kind: "cookies" });
+
+        expect(cookies.isError).toBe(true);
+        expect(cookies.text).toContain("localhost");
+
+        const inside = await env.open("/a");
+        const allowed = await env.call("storage_read", { tab: inside, kind: "cookies" });
+        const mockOutside = await env.call("network_mock", {
+            tab   : inside,
+            action: "add",
+            rule  : { urlPattern: `${env.other.origin}/*`, response: { status: 200, body: "x" } },
+        });
+        const mockInside = await env.call("network_mock", {
+            tab   : inside,
+            action: "add",
+            rule  : { urlPattern: `${env.fixture.origin}/api/*`, response: { status: 200, body: "x" } },
+        });
+
+        expect(allowed.isError).toBe(false);
+        expect(mockOutside.isError).toBe(true);
+        expect(mockOutside.text).toContain("localhost");
+        expect(mockInside.isError).toBe(false);
     });
 
     it("refuses to go back to a forbidden history entry", async () => {

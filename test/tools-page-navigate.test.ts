@@ -827,3 +827,128 @@ describe("page_navigate", () => {
         });
     });
 });
+
+describe("page_navigate and private networks", () => {
+    const closed = {
+        ...managedConfig,
+        safety: { ...managedConfig.safety, allowPrivateNetworks: false },
+    };
+
+    function runtimeFor(fake: FakeAccess, config = closed) {
+        const { clock } = trackingSleep();
+        const runtime = new ToolRuntime({ access: fake.asAccess(), config, clock });
+
+        return runtime;
+    }
+
+    function redirecting(landing: string): FakeAccess {
+        const fake = new FakeAccess();
+
+        fake.respond = (_targetId, method) => {
+            switch (method) {
+                case "Page.getFrameTree":
+                    return { frameTree: { frame: { id: "main" } } };
+                case "Page.navigate":
+                    return { loaderId: "loader-9" };
+                case "Runtime.evaluate":
+                    return pageState(landing, "Landed");
+                default:
+                    return {};
+            }
+        };
+
+        return fake;
+    }
+
+    async function navigate(fake: FakeAccess, config = closed) {
+        const runtime = runtimeFor(fake, config);
+
+        await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+
+        const pending = runTool(pageNavigate, { url: "https://example.org/" }, extra(), runtime);
+
+        await vi.waitFor(() =>
+            expect(fake.subscribed).toContainEqual({ targetId: "tab1", event: "Page.lifecycleEvent" }),
+        );
+        fake.emit("cdp.event", {
+            targetId: "tab1",
+            event   : "Network.responseReceived",
+            params  : { frameId: "main", loaderId: "loader-9", type: "Document", response: { status: 200 } },
+        });
+        fake.emit("cdp.event", {
+            targetId: "tab1",
+            event   : "Page.lifecycleEvent",
+            params  : { frameId: "main", loaderId: "loader-9", name: "load" },
+        });
+
+        return pending;
+    }
+
+    it("parks the tab when a public address redirects to a private one", async () => {
+        const fake = redirecting("http://169.254.169.254/latest/meta-data/");
+        const result = await navigate(fake);
+        const text = JSON.stringify(result.content);
+
+        expect(result.isError).toBe(true);
+        expect(text).toContain("169.254.169.254");
+        expect(text).toContain("safety.allowPrivateNetworks");
+        expect(fake.sent.some((call) =>
+            call.method === "Page.navigate"
+            && (call.params as { url?: string }).url === "about:blank")).toBe(true);
+    });
+
+    it("leaves a navigation that ends on a public address alone", async () => {
+        const fake = redirecting("https://example.org/done");
+        const result = await navigate(fake);
+
+        expect(result.isError).not.toBe(true);
+        expect(fake.sent.some((call) =>
+            (call.params as { url?: string } | undefined)?.url === "about:blank")).toBe(false);
+    });
+
+    it("follows a private address when the owner allows private networks", async () => {
+        const open = { ...closed, safety: { ...closed.safety, allowPrivateNetworks: true } };
+        const result = await navigate(redirecting("http://192.168.1.1/admin"), open);
+
+        expect(result.isError).not.toBe(true);
+    });
+
+    it("refuses to go back to a private address and a denied host", async () => {
+        for (const [entry, setting] of [
+            ["http://localhost:3000/", "safety.allowPrivateNetworks"],
+            ["https://bad.test/", "safety.deniedDomains"],
+        ] as const) {
+            const fake = new FakeAccess();
+
+            fake.respond = (_targetId, method) => {
+                if (method === "Page.getNavigationHistory") {
+                    return {
+                        currentIndex: 1,
+                        entries     : [
+                            { id: 11, url: entry, title: "x" },
+                            { id: 12, url: "https://b.example/", title: "b" },
+                        ],
+                    };
+                }
+
+                return {};
+            };
+
+            const config = {
+                ...closed,
+                safety: { ...closed.safety, deniedDomains: ["bad.test"] },
+            };
+            const runtime = runtimeFor(fake, config);
+
+            await runTool(newTab, {}, extra(), runtime);
+            fake.sent.length = 0;
+
+            const result = await runTool(pageNavigate, { action: "back", waitUntil: "none" }, extra(), runtime);
+
+            expect(result.isError).toBe(true);
+            expect(JSON.stringify(result.content)).toContain(setting);
+            expect(fake.sent.map((call) => call.method)).toEqual(["Page.getNavigationHistory"]);
+        }
+    });
+});

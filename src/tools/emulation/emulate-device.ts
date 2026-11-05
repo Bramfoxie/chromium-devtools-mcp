@@ -86,6 +86,7 @@ export function explicitMetrics(input: DeviceInput): DeviceMetrics {
 
 export const emulateDevice = defineTool({
     name       : "emulate_device",
+    untrusted  : false,
     closedWorld: true,
     description:
         "Emulate a device size, pixel ratio, mobile viewport, touch and user agent on a tab. Reads back what the page reports. The Chrome version in a device user agent follows the connected browser. Client hints metadata is not emulated.",

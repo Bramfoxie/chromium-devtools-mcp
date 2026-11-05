@@ -119,6 +119,7 @@ export interface Env {
     other       : Fixture;
     artifactsDir: string;
     tools(): Promise<unknown>;
+    client      : Client;
     call(name: string, args?: Record<string, unknown>): Promise<ToolOutcome>;
     ok(name: string, args?: Record<string, unknown>): Promise<Record<string, unknown>>;
     open(path: string): Promise<string>;
@@ -145,7 +146,13 @@ export async function startEnv(
         debugPort : port,
         allowFocus,
         isolated  : true,
-        safety    : safety ?? { readOnly: false, allowedDomains: [], confirmDangerous: false },
+        safety    : safety ?? {
+            readOnly            : false,
+            allowedDomains      : [],
+            deniedDomains       : [],
+            allowPrivateNetworks: true,
+            confirmDangerous    : false,
+        },
     };
     const options = await harness.options();
     const tokenDir = await mkdtemp(path.join(home, "token-"));
@@ -196,7 +203,7 @@ export async function startEnv(
     );
     const server = createMcpServer("0.0.0");
 
-    const artifactsDir = path.join(home, "artifacts");
+    const artifactsDir = path.join(tokenDir, "artifacts");
 
     registerServerTools(server, config, link, {
         artifacts: new DirectoryArtifactStore({
@@ -245,6 +252,7 @@ export async function startEnv(
         fixture,
         other,
         artifactsDir,
+        client,
         tools: async () => (await client.listTools()).tools,
         call,
         ok,

@@ -56,6 +56,7 @@ async function tabOrigin(
 
 export const emulateGeolocation = defineTool({
     name       : "emulate_geolocation",
+    untrusted  : false,
     closedWorld: true,
     description:
         "Emulate the geolocation of a tab and allow the page origin to read it, without a prompt. The page needs a secure context (https or localhost). Other tabs of the same origin in a shared browser read the real position while it is allowed. reset removes the override and the permission.",

@@ -1,4 +1,4 @@
-import { describeUrlHost, isRestricted, isUrlAllowed } from "../safety/index.js";
+import { describeBlock, describeUrlHost, isPolicyActive, navigationBlock } from "../safety/index.js";
 import type { ToolContext } from "./define-tool.js";
 import { ToolError } from "./errors.js";
 
@@ -14,19 +14,18 @@ async function committedUrl(context: ToolContext, targetId: string, reported: st
     return tabs.find((tab) => tab.targetId === targetId)?.url ?? "";
 }
 
-// Returns a message when the tab ended outside the allowlist; the tab is then parked on about:blank.
+// Returns a message when the tab ended where the safety rules do not allow; it is then parked on about:blank.
 export async function parkIfForbidden(
     context : ToolContext,
     targetId: string,
     reported: string,
 ): Promise<string | undefined> {
-    const domains = context.config.safety.allowedDomains;
-
-    if (!isRestricted(domains)) return undefined;
-
     const url = await committedUrl(context, targetId, reported);
+    const { safety } = context.config;
+    const unknown = isPolicyActive(safety) ? "outside-allowed" : undefined;
+    const block = url === "" ? unknown : navigationBlock(url, safety);
 
-    if (url !== "" && isUrlAllowed(url, domains)) return undefined;
+    if (block === undefined) return undefined;
 
     const host = url === "" ? "an unknown page" : describeUrlHost(url);
     const parked = await context.access
@@ -41,7 +40,9 @@ export async function parkIfForbidden(
         ? "The tab was moved to about:blank."
         : "The tab could not be moved away and still shows that page; close it with close_tab.";
 
-    return `The navigation ended on ${host}, which is outside safety.allowedDomains. ${state} Navigate to an allowed domain, or ask the owner to add it to safety.allowedDomains.`;
+    const described = describeBlock(block);
+
+    return `The navigation ended on ${host}, ${described.reason}. ${state} ${described.hint}`;
 }
 
 export async function requireAllowedFinalUrl(

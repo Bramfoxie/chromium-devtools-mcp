@@ -1,5 +1,11 @@
 import { z } from "zod";
-import { ensureActionable } from "./actionability.js";
+import {
+    type ActionWait,
+    actionWaitOf,
+    actionWaitSchema,
+    ensureActionable,
+    retryWhileRefused,
+} from "./actionability.js";
 import { defineTool, type ToolContext } from "./define-tool.js";
 import { ensureNoDialog } from "./dialogs.js";
 import {
@@ -82,7 +88,11 @@ interface Probe {
 }
 
 function describeTarget(target: ElementTarget): string {
-    return target.uid === undefined ? `selector ${JSON.stringify(target.selector)}` : `uid ${target.uid}`;
+    if (target.uid !== undefined) return `uid ${target.uid}`;
+
+    if (target.locator !== undefined) return `locator ${JSON.stringify(target.locator)}`;
+
+    return `selector ${JSON.stringify(target.selector)}`;
 }
 
 function wrongValue(kind: string, expected: string): ToolError {
@@ -93,11 +103,15 @@ async function kindOf(
     context : ToolContext,
     targetId: string,
     target  : ElementTarget,
+    wait?   : ActionWait,
 ): Promise<Probe> {
     return withElement(context, targetId, target, async (element) => {
         const owner = elementAccess(context.access, element);
 
-        await ensureActionable(owner, targetId, element, { checkDisabled: true });
+        await retryWhileRefused(
+            wait,
+            () => ensureActionable(owner, targetId, element, { checkDisabled: true }),
+        );
 
         const parsed = kindSchema.safeParse(
             await owner.send({
@@ -220,8 +234,9 @@ async function fillField(
     context : ToolContext,
     targetId: string,
     field   : Field,
+    wait    : ActionWait,
 ): Promise<{ kind: FieldResult["kind"]; effect: string }> {
-    const probe = await kindOf(context, targetId, field.target);
+    const probe = await kindOf(context, targetId, field.target, wait);
 
     switch (probe.kind) {
         case "text":
@@ -272,8 +287,9 @@ export const fillForm = defineTool({
         "Fill several form fields in one call, in order: text and textarea fields, selects, checkboxes and radio buttons. Stops at the first field that fails and says which fields were filled.",
     access: "mutate",
     input : z.strictObject({
-        tab   : tabSchema,
-        fields: z.array(fieldSchema).min(1).max(FIELDS_MAX).describe(`Fields to fill, 1 to ${FIELDS_MAX}.`),
+        tab      : tabSchema,
+        fields   : z.array(fieldSchema).min(1).max(FIELDS_MAX).describe(`Fields to fill, 1 to ${FIELDS_MAX}.`),
+        timeoutMs: actionWaitSchema,
     }),
     output: z.strictObject({
         ok    : z.boolean().describe("Whether every field was filled."),
@@ -292,7 +308,12 @@ export const fillForm = defineTool({
             throwIfCancelled(context.signal);
 
             try {
-                const done = await fillField(context, targetId, field);
+                const done = await fillField(
+                    context,
+                    targetId,
+                    field,
+                    actionWaitOf(args.timeoutMs, context.clock),
+                );
 
                 results.push({ index: index + 1, ...done });
             } catch (error) {

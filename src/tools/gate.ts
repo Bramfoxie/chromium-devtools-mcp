@@ -1,7 +1,7 @@
 import { confirmationRefusal } from "./confirmation.js";
 import type { ToolRuntime } from "./context.js";
 import type { AnyTool } from "./define-tool.js";
-import { isRestricted } from "../safety/index.js";
+import { isPolicyActive } from "../safety/index.js";
 import { checkSafety, type SafetyAccess, type SafetyDecision, type SafetyFrame } from "./safety.js";
 import { safetyFramesOf } from "./safety-frame.js";
 import { accessFor, dangerousFor, tabUrlExemptFor } from "./tool-traits.js";
@@ -67,13 +67,13 @@ async function admitWithChecks(
     const exempt = tabUrlExemptFor(tool, args);
     let tabUrl: string | undefined;
 
-    if (access === "mutate" && isRestricted(runtime.config.safety.allowedDomains) && !exempt) {
+    if (access === "mutate" && isPolicyActive(runtime.config.safety) && !exempt) {
         try {
             tabUrl = await resolveTabUrl(args, runtime);
         } catch {
             return {
                 admitted: false,
-                message : "The tab URL could not be read to check it against safety.allowedDomains. Call the tool again.",
+                message : "The tab URL could not be read to check it against the domain rules in safety. Call the tool again.",
             };
         }
     }
@@ -85,10 +85,10 @@ async function admitWithChecks(
         try {
             frames = await safetyFramesOf(args, tab, runtime.elements, runtime.frames);
         } catch {
-            if (isRestricted(runtime.config.safety.allowedDomains)) {
+            if (isPolicyActive(runtime.config.safety)) {
                 return {
                     admitted: false,
-                    message : "The frame of the target could not be checked against safety.allowedDomains. Call the tool again.",
+                    message : "The frame of the target could not be checked against the domain rules in safety. Call the tool again.",
                 };
             }
         }

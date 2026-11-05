@@ -95,3 +95,73 @@ describe("checkSafety allowed domains", () => {
         ).toBe(true);
     });
 });
+
+const denying: Config = {
+    ...managedConfig,
+    safety: { ...managedConfig.safety, deniedDomains: ["bad.test", "*.evil.test"] },
+};
+
+describe("checkSafety denied domains", () => {
+    const base = { tool: "click", access: "mutate", config: denying } as const;
+
+    it("refuses a tab, a target and a frame on a denied host with the setting named", () => {
+        const onTab = checkSafety({ ...base, tabUrl: "https://bad.test/page" });
+
+        expect(onTab).toEqual({
+            allowed: false,
+            reason : "click acts on a tab that shows bad.test, which is blocked by safety.deniedDomains.",
+            hint   : "Use another site, or ask the owner to remove it from safety.deniedDomains.",
+        });
+        expect(checkSafety({ ...base, target: { url: "https://x.evil.test/" } }).allowed).toBe(false);
+        expect(
+            checkSafety({ ...base, frame: { frameId: "f", url: "https://bad.test/f" } }).allowed,
+        ).toBe(false);
+    });
+
+    it("lets other hosts and read tools through", () => {
+        expect(checkSafety({ ...base, tabUrl: "https://good.test/" }).allowed).toBe(true);
+        expect(checkSafety({ ...base, access: "read", tabUrl: "https://bad.test/" }).allowed).toBe(true);
+    });
+
+    it("judges an inherited frame by nothing but its own url", () => {
+        expect(
+            checkSafety({ ...base, frame: { frameId: "f", url: "about:srcdoc" } }).allowed,
+        ).toBe(true);
+    });
+});
+
+describe("checkSafety private networks", () => {
+    const closed: Config = {
+        ...managedConfig,
+        safety: { ...managedConfig.safety, allowPrivateNetworks: false },
+    };
+    const base = { tool: "lighthouse_audit", access: "mutate", config: closed } as const;
+
+    it("refuses a tool that would open a local or private address by default", () => {
+        const decision = checkSafety({ ...base, target: { url: "http://192.168.1.1/admin" } });
+
+        expect(decision).toMatchObject({ allowed: false });
+        expect(decision.allowed ? "" : decision.hint).toContain("safety.allowPrivateNetworks");
+        expect(checkSafety({ ...base, target: { url: "http://localhost:3000/" } }).allowed).toBe(false);
+    });
+
+    it("opens public addresses and a private host that the allow list names", () => {
+        expect(checkSafety({ ...base, target: { url: "https://example.com/" } }).allowed).toBe(true);
+
+        const named: Config = {
+            ...closed,
+            safety: { ...closed.safety, allowedDomains: ["localhost:3000"] },
+        };
+
+        expect(
+            checkSafety({ ...base, config: named, target: { url: "http://localhost:3000/" } }).allowed,
+        ).toBe(true);
+    });
+
+    it("does not stop a read tool or a tool with no address", () => {
+        expect(
+            checkSafety({ ...base, access: "read", target: { url: "http://localhost/" } }).allowed,
+        ).toBe(true);
+        expect(checkSafety(base).allowed).toBe(true);
+    });
+});

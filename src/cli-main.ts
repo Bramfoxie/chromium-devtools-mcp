@@ -1,4 +1,6 @@
-import { type Config, ConfigError, loadConfig } from "./config/index.js";
+import { type Config, ConfigError, describeConfig, loadConfig } from "./config/index.js";
+import { explainConfigError, formatConfigReport } from "./cli-config.js";
+import { allTools, selectTools } from "./tools/index.js";
 import { realFs } from "./install/fs.js";
 import { runInstall } from "./install/install.js";
 import os from "node:os";
@@ -14,7 +16,7 @@ import {
 } from "./cli-daemon.js";
 
 const USAGE =
-    "Usage: chromium-devtools-mcp [options]        run the MCP server on stdio\n       chromium-devtools-mcp daemon [options] run the browser daemon\n       chromium-devtools-mcp daemon status|stop|logs [--lines <count>]\n       chromium-devtools-mcp doctor [options]  check the setup and print how to fix it\n       chromium-devtools-mcp install --client <name|all> [--dry-run] [--remove] [options]\nOptions: --browser chrome, --mode attach|managed, --headless, --profile-dir, --debug-port, --ws-endpoint, --allow-focus, --isolated, --read-only, --allowed-domains, --confirm-dangerous, --help\nBoolean flags also accept a --no- form, for example --no-headless.";
+    "Usage: chromium-devtools-mcp [options]        run the MCP server on stdio\n       chromium-devtools-mcp daemon [options] run the browser daemon\n       chromium-devtools-mcp daemon status|stop|logs [--lines <count>]\n       chromium-devtools-mcp doctor [options]  check the setup and print how to fix it\n       chromium-devtools-mcp config [options]  show the effective configuration and where each value comes from\n       chromium-devtools-mcp install --client <name|all> [--dry-run] [--remove] [options]\nOptions: --browser chrome, --mode attach|managed, --headless, --profile-dir, --debug-port, --ws-endpoint, --allow-focus, --isolated, --read-only, --allowed-domains, --denied-domains, --allow-private-networks, --tools, --exclude-tools, --audit-log, --confirm-dangerous, --help\nBoolean flags also accept a --no- form, for example --no-headless.";
 
 export interface CliDeps {
     run     : (config: Config) => Promise<RunningDaemon>;
@@ -24,6 +26,8 @@ export interface CliDeps {
     install : (argv: string[]) => number;
     control : (subcommand: DaemonSubcommand, argv: string[]) => Promise<number>;
     doctor  : (config: Config) => Promise<number>;
+    describe: typeof describeConfig;
+    out     : (text: string) => void;
     onSignal: (signal: "SIGINT" | "SIGTERM" | "SIGHUP", handler: () => void) => void;
 }
 
@@ -50,6 +54,8 @@ const defaults: CliDeps = {
 
         return checks.some((check) => check.level === "fail") ? 1 : 0;
     },
+    describe: describeConfig,
+    out     : (text) => void process.stdout.write(text),
     onSignal: (signal, handler) => void process.once(signal, handler),
 };
 
@@ -101,6 +107,21 @@ async function runDoctorCommand(deps: CliDeps, argv: string[]): Promise<number> 
     }
 }
 
+function runConfigCommand(deps: CliDeps, argv: string[]): number {
+    try {
+        const report = deps.describe({ argv });
+
+        selectTools(allTools, report.config);
+        deps.out(formatConfigReport(report));
+
+        return 0;
+    } catch (error) {
+        deps.write(explainConfigError(error));
+
+        return 2;
+    }
+}
+
 async function runDaemonCommand(deps: CliDeps, argv: string[]): Promise<number> {
     const config = loadOrExplain(deps, argv);
 
@@ -145,6 +166,7 @@ export async function main(argv: string[], overrides: Partial<CliDeps> = {}): Pr
 
     if (first === "install") return deps.install(rest);
     if (first === "doctor") return runDoctorCommand(deps, rest);
+    if (first === "config") return runConfigCommand(deps, rest);
 
     if (first === "daemon") {
         const [subcommand, ...options] = rest;

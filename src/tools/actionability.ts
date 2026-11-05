@@ -6,7 +6,66 @@ import {
     type ResolvedElement,
     revealElement,
 } from "./element-target.js";
-import { ToolError } from "./errors.js";
+import { ToolError, TransientRefusal } from "./errors.js";
+
+export { TransientRefusal };
+
+export const DEFAULT_ACTION_WAIT_MS = 2000;
+
+export const MAX_ACTION_WAIT_MS = 30_000;
+
+const ACTION_POLL_MS = 100;
+
+export interface ActionWait {
+    timeoutMs: number;
+    clock    : { now(): number; sleep(ms: number): Promise<void> };
+}
+
+export const actionWaitSchema = z
+    .number()
+    .int()
+    .min(0)
+    .max(MAX_ACTION_WAIT_MS)
+    .optional()
+    .describe(
+        `How long to wait, in milliseconds, for the element to be visible, enabled and not covered before refusing. Defaults to ${DEFAULT_ACTION_WAIT_MS}; 0 does not wait.`,
+    );
+
+export function actionWaitOf(
+    timeoutMs: number | undefined,
+    clock    : ActionWait["clock"],
+): ActionWait {
+    return { timeoutMs: timeoutMs ?? DEFAULT_ACTION_WAIT_MS, clock };
+}
+
+// Retries only checks made before anything is sent to the page, so a retry never repeats an action.
+export async function retryWhileRefused<T>(
+    wait   : ActionWait | undefined,
+    attempt: () => Promise<T>,
+): Promise<T> {
+    const started = wait?.clock.now() ?? 0;
+    const maxRetries = wait === undefined ? 0 : Math.ceil(wait.timeoutMs / ACTION_POLL_MS);
+
+    for (let retries = 0; ; retries += 1) {
+        try {
+            return await attempt();
+        } catch (error) {
+            if (wait === undefined || !(error instanceof TransientRefusal)) throw error;
+
+            const left = started + wait.timeoutMs - wait.clock.now();
+
+            if (left <= 0 || retries >= maxRetries) {
+                throw wait.timeoutMs === 0
+                    ? error
+                    : new TransientRefusal(
+                        `${error.message} It did not change within ${wait.timeoutMs} ms.`,
+                    );
+            }
+
+            await wait.clock.sleep(Math.min(ACTION_POLL_MS, left));
+        }
+    }
+}
 
 export interface ElementState {
     tag       : string;
@@ -353,7 +412,7 @@ function notAttachedError(): ToolError {
 }
 
 function hiddenError(): ToolError {
-    return new ToolError(
+    return new TransientRefusal(
         "The element is hidden: it has no box on the page. Make it visible and try again.",
     );
 }
@@ -369,7 +428,7 @@ export async function ensureActionable(
     if (!state.connected) throw notAttachedError();
 
     if (options.checkDisabled && state.disabled) {
-        throw new ToolError("The element is disabled and cannot receive input.");
+        throw new TransientRefusal("The element is disabled and cannot receive input.");
     }
 
     if (options.checkVisible === false) {

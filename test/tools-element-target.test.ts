@@ -40,11 +40,11 @@ describe("elementTargetSchema", () => {
         expect(neither.success).toBe(false);
 
         if (!both.success) {
-            expect(both.error.issues[0]?.message).toContain("exactly one of uid or selector");
+            expect(both.error.issues[0]?.message).toContain("exactly one of uid, selector or locator");
         }
 
         if (!neither.success) {
-            expect(neither.error.issues[0]?.message).toContain("exactly one of uid or selector");
+            expect(neither.error.issues[0]?.message).toContain("exactly one of uid, selector or locator");
         }
     });
 

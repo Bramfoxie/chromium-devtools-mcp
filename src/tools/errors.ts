@@ -13,6 +13,9 @@ import { AppError } from "../util/app-error.js";
 
 export class ToolError extends AppError {}
 
+// A refusal that can go away by itself, such as a hidden or covered element, so a retry can help.
+export class TransientRefusal extends ToolError {}
+
 const MAX_ERROR_CHARS = 500;
 
 function clip(message: string): string {

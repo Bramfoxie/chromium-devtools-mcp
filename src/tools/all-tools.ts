@@ -1,8 +1,12 @@
 import { bringToFront } from "./bring-to-front.js";
 import { consoleLogs } from "./console-logs.js";
+import { cssEdit } from "./css-edit.js";
 import { cssInspect } from "./css-inspect.js";
+import { domEdit } from "./dom-edit.js";
 import type { AnyTool } from "./define-tool.js";
 import { domQuery } from "./dom-query.js";
+import { a11ySnapshot } from "./a11y-snapshot.js";
+import { domSelector } from "./dom-selector.js";
 import { domSnapshot } from "./dom-snapshot.js";
 import { emulateDevice } from "./emulation/emulate-device.js";
 import { emulateGeolocation } from "./emulation/emulate-geolocation.js";
@@ -19,6 +23,8 @@ import { inputUpload } from "./input-upload.js";
 import { fillForm } from "./fill-form.js";
 import { jsEvaluate } from "./js-evaluate.js";
 import { networkMock } from "./network-mock.js";
+import { downloads } from "./downloads.js";
+import { networkHar } from "./network-har.js";
 import { networkRequests } from "./network-requests.js";
 import { networkResponseBody } from "./network-response-body.js";
 import { lighthouseAudit } from "./perf/lighthouse.js";
@@ -50,9 +56,15 @@ export const allTools: AnyTool[] = [
     jsEvaluate,
     domQuery,
     domSnapshot,
+    a11ySnapshot,
+    domSelector,
+    domEdit,
     cssInspect,
+    cssEdit,
     consoleLogs,
     networkRequests,
+    networkHar,
+    downloads,
     networkResponseBody,
     networkMock,
     pageDialogs,

@@ -77,20 +77,29 @@ function envLayer(env: NodeJS.ProcessEnv): Layer {
     };
     const port = get("DEBUG_PORT");
     const domains = get("ALLOWED_DOMAINS");
+    const denied = get("DENIED_DOMAINS");
+    const tools = get("TOOLS");
+    const excluded = get("EXCLUDE_TOOLS");
+    const auditLog = get("AUDIT_LOG");
 
     return compact({
-        browser   : get("BROWSER"),
-        mode      : get("MODE"),
-        headless  : bool("HEADLESS"),
-        profileDir: get("PROFILE_DIR"),
-        debugPort : port === undefined ? undefined : toInt(port),
-        wsEndpoint: get("WS_ENDPOINT"),
-        allowFocus: bool("ALLOW_FOCUS"),
-        isolated  : bool("ISOLATED"),
-        safety    : {
-            readOnly        : bool("READ_ONLY"),
-            allowedDomains  : domains === undefined ? undefined : toList(domains),
-            confirmDangerous: bool("CONFIRM_DANGEROUS"),
+        browser     : get("BROWSER"),
+        mode        : get("MODE"),
+        headless    : bool("HEADLESS"),
+        profileDir  : get("PROFILE_DIR"),
+        debugPort   : port === undefined ? undefined : toInt(port),
+        wsEndpoint  : get("WS_ENDPOINT"),
+        allowFocus  : bool("ALLOW_FOCUS"),
+        isolated    : bool("ISOLATED"),
+        tools       : tools === undefined ? undefined : toList(tools),
+        excludeTools: excluded === undefined ? undefined : toList(excluded),
+        auditLog    : auditLog,
+        safety      : {
+            readOnly            : bool("READ_ONLY"),
+            allowedDomains      : domains === undefined ? undefined : toList(domains),
+            deniedDomains       : denied === undefined ? undefined : toList(denied),
+            allowPrivateNetworks: bool("ALLOW_PRIVATE_NETWORKS"),
+            confirmDangerous    : bool("CONFIRM_DANGEROUS"),
         },
     });
 }
@@ -103,17 +112,22 @@ function parseFlags(argv: string[]) {
             allowPositionals: false,
             allowNegative   : true,
             options         : {
-                browser            : { type: "string" },
-                mode               : { type: "string" },
-                headless           : { type: "boolean" },
-                "profile-dir"      : { type: "string" },
-                "debug-port"       : { type: "string" },
-                "ws-endpoint"      : { type: "string" },
-                "allow-focus"      : { type: "boolean" },
-                isolated           : { type: "boolean" },
-                "read-only"        : { type: "boolean" },
-                "allowed-domains"  : { type: "string" },
-                "confirm-dangerous": { type: "boolean" },
+                browser                 : { type: "string" },
+                mode                    : { type: "string" },
+                headless                : { type: "boolean" },
+                "profile-dir"           : { type: "string" },
+                "debug-port"            : { type: "string" },
+                "ws-endpoint"           : { type: "string" },
+                "allow-focus"           : { type: "boolean" },
+                isolated                : { type: "boolean" },
+                "read-only"             : { type: "boolean" },
+                "allowed-domains"       : { type: "string" },
+                "denied-domains"        : { type: "string" },
+                "allow-private-networks": { type: "boolean" },
+                tools                   : { type: "string" },
+                "exclude-tools"         : { type: "string" },
+                "audit-log"             : { type: "string" },
+                "confirm-dangerous"     : { type: "boolean" },
             },
         });
     } catch (error) {
@@ -127,20 +141,29 @@ function argvLayer(argv: string[]): Layer {
     const { values } = parseFlags(argv);
     const port = values["debug-port"];
     const domains = values["allowed-domains"];
+    const denied = values["denied-domains"];
+    const tools = values.tools;
+    const excluded = values["exclude-tools"];
+    const auditLog = values["audit-log"];
 
     return compact({
-        browser   : values.browser,
-        mode      : values.mode,
-        headless  : values.headless,
-        profileDir: values["profile-dir"],
-        debugPort : typeof port === "string" ? toInt(port) : port,
-        wsEndpoint: values["ws-endpoint"],
-        allowFocus: values["allow-focus"],
-        isolated  : values.isolated,
-        safety    : {
-            readOnly        : values["read-only"],
-            allowedDomains  : typeof domains === "string" ? toList(domains) : domains,
-            confirmDangerous: values["confirm-dangerous"],
+        browser     : values.browser,
+        mode        : values.mode,
+        headless    : values.headless,
+        profileDir  : values["profile-dir"],
+        debugPort   : typeof port === "string" ? toInt(port) : port,
+        wsEndpoint  : values["ws-endpoint"],
+        allowFocus  : values["allow-focus"],
+        isolated    : values.isolated,
+        tools       : typeof tools === "string" ? toList(tools) : tools,
+        excludeTools: typeof excluded === "string" ? toList(excluded) : excluded,
+        auditLog    : auditLog,
+        safety      : {
+            readOnly            : values["read-only"],
+            allowedDomains      : typeof domains === "string" ? toList(domains) : domains,
+            deniedDomains       : typeof denied === "string" ? toList(denied) : denied,
+            allowPrivateNetworks: values["allow-private-networks"],
+            confirmDangerous    : values["confirm-dangerous"],
         },
     });
 }
@@ -169,7 +192,17 @@ function merge(base: Layer, layer: Layer): Layer {
     return { ...base, ...layer, safety: { ...base.safety, ...layer.safety } };
 }
 
-export function loadConfig(options: LoadOptions = {}): Config {
+interface Resolved {
+    file    : string;
+    exists  : boolean;
+    defaults: Layer;
+    layers  : Array<{ source: ConfigSource; layer: Layer }>;
+    platform: NodeJS.Platform;
+}
+
+export type ConfigSource = "default" | "file" | "env" | "flag";
+
+function resolveLayers(options: LoadOptions): Resolved {
     const ctx: PathContext = {
         env     : options.env ?? process.env,
         platform: options.platform ?? process.platform,
@@ -191,23 +224,50 @@ export function loadConfig(options: LoadOptions = {}): Config {
         profileDir: defaultProfileDir(ctx),
         allowFocus: false,
         isolated  : false,
-        safety    : { readOnly: false, allowedDomains: [], confirmDangerous: false },
+        safety    : {
+            readOnly            : false,
+            allowedDomains      : [],
+            deniedDomains       : [],
+            allowPrivateNetworks: false,
+            confirmDangerous    : false,
+        },
     };
 
-    const layers = [
-        fileLayer(file, content),
-        envLayer(ctx.env),
-        argvLayer(options.argv ?? process.argv.slice(2)),
-    ];
-    const layered = layers.reduce(merge, defaults);
+    return {
+        file,
+        exists  : content !== undefined,
+        defaults,
+        platform: ctx.platform,
+        layers  : [
+            { source: "file", layer: fileLayer(file, content) },
+            { source: "env", layer: envLayer(ctx.env) },
+            { source: "flag", layer: argvLayer(options.argv ?? process.argv.slice(2)) },
+        ],
+    };
+}
+
+function validate(resolved: Resolved): Config {
+    const layered = resolved.layers.reduce(
+        (base, entry) => merge(base, entry.layer),
+        resolved.defaults,
+    );
     const merged = { ...layered, debugPort: layered.debugPort ?? (layered.mode === "managed" ? 0 : 9222) };
 
     const result = configSchema.safeParse(merged);
 
     if (result.success) {
-        if (!pathFor(ctx.platform).isAbsolute(result.data.profileDir)) {
+        if (!pathFor(resolved.platform).isAbsolute(result.data.profileDir)) {
             throw new ConfigError(
                 `invalid configuration: profileDir: must be an absolute path, got ${JSON.stringify(result.data.profileDir)}. A leading ~ is not expanded.`,
+            );
+        }
+
+        if (
+            result.data.auditLog !== undefined
+            && !pathFor(resolved.platform).isAbsolute(result.data.auditLog)
+        ) {
+            throw new ConfigError(
+                `invalid configuration: auditLog: must be an absolute path, got ${JSON.stringify(result.data.auditLog)}`,
             );
         }
 
@@ -219,4 +279,61 @@ export function loadConfig(options: LoadOptions = {}): Config {
         .join("; ");
 
     throw new ConfigError(`invalid configuration: ${details}`);
+}
+
+export function loadConfig(options: LoadOptions = {}): Config {
+    return validate(resolveLayers(options));
+}
+
+export interface ConfigReport {
+    file   : string;
+    exists : boolean;
+    config : Config;
+    sources: Record<string, ConfigSource>;
+}
+
+const FIELDS = [
+    "browser",
+    "mode",
+    "headless",
+    "profileDir",
+    "debugPort",
+    "wsEndpoint",
+    "allowFocus",
+    "isolated",
+    "tools",
+    "excludeTools",
+    "auditLog",
+] as const;
+
+const SAFETY_FIELDS = [
+    "readOnly",
+    "allowedDomains",
+    "deniedDomains",
+    "allowPrivateNetworks",
+    "confirmDangerous",
+] as const;
+
+// The effective configuration with the layer that set each value; the last layer that sets it wins.
+export function describeConfig(options: LoadOptions = {}): ConfigReport {
+    const resolved = resolveLayers(options);
+    const config = validate(resolved);
+    const sources: Record<string, ConfigSource> = {};
+    const find = (read: (layer: Layer) => unknown): ConfigSource => {
+        let source: ConfigSource = "default";
+
+        for (const entry of resolved.layers) {
+            if (read(entry.layer) !== undefined) source = entry.source;
+        }
+
+        return source;
+    };
+
+    for (const field of FIELDS) sources[field] = find((layer) => layer[field]);
+
+    for (const field of SAFETY_FIELDS) {
+        sources[`safety.${field}`] = find((layer) => layer.safety?.[field]);
+    }
+
+    return { file: resolved.file, exists: resolved.exists, config, sources };
 }

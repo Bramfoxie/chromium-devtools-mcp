@@ -8,7 +8,9 @@ export { ToolError, toToolMessage } from "./errors.js";
 
 export { CANCELLED_MESSAGE, registerTools, runTool, throwIfCancelled } from "./registry.js";
 
-export { binaryResult, errorResult, imageBlock, jsonResult, resourceBlock, textBlock, truncateText } from "./result.js";
+export { pageTextDocument, registerResources, resourceUri, TEXT_RESOURCE_MAX_CHARS } from "./resources.js";
+
+export { binaryResult, errorResult, imageBlock, jsonResult, markUntrusted, resourceBlock, textBlock, truncateText, UNTRUSTED_NOTICE } from "./result.js";
 
 export { checkSafety, type SafetyRequest } from "./safety.js";
 
@@ -26,9 +28,33 @@ export { WALK_NODE_BUDGET } from "./walk-script.js";
 
 export { clipCssValue, cssInspect, DEFAULT_CSS_PROPERTIES, quadToRect, shapeComputed, shapeInherited, droppedWinners, shapeMatchedRules } from "./css-inspect.js";
 
+export { buildRuleRequest, buildSetStyleRequest, clipPreviousMap, cssEdit, isDangerousCssEdit, isValidPropertyName, splitImportant, toDeclarations } from "./css-edit.js";
+
+export { buildDomEditRequest, domEdit, domEditEffect, isDangerousDomEdit, isValidAttributeName, isValidClassToken, shapePrevious } from "./dom-edit.js";
+
 export { consoleLogs } from "./console-logs.js";
 
+export { a11ySnapshot } from "./a11y-snapshot.js";
+
+export { domSelector } from "./dom-selector.js";
+
+export { pickLocator } from "./locator-suggest.js";
+
+export { a11yEntries, summarize as summarizeA11y } from "./a11y-tree.js";
+
+export { AuditLog, auditLine, fileAuditSink, summarizeArgs, type AuditEntry, type AuditSink } from "./audit-log.js";
+
+export { downloads } from "./downloads.js";
+
+export { selectTools, TOOL_GROUPS, type ToolSelection } from "./tool-selection.js";
+
+export { DownloadState, safeFilename, type DownloadItem } from "./download-state.js";
+
+export { networkHar } from "./network-har.js";
+
 export { networkFilterOf, networkRequests } from "./network-requests.js";
+
+export { buildHar, type Har, type HarEntry } from "./capture/har.js";
 
 export { bodyByteSize, isTextMimeType, networkResponseBody } from "./network-response-body.js";
 
@@ -111,6 +137,8 @@ export { type NetworkRecord, matchNetworkRecord, reduceNetworkEvent } from "./ca
 export { compileUrlPattern, testUrlPattern } from "./capture/url-pattern.js";
 
 export { redactHeaders, redactUrl } from "./capture/redact.js";
+
+export { actionWaitOf, actionWaitSchema, DEFAULT_ACTION_WAIT_MS, retryWhileRefused, TransientRefusal } from "./actionability.js";
 
 export { coveredMessage, describeTarget, elementState, ensureActionable, HIT_EXPRESSION, hitTest } from "./actionability.js";
 

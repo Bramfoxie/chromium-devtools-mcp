@@ -27,7 +27,7 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run typecheck
-      - run: npm test
       - run: npm run build
+      - run: npm test
       - if: matrix.node == 24
         run: npm run smoke:pack

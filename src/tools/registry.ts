@@ -10,7 +10,9 @@ import { ToolRuntime } from "./context.js";
 import { admit } from "./gate.js";
 import { ToolError, toToolMessage } from "./errors.js";
 import { accessFor, mayBeDangerous, mayMutate } from "./tool-traits.js";
-import { errorResult, jsonResult } from "./result.js";
+import { summarizeArgs } from "./audit-log.js";
+import { redactUrl } from "./capture/redact.js";
+import { errorResult, jsonResult, markUntrusted } from "./result.js";
 import { logDaemon } from "../util/log.js";
 import { SessionResetError } from "../mcp/index.js";
 
@@ -90,6 +92,37 @@ export async function runTool(
     extra  : RequestHandlerExtra<ServerRequest, ServerNotification>,
     runtime: ToolRuntime,
 ): Promise<CallToolResult> {
+    const audit = runtime.audit;
+
+    if (audit === undefined) return runToolUnaudited(tool, rawArgs, extra, runtime);
+
+    const started = runtime.clock.now();
+    const result = await runToolUnaudited(tool, rawArgs, extra, runtime);
+    const tab = (rawArgs as { tab?: unknown } | null | undefined)?.tab;
+    const tabId = typeof tab === "string" ? tab : runtime.tabs.selected();
+    const url = runtime.tabs.knownTabs().find((known) => known.targetId === tabId)?.url;
+    const message = result.content.find((block) => block.type === "text");
+
+    audit.record({
+        time      : new Date(started).toISOString(),
+        tool      : tool.name,
+        ...(tabId === undefined ? {} : { tab: tabId }),
+        ...(url === undefined || url === "" ? {} : { url: redactUrl(url) }),
+        args      : summarizeArgs(rawArgs),
+        outcome   : result.isError === true ? "error" : "ok",
+        ...(result.isError === true && message?.type === "text" ? { error: message.text } : {}),
+        durationMs: Math.max(0, runtime.clock.now() - started),
+    });
+
+    return result;
+}
+
+async function runToolUnaudited(
+    tool   : AnyTool,
+    rawArgs: unknown,
+    extra  : RequestHandlerExtra<ServerRequest, ServerNotification>,
+    runtime: ToolRuntime,
+): Promise<CallToolResult> {
     const parsed = tool.input.safeParse(rawArgs ?? {});
 
     if (!parsed.success) {
@@ -125,9 +158,9 @@ export async function runTool(
 
         const value = validated.data as Record<string, unknown>;
 
-        if (tool.present) return tool.present(validated.data);
+        const result = tool.present ? tool.present(validated.data) : jsonResult(value);
 
-        return jsonResult(value);
+        return tool.untrusted === false ? result : markUntrusted(result);
     } catch (error) {
         if (error instanceof SessionResetError) return errorResult(error.message);
 

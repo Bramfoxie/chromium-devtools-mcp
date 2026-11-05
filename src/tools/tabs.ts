@@ -252,6 +252,7 @@ export const closeTab = defineTool({
 
 export const listSessions = defineTool({
     name       : "list_sessions",
+    untrusted  : false,
     closedWorld: true,
     description: "List open sessions of the daemon without their tab details.",
     access     : "read",

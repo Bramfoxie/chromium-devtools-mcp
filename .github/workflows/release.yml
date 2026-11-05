@@ -24,7 +24,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           for attempt in $(seq 1 120); do
-            runs=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$GITHUB_SHA" --json status,conclusion --limit 20)
+            runs=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$GITHUB_SHA" --json status,conclusion --limit 20) || { sleep 20; continue; }
             total=$(printf '%s' "$runs" | jq 'length')
             open=$(printf '%s' "$runs" | jq '[.[] | select(.status != "completed")] | length')
             failed=$(printf '%s' "$runs" | jq '[.[] | select(.status == "completed" and .conclusion != "success")] | length')
@@ -73,14 +73,6 @@ jobs:
       - if: steps.version.outputs.publish == 'true'
         run: npm ci
       - if: steps.version.outputs.publish == 'true'
-        run: npm run lint
-      - if: steps.version.outputs.publish == 'true'
-        run: npm run typecheck
-      - if: steps.version.outputs.publish == 'true'
-        run: npm test
-      - if: steps.version.outputs.publish == 'true'
-        run: npm run build
-      - if: steps.version.outputs.publish == 'true'
         run: npm publish --access public
 
   github-release:
@@ -98,9 +90,17 @@ jobs:
         run: |
           name=$(node -p "require('./package.json').name")
           version=$(node -p "require('./package.json').version")
-          if ! output=$(npm view "${name}@${version}" version 2>&1); then
+          found=false
+          for attempt in $(seq 1 30); do
+            if output=$(npm view "${name}@${version}" version 2>&1); then
+              found=true
+              break
+            fi
+            sleep 20
+          done
+          if [ "$found" != true ]; then
             printf '%s\n' "$output"
-            echo "${name}@${version} is not on npm, so no release is created for it. Run this workflow again once the version is published."
+            echo "${name}@${version} is not on npm after 10 minutes, so no release is created for it. Run this workflow again once the version is published."
             exit 1
           fi
           if gh release view "v${version}" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then

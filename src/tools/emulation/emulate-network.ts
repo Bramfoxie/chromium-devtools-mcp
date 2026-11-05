@@ -80,6 +80,7 @@ async function ensureNetworkForEmulation(
 
 export const emulateNetwork = defineTool({
     name       : "emulate_network",
+    untrusted  : false,
     closedWorld: true,
     description:
         "Emulate network conditions on a tab: offline, slow-3g (2000 ms, 400/400 Kbps), fast-3g (562 ms, 1600/750 Kbps), 4g (170 ms, 9000/9000 Kbps), wifi (28 ms, 30000/15000 Kbps) or none. Shares Network.enable with the capture manager, never disables capture.",

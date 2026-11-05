@@ -457,10 +457,34 @@ describe("rendering during cross-site pointer input", () => {
             renderGated: true,
             innerHit   : { kind: "covered", tag: "div", id: "veil", classes: [] },
         });
-        const result = await runTool(inputClick, { target: { uid: "1_1" } }, extra(), runtime);
+        const result = await runTool(
+            inputClick,
+            { target: { uid: "1_1" }, timeoutMs: 0 },
+            extra(),
+            runtime,
+        );
 
         expect(result.isError).toBe(true);
         expect(pointerCounters.get(fake)).toMatchObject(ONE_HOLD);
+    });
+
+    it("lets go of the screencast after every retry while a covered point is waited for", async () => {
+        const { fake, runtime } = setup({
+            renderGated: true,
+            innerHit   : { kind: "covered", tag: "div", id: "veil", classes: [] },
+        });
+        const result = await runTool(
+            inputClick,
+            { target: { uid: "1_1" }, timeoutMs: 300 },
+            extra(),
+            runtime,
+        );
+        const counters = pointerCounters.get(fake);
+
+        expect(result.isError).toBe(true);
+        expect(JSON.stringify(result.content)).toContain("did not change within 300 ms");
+        expect(counters?.screencastStarts).toBeGreaterThan(1);
+        expect(counters?.screencastStops).toBe(counters?.screencastStarts);
     });
 
     it("holds rendering for hover", async () => {
