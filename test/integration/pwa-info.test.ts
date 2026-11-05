@@ -136,7 +136,7 @@ describe.skipIf(!present)("pwa_info in a real browser", () => {
         await eventually(async () => {
             info = (await env.ok("pwa_info", { tab })) as unknown as Info;
 
-            return info.serviceWorkers.length > 0 ? true : undefined;
+            return info.serviceWorkers[0]?.state === "activated" ? true : undefined;
         }, 15_000);
 
         expect(info?.installabilityErrors.map((problem) => problem.id)).toEqual(["in-incognito"]);
