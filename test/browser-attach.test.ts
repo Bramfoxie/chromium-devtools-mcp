@@ -292,6 +292,44 @@ describe("attachBrowser", () => {
         expect(logs).toEqual(["Attaching to Chrome on port 9222 (debug-port)."]);
     });
 
+    it("logs once why the port file cannot be used while it keeps waiting", async () => {
+        const file = "/Users/u/Library/Application Support/Google/Chrome/DevToolsActivePort";
+        let polls = 0;
+        const unreadable = deps({}, {
+            readFile: async () => {
+                throw new Error("EPERM: operation not permitted");
+            },
+            sleep: async () => {
+                polls += 1;
+
+                if (polls > 2) throw new Error("stop");
+            },
+        });
+
+        await expect(attachBrowser(config, unreadable.value)).rejects.toThrow("stop");
+        expect(unreadable.logs.filter((line) => line.startsWith(`Cannot read ${file}`))).toEqual([
+            `Cannot read ${file}: EPERM: operation not permitted`,
+        ]);
+
+        const closed = deps({ files: { [file]: "9222\n/devtools/browser/abc" } }, {
+            sleep: async () => {
+                throw new Error("stop");
+            },
+        });
+
+        await expect(attachBrowser(config, closed.value)).rejects.toThrow("stop");
+        expect(closed.logs.join("\n")).toContain("Port 9222 named in");
+
+        const broken = deps({ files: { [file]: "garbage" } }, {
+            sleep: async () => {
+                throw new Error("stop");
+            },
+        });
+
+        await expect(attachBrowser(config, broken.value)).rejects.toThrow("stop");
+        expect(broken.logs.join("\n")).toContain("does not hold a port");
+    });
+
     it("does not swallow unexpected errors while waiting", async () => {
         const broken = {
             get platform(): NodeJS.Platform {

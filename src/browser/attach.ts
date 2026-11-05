@@ -8,6 +8,7 @@ import { readIfExists } from "../util/read-if-exists.js";
 import { writeLogLine } from "../util/stderr.js";
 import { abortableSleep } from "../util/sleep.js";
 import { AppError } from "../util/app-error.js";
+import { messageOf } from "../util/message-of.js";
 
 const PORT_FILE_NAME = "DevToolsActivePort";
 const MAX_VERSION_BYTES = 64 * 1024;
@@ -75,34 +76,51 @@ function browserWebSocketUrl(version: unknown, port: number): string | undefined
     }
 }
 
+export type ProblemReporter = (message: string) => void;
+
 async function endpointInDir(
-    deps   : Pick<AttachDeps, "context" | "readFile" | "isPortOpen">,
-    dir    : string,
-    signal?: AbortSignal,
+    deps      : Pick<AttachDeps, "context" | "readFile" | "isPortOpen">,
+    dir       : string,
+    signal?   : AbortSignal,
+    onProblem?: ProblemReporter,
 ): Promise<AttachEndpoint | undefined> {
+    const file = pathFor(deps.context.platform).join(dir, PORT_FILE_NAME);
     let content: string | undefined;
 
     try {
-        content = await deps.readFile(pathFor(deps.context.platform).join(dir, PORT_FILE_NAME));
-    } catch {
+        content = await deps.readFile(file);
+    } catch (error) {
+        onProblem?.(`Cannot read ${file}: ${messageOf(error)}`);
+
         return undefined;
     }
 
-    const parsed = content === undefined ? undefined : parseActivePortFile(content);
+    if (content === undefined) return undefined;
 
-    if (parsed && (await deps.isPortOpen(parsed.port, signal).catch(() => false))) {
+    const parsed = parseActivePortFile(content);
+
+    if (parsed === undefined) {
+        onProblem?.(`${file} does not hold a port and a browser path.`);
+
+        return undefined;
+    }
+
+    if (await deps.isPortOpen(parsed.port, signal).catch(() => false)) {
         return { ...parsed, source: "port-file" };
     }
+
+    onProblem?.(`Port ${parsed.port} named in ${file} does not accept connections.`);
 
     return undefined;
 }
 
 async function portFileEndpoint(
-    deps   : AttachDeps,
-    browser: BrowserName,
-    signal?: AbortSignal,
+    deps      : AttachDeps,
+    browser   : BrowserName,
+    signal?   : AbortSignal,
+    onProblem?: ProblemReporter,
 ): Promise<AttachEndpoint | undefined> {
-    return endpointInDir(deps, browserUserDataDir(browser, deps.context), signal);
+    return endpointInDir(deps, browserUserDataDir(browser, deps.context), signal, onProblem);
 }
 
 // Finds a browser already running on the user data directory.
@@ -141,11 +159,12 @@ async function profileLocked(deps: AttachDeps, dir: string): Promise<boolean> {
 }
 
 export async function resolveAttachEndpoint(
-    config : AttachConfig,
-    deps   : AttachDeps,
-    signal?: AbortSignal,
+    config    : AttachConfig,
+    deps      : AttachDeps,
+    signal?   : AbortSignal,
+    onProblem?: ProblemReporter,
 ): Promise<AttachEndpoint | undefined> {
-    const fromFile = await portFileEndpoint(deps, config.browser, signal);
+    const fromFile = await portFileEndpoint(deps, config.browser, signal, onProblem);
 
     if (fromFile) return fromFile;
 
@@ -195,9 +214,16 @@ export async function attachBrowser(
 ): Promise<AttachEndpoint> {
     const deps: AttachDeps = { ...defaultAttachDeps(), ...overrides };
     let instructed = false;
+    const reported = new Set<string>();
+    const onProblem: ProblemReporter = (message) => {
+        if (reported.has(message)) return;
+
+        reported.add(message);
+        deps.log(message);
+    };
 
     while (!signal?.aborted) {
-        const endpoint = await resolveAttachEndpoint(config, deps, signal);
+        const endpoint = await resolveAttachEndpoint(config, deps, signal, onProblem);
 
         if (endpoint) {
             deps.log(`Attaching to ${BROWSERS[config.browser].label} on port ${endpoint.port} (${endpoint.source}).`);
