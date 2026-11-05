@@ -32,7 +32,7 @@ beforeAll(async () => {
     });
     env.fixture.pages.set(
         "/jump",
-        html(`<script>setTimeout(() => { location.href = ${JSON.stringify(`${env.other.origin}/forbidden`)}; }, 300);</script>`),
+        html(`<script>setTimeout(() => { location.href = ${JSON.stringify(`${env.other.origin}/forbidden`)}; }, 2000);</script>`),
     );
 });
 
