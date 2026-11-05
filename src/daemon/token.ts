@@ -78,7 +78,10 @@ async function publishToken(
             await mkdir(lock);
             break;
         } catch (error) {
-            if (errorCode(error) !== "EEXIST") throw error;
+            const code = errorCode(error);
+            const busy = code === "EEXIST" || (code === "EPERM" && now() < deadline);
+
+            if (!busy) throw error;
 
             const winner = await readToken(file);
 
