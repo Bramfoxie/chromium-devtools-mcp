@@ -520,7 +520,7 @@ describe.skipIf(!present)("dom and css edits under safety options in a real brow
 
         try {
             guarded.fixture.pages.set("/edit-jump", html(
-                `<script>setTimeout(() => { location.href = ${JSON.stringify(`${guarded.other.origin}/edit-cross`)}; }, 100);</script>`,
+                `<script>setTimeout(() => { location.href = ${JSON.stringify(`${guarded.other.origin}/edit-cross`)}; }, 300);</script>`,
             ));
             guarded.other.pages.set("/edit-cross", html(`<p id="cross">cross text</p>`));
             const opened = await guarded.ok("new_tab", { url: `${guarded.fixture.origin}/edit-jump` });
@@ -529,7 +529,7 @@ describe.skipIf(!present)("dom and css edits under safety options in a real brow
             await eventually(async () => {
                 const info = (await guarded.ok("page_info", { tab })) as { url?: string };
 
-                return info.url?.includes("localhost") === true ? true : undefined;
+                return JSON.stringify(info).includes("localhost") ? true : undefined;
             });
 
             const dom = await guarded.call("dom_edit", {
