@@ -65,7 +65,7 @@ export function safeFilename(name: string): string {
     return last.replace(/[\u0000-\u001f]/g, "").slice(0, 255);
 }
 
-const LOCATE_ATTEMPTS = 10;
+const LOCATE_ATTEMPTS = 40;
 
 const LOCATE_PAUSE_MS = 50;
 
@@ -162,6 +162,10 @@ export class DownloadState {
 
         if (found === undefined) return undefined;
 
+        if (found.state === "completed" && found.path === undefined) {
+            await this.locate(state, found);
+        }
+
         found.delivered = true;
 
         return publicItem(found);
@@ -237,12 +241,15 @@ export class DownloadState {
         state    : TabDownloads,
         directory: string,
         entry    : Entry,
-    ): Promise<string | undefined> {
+    ): Promise<string | undefined | null> {
         const claimed = new Set(
             [...state.entries.values()].flatMap((other) =>
                 other.path === undefined ? [] : [other.path]),
         );
-        const names = await this.files.list(directory).catch(() => [] as string[]);
+        const names = await this.files.list(directory).catch(() => null);
+
+        if (names === null) return null;
+
         const free = names
             .filter((name) => !name.endsWith(".crdownload"))
             .map((name) => path.join(directory, name))
@@ -256,7 +263,7 @@ export class DownloadState {
         if (state.directory === undefined) return;
 
         const directory = state.directory;
-        let chosen: string | undefined;
+        let chosen: string | undefined | null;
 
         for (let attempt = 0; chosen === undefined && attempt < LOCATE_ATTEMPTS; attempt += 1) {
             if (attempt > 0) await this.pause(LOCATE_PAUSE_MS);
@@ -264,7 +271,7 @@ export class DownloadState {
             chosen = await this.choose(state, directory, entry);
         }
 
-        if (chosen === undefined) return;
+        if (chosen === undefined || chosen === null) return;
 
         entry.path = chosen;
 
