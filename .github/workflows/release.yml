@@ -24,7 +24,12 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           for attempt in $(seq 1 120); do
-            runs=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$GITHUB_SHA" --json status,conclusion --limit 20) || { sleep 20; continue; }
+            runs=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$GITHUB_SHA" --json databaseId,attempt,status,conclusion --limit 1000) || { sleep 20; continue; }
+            if [ "$(printf '%s' "$runs" | jq 'length')" -ge 1000 ]; then
+              echo "Too many CI runs to verify for ${GITHUB_SHA}."
+              exit 1
+            fi
+            runs=$(printf '%s' "$runs" | jq 'group_by(.databaseId) | map(max_by(.attempt))') || { sleep 20; continue; }
             total=$(printf '%s' "$runs" | jq 'length')
             open=$(printf '%s' "$runs" | jq '[.[] | select(.status != "completed")] | length')
             failed=$(printf '%s' "$runs" | jq '[.[] | select(.status == "completed" and .conclusion != "success")] | length')
