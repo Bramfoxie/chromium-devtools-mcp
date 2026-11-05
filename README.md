@@ -42,31 +42,36 @@ If something does not connect, run `npx chromium-devtools-mcp doctor` (add the s
 
 ✅ means the project has the capability, ❌ means it has none.
 
-| Capability                                                          | chromium-devtools-mcp | Chrome DevTools MCP |
-| ------------------------------------------------------------------- | :-------------------: | :-----------------: |
-| One shared daemon, isolated sessions for several clients            |          ✅           |         ❌          |
-| Focus never stolen, tabs open in the background                     |          ✅           |         ❌          |
-| Trusted input events (CDP) and DOM-level click as separate tools    |          ✅           |         ❌          |
-| Shadow DOM and cross-site iframe piercing in every element tool     |          ✅           |         ❌          |
-| Network mocking and failing requests                                |          ✅           |         ❌          |
-| Network records with redaction of secrets in URLs and headers       |          ✅           |         ❌          |
-| Storage read and write (local, session, cookies)                    |          ✅           |         ❌          |
-| PDF export                                                          |          ✅           |         ❌          |
-| Built-in device list, locale, timezone, media, network emulation    |          ✅           |         ❌          |
-| Read-only mode, domain allowlist, confirmation of dangerous actions |          ✅           |         ❌          |
-| Installer for several clients                                       |          ✅           |         ❌          |
-| Attach to your running browser                                      |          ✅           |         ✅          |
-| Managed persistent profile                                          |          ✅           |         ✅          |
-| Isolated browser context per session                                |          ✅           |         ✅          |
-| Performance traces and insights                                     |          ✅           |         ✅          |
-| Lighthouse audit                                                    |          ✅           |         ✅          |
-| Heap snapshots                                                      |          ✅           |         ✅          |
-| Screencast recording                                                |          ✅           |         ✅          |
-| WebAuthn virtual authenticators                                     |          ✅           |         ✅          |
-| PWA inspection (manifest, installability, service workers)          |          ✅           |         ✅          |
-| Geolocation emulation                                               |          ✅           |         ✅          |
-| PWA install and extension management                                |          ❌           |         ✅          |
-| Browsers other than Chrome                                          |          ❌           |         ❌          |
+| Capability                                                                 | chromium-devtools-mcp | Chrome DevTools MCP |
+| -------------------------------------------------------------------------- | :-------------------: | :-----------------: |
+| One shared daemon, isolated sessions for several clients                   |          ✅           |         ❌          |
+| Focus never stolen, tabs open in the background                            |          ✅           |         ❌          |
+| Trusted input events (CDP) and DOM-level click as separate tools           |          ✅           |         ❌          |
+| Shadow DOM and cross-site iframe piercing in every element tool            |          ✅           |         ❌          |
+| Network mocking and failing requests                                       |          ✅           |         ❌          |
+| Network records with redaction of secrets in URLs and headers              |          ✅           |         ❌          |
+| Storage read and write (local, session, cookies)                           |          ✅           |         ❌          |
+| PDF export                                                                 |          ✅           |         ❌          |
+| Built-in device list, locale, timezone, media, network emulation           |          ✅           |         ❌          |
+| Read-only mode, allow and deny lists, private network block, confirmations |          ✅           |         ❌          |
+| DOM and CSS editing without JavaScript, previous value returned            |          ✅           |         ❌          |
+| Locators by role, name or text, with auto-wait before input                |          ✅           |         ❌          |
+| HAR 1.2 export of network records                                          |          ✅           |         ❌          |
+| Audit log of every tool call with secrets redacted                         |          ✅           |         ❌          |
+| Choose the offered tools by name or group                                  |          ✅           |         ❌          |
+| Installer for several clients                                              |          ✅           |         ❌          |
+| Attach to your running browser                                             |          ✅           |         ✅          |
+| Managed persistent profile                                                 |          ✅           |         ✅          |
+| Isolated browser context per session                                       |          ✅           |         ✅          |
+| Performance traces and insights                                            |          ✅           |         ✅          |
+| Lighthouse audit                                                           |          ✅           |         ✅          |
+| Heap snapshots                                                             |          ✅           |         ✅          |
+| Screencast recording                                                       |          ✅           |         ✅          |
+| WebAuthn virtual authenticators                                            |          ✅           |         ✅          |
+| PWA inspection (manifest, installability, service workers)                 |          ✅           |         ✅          |
+| Geolocation emulation                                                      |          ✅           |         ✅          |
+| PWA install and extension management                                       |          ❌           |         ✅          |
+| Browsers other than Chrome                                                 |          ❌           |         ❌          |
 
 Lighthouse audits and the video of a screencast use the `lighthouse` and `ffmpeg` programs when they are installed on your machine; `doctor` shows whether they are.
 
