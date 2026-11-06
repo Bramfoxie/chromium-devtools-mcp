@@ -287,6 +287,10 @@ export class FakeBrowser {
                 this.destroy(String(params.targetId));
 
                 return;
+            case "Browser.getWindowForTarget":
+                reply({ windowId: 17, bounds: { left: 10, top: 20, width: 800, height: 600, windowState: "normal" } });
+
+                return;
             case "Target.getTargets":
                 reply({
                     targetInfos: [...this.targets].map(([targetId, target]) => ({

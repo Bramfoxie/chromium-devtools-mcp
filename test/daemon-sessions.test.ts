@@ -168,6 +168,26 @@ describe("tab ownership", () => {
         expect(await code(listing)).toBe(ErrorCode.notFound);
     });
 
+    it("allows only one concurrent session to claim a discovered popup", async () => {
+        const { backend, open } = setup();
+        const owner = await open("owner");
+        const a = await open("a");
+        const b = await open("b");
+        const opener = await owner.createTab("about:blank");
+        const popup = backend.seedTab("https://popup.example/");
+        const target = backend.targets.get(popup);
+
+        if (!target) throw new Error("Missing popup");
+
+        target.openerId = opener;
+        expect((await owner.listPopups(opener)).map((tab) => tab.targetId)).toEqual([popup]);
+        const claims = await Promise.allSettled([a.claimTab(popup), b.claimTab(popup)]);
+
+        expect(claims.filter((claim) => claim.status === "fulfilled")).toHaveLength(1);
+        expect(claims.filter((claim) => claim.status === "rejected")).toHaveLength(1);
+        expect(await owner.listPopups(opener)).toEqual([]);
+    });
+
     it("excludes a popup claimed while discovery is pending", async () => {
         const { backend, open } = setup();
         const a = await open("a");

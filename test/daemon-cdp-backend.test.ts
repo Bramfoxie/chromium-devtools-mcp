@@ -66,6 +66,20 @@ describe("create", () => {
 });
 
 describe("contexts and targets", () => {
+    it("requests and validates a target window over CDP", async () => {
+        const { browser, backend } = await setup();
+        const targetId = await backend.createTarget("about:blank", undefined);
+
+        expect(await backend.getWindowForTarget(targetId)).toEqual({
+            windowId: 17, bounds: { left: 10, top: 20, width: 800, height: 600, windowState: "normal" },
+        });
+        expect(browser.calls.at(-1)).toMatchObject({
+            method: "Browser.getWindowForTarget", params: { targetId },
+        });
+        browser.malformed.add("Browser.getWindowForTarget");
+        await expect(backend.getWindowForTarget(targetId)).rejects.toBeInstanceOf(DaemonError);
+    });
+
     it("creates and disposes isolated contexts", async () => {
         const { browser, backend } = await setup();
         const id = await backend.createContext();

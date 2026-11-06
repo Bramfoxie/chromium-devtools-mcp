@@ -53,6 +53,33 @@ describe("window_list", () => {
         expect(result.isError).toBe(true);
     });
 
+    it("looks up only owned tabs with active domain restrictions", async () => {
+        const config: Config = {
+            ...managedConfig,
+            safety: { ...managedConfig.safety, allowedDomains: ["allowed.example"] },
+        };
+        const { fake, runtime } = setup(config);
+        const first = await fake.createTab();
+        const second = await fake.createTab();
+
+        fake.tabs.push({ targetId: "foreign", url: "https://blocked.example/", title: "", owned: false, created: false });
+        const lookedUp: string[] = [];
+
+        fake.getWindow = async (id) => {
+            lookedUp.push(id);
+
+            return { windowId: id === first ? 1 : 2, bounds: {} };
+        };
+
+        const result = await runTool(windowList, {}, extra(), runtime);
+
+        expect(lookedUp).toEqual([first, second]);
+        expect(result.structuredContent).toEqual({
+            windows  : [{ windowId: 1, bounds: {} }, { windowId: 2, bounds: {} }],
+            total    : 2, truncated: false,
+        });
+    });
+
     it("deduplicates owned windows and limits results", async () => {
         const { fake, runtime } = setup();
         const ids = await Promise.all([fake.createTab(), fake.createTab(), fake.createTab()]);
