@@ -225,14 +225,39 @@ describe.skipIf(!present)("cross-site iframe in a real browser", () => {
         expect(Number(scrolled.value)).toBeGreaterThan(0);
     });
 
-    it("reports wheel delivery consistently with the nested document", async () => {
-        const tab = await crossTab("/xnested", 2);
-        const frame = await frameIdOf(tab, "/deep");
-        const result = await env.ok("input_scroll", { tab, at: { x: 100, y: 100 }, deltaY: 100 });
-        const deep = await env.ok("dom_query", { tab, selector: "body", frame, attributes: ["data-wheel"] });
-        const seen = ((deep.matches as Row[])[0]?.attributes as Row | undefined)?.["data-wheel"] === "seen";
+    it("observes a trusted wheel in a nested cross-site document", async () => {
+        const isolated = await startEnv(undefined, true, undefined, undefined, true);
 
-        expect(String(result.effect)).toContain(seen ? "trusted wheel event was observed" : "wheel delivery is unconfirmed");
+        try {
+            isolated.other.pages.set("/nest", html(nest(`${isolated.fixture.origin}/deep`)));
+            isolated.fixture.pages.set("/deep", html(DEEP));
+            isolated.fixture.pages.set("/xnested", html(`<iframe name="outer" style="margin:30px 0 0 25px;border:3px solid red;padding:5px;width:400px;height:300px" src="${isolated.other.origin}/nest"></iframe>`));
+            const tab = await isolated.open("/xnested");
+
+            await isolated.ok("bring_to_front", { tab });
+            const frame = await eventually(async () => {
+                const snap = await isolated.ok("dom_snapshot", { tab });
+                const frames = snap.frames as Row[];
+                const deep = frames.find((item) => String(item.url).endsWith("/deep"));
+
+                return frames.filter((item) => item.isolated === true).length >= 2 && deep
+                    ? String(deep.frameId)
+                    : undefined;
+            });
+
+            await eventually(async () => {
+                const ready = await isolated.ok("dom_query", { tab, selector: "#deep-input", frame });
+
+                return (ready.matches as Row[]).length === 1 ? true : undefined;
+            });
+            const result = await isolated.ok("input_scroll", { tab, at: { x: 100, y: 100 }, deltaY: 100 });
+            const deep = await isolated.ok("dom_query", { tab, selector: "body", frame, attributes: ["data-wheel"] });
+
+            expect(((deep.matches as Row[])[0]?.attributes as Row | undefined)?.["data-wheel"]).toBe("seen");
+            expect(String(result.effect)).toContain("trusted wheel event was observed");
+        } finally {
+            await isolated.stop();
+        }
     });
 
     it("input_click reaches an element two cross-site frames deep", async () => {
