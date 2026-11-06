@@ -149,6 +149,8 @@ Env names, file paths and rules: [docs/configuration.md](docs/configuration.md).
 - [Installer](docs/install.md)
 - [Contributing](CONTRIBUTING.md), [security policy](SECURITY.md) and [code of conduct](CODE_OF_CONDUCT.md)
 
+Wheel scrolling can experimentally observe a trusted event in the document under the point; an unconfirmed observation does not mean the event was not delivered. See [tool details](docs/tools.md).
+
 ## License
 
 [MIT](LICENSE)

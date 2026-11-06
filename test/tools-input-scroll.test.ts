@@ -205,6 +205,30 @@ describe("input_scroll", () => {
         });
     });
 
+    it("reports a trusted wheel observation without sending twice", async () => {
+        const fake = scrollFake();
+        const respond = fake.respond;
+
+        fake.respond = (tab, method, params) => {
+            if (method === "DOM.getNodeForLocation") return { backendNodeId: 1, frameId: "main" };
+            if (method === "Page.getFrameTree") return { frameTree: { frame: { id: "main", url: "https://page.example/" } } };
+            if (method === "Page.createIsolatedWorld") return { executionContextId: 42 };
+
+            if (method === "Runtime.evaluate" && String((params as { expression?: unknown }).expression).includes("cdmWheelProbe")) {
+                return { result: { value: true } };
+            }
+
+            return respond?.(tab, method, params);
+        };
+
+        const { runtime } = runtimeWith(fake);
+        const result = await runTool(inputScroll, { deltaY: 100 }, extra(), runtime);
+
+        expect(JSON.stringify(result.structuredContent)).toContain("trusted wheel event was observed");
+        expect(fake.sent.filter((entry) => entry.method === "Input.dispatchMouseEvent")).toHaveLength(1);
+        expect(fake.sent.some((entry) => entry.method === "Runtime.evaluate" && String((entry.params as { expression?: unknown }).expression).includes("cdmWheelProbeRemove"))).toBe(true);
+    });
+
     it("honours an explicit wheel point", async () => {
         const { fake, runtime } = runtimeWith(scrollFake());
 

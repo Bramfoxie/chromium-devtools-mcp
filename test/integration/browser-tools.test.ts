@@ -278,6 +278,13 @@ describe.skipIf(!present)("real browser", () => {
         expect(await evaluate("window.clicks")).toBe(2);
     });
 
+    it("observes a trusted wheel event in the main document", async () => {
+        await env.open("/tall");
+        const result = await env.ok("input_scroll", { deltaY: 200 });
+
+        expect(result.effect).toContain("a trusted wheel event was observed");
+    });
+
     it("input_scroll to the bottom reaches maxY of a very tall page", async () => {
         await env.open("/tall");
         await env.ok("input_scroll", { to: "bottom" });

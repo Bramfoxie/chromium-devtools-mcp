@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isPolicyActive } from "../safety/index.js";
 import type { DaemonAccess } from "../mcp/index.js";
 import { ensureActionable } from "./actionability.js";
 import { defineTool, type ToolContext } from "./define-tool.js";
@@ -13,6 +14,8 @@ import {
 import { ToolError } from "./errors.js";
 import { frameChain, revealChain } from "./frame-geometry.js";
 import { summarizeTarget, targetSummarySchema } from "./input-outcome.js";
+import { ensurePointAllowed } from "./point-target.js";
+import { withWheelProbe } from "./wheel-probe.js";
 import { throwIfCancelled } from "./registry.js";
 import { resolveTab, tabSchema } from "./tab-target.js";
 
@@ -106,6 +109,7 @@ export function wheelParams(
 interface WheelScrollResult {
     position: ScrollPosition;
     method  : "wheel";
+    observed: boolean;
 }
 
 export function scrollMoved(before: ScrollPosition, after: ScrollPosition): boolean {
@@ -120,21 +124,30 @@ async function wheelScroll(
     deltaX  : number,
     deltaY  : number,
 ): Promise<WheelScrollResult> {
-    try {
-        await context.access.send({
-            targetId,
-            method: "Input.dispatchMouseEvent",
-            params: wheelParams(point, deltaX, deltaY),
-        });
+    await ensurePointAllowed("input_scroll", context, targetId, point);
 
-        const after = await settleScroll(context, targetId);
+    const run = async (probe: () => Promise<boolean>): Promise<WheelScrollResult> => {
+        try {
+            await context.access.send({
+                targetId,
+                method: "Input.dispatchMouseEvent",
+                params: wheelParams(point, deltaX, deltaY),
+            });
 
-        return { position: after, method: "wheel" };
-    } catch {
-        throw new ToolError(
-            "The wheel outcome is unknown. The page or a scrollable container may have changed. Check the page state before trying again.",
-        );
-    }
+            const after = await settleScroll(context, targetId);
+            const observed = await probe();
+
+            return { position: after, method: "wheel", observed };
+        } catch {
+            throw new ToolError(
+                "The wheel outcome is unknown. The page or a scrollable container may have changed. Check the page state before trying again.",
+            );
+        }
+    };
+
+    if (isPolicyActive(context.config.safety)) return run(() => Promise.resolve(false));
+
+    return withWheelProbe(context.access, targetId, point, run);
 }
 
 async function settleScroll(context: ToolContext, targetId: string): Promise<ScrollPosition> {
@@ -257,12 +270,13 @@ export const inputScroll = defineTool({
         const scrolled = await wheelScroll(context, targetId, state, point, deltaX, deltaY);
 
         const moved = scrollMoved(state, scrolled.position);
+        const delivery = scrolled.observed ? "a trusted wheel event was observed in the selected document" : "wheel delivery is unconfirmed";
 
         return {
             ok    : true,
             effect: moved
-                ? `The window scroll position changed after requesting wheel deltas (${deltaX}, ${deltaY}); wheel delivery is unconfirmed.`
-                : `The window scroll position did not change after requesting wheel deltas (${deltaX}, ${deltaY}); wheel delivery is unconfirmed. A scrollable container may have changed.`,
+                ? `The window scroll position changed after requesting wheel deltas (${deltaX}, ${deltaY}); ${delivery}.`
+                : `The window scroll position did not change after requesting wheel deltas (${deltaX}, ${deltaY}); ${delivery}. A scrollable container may have changed.`,
             method: scrolled.method,
             x     : scrolled.position.x,
             y     : scrolled.position.y,
