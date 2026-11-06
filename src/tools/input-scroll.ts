@@ -147,7 +147,7 @@ async function wheelScroll(
 
     if (isPolicyActive(context.config.safety)) return run(() => Promise.resolve(false));
 
-    return withWheelProbe(context.access, targetId, point, run);
+    return withWheelProbe(context.access, context.frames, targetId, point, run);
 }
 
 async function settleScroll(context: ToolContext, targetId: string): Promise<ScrollPosition> {

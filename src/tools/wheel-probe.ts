@@ -1,22 +1,34 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { DaemonAccess } from "../mcp/index.js";
+import { bindAccess } from "./frame-scope.js";
+import { ownerGeometry } from "./frame-geometry.js";
+import type { FrameState } from "./frames.js";
 
-const hitSchema = z.object({ frameId: z.string() });
+const hitSchema = z.object({ frameId: z.string(), backendNodeId: z.number().optional() });
+const describedSchema = z.object({ node: z.object({ frameId: z.string().optional() }) });
+const modelSchema = z.object({ model: z.object({
+    content: z.array(z.number()).length(8),
+    border : z.array(z.number()).length(8),
+    width  : z.number(),
+    height : z.number(),
+}) });
 const worldSchema = z.object({ executionContextId: z.number() });
 const valueSchema = z.object({ result: z.object({ value: z.boolean() }) });
 
 export async function withWheelProbe<T>(
     access: DaemonAccess,
+    frames: FrameState,
     tab   : string,
     point : { x: number; y: number },
     run   : (read: () => Promise<boolean>) => Promise<T>,
 ): Promise<T> {
     let contextId: number | undefined;
     let installed = false;
+    let owner = access;
     const key = `cdmWheelProbe_${randomUUID()}`;
     const keyLiteral = JSON.stringify(key);
-    const evaluate = async (expression: string): Promise<unknown> => access.send({
+    const evaluate = async (expression: string): Promise<unknown> => owner.send({
         targetId: tab,
         method  : "Runtime.evaluate",
         params  : { expression, contextId, returnByValue: true },
@@ -24,17 +36,58 @@ export async function withWheelProbe<T>(
 
     try {
         try {
-            const hit = hitSchema.safeParse(await access.send({
-                targetId: tab,
-                method  : "DOM.getNodeForLocation",
-                params  : { x: Math.floor(point.x), y: Math.floor(point.y) },
-            }));
+            await frames.refresh(tab).catch(() => undefined);
+            let local = point;
+            let frameId: string | undefined;
+            const visited = new Set<string>();
 
-            if (hit.success) {
-                const world = worldSchema.safeParse(await access.send({
+            while (true) {
+                const hit = hitSchema.parse(await owner.send({
+                    targetId: tab,
+                    method  : "DOM.getNodeForLocation",
+                    params  : { x: Math.floor(local.x), y: Math.floor(local.y) },
+                }));
+
+                frameId = hit.frameId;
+                if (hit.backendNodeId === undefined) break;
+
+                const described = describedSchema.safeParse(await owner.send({
+                    targetId: tab,
+                    method  : "DOM.describeNode",
+                    params  : { backendNodeId: hit.backendNodeId },
+                }).catch(() => undefined));
+                const child = described.success ? described.data.node.frameId : undefined;
+
+                if (child === undefined || child === frameId) break;
+                if (visited.has(child)) throw new Error("Frame cycle detected");
+
+                const info = frames.frameOf(tab, child);
+
+                if (info === undefined || !info.isolated) throw new Error("Frame session unavailable");
+
+                const model = modelSchema.parse(await owner.send({
+                    targetId: tab,
+                    method  : "DOM.getBoxModel",
+                    params  : { backendNodeId: hit.backendNodeId },
+                }));
+                const transform = ownerGeometry(model.model).transform;
+
+                if (transform.scaleX <= 0 || transform.scaleY <= 0) throw new Error("Invalid frame geometry");
+
+                local = {
+                    x: (local.x - transform.x) / transform.scaleX,
+                    y: (local.y - transform.y) / transform.scaleY,
+                };
+                visited.add(child);
+                frameId = child;
+                if (info.isolated) owner = bindAccess(access, child);
+            }
+
+            if (frameId !== undefined) {
+                const world = worldSchema.safeParse(await owner.send({
                     targetId: tab,
                     method  : "Page.createIsolatedWorld",
-                    params  : { frameId: hit.data.frameId, worldName: key },
+                    params  : { frameId, worldName: key },
                 }));
 
                 if (world.success) {

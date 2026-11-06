@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ElementRegistry, FrameState, resolveElement } from "../src/tools/index.js";
 import { bindAccess, isolatedDocumentNode } from "../src/tools/frame-scope.js";
+import { withWheelProbe } from "../src/tools/wheel-probe.js";
 import { FakeAccess } from "./helpers/fake-access.js";
 
 function crossFake(): FakeAccess {
@@ -137,5 +138,28 @@ describe("elements in a cross site frame", () => {
         const { resolved } = await resolve("#frame");
 
         expect(resolved).toMatchObject({ frameId: "cross", isolated: true });
+    });
+});
+
+describe("wheel probe routing", () => {
+    it("routes nested frame hit tests and probe calls to their owners", async () => {
+        const fake = crossFake();
+        const frames = new FrameState({ access: fake.asAccess() });
+
+        fake.respond = (_tab, method) => {
+            const frame = fake.sent.at(-1)?.frameId;
+
+            if (method === "DOM.getNodeForLocation") return { frameId: frame ?? "main", backendNodeId: 1 };
+            if (method === "DOM.describeNode") return { node: frame === undefined ? { frameId: "cross" } : frame === "cross" ? { frameId: "inside" } : {} };
+            if (method === "DOM.getBoxModel") return { model: { content: [0, 0, 100, 0, 100, 100, 0, 100], border: [0, 0, 100, 0, 100, 100, 0, 100], width: 100, height: 100 } };
+            if (method === "Page.createIsolatedWorld") return { executionContextId: 1 };
+            if (method === "Runtime.evaluate") return { result: { value: true } };
+
+            throw new Error(`unexpected CDP call ${method}`);
+        };
+
+        expect(await withWheelProbe(fake.asAccess(), frames, "tab1", { x: 50, y: 50 }, (read) => read())).toBe(true);
+        expect(fake.sent.filter((entry) => entry.method === "DOM.getNodeForLocation").map((entry) => entry.frameId)).toEqual([undefined, "cross", "inside"]);
+        expect(fake.sent.filter((entry) => entry.method === "Runtime.evaluate" || entry.method === "Page.createIsolatedWorld").map((entry) => entry.frameId)).toEqual(["inside", "inside", "inside", "inside"]);
     });
 });
