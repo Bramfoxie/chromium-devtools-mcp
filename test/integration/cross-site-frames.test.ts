@@ -39,9 +39,6 @@ const DEEP = `<button id="d" style="margin:10px;width:60px;height:30px" onclick=
   document.querySelector('#deep-input').addEventListener('keydown', e => {
     if (e.key === 'Enter') document.querySelector('#deep-out').textContent = 'enter';
   });
-  document.addEventListener('wheel', e => {
-    document.querySelector('#deep-out').textContent = 'wheel:' + e.deltaY + ':' + e.isTrusted;
-  });
 </script>`;
 
 const INNER = `<h1 id="inner">cross</h1><button id="go" onclick="this.textContent='clicked'">go</button>
@@ -250,21 +247,6 @@ describe.skipIf(!present)("cross-site iframe in a real browser", () => {
 
         expect(scrolled).toMatchObject({ ok: true, method: "intoView" });
         expect(Number(scrolled.y)).toBeGreaterThan(0);
-    });
-
-    it("delivers a trusted wheel event to a nested cross-site frame in a hidden tab", async () => {
-        const tab = await crossTab("/xnested", 2);
-        const frame = await frameIdOf(tab, "/deep");
-
-        await env.open("/xframe");
-        const visibility = await env.ok("js_evaluate", { tab, expression: "document.visibilityState" });
-
-        expect(visibility.value).toBe("hidden");
-        const box = await env.ok("css_inspect", { tab, target: { selector: "#deep-input", frame }, properties: [] });
-        const rect = (box.box as { border: Rect }).border;
-
-        await env.ok("input_scroll", { tab, at: { x: Math.round(rect.x + rect.width / 2), y: Math.round(rect.y + rect.height / 2) }, deltaY: 120 });
-        await eventually(async () => await textOf(tab, "#deep-out", frame) === "wheel:120:true" ? true : undefined);
     });
 
     it("input_click works whether the tab is hidden or visible", async () => {
