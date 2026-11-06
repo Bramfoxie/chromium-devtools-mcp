@@ -79,6 +79,7 @@ const READING: Case[] = [
     ["a11y_snapshot", {}],
     ["dom_selector", { target: { selector: "body" } }],
     ["css_inspect", { uid: "1_1" }],
+    ["event_listeners", { target: { uid: "1_1" } }],
     ["console_logs", {}],
     ["network_requests", {}],
     ["network_har", {}],

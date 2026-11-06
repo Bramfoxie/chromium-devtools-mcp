@@ -3,6 +3,7 @@ import type { ServerNotification, ServerRequest } from "@modelcontextprotocol/sd
 import { describe, expect, it } from "vitest";
 import {
     cssInspect,
+    eventListeners,
     domSnapshot,
     ElementRegistry,
     jsEvaluate,
@@ -344,5 +345,20 @@ describe("dom_snapshot with cross-site frames", () => {
             frameId : MID_FRAME,
             isolated: true,
         });
+    });
+});
+
+describe("event_listeners in a cross-site frame", () => {
+    it("uses the frame session and releases the element there", async () => {
+        const { fake, runtime } = setup((_tab, method) => method === "DOMDebugger.getEventListeners"
+            ? { listeners: [{ type: "click", useCapture: false, passive: false, once: false }] }
+            : undefined);
+        const result = await runTool(eventListeners, { target: { uid: "1_1" } }, extra(), runtime);
+
+        expect(result.isError).not.toBe(true);
+
+        for (const method of ["DOMDebugger.getEventListeners", "Runtime.releaseObject"]) {
+            expect(fake.sent.find((call) => call.method === method)?.frameId).toBe(MID_FRAME);
+        }
     });
 });

@@ -11,6 +11,7 @@ export const TOOL_GROUPS: Readonly<Record<string, readonly string[]>> = {
         "dom_selector",
         "dom_edit",
         "css_inspect",
+        "event_listeners",
         "css_edit",
         "js_evaluate",
         "screenshot",

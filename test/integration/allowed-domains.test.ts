@@ -49,6 +49,23 @@ async function settled(tab: string): Promise<void> {
 }
 
 describe.skipIf(!present)("allowed domains in a real browser", () => {
+    it("refuses listener inspection in a forbidden cross-site frame", async () => {
+        const tab = await env.open("/nested");
+
+        await eventually(async () => {
+            const snapshot = await env.ok("dom_snapshot", { tab });
+
+            return (snapshot.frames as Array<{ isolated: boolean }>).some((frame) => frame.isolated)
+                ? true : undefined;
+        });
+        const result = await env.call("event_listeners", {
+            tab, target: { selector: "iframe", frame: "iframe[name=wrap]" },
+        });
+
+        expect(result.isError).toBe(true);
+        expect(result.text).toContain("localhost");
+    });
+
     it("reports a redirect to a forbidden host and parks the tab on about:blank", async () => {
         const tab = await env.open("/a");
         const outcome = await env.call("page_navigate", {

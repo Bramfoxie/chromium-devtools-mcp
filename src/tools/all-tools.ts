@@ -2,6 +2,7 @@ import { bringToFront } from "./bring-to-front.js";
 import { consoleLogs } from "./console-logs.js";
 import { cssEdit } from "./css-edit.js";
 import { cssInspect } from "./css-inspect.js";
+import { eventListeners } from "./event-listeners.js";
 import { domEdit } from "./dom-edit.js";
 import type { AnyTool } from "./define-tool.js";
 import { domQuery } from "./dom-query.js";
@@ -60,6 +61,7 @@ export const allTools: AnyTool[] = [
     domSelector,
     domEdit,
     cssInspect,
+    eventListeners,
     cssEdit,
     consoleLogs,
     networkRequests,
