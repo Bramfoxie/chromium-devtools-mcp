@@ -39,6 +39,19 @@ describe.skipIf(!present)("untrusted page content in a real browser", () => {
         );
     });
 
+    it("finds a noopener popup using its browser target opener", async () => {
+        env.fixture.pages.set("/noopener-opener", html("<button onclick=\"window.open('/popup-target', '_blank', 'noopener')\">Open</button>"));
+        env.fixture.pages.set("/popup-target", html("<title>Popup</title>"));
+        const tab = await env.open("/noopener-opener");
+
+        await env.ok("input_click", { tab, target: { selector: "button" } });
+        const result = await env.ok("popup_list", { tab, timeoutMs: 500 });
+
+        expect(result).toMatchObject({
+            popups: [expect.objectContaining({ owned: false })], timedOut: false,
+        });
+    });
+
     it("leads the text of a result that holds page text with the notice and keeps the page text quoted", async () => {
         const tab = await env.open("/hostile");
         const result = await env.call("dom_query", { tab, selector: "#p" });

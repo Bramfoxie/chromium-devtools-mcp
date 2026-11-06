@@ -121,6 +121,42 @@ describe("tab ownership", () => {
         expect(backend.log.filter((entry) => entry.includes(popup))).toEqual([]);
     });
 
+    it("rejects popup enumeration when the opener closes during discovery", async () => {
+        const { backend, open } = setup();
+        const session = await open("a");
+        const opener = await session.createTab("about:blank");
+        let release: () => void = () => undefined;
+
+        backend.gates.listTargets = new Promise<void>((resolve) => (release = resolve));
+        const listing = session.listPopups(opener);
+
+        await session.closeTab(opener);
+        release();
+        expect(await code(listing)).toBe(ErrorCode.notFound);
+    });
+
+    it("excludes a popup claimed while discovery is pending", async () => {
+        const { backend, open } = setup();
+        const a = await open("a");
+        const b = await open("b");
+        const opener = await a.createTab("about:blank");
+        const popup = backend.seedTab("https://popup.example/");
+        const target = backend.targets.get(popup);
+
+        if (!target) throw new Error("Missing popup");
+
+        target.openerId = opener;
+        let release: () => void = () => undefined;
+
+        backend.gates.listTargets = new Promise<void>((resolve) => (release = resolve));
+        const listing = a.listPopups(opener);
+
+        backend.gates.listTargets = undefined;
+        await b.claimTab(popup);
+        release();
+        expect(await listing).toEqual([]);
+    });
+
     it("creates tabs in the context of the session", async () => {
         const { backend, open } = setup();
         const shared = await open("a");
