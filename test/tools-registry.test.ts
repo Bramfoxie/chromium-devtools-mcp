@@ -114,6 +114,7 @@ describe("tool declarations", () => {
         expect(allTools.map((tool) => tool.name)).toEqual([
             "list_tabs",
             "popup_list",
+            "window_list",
             "list_sessions",
             "select_tab",
             "new_tab",
@@ -697,6 +698,7 @@ describe("tools/list", () => {
         expect(listed.tools.map((tool) => tool.name)).toEqual([
             "list_tabs",
             "popup_list",
+            "window_list",
             "list_sessions",
             "select_tab",
             "new_tab",

@@ -261,6 +261,21 @@ export class ClientSession {
         return result;
     }
 
+    async getWindow(targetId: string) {
+        this.ensureOpen();
+        const tab = this.owned(targetId);
+
+        try {
+            const result = await this.backend.getWindowForTarget(targetId);
+
+            this.assertCurrent(targetId, tab);
+
+            return result;
+        } catch (error) {
+            throw translate(error);
+        }
+    }
+
     async listPopups(openerId: string): Promise<TabInfo[]> {
         this.ensureOpen();
         const opener = this.owned(openerId);

@@ -99,6 +99,39 @@ describe("opening sessions", () => {
 });
 
 describe("tab ownership", () => {
+    it("only resolves windows for owned tabs and rejects a closed tab", async () => {
+        const { backend, open } = setup();
+        const a = await open("a");
+        const b = await open("b");
+        const tab = await a.createTab("about:blank");
+        const getWindow = vi.spyOn(backend, "getWindowForTarget");
+
+        expect(await code(b.getWindow(tab))).toBe(ErrorCode.notOwned);
+        expect(getWindow).not.toHaveBeenCalled();
+        expect(await a.getWindow(tab)).toEqual({ windowId: 1, bounds: {} });
+        await a.closeTab(tab);
+        expect(await code(a.getWindow(tab))).toBe(ErrorCode.notFound);
+    });
+
+    it("rejects a window result when its tab closes during the request", async () => {
+        const { backend, open } = setup();
+        const a = await open("a");
+        const tab = await a.createTab("about:blank");
+        let release: () => void = () => undefined;
+        const gate = new Promise<void>((resolve) => { release = resolve; });
+
+        vi.spyOn(backend, "getWindowForTarget").mockImplementation(async () => {
+            await gate;
+
+            return { windowId: 1, bounds: {} };
+        });
+        const result = a.getWindow(tab);
+
+        await a.closeTab(tab);
+        release();
+        expect(await code(result)).toBe(ErrorCode.notFound);
+    });
+
     it("lists only unclaimed popups in the opener context and requires ownership", async () => {
         const { backend, open } = setup();
         const a = await open("a");

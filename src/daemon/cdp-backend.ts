@@ -6,6 +6,7 @@ import type {
     ChildSessionHandle,
     ChildSessionOptions,
     TargetInfo,
+    WindowInfo,
 } from "./browser-backend.js";
 import { cdpChildTargetsDeps, ChildTargets } from "./child-targets.js";
 import { DaemonError } from "./errors.js";
@@ -26,6 +27,10 @@ const targetInfoSchema = z.object({
     openerId        : z.string().min(1).optional(),
 });
 const targetsSchema = z.object({ targetInfos: z.array(z.unknown()) });
+const windowSchema = z.object({
+    windowId: z.number().int(),
+    bounds  : z.object({ left: z.number().optional(), top: z.number().optional(), width: z.number().optional(), height: z.number().optional(), windowState: z.enum(["normal", "minimized", "maximized", "fullscreen"]).optional() }),
+});
 const destroyedSchema = z.object({ targetId: z.string().min(1) });
 
 function parseResult<T>(schema: z.ZodType<T>, value: unknown, method: string): T {
@@ -137,6 +142,10 @@ export class CdpBackend implements BrowserBackend {
               ? undefined
               : info.browserContextId,
             }));
+    }
+
+    async getWindowForTarget(targetId: string): Promise<WindowInfo> {
+        return parseResult(windowSchema, await this.client.send("Browser.getWindowForTarget", { targetId }), "Browser.getWindowForTarget");
     }
 
     async attach(targetId: string): Promise<BackendSession> {

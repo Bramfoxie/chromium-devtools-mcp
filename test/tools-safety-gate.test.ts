@@ -73,6 +73,7 @@ const MUTATING: Case[] = [
 const READING: Case[] = [
     ["list_tabs", {}],
     ["popup_list", { tab: "tab1" }],
+    ["window_list", {}],
     ["list_sessions", {}],
     ["page_info", {}],
     ["dom_query", { selector: "body" }],

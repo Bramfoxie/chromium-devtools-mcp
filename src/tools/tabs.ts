@@ -99,6 +99,37 @@ export const newTab = defineTool({
     },
 });
 
+export const windowList = defineTool({
+    name       : "window_list",
+    description: "List distinct windows containing tabs owned by this session without focusing them.",
+    access     : "read",
+    input      : z.strictObject({ limit: z.number().int().min(1).max(500).optional().describe("Maximum windows to return. Defaults to 100.") }),
+    output     : z.strictObject({
+        windows  : z.array(z.strictObject({ windowId: z.number().int(), bounds: z.strictObject({ left: z.number().optional(), top: z.number().optional(), width: z.number().optional(), height: z.number().optional(), windowState: z.enum(["normal", "minimized", "maximized", "fullscreen"]).optional() }) })),
+        total    : z.number(),
+        truncated: z.boolean(),
+    }),
+    handler: async (args, context) => {
+        const tabs = await context.access.listTabs("owned");
+        const windows = new Map<number, Awaited<ReturnType<typeof context.access.getWindow>>>();
+
+        for (const tab of tabs) {
+            context.signal.throwIfAborted();
+            const window = await context.access.getWindow(tab.targetId);
+
+            windows.set(window.windowId, window);
+        }
+
+        const limit = args.limit ?? 100;
+
+        return {
+            windows  : [...windows.values()].slice(0, limit),
+            total    : windows.size,
+            truncated: windows.size > limit,
+        };
+    },
+});
+
 export const popupList = defineTool({
     name       : "popup_list",
     description: "List available popups opened by an owned tab, optionally waiting for IDs absent from a baseline.",

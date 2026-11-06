@@ -13,6 +13,7 @@ import {
     runTool,
     selectTab,
     ToolRuntime,
+    windowList,
 } from "../src/tools/index.js";
 import { FakeAccess } from "./helpers/fake-access.js";
 import { managedConfig } from "./helpers/daemon-env.js";
@@ -31,6 +32,20 @@ function setup(config: Config = managedConfig, access?: FakeAccess) {
 function textOf(result: Awaited<ReturnType<typeof runTool>>): string {
     return JSON.stringify(result.content);
 }
+
+describe("window_list", () => {
+    it("deduplicates owned windows and limits results", async () => {
+        const { fake, runtime } = setup();
+        const ids = await Promise.all([fake.createTab(), fake.createTab(), fake.createTab()]);
+
+        fake.getWindow = async (id) => ({ windowId: id === ids[2] ? 2 : 1, bounds: {} });
+        const result = await runTool(windowList, { limit: 1 }, extra(), runtime);
+
+        expect(result.structuredContent).toEqual({
+            windows: [{ windowId: 1, bounds: {} }], total: 2, truncated: true,
+        });
+    });
+});
 
 describe("list_tabs clipping", () => {
     it("clips titles and URLs on code points and marks the omission", async () => {

@@ -246,6 +246,12 @@ export class FakeBackend implements BrowserBackend {
         this.destroyTarget(targetId);
     }
 
+    async getWindowForTarget(targetId: string) {
+        void targetId;
+
+        return { windowId: 1, bounds: {} };
+    }
+
     async listTargets(): Promise<TargetInfo[]> {
         const snapshot = [...this.targets];
 

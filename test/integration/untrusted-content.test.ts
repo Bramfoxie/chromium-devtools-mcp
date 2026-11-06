@@ -19,6 +19,16 @@ afterAll(async () => {
 });
 
 describe.skipIf(!present)("untrusted page content in a real browser", () => {
+    it("lists the window of a session tab in Chrome", async () => {
+        await env.open("/hostile");
+        const result = await env.ok("window_list");
+
+        expect(result.windows).toEqual(expect.arrayContaining([
+            expect.objectContaining({ windowId: expect.any(Number), bounds: expect.any(Object) }),
+        ]));
+        expect(result.total).toBeGreaterThan(0);
+    });
+
     it("finds a newly opened popup without claiming it", async () => {
         env.fixture.pages.set("/popup-opener", html("<button onclick=\"window.open('/popup-target')\">Open</button>"));
         env.fixture.pages.set("/popup-target", html("<title>Popup</title>"));
