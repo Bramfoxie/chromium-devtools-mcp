@@ -110,8 +110,10 @@ export const popupList = defineTool({
         timeoutMs  : z.number().int().min(0).max(30000).optional().describe("Maximum wait for a matching popup in milliseconds. Defaults to 0."),
     }),
     output: z.strictObject({
-        popups  : z.array(tabObject),
-        timedOut: z.boolean(),
+        popups   : z.array(tabObject),
+        timedOut : z.boolean(),
+        total    : z.number().describe("Matching popups before the limit."),
+        truncated: z.boolean().describe("Whether the limit dropped popups."),
     }),
     handler: async (args, context) => {
         const opener = resolveTab(args, context);
@@ -123,6 +125,7 @@ export const popupList = defineTool({
             context.signal.throwIfAborted();
             popups = (await context.access.listPopups(opener))
                 .filter((popup) => !baseline.has(popup.targetId));
+            context.signal.throwIfAborted();
             if (popups.length || Date.now() >= deadline) break;
 
             await delay(Math.min(100, deadline - Date.now()), undefined, {
@@ -131,14 +134,16 @@ export const popupList = defineTool({
         } while (true);
 
         return {
-            popups: popups.map((popup) => ({
+            popups: popups.slice(0, 100).map((popup) => ({
                 tab    : popup.targetId,
                 url    : truncateText(popup.url, TAB_URL_MAX_CHARS).text,
                 title  : truncateText(popup.title, TAB_TITLE_MAX_CHARS).text,
                 owned  : false,
                 created: false,
             })),
-            timedOut: popups.length === 0 && (args.timeoutMs ?? 0) > 0,
+            timedOut : popups.length === 0 && (args.timeoutMs ?? 0) > 0,
+            total    : popups.length,
+            truncated: popups.length > 100,
         };
     },
 });
