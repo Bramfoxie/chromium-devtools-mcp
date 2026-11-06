@@ -127,6 +127,8 @@ async function wheelScroll(
     await ensurePointAllowed("input_scroll", context, targetId, point);
 
     const run = async (probe: () => Promise<boolean>): Promise<WheelScrollResult> => {
+        throwIfCancelled(context.signal);
+
         try {
             await context.access.send({
                 targetId,
