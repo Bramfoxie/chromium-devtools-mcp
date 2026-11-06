@@ -569,6 +569,27 @@ describe("input_scroll", () => {
         });
     });
 
+    it("does not scroll an element after cancellation during actionability checks", async () => {
+        const fake = scrollFake();
+        const respond = fake.respond;
+        const controller = new AbortController();
+
+        fake.respond = (tab, method, params) => {
+            if (method === "Runtime.callFunctionOn" && !String(params?.functionDeclaration).includes("scrollIntoView")) {
+                controller.abort();
+            }
+
+            return respond?.(tab, method, params);
+        };
+
+        const { runtime } = runtimeWith(fake);
+        const result = await runTool(inputScroll, { target: { uid: "1_1" } }, { signal: controller.signal } as Extra, runtime);
+
+        expect(result.isError).toBe(true);
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+        expect(fake.sent.some((call) => String(call.params?.functionDeclaration).includes("scrollIntoView({"))).toBe(false);
+    });
+
     it("requires exactly one scroll mode", async () => {
         const { runtime } = runtimeWith(scrollFake());
 

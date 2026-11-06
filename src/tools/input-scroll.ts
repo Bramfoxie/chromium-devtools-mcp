@@ -311,6 +311,7 @@ async function scrollToElement(
             checkDisabled: false,
         });
 
+        throwIfCancelled(context.signal);
         await owner.send({
             targetId,
             method: "Runtime.callFunctionOn",
