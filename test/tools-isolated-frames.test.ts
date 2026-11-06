@@ -236,6 +236,32 @@ describe("wheel probe isolated worlds", () => {
         expect(env.count()).toBe(0);
     });
 
+    it("observes a trusted event delivered to the nested document", async () => {
+        const env = setup();
+
+        const observed = await env.probe(async (read) => {
+            env.emit("inside", true);
+
+            return read();
+        });
+
+        expect(observed).toBe(true);
+        expect(env.count()).toBe(0);
+    });
+
+    it("does not observe a trusted event delivered to another frame", async () => {
+        const env = setup();
+
+        const observed = await env.probe(async (read) => {
+            env.emit("cross", true);
+
+            return read();
+        });
+
+        expect(observed).toBe(false);
+        expect(env.count()).toBe(0);
+    });
+
     it("keeps concurrent probes independent and cleans each listener", async () => {
         const env = setup();
 
