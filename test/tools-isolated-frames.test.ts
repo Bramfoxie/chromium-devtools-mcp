@@ -262,3 +262,77 @@ describe("wheel probe isolated worlds", () => {
         await expect(env.probe(async () => "ok")).resolves.toBe("ok");
     });
 });
+
+describe("wheel probe failure contracts", () => {
+    it.each(["world", "install", "read"])("treats %s failures as unobserved and cleans up the world", async (failure) => {
+        const fake = crossFake();
+        const frames = new FrameState({ access: fake.asAccess() });
+
+        fake.respond = (_tab, method, params) => {
+            if (method === "DOM.getNodeForLocation") return { frameId: "main" };
+
+            if (method === "Page.createIsolatedWorld") {
+                if (failure === "world") throw new Error("target closed");
+
+                return { executionContextId: 42 };
+            }
+
+            if (method === "Runtime.evaluate") {
+                const expression = String(params?.expression);
+
+                if (expression.includes(`cdmWheelProbe${failure === "install" ? "Install" : "Read"}`) && failure !== "world") throw new Error("execution context destroyed");
+
+                return { result: { value: true } };
+            }
+
+            throw new Error(`unexpected CDP call ${method}`);
+        };
+
+        expect(await withWheelProbe(fake.asAccess(), frames, "tab1", { x: 1, y: 2 }, (read) => read())).toBe(false);
+        const cleanup = fake.sent.filter((call) => String(call.params?.expression).includes("cdmWheelProbeRemove"));
+
+        expect(cleanup).toHaveLength(failure === "world" ? 0 : 1);
+        if (cleanup.length) expect(cleanup[0]?.params?.contextId).toBe(42);
+    });
+
+    it("transforms and floors coordinates at each nested frame", async () => {
+        const fake = crossFake();
+        const frames = new FrameState({ access: fake.asAccess() });
+
+        fake.respond = (_tab, method) => {
+            const frame = fake.sent.at(-1)?.frameId;
+
+            if (method === "DOM.getNodeForLocation") return { frameId: frame ?? "main", backendNodeId: 1 };
+            if (method === "DOM.describeNode") return { node: frame === undefined ? { frameId: "cross" } : frame === "cross" ? { frameId: "inside" } : {} };
+            if (method === "DOM.getBoxModel") return { model: { content: [10, 20, 210, 20, 210, 220, 10, 220], border: [10, 20, 210, 20, 210, 220, 10, 220], width: 100, height: 100 } };
+            if (method === "Page.createIsolatedWorld") return { executionContextId: 1 };
+            if (method === "Runtime.evaluate") return { result: { value: true } };
+
+            throw new Error(`unexpected CDP call ${method}`);
+        };
+
+        expect(await withWheelProbe(fake.asAccess(), frames, "tab1", { x: 113.5, y: 135.5 }, (read) => read())).toBe(true);
+        expect(fake.sent.filter((call) => call.method === "DOM.getNodeForLocation").map((call) => call.params)).toEqual([
+            { x: 113, y: 135 }, { x: 51, y: 57 }, { x: 20, y: 18 },
+        ]);
+    });
+
+    it("stops a frame cycle and leaves observation unconfirmed", async () => {
+        const fake = crossFake();
+        const frames = new FrameState({ access: fake.asAccess() });
+
+        fake.respond = (_tab, method) => {
+            const frame = fake.sent.at(-1)?.frameId;
+
+            if (method === "DOM.getNodeForLocation") return { frameId: frame ?? "main", backendNodeId: 1 };
+            if (method === "DOM.describeNode") return { node: { frameId: frame === "cross" ? "inside" : "cross" } };
+            if (method === "DOM.getBoxModel") return { model: { content: [0, 0, 100, 0, 100, 100, 0, 100], border: [0, 0, 100, 0, 100, 100, 0, 100], width: 100, height: 100 } };
+
+            throw new Error(`unexpected CDP call ${method}`);
+        };
+
+        expect(await withWheelProbe(fake.asAccess(), frames, "tab1", { x: 5, y: 5 }, (read) => read())).toBe(false);
+        expect(fake.sent.filter((call) => call.method === "DOM.getNodeForLocation")).toHaveLength(3);
+        expect(fake.sent.some((call) => call.method === "Page.createIsolatedWorld")).toBe(false);
+    });
+});
