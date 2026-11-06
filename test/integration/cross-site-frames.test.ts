@@ -36,6 +36,7 @@ const nest = (deep: string) =>
 const DEEP = `<button id="d" style="margin:10px;width:60px;height:30px" onclick="this.textContent='deepclicked'">d</button>
 <input id="deep-input"><div id="deep-out">idle</div><div style="height:1500px"></div><button id="deep-far">far</button>
 <script>
+  document.addEventListener('wheel', e => { if (e.isTrusted) document.body.dataset.wheel = 'seen'; }, true);
   document.querySelector('#deep-input').addEventListener('keydown', e => {
     if (e.key === 'Enter') document.querySelector('#deep-out').textContent = 'enter';
   });
@@ -222,6 +223,16 @@ describe.skipIf(!present)("cross-site iframe in a real browser", () => {
         const scrolled = await env.ok("js_evaluate", { tab, expression: "window.scrollY" });
 
         expect(Number(scrolled.value)).toBeGreaterThan(0);
+    });
+
+    it("reports wheel delivery consistently with the nested document", async () => {
+        const tab = await crossTab("/xnested", 2);
+        const frame = await frameIdOf(tab, "/deep");
+        const result = await env.ok("input_scroll", { tab, at: { x: 100, y: 100 }, deltaY: 100 });
+        const deep = await env.ok("dom_query", { tab, selector: "body", frame, attributes: ["data-wheel"] });
+        const seen = ((deep.matches as Row[])[0]?.attributes as Row | undefined)?.["data-wheel"] === "seen";
+
+        expect(String(result.effect)).toContain(seen ? "trusted wheel event was observed" : "wheel delivery is unconfirmed");
     });
 
     it("input_click reaches an element two cross-site frames deep", async () => {

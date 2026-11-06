@@ -1,3 +1,4 @@
+import { createContext, runInContext } from "node:vm";
 import { describe, expect, it } from "vitest";
 import { ElementRegistry, FrameState, resolveElement } from "../src/tools/index.js";
 import { bindAccess, isolatedDocumentNode } from "../src/tools/frame-scope.js";
@@ -161,5 +162,103 @@ describe("wheel probe routing", () => {
         expect(await withWheelProbe(fake.asAccess(), frames, "tab1", { x: 50, y: 50 }, (read) => read())).toBe(true);
         expect(fake.sent.filter((entry) => entry.method === "DOM.getNodeForLocation").map((entry) => entry.frameId)).toEqual([undefined, "cross", "inside"]);
         expect(fake.sent.filter((entry) => entry.method === "Runtime.evaluate" || entry.method === "Page.createIsolatedWorld").map((entry) => entry.frameId)).toEqual(["inside", "inside", "inside", "inside"]);
+    });
+});
+
+describe("wheel probe isolated worlds", () => {
+    function setup() {
+        const fake = crossFake();
+        const frames = new FrameState({ access: fake.asAccess() });
+
+        type Handler = (event: { isTrusted: boolean }) => void;
+        const listeners = new Map<string, Set<Handler>>();
+        const worlds = new Map<number, ReturnType<typeof createContext>>();
+        let next = 0;
+        let failRemove = false;
+
+        fake.respond = (_tab, method, params) => {
+            const frame = fake.sent.at(-1)?.frameId;
+
+            if (method === "DOM.getNodeForLocation") return { frameId: frame ?? "main", backendNodeId: 1 };
+            if (method === "DOM.describeNode") return { node: frame === undefined ? { frameId: "cross" } : frame === "cross" ? { frameId: "inside" } : {} };
+            if (method === "DOM.getBoxModel") return { model: { content: [0, 0, 100, 0, 100, 100, 0, 100], border: [0, 0, 100, 0, 100, 100, 0, 100], width: 100, height: 100 } };
+
+            if (method === "Page.createIsolatedWorld") {
+                const id = ++next;
+                const documentId = String(params?.frameId);
+                const handlers = listeners.get(documentId) ?? new Set<Handler>();
+
+                listeners.set(documentId, handlers);
+                worlds.set(id, createContext({ document: {
+                    addEventListener   : (_type: string, handler: Handler) => handlers.add(handler),
+                    removeEventListener: (_type: string, handler: Handler) =>
+                        handlers.delete(handler),
+                } }));
+
+                return { executionContextId: id };
+            }
+
+            if (method === "Runtime.evaluate") {
+                const expression = String(params?.expression);
+                const world = worlds.get(Number(params?.contextId));
+
+                if (failRemove && expression.includes("cdmWheelProbeRemove")) throw new Error("cleanup failed");
+                if (!world) throw new Error("unknown world");
+
+                return { result: { value: runInContext(expression, world) as boolean } };
+            }
+
+            throw new Error(`unexpected CDP call ${method}`);
+        };
+
+        return {
+            probe: <T>(run: (read: () => Promise<boolean>) => Promise<T>) =>
+                withWheelProbe(fake.asAccess(), frames, "tab1", { x: 50, y: 50 }, run),
+            emit: (documentId: string, isTrusted: boolean) =>
+                listeners.get(documentId)?.forEach((handler) => handler({ isTrusted })),
+            count: () =>
+                [...listeners.values()].reduce((sum, handlers) => sum + handlers.size, 0),
+            failCleanup: () => { failRemove = true; },
+        };
+    }
+
+    it("observes only trusted events in the selected document", async () => {
+        const env = setup();
+
+        await env.probe(async (read) => {
+            expect(await read()).toBe(false);
+            env.emit("main", true);
+            env.emit("inside", false);
+            expect(await read()).toBe(false);
+            env.emit("inside", true);
+            expect(await read()).toBe(true);
+        });
+        expect(env.count()).toBe(0);
+    });
+
+    it("keeps concurrent probes independent and cleans each listener", async () => {
+        const env = setup();
+
+        await env.probe(async (first) => {
+            env.emit("inside", true);
+            await env.probe(async (second) => {
+                expect(env.count()).toBe(2);
+                expect(await first()).toBe(true);
+                expect(await second()).toBe(false);
+            });
+            expect(env.count()).toBe(1);
+            expect(await first()).toBe(true);
+        });
+        expect(env.count()).toBe(0);
+    });
+
+    it("cleans up on failure and preserves errors when cleanup fails", async () => {
+        const env = setup();
+
+        await expect(env.probe(async () => { throw new Error("run failed"); })).rejects.toThrow("run failed");
+        expect(env.count()).toBe(0);
+        env.failCleanup();
+        await expect(env.probe(async () => { throw new Error("run failed"); })).rejects.toThrow("run failed");
+        await expect(env.probe(async () => "ok")).resolves.toBe("ok");
     });
 });
