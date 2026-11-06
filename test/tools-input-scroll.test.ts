@@ -237,13 +237,43 @@ describe("input_scroll", () => {
 
         expect(result.isError).not.toBe(true);
         expect(result.structuredContent).toMatchObject({ method: "wheel", y: 0 });
-        expect(JSON.stringify(result.structuredContent)).toContain("window did not move");
+        expect(JSON.stringify(result.structuredContent)).toContain("delivery is unconfirmed");
+        expect(fake.sent.filter((entry) => entry.method === "Input.dispatchMouseEvent")).toHaveLength(1);
         expect(
             fake.sent.filter((entry) =>
                 entry.method === "Runtime.evaluate" &&
                 String((entry.params as { expression?: unknown })?.expression).includes("scrollBy"),
             ),
         ).toHaveLength(0);
+    });
+
+    it("does not claim a wheel was requested when already at the edge", async () => {
+        const still = { x: 0, y: 0, maxX: 0, maxY: 1000, width: 800, height: 600 };
+        const { fake, runtime } = runtimeWith(scrollFake({ positions: [still] }));
+        const result = await runTool(inputScroll, { to: "top" }, extra(), runtime);
+
+        expect(JSON.stringify(result.structuredContent)).not.toContain("wheel delivery is unconfirmed");
+        expect(fake.sent.filter((entry) => entry.method === "Input.dispatchMouseEvent")).toHaveLength(0);
+    });
+
+    it("reports an uncertain outcome when a late edge observation fails", async () => {
+        const still = { x: 0, y: 0, maxX: 0, maxY: 1000, width: 800, height: 600 };
+        const fake = scrollFake({ positions: [still] });
+        const base = fake.respond ?? (() => ({}));
+        let reads = 0;
+
+        fake.respond = (targetId, method, params) => {
+            if (method === "Runtime.evaluate" && ++reads === 4) throw new Error("secret");
+
+            return base(targetId, method, params);
+        };
+
+        const { runtime } = runtimeWith(fake);
+        const result = await runTool(inputScroll, { to: "bottom" }, extra(), runtime);
+
+        expect(result.isError).toBe(true);
+        expect(contentOf(result)).toContain("outcome is unknown");
+        expect(contentOf(result)).not.toContain("secret");
     });
 
     it("scrolls to the top and the bottom through the wheel", async () => {
