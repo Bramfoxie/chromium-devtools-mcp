@@ -118,7 +118,7 @@ export { perfTraceStart, perfTraceStop } from "./perf/perf-trace.js";
 
 export { inputDrag } from "./input-drag.js";
 
-export { closeTab, listSessions, listTabs, newTab, selectTab } from "./tabs.js";
+export { closeTab, listSessions, listTabs, newTab, popupList, selectTab } from "./tabs.js";
 
 export { assertElementOriginAllowed, boxOf, ElementRegistry, elementTargetSchema, MAX_UIDS_PER_TAB, rectOfQuad, resolveElement, revealElement, splitPierceChain, STALE_UID_MESSAGE, withElement } from "./element-target.js";
 

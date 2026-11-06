@@ -23,6 +23,7 @@ const targetInfoSchema = z.object({
     title           : z.string().default(""),
     url             : z.string().default(""),
     browserContextId: z.string().nullish(),
+    openerId        : z.string().min(1).optional(),
 });
 const targetsSchema = z.object({ targetInfos: z.array(z.unknown()) });
 const destroyedSchema = z.object({ targetId: z.string().min(1) });
@@ -130,6 +131,7 @@ export class CdpBackend implements BrowserBackend {
                 targetId: info.targetId,
                 url     : info.url,
                 title   : info.title,
+                ...(info.openerId === undefined ? {} : { openerId: info.openerId }),
                 contextId:
           info.browserContextId == null || info.browserContextId === this.defaultContextId
               ? undefined

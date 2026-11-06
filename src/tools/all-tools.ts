@@ -43,10 +43,11 @@ import { screenshot } from "./screenshot.js";
 import { pageInfo } from "./page-info.js";
 import { pageMetrics } from "./page-metrics.js";
 import { pageNavigate } from "./page-navigate.js";
-import { closeTab, listSessions, listTabs, newTab, selectTab } from "./tabs.js";
+import { closeTab, listSessions, listTabs, newTab, popupList, selectTab } from "./tabs.js";
 
 export const allTools: AnyTool[] = [
     listTabs,
+    popupList,
     listSessions,
     selectTab,
     newTab,

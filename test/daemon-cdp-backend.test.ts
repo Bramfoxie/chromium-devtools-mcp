@@ -213,6 +213,22 @@ describe("contexts and targets", () => {
         });
     });
 
+    it("reports the opener of a page target", async () => {
+        const { browser, backend } = await setup();
+        const id = browser.addTarget("page", "https://popup.example/", browser.defaultContext);
+        const target = browser.targets.get(id);
+
+        if (target) Object.assign(target, { openerId: "opener" });
+
+        expect(await backend.listTargets()).toContainEqual({
+            targetId : id,
+            url      : "https://popup.example/",
+            title    : "title https://popup.example/",
+            openerId : "opener",
+            contextId: undefined,
+        });
+    });
+
     it("fills in empty titles and urls", async () => {
         const { browser, backend } = await setup();
         const id = browser.addTarget("page", "", browser.defaultContext);

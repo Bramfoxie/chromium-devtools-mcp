@@ -261,6 +261,23 @@ export class ClientSession {
         return result;
     }
 
+    async listPopups(openerId: string): Promise<TabInfo[]> {
+        this.ensureOpen();
+        const opener = this.owned(openerId);
+        let targets: TargetInfo[];
+
+        try {
+            targets = await this.backend.listTargets();
+        } catch (error) {
+            throw translate(error);
+        }
+
+        this.assertCurrent(openerId, opener);
+
+        return targets.filter((target) => target.openerId === openerId && this.isAvailable(target))
+            .map((target) => describe(target, false, false));
+    }
+
     async send(call: SendCall): Promise<unknown> {
         const { targetId, method, params, timeoutMs, frameId, confirmed = false } = call;
 

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { setTimeout as delay } from "node:timers/promises";
 import { RpcError, ErrorCode, normalizeUrl } from "../daemon/index.js";
 import { defineTool } from "./define-tool.js";
 import { parkIfForbidden } from "./final-url.js";
@@ -94,6 +95,50 @@ export const newTab = defineTool({
             ...(load?.navigationError === undefined
                 ? {}
                 : { navigationError: load.navigationError }),
+        };
+    },
+});
+
+export const popupList = defineTool({
+    name       : "popup_list",
+    description: "List available popups opened by an owned tab, optionally waiting for IDs absent from a baseline.",
+    access     : "read",
+    untrusted  : true,
+    input      : z.strictObject({
+        tab        : tabId.optional().describe("Opener tab id. Defaults to the selected tab."),
+        baselineIds: z.array(tabId).max(500).optional().describe("Previously observed popup IDs to exclude. Omit to list all available popups."),
+        timeoutMs  : z.number().int().min(0).max(30000).optional().describe("Maximum wait for a matching popup in milliseconds. Defaults to 0."),
+    }),
+    output: z.strictObject({
+        popups  : z.array(tabObject),
+        timedOut: z.boolean(),
+    }),
+    handler: async (args, context) => {
+        const opener = resolveTab(args, context);
+        const baseline = new Set(args.baselineIds ?? []);
+        const deadline = Date.now() + (args.timeoutMs ?? 0);
+        let popups;
+
+        do {
+            context.signal.throwIfAborted();
+            popups = (await context.access.listPopups(opener))
+                .filter((popup) => !baseline.has(popup.targetId));
+            if (popups.length || Date.now() >= deadline) break;
+
+            await delay(Math.min(100, deadline - Date.now()), undefined, {
+                signal: context.signal,
+            });
+        } while (true);
+
+        return {
+            popups: popups.map((popup) => ({
+                tab    : popup.targetId,
+                url    : truncateText(popup.url, TAB_URL_MAX_CHARS).text,
+                title  : truncateText(popup.title, TAB_TITLE_MAX_CHARS).text,
+                owned  : false,
+                created: false,
+            })),
+            timedOut: popups.length === 0 && (args.timeoutMs ?? 0) > 0,
         };
     },
 });

@@ -113,6 +113,7 @@ describe("tool declarations", () => {
     it("declares fifty three tools with unique names, descriptions and access", () => {
         expect(allTools.map((tool) => tool.name)).toEqual([
             "list_tabs",
+            "popup_list",
             "list_sessions",
             "select_tab",
             "new_tab",
@@ -695,6 +696,7 @@ describe("tools/list", () => {
 
         expect(listed.tools.map((tool) => tool.name)).toEqual([
             "list_tabs",
+            "popup_list",
             "list_sessions",
             "select_tab",
             "new_tab",

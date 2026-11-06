@@ -106,6 +106,10 @@ export class FakeAccess {
         return this.tabs.filter((tab) => tab.owned).map((tab) => ({ ...tab }));
     }
 
+    async listPopups(): Promise<DaemonTab[]> {
+        return this.listTabs("available");
+    }
+
     async claimTab(targetId: string): Promise<void> {
         const tab = this.tabs.find((known) => known.targetId === targetId);
 

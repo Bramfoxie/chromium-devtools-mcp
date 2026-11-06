@@ -111,6 +111,12 @@ export class DaemonAccess {
         return parse("tab.list", tabListSchema, result).tabs;
     }
 
+    async listPopups(targetId: string): Promise<DaemonTab[]> {
+        const result = await this.request("popup.list", { targetId });
+
+        return parse("popup.list", tabListSchema, result).tabs;
+    }
+
     async claimTab(targetId: string): Promise<void> {
         await this.request("tab.claim", { targetId });
     }

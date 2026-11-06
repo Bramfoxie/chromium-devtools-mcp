@@ -9,6 +9,7 @@ import {
     listTabs,
     mergeMedia,
     newTab,
+    popupList,
     runTool,
     selectTab,
     ToolRuntime,
@@ -482,5 +483,25 @@ describe("frame tracking on tabs", () => {
         expect(runtime.frames.ensured("tab1")).toBe(true);
         await runTool(closeTab, {}, extra(), runtime);
         expect(runtime.frames.ensured("tab1")).toBe(false);
+    });
+});
+
+describe("popup_list", () => {
+    it("filters baseline IDs and waits for a new popup without claiming it", async () => {
+        const { fake, runtime } = setup();
+
+        await runTool(newTab, {}, extra(), runtime);
+        fake.tabs.push({ targetId: "old", url: "about:blank", title: "", owned: false, created: false });
+        const initial = await runTool(popupList, {}, extra(), runtime);
+
+        expect(initial.structuredContent).toMatchObject({ popups: [{ tab: "old" }], timedOut: false });
+        setTimeout(() => fake.tabs.push({ targetId: "new", url: "about:blank", title: "", owned: false, created: false }), 20);
+        const result = await runTool(popupList, { baselineIds: ["old"], timeoutMs: 500 }, extra(), runtime);
+
+        expect(result.structuredContent).toMatchObject({ popups: [{ tab: "new" }], timedOut: false });
+        expect(fake.claimed).toEqual([]);
+        const timeout = await runTool(popupList, { baselineIds: ["old", "new"], timeoutMs: 10 }, extra(), runtime);
+
+        expect(timeout.structuredContent).toEqual({ popups: [], timedOut: true });
     });
 });

@@ -99,6 +99,28 @@ describe("opening sessions", () => {
 });
 
 describe("tab ownership", () => {
+    it("lists only unclaimed popups in the opener context and requires ownership", async () => {
+        const { backend, open } = setup();
+        const a = await open("a");
+        const b = await open("b");
+        const opener = await a.createTab("about:blank");
+        const popup = backend.seedTab("https://popup.example/");
+        const otherContext = backend.seedTab("https://private.example/", "other");
+        const claimed = backend.seedTab("https://claimed.example/");
+
+        for (const id of [popup, otherContext, claimed]) {
+            const target = backend.targets.get(id);
+
+            if (target) target.openerId = opener;
+        }
+
+        await b.claimTab(claimed);
+        expect((await a.listPopups(opener)).map((tab) => tab.targetId)).toEqual([popup]);
+        expect(await code(b.listPopups(opener))).toBe(ErrorCode.notOwned);
+        expect(await code(a.listPopups("missing"))).toBe(ErrorCode.notFound);
+        expect(backend.log.filter((entry) => entry.includes(popup))).toEqual([]);
+    });
+
     it("creates tabs in the context of the session", async () => {
         const { backend, open } = setup();
         const shared = await open("a");

@@ -125,6 +125,10 @@ export function createRequestHandler(context: HandlerContext): RequestHandler {
                 return { tabs: await session.listTabs(scope ?? "owned") };
             }
 
+            case "popup.list": {
+                return { tabs: await session.listPopups(parseParams(method, params).targetId) };
+            }
+
             case "tab.claim": {
                 await session.claimTab(parseParams(method, params).targetId);
 

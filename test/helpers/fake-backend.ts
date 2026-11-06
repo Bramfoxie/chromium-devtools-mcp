@@ -166,7 +166,7 @@ export class FakeBackend implements BrowserBackend {
     readonly contexts = new Set<string>();
     readonly targets = new Map<
         string,
-        { url: string; title: string; contextId: string | undefined }
+        { url: string; title: string; contextId: string | undefined; openerId?: string }
     >();
     readonly sessions = new Map<string, FakeSession>();
     readonly childHandles: FakeChildHandle[] = [];

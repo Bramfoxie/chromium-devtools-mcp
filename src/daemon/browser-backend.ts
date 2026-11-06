@@ -3,6 +3,7 @@ export interface TargetInfo {
     targetId : string;
     url      : string;
     title    : string;
+    openerId?: string;
     // undefined for the default browser context
     contextId: string | undefined;
 }
