@@ -261,6 +261,45 @@ describe("input_scroll", () => {
         expect(fake.sent.some((entry) => String(entry.params?.expression).includes("cdmWheelProbeRemove"))).toBe(true);
     });
 
+    it("does not dispatch after cancellation while probe installation is pending", async () => {
+        const fake = scrollFake();
+        const respond = fake.respond;
+        const controller = new AbortController();
+        let release: (() => void) | undefined;
+        let started: (() => void) | undefined;
+        const pending = new Promise<void>((resolve) => { release = resolve; });
+        const installed = new Promise<void>((resolve) => { started = resolve; });
+
+        fake.respond = async (tab, method, params) => {
+            if (method === "DOM.getNodeForLocation") return { frameId: "main" };
+            if (method === "Page.createIsolatedWorld") return { executionContextId: 42 };
+
+            if (method === "Runtime.evaluate" && String(params?.expression).includes("cdmWheelProbeInstall")) {
+                started?.();
+                await pending;
+
+                return { result: { value: true } };
+            }
+
+            if (method === "Runtime.evaluate" && String(params?.expression).includes("cdmWheelProbeRemove")) return { result: { value: true } };
+
+            return respond?.(tab, method, params);
+        };
+
+        const { runtime } = runtimeWith(fake);
+        const result = runTool(
+            inputScroll, { deltaY: 100 }, { signal: controller.signal } as Extra, runtime,
+        );
+
+        await installed;
+        controller.abort();
+        release?.();
+        expect((await result).isError).toBe(true);
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+        expect(fake.sent.some((call) => call.method === "Input.dispatchMouseEvent")).toBe(false);
+        expect(fake.sent.filter((call) => String(call.params?.expression).includes("cdmWheelProbeRemove"))).toHaveLength(1);
+    });
+
     it.each(["navigation", "target closed"])("reports an unknown wheel outcome after %s and attempts cleanup", async (failure) => {
         const fake = scrollFake();
         const respond = fake.respond;
