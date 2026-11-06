@@ -34,6 +34,25 @@ function textOf(result: Awaited<ReturnType<typeof runTool>>): string {
 }
 
 describe("window_list", () => {
+    it("does not return window data after cancellation during the last lookup", async () => {
+        const { fake, runtime } = setup();
+        const controller = new AbortController();
+
+        await fake.createTab();
+
+        fake.getWindow = async () => {
+            controller.abort();
+
+            return { windowId: 1, bounds: {} };
+        };
+
+        const result = await runTool(
+            windowList, {}, { signal: controller.signal } as Extra, runtime,
+        );
+
+        expect(result.isError).toBe(true);
+    });
+
     it("deduplicates owned windows and limits results", async () => {
         const { fake, runtime } = setup();
         const ids = await Promise.all([fake.createTab(), fake.createTab(), fake.createTab()]);
