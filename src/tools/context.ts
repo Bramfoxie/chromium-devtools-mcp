@@ -169,19 +169,22 @@ export class ToolRuntime {
         const mock = this.mock.forget(targetId);
         const trace = this.trace.forget(targetId);
         const screencast = this.screencast.forget(targetId);
+        const settled = Promise.allSettled([mock, trace, screencast]);
 
         this.webauthn.forget(targetId);
         this.downloadState.forget(targetId);
-        const origin = this.emulation.snapshot(targetId).geolocation?.origin;
+        await this.emulation.withGeolocation(async () => {
+            const origin = this.emulation.snapshot(targetId).geolocation?.origin;
 
-        this.emulation.forget(targetId);
-        await Promise.allSettled([mock, trace, screencast]);
+            this.emulation.forget(targetId);
 
-        if (origin !== undefined && !this.emulation.geolocationOrigins().has(origin)) {
-            await this.access
-                .setPermission({ name: "geolocation", setting: "reset", origin })
-                .catch(() => undefined);
-        }
+            if (origin !== undefined && !this.emulation.geolocationOrigins().has(origin)) {
+                await this.access
+                    .setPermission({ name: "geolocation", setting: "reset", origin })
+                    .catch(() => undefined);
+            }
+        });
+        await settled;
     }
 
     async resetAll(): Promise<void> {
@@ -198,7 +201,7 @@ export class ToolRuntime {
         this.webauthn.reset();
         this.downloadState.reset();
 
-        this.emulation.reset();
+        await this.emulation.withGeolocation(async () => { this.emulation.reset(); });
         await mock;
         await trace;
         await screencast;

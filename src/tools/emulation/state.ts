@@ -46,6 +46,21 @@ function emptyTab(): TabEmulation {
 
 export class EmulationState {
     private readonly tabs = new Map<string, TabEmulation>();
+    private geolocationTail: Promise<void> = Promise.resolve();
+
+    async withGeolocation<T>(run: () => Promise<T>): Promise<T> {
+        const previous = this.geolocationTail;
+        let release: () => void = () => undefined;
+
+        this.geolocationTail = new Promise<void>((resolve) => { release = resolve; });
+        await previous;
+
+        try {
+            return await run();
+        } finally {
+            release();
+        }
+    }
 
     snapshot(tab: string): TabEmulation {
         const state = this.tabs.get(tab) ?? emptyTab();

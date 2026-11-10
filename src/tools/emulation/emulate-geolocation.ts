@@ -92,106 +92,111 @@ export const emulateGeolocation = defineTool({
             throw new ToolError("Provide latitude and longitude, or reset: true. Nothing was changed.");
         }
 
-        throwIfCancelled(context.signal);
-        await ensureNoDialog(context.dialogs, targetId);
+        return context.emulation.withGeolocation(async () => {
+            throwIfCancelled(context.signal);
+            await ensureNoDialog(context.dialogs, targetId);
 
-        const previous = context.emulation.snapshot(targetId).geolocation;
+            const previous = context.emulation.snapshot(targetId).geolocation;
 
-        if (reset) {
-            if (
-                previous !== undefined &&
-                !context.emulation.geolocationOrigins(targetId).has(previous.origin)
-            ) {
-                await context.access.setPermission({
-                    name   : "geolocation",
-                    setting: "reset",
-                    origin : previous.origin,
-                });
+            if (reset) {
+                if (
+                    previous !== undefined &&
+                    !context.emulation.geolocationOrigins(targetId).has(previous.origin)
+                ) {
+                    await context.access.setPermission({
+                        name   : "geolocation",
+                        setting: "reset",
+                        origin : previous.origin,
+                    });
+                }
+
+                await runSteps(context.access, context.signal, targetId, [
+                    {
+                        commands: buildGeolocationResetCommands(),
+                        record  : () => context.emulation.resetGeolocation(targetId),
+                    },
+                ]);
+
+                return {
+                    tab      : targetId,
+                    emulation: summarizeEmulation(context.emulation.snapshot(targetId)),
+                };
             }
 
-            await runSteps(context.access, context.signal, targetId, [
-                {
-                    commands: buildGeolocationResetCommands(),
-                    record  : () => context.emulation.resetGeolocation(targetId),
-                },
-            ]);
+            await context.focus.ensure(context.access, targetId);
+
+            const origin = args.origin === undefined
+                ? await tabOrigin(context, targetId)
+                : explicitOrigin(args.origin);
+            const next = {
+                latitude : args.latitude ?? 0,
+                longitude: args.longitude ?? 0,
+                accuracy : args.accuracy ?? ACCURACY_DEFAULT_METERS,
+                origin,
+            };
+
+            const releasePrevious = previous !== undefined && previous.origin !== origin &&
+                !context.emulation.geolocationOrigins(targetId).has(previous.origin);
+
+            if (releasePrevious) {
+                await context.access.setPermission({ name: "geolocation", setting: "reset", origin: previous.origin });
+            }
+
+            let granted = false;
+
+            try {
+                await context.access.setPermission({ name: "geolocation", setting: "granted", origin });
+                granted = true;
+                await runSteps(context.access, context.signal, targetId, [
+                    {
+                        commands: buildGeolocationCommands(next),
+                        record  : () => context.emulation.applyGeolocation(targetId, next),
+                        undo    : previous === undefined
+                            ? buildGeolocationResetCommands()
+                            : buildGeolocationCommands(previous),
+                        unrecord: () => {
+                            if (previous === undefined) {
+                                context.emulation.resetGeolocation(targetId);
+                            } else context.emulation.applyGeolocation(targetId, previous);
+                        },
+                    },
+                ]);
+            } catch (error) {
+                const stillUsed = context.emulation.geolocationOrigins().has(origin);
+                let cleanupFailed = false;
+
+                if (granted && !stillUsed && previous?.origin !== origin) {
+                    try {
+                        await context.access.setPermission({ name: "geolocation", setting: "reset", origin });
+                    } catch {
+                        cleanupFailed = true;
+                    }
+                }
+
+                if (releasePrevious) {
+                    try {
+                        await context.access.setPermission({ name: "geolocation", setting: "granted", origin: previous.origin });
+                    } catch {
+                        cleanupFailed = true;
+                    }
+                }
+
+                if (cleanupFailed) {
+                    throw new ToolError("The geolocation change failed and permission cleanup was incomplete. End this session to release its permissions, then check the browser settings.");
+                }
+
+                throw error;
+            }
+
+            const reported = await readGeolocation(
+                context.access, targetId, origin, context.signal,
+            );
 
             return {
                 tab      : targetId,
                 emulation: summarizeEmulation(context.emulation.snapshot(targetId)),
+                ...(reported === undefined ? {} : { reported }),
             };
-        }
-
-        await context.focus.ensure(context.access, targetId);
-
-        const origin = args.origin === undefined
-            ? await tabOrigin(context, targetId)
-            : explicitOrigin(args.origin);
-        const next = {
-            latitude : args.latitude ?? 0,
-            longitude: args.longitude ?? 0,
-            accuracy : args.accuracy ?? ACCURACY_DEFAULT_METERS,
-            origin,
-        };
-
-        const releasePrevious = previous !== undefined && previous.origin !== origin &&
-            !context.emulation.geolocationOrigins(targetId).has(previous.origin);
-
-        if (releasePrevious) {
-            await context.access.setPermission({ name: "geolocation", setting: "reset", origin: previous.origin });
-        }
-
-        let granted = false;
-
-        try {
-            await context.access.setPermission({ name: "geolocation", setting: "granted", origin });
-            granted = true;
-            await runSteps(context.access, context.signal, targetId, [
-                {
-                    commands: buildGeolocationCommands(next),
-                    record  : () => context.emulation.applyGeolocation(targetId, next),
-                    undo    : previous === undefined
-                        ? buildGeolocationResetCommands()
-                        : buildGeolocationCommands(previous),
-                    unrecord: () => {
-                        if (previous === undefined) context.emulation.resetGeolocation(targetId);
-                        else context.emulation.applyGeolocation(targetId, previous);
-                    },
-                },
-            ]);
-        } catch (error) {
-            const stillUsed = context.emulation.geolocationOrigins().has(origin);
-            let cleanupFailed = false;
-
-            if (granted && !stillUsed && previous?.origin !== origin) {
-                try {
-                    await context.access.setPermission({ name: "geolocation", setting: "reset", origin });
-                } catch {
-                    cleanupFailed = true;
-                }
-            }
-
-            if (releasePrevious) {
-                try {
-                    await context.access.setPermission({ name: "geolocation", setting: "granted", origin: previous.origin });
-                } catch {
-                    cleanupFailed = true;
-                }
-            }
-
-            if (cleanupFailed) {
-                throw new ToolError("The geolocation change failed and permission cleanup was incomplete. End this session to release its permissions, then check the browser settings.");
-            }
-
-            throw error;
-        }
-
-        const reported = await readGeolocation(context.access, targetId, origin, context.signal);
-
-        return {
-            tab      : targetId,
-            emulation: summarizeEmulation(context.emulation.snapshot(targetId)),
-            ...(reported === undefined ? {} : { reported }),
-        };
+        });
     },
 });

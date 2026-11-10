@@ -188,6 +188,51 @@ describe("emulate_geolocation", () => {
         expect(fake.permissions.at(-1)).toEqual({ name: "geolocation", setting: "reset", origin: SITE });
     });
 
+    it("releases the permission when two tabs reset at the same time", async () => {
+        const { fake, runtime } = setup();
+
+        await runTool(emulateGeolocation, { latitude: 1, longitude: 2 }, extra(), runtime);
+        await runTool(emulateGeolocation, { tab: "tab2", latitude: 3, longitude: 4 }, extra(), runtime);
+        const results = await Promise.all([
+            runTool(emulateGeolocation, { reset: true }, extra(), runtime),
+            runTool(emulateGeolocation, { tab: "tab2", reset: true }, extra(), runtime),
+        ]);
+
+        expect(results.every((result) => result.isError !== true)).toBe(true);
+        expect(fake.permissions.at(-1)).toEqual({ name: "geolocation", setting: "reset", origin: SITE });
+    });
+
+    it("releases the old permission when two tabs switch origins at the same time", async () => {
+        const { fake, runtime } = setup();
+
+        await runTool(emulateGeolocation, { latitude: 1, longitude: 2 }, extra(), runtime);
+        await runTool(emulateGeolocation, { tab: "tab2", latitude: 3, longitude: 4 }, extra(), runtime);
+        const results = await Promise.all([
+            runTool(
+                emulateGeolocation, { latitude: 1, longitude: 2, origin: OTHER }, extra(), runtime,
+            ),
+            runTool(emulateGeolocation, {
+                tab: "tab2", latitude: 3, longitude: 4, origin: "https://c.example",
+            }, extra(), runtime),
+        ]);
+
+        expect(results.every((result) => result.isError !== true)).toBe(true);
+        expect(fake.permissions).toContainEqual({ name: "geolocation", setting: "reset", origin: SITE });
+    });
+
+    it("releases the permission when one tab closes while another resets", async () => {
+        const { fake, runtime } = setup();
+
+        await runTool(emulateGeolocation, { latitude: 1, longitude: 2 }, extra(), runtime);
+        await runTool(emulateGeolocation, { tab: "tab2", latitude: 3, longitude: 4 }, extra(), runtime);
+        await Promise.all([
+            runtime.forgetTab("tab1"),
+            runTool(emulateGeolocation, { tab: "tab2", reset: true }, extra(), runtime),
+        ]);
+
+        expect(fake.permissions.at(-1)).toEqual({ name: "geolocation", setting: "reset", origin: SITE });
+    });
+
     it("moves the permission when the same tab is given another origin", async () => {
         const { fake, runtime } = setup();
 
