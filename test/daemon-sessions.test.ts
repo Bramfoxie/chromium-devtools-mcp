@@ -1681,6 +1681,22 @@ describe("trace lock", () => {
         await expect(start(b, tabB)).resolves.toBeDefined();
     });
 
+    it("keeps the lock when ending a trace fails so its owner can retry", async () => {
+        const { a, b, backend, tabA, tabB } = await twoSessions();
+
+        await start(a, tabA);
+        const session = backend.sessions.get(tabA);
+
+        if (session) session.failure = new Error("stop failed");
+
+        await expect(end(a, tabA)).rejects.toThrow();
+        if (session) session.failure = undefined;
+
+        expect(await code(start(b, tabB))).toBe(ErrorCode.busy);
+        await expect(end(a, tabA)).resolves.toBeDefined();
+        await expect(start(b, tabB)).resolves.toBeDefined();
+    });
+
     it("frees the lock when the tab closes or the session ends", async () => {
         const { a, b, registry, tabA, tabB } = await twoSessions();
 

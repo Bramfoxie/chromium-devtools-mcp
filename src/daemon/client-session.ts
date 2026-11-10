@@ -314,21 +314,21 @@ export class ClientSession {
                 ? await this.frames.routedChild(tab, method, checked)
                 : undefined;
 
-            if (routed !== undefined) return await routed.send(method, checked, timeoutMs);
+            const result = routed === undefined
+                ? await session.send(method, checked, timeoutMs)
+                : await routed.send(method, checked, timeoutMs);
 
-            const result = await session.send(method, checked, timeoutMs);
-
-            if (frameId === undefined && isReplicated(method)) {
+            if (routed === undefined && frameId === undefined && isReplicated(method)) {
                 await this.frames.replicate(targetId, tab, method, checked);
             }
+
+            if (method === "Tracing.end") this.traceLock.release(this, targetId);
 
             return result;
         } catch (error) {
             if (method === "Tracing.start") this.traceLock.release(this);
 
             throw translate(error);
-        } finally {
-            if (method === "Tracing.end") this.traceLock.release(this, targetId);
         }
     }
 

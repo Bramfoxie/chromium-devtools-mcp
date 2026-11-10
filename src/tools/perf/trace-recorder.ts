@@ -94,8 +94,9 @@ export class TraceRecorder {
             throw new ToolError("No trace is recording on this tab. Start one with perf_trace_start.");
         }
 
+        await this.access.send({ targetId: tab, method: "Tracing.end", params: {} });
+
         try {
-            await this.access.send({ targetId: tab, method: "Tracing.end", params: {} });
             await this.waitFor(recording);
 
             return {

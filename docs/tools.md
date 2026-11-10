@@ -84,6 +84,8 @@ Every tool with its behavior. Element targeting is in [frames-and-shadow-dom.md]
 
 A trace covers the whole browser, so it would hold the addresses and labels of every other tab. The file and the numbers keep only the events that name nothing but frames of the tab, and the events of the processes that host those frames when they name no frame and carry no address, title, host or message. Events of the browser process are kept only when they name a frame of the tab, such as the commit of its navigation; the rest of the browser process, the GPU process and other renderers are left out, and so are the process labels, which hold tab titles, and the marks that page scripts write with the user timing API. `events.dropped` says how many events were left out. A tab that shares its renderer process with another tab, such as a window its page opened, also shares the events of that process that name no frame and carry no address, for example task timing and garbage collection. The daemon allows only the timeline categories and the event transfer mode, and frees its one trace lock when the trace ends, when its tab closes and when its session ends.
 
+If the request to stop a trace fails, the recording remains assigned to its session and `perf_trace_stop` can be retried. A timed out request may already have stopped the trace in the browser; ending the session releases its lock.
+
 Files and directories that tools save go into the `artifacts` directory next to `daemon.log`, which only you can read. An entry is named by its kind, the time and a random part, and entries older than a day are removed when a new one is saved.
 
 ## Web authentication
