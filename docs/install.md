@@ -10,14 +10,20 @@ npx chromium-devtools-mcp install --client codex --remove
 
 ```
 
-`--client` takes `claude-code`, `cursor`, `codex`, `cherry-studio` or `all`, and may be repeated. Each client is handled on its own: one failure does not stop the others and makes the exit code 1. A usage error exits with 2.
+`--client` takes `claude-code`, `cursor`, `codex`, `cherry-studio`, `claude-desktop`, `windsurf`, `gemini-cli`, `vscode`, `vscode-insiders` or `all`, and may be repeated. `all` means the first four; the others are named explicitly so that no folder is created for a program you do not use. Each client is handled on its own: one failure does not stop the others and makes the exit code 1. A usage error exits with 2.
 
-| Client        | What the installer changes                                                                                  |
-| ------------- | ----------------------------------------------------------------------------------------------------------- |
-| Claude Code   | `mcpServers` in `~/.claude.json` (user scope), or `$CLAUDE_CONFIG_DIR/.claude.json` when that is set        |
-| Cursor        | `mcpServers` in `~/.cursor/mcp.json` (global)                                                               |
-| Codex         | table `[mcp_servers.chromium-devtools]` in `~/.codex/config.toml`, or under `$CODEX_HOME` when that is set  |
-| Cherry Studio | nothing: it has no config file to edit, so the installer prints the JSON and the steps for Import from JSON |
+| Client                    | What the installer changes                                                                                                                                                                                       |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Claude Code               | `mcpServers` in `~/.claude.json` (user scope), or `$CLAUDE_CONFIG_DIR/.claude.json` when that is set                                                                                                             |
+| Cursor                    | `mcpServers` in `~/.cursor/mcp.json` (global)                                                                                                                                                                    |
+| Codex                     | table `[mcp_servers.chromium-devtools]` in `~/.codex/config.toml`, or under `$CODEX_HOME` when that is set                                                                                                       |
+| Cherry Studio             | nothing: it has no config file to edit, so the installer prints the JSON and the steps for Import from JSON                                                                                                      |
+| Claude Desktop            | `mcpServers` in `claude_desktop_config.json` under the Claude folder of the user config directory (`~/Library/Application Support` on macOS, `%APPDATA%` on Windows, `$XDG_CONFIG_HOME` or `~/.config` on Linux) |
+| Windsurf                  | `mcpServers` in `~/.codeium/windsurf/mcp_config.json`                                                                                                                                                            |
+| Gemini CLI                | `mcpServers` in `~/.gemini/settings.json`, other settings are kept                                                                                                                                               |
+| VS Code, VS Code Insiders | `servers` in the user `mcp.json` (`Code/User` or `Code - Insiders/User` under the user config directory), with `type` set to `stdio`                                                                             |
+
+The Claude Desktop, Windsurf, Gemini CLI and VS Code entries follow the locations and formats those clients document; they are covered by tests with a fake file system and have not been run inside the clients. The VS Code file may hold comments, which the installer does not parse: such a file is refused and left untouched. Claude Desktop started from the macOS Dock may not find `npx` in its PATH.
 
 Cherry Studio: open Settings, MCP Servers, Add, Import from JSON, paste the printed JSON and save.
 

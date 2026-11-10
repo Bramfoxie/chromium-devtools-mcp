@@ -9,6 +9,7 @@ export interface InstallArgs {
 }
 
 const NAMES = CLIENTS.map((client) => client.name);
+const ALL = CLIENTS.filter((client) => client.inAll !== false).map((client) => client.name);
 
 export function parseInstallArgs(argv: string[]): InstallArgs {
     const requested: string[] = [];
@@ -38,7 +39,7 @@ export function parseInstallArgs(argv: string[]): InstallArgs {
         throw new ConfigError(`--client is required: ${NAMES.join(", ")} or all`);
     }
 
-    const clients = requested.includes("all") ? NAMES : requested;
+    const clients = requested.includes("all") ? [...ALL, ...requested.filter((name) => name !== "all")] : requested;
     const unknown = clients.find((name) => !NAMES.includes(name));
 
     if (unknown !== undefined) {

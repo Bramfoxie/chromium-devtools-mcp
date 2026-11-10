@@ -109,7 +109,7 @@ export function runInstall(argv: string[], deps: InstallDeps): number {
             });
         }
     } catch (error) {
-        deps.err(`${error instanceof ConfigError ? error.message : String(error)}\nUsage: chromium-devtools-mcp install --client <claude-code|cursor|codex|cherry-studio|all> [--dry-run] [--remove] [server options]\n`);
+        deps.err(`${error instanceof ConfigError ? error.message : String(error)}\nUsage: chromium-devtools-mcp install --client <${CLIENTS.map((client) => client.name).join("|")}|all> [--dry-run] [--remove] [server options]\n`);
 
         return 2;
     }

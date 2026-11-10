@@ -21,7 +21,7 @@ An MCP server that lets AI agents drive Chrome through the DevTools Protocol, ei
 npx chromium-devtools-mcp install --client claude-code
 ```
 
-`--client` takes `claude-code`, `cursor`, `codex`, `cherry-studio` or `all`. Restart the client afterwards. Any other client that accepts a JSON `mcpServers` entry can use:
+`--client` takes `claude-code`, `cursor`, `codex`, `cherry-studio`, `claude-desktop`, `windsurf`, `gemini-cli`, `vscode`, `vscode-insiders` or `all`. Restart the client afterwards. Any other client that accepts a JSON `mcpServers` entry can use:
 
 ```json
 {
