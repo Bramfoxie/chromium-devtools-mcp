@@ -9,7 +9,7 @@ import { NAVIGATE_DEFAULT_TIMEOUT_MS, NAVIGATE_MAX_TIMEOUT_MS } from "./page-nav
 import { truncateText } from "./result.js";
 import { resolveTab } from "./tab-target.js";
 import { checkSafety } from "./safety.js";
-import { resolutionProblem } from "./resolution-check.js";
+import { resolutionProblem } from "../safety/resolution-check.js";
 
 const TAB_URL_MAX_CHARS = 2000;
 const TAB_TITLE_MAX_CHARS = 500;

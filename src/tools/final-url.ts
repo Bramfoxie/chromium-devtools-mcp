@@ -1,7 +1,7 @@
 import { describeBlock, describeUrlHost, isPolicyActive, navigationBlock } from "../safety/index.js";
 import type { ToolContext } from "./define-tool.js";
 import { ToolError } from "./errors.js";
-import { resolutionProblem } from "./resolution-check.js";
+import { resolutionProblem } from "../safety/resolution-check.js";
 
 const PARK_TIMEOUT_MS = 5000;
 

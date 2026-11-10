@@ -12,9 +12,11 @@ afterEach(() => {
 const SITE = "https://a.example";
 const OTHER = "https://b.example";
 
-function setup() {
+function setup(resolveHost: (host: string) => Promise<string[]> = async () => []) {
     const backend = new FakeBackend();
-    const registry = new SessionRegistry<string>(backend, { allowFocus: false });
+    const registry = new SessionRegistry<string>(backend, {
+        allowFocus: false, resolveHost,
+    });
     const open = (
         key    : string,
         options: { isolated?: boolean; safety?: Parameters<typeof registry.open>[2]["safety"] } = {},
@@ -358,6 +360,41 @@ describe("permission.set on a session", () => {
 
         expect(result).toBe(ErrorCode.forbiddenMethod);
         expect(backend.permissions.size).toBe(0);
+    });
+
+    it("refuses an origin whose name resolves to a private address", async () => {
+        const { backend, open } = setup(async () => ["192.168.1.20"]);
+        const session = await open("a", {
+            safety: {
+                readOnly            : false, allowedDomains      : [], deniedDomains       : [],
+                allowPrivateNetworks: false, confirmDangerous    : false, uploadDirs          : [],
+            },
+        });
+
+        const result = await code(session.setPermission({
+            name: "camera", setting: "granted", origin: SITE, owner: "permissions",
+        }));
+
+        expect(result).toBe(ErrorCode.forbiddenMethod);
+        expect(backend.permissions.size).toBe(0);
+    });
+
+    it("allows an origin whose name resolves to a public address", async () => {
+        const resolve = vi.fn(async () => ["8.8.8.8"]);
+        const { backend, open } = setup(resolve);
+        const session = await open("a", {
+            safety: {
+                readOnly            : false, allowedDomains      : [], deniedDomains       : [],
+                allowPrivateNetworks: false, confirmDangerous    : false, uploadDirs          : [],
+            },
+        });
+
+        await session.setPermission({
+            name: "camera", setting: "granted", origin: SITE, owner: "permissions",
+        });
+
+        expect(resolve).toHaveBeenCalledWith("a.example");
+        expect(backend.permissions.size).toBe(1);
     });
 
     it("lets go of its grants when the session closes and leaves other sessions alone", async () => {

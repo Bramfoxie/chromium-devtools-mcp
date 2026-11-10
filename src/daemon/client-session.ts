@@ -2,6 +2,8 @@ import { ChildSync, isMirroredEvent, isReplicated } from "./child-sync.js";
 import type { FrameSummary } from "./frames.js";
 import type { BrowserBackend, TargetInfo } from "./browser-backend.js";
 import { webOrigin } from "../safety/index.js";
+import { systemResolver, type HostResolver } from "../safety/host-resolver.js";
+import { resolutionProblem } from "../safety/resolution-check.js";
 import { RpcError } from "./errors.js";
 import { describeError, logDaemon } from "../util/log.js";
 import {
@@ -26,6 +28,7 @@ export interface SessionOptions {
     allowFocus    : boolean;
     downloadsRoot?: string;
     platform?     : NodeJS.Platform;
+    resolveHost?  : HostResolver;
 }
 
 export type TabScope = "owned" | "available";
@@ -208,6 +211,16 @@ export class ClientSession {
         const origin = permissionOrigin(request.origin);
 
         checkPermissionOrigin(origin, this.safety);
+
+        const problem = await resolutionProblem(
+            origin, this.safety, this.options.resolveHost ?? systemResolver(),
+        );
+
+        this.ensureOpen();
+
+        if (problem !== undefined) {
+            throw new RpcError(ErrorCode.forbiddenMethod, `permission.set would act for ${origin}, ${problem.reason}. ${problem.hint}`);
+        }
 
         if ((request.owner === "permissions" || request.setting !== "reset") &&
             this.safety.confirmDangerous && request.confirmed !== true) {

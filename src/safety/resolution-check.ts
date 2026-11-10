@@ -1,4 +1,4 @@
-import { addressesArePrivate, describeBlock, hostToResolve } from "../safety/index.js";
+import { addressesArePrivate, describeBlock, hostToResolve } from "./index.js";
 import type { Config } from "../config/index.js";
 import type { HostResolver } from "./host-resolver.js";
 

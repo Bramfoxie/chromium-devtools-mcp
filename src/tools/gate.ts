@@ -3,7 +3,7 @@ import type { ToolRuntime } from "./context.js";
 import type { AnyTool } from "./define-tool.js";
 import { describeUrlHost, isPolicyActive } from "../safety/index.js";
 import { checkSafety, type SafetyAccess, type SafetyDecision, type SafetyFrame } from "./safety.js";
-import { resolutionProblem } from "./resolution-check.js";
+import { resolutionProblem } from "../safety/resolution-check.js";
 import { safetyFramesOf } from "./safety-frame.js";
 import { accessFor, dangerousFor, tabUrlExemptFor } from "./tool-traits.js";
 

@@ -19,7 +19,7 @@ import { nodeUploadEnvironment, type UploadEnvironment } from "./upload-environm
 import { FocusEmulation } from "./focus-emulation.js";
 import { FrameState } from "./frames.js";
 import { InterceptionManager } from "./mock/interception.js";
-import { type HostResolver, systemResolver } from "./host-resolver.js";
+import { type HostResolver, systemResolver } from "../safety/host-resolver.js";
 import { sleep } from "../util/sleep.js";
 
 export type { ToolClock, ToolContext };
