@@ -32,6 +32,14 @@ describe("daemon identity with an explicit endpoint", () => {
 });
 
 describe("describing the settings of a daemon", () => {
+    it("treats different CDP log paths as different daemon settings", () => {
+        const first = daemonIdentity({ ...attach, cdpLog: "/tmp/one" });
+        const second = daemonIdentity({ ...attach, cdpLog: "/tmp/two" });
+
+        expect(differingFields(first, second)).toEqual(["cdpLog"]);
+        expect(differingFields(first, daemonIdentity(attach))).toEqual(["cdpLog"]);
+    });
+
     it("hides the endpoint in settings and mismatch descriptions", () => {
         const identity = daemonIdentity({ ...attach, wsEndpoint: "ws://127.0.0.1:9444/devtools/browser/private-id" });
 

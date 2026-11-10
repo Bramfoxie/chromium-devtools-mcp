@@ -132,6 +132,7 @@ export async function startEnv(
     video?     : VideoTools,
     lighthouse?: LighthouseTools,
     forceHeadless = false,
+    cdpLog?    : string,
 ): Promise<Env> {
     const harness = createSocketHarness();
     const home = await mkdtemp(path.join(os.tmpdir(), "cdm-it-home-"));
@@ -147,6 +148,7 @@ export async function startEnv(
         debugPort : port,
         allowFocus,
         isolated  : true,
+        ...(cdpLog === undefined ? {} : { cdpLog }),
         safety    : safety ?? {
             readOnly            : false,
             allowedDomains      : [],

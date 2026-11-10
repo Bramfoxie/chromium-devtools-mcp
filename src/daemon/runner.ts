@@ -7,6 +7,7 @@ import {
 } from "../browser/attach.js";
 import { BrowserLaunchError, launchManaged } from "../browser/launch.js";
 import { CdpClient, createWsTransportFactory } from "../cdp/index.js";
+import { trafficFile, type TrafficObserver } from "../cdp/traffic-log.js";
 import type { Config } from "../config/index.js";
 import { CdpBackend } from "./cdp-backend.js";
 import { Daemon } from "./daemon.js";
@@ -79,10 +80,12 @@ export function approvalMessage(): string {
 }
 
 export interface ConnectorDeps {
-    launch      : typeof launchManaged;
-    attach      : typeof attachBrowser;
-    findRunning : (profileDir: string, debugPort: number) => Promise<AttachEndpoint | undefined>;
-    connect     : (url: string, handshakeMs?: number, signal?: AbortSignal) => Promise<CdpClient>;
+    launch     : typeof launchManaged;
+    attach     : typeof attachBrowser;
+    findRunning: (profileDir: string, debugPort: number) => Promise<AttachEndpoint | undefined>;
+    connect: (
+        url: string, handshakeMs?: number, signal?: AbortSignal, traffic?: TrafficObserver,
+    ) => Promise<CdpClient>;
     sleep       : (ms: number, signal?: AbortSignal) => Promise<void>;
     handshakeMs?: number;
     retryMs?    : number;
@@ -94,10 +97,11 @@ const defaultConnectorDeps: ConnectorDeps = {
     launch     : launchManaged,
     attach     : attachBrowser,
     findRunning: (profileDir, debugPort) => runningInProfile(profileDir, debugPort),
-    connect    : (url, handshakeMs, signal) =>
+    connect    : (url, handshakeMs, signal, traffic) =>
         CdpClient.connect({
             url,
             signal,
+            traffic,
             ...(handshakeMs === undefined
                 ? {}
                 : { createTransport: createWsTransportFactory(handshakeMs) }),
@@ -129,9 +133,10 @@ async function closeLeftoverPages(client: CdpClient): Promise<void> {
 
 // Reuses a browser left on the managed profile; never closes it.
 async function adoptManaged(
-    config: Config,
-    deps  : ConnectorDeps,
-    signal: AbortSignal,
+    config : Config,
+    deps   : ConnectorDeps,
+    signal : AbortSignal,
+    traffic: TrafficObserver | undefined,
 ): Promise<BrowserHandle | undefined> {
     const running = await deps
         .findRunning(config.profileDir, config.debugPort)
@@ -140,7 +145,7 @@ async function adoptManaged(
     if (!running) return undefined;
 
     const client = await deps
-        .connect(running.webSocketUrl, undefined, signal)
+        .connect(running.webSocketUrl, undefined, signal, traffic)
         .catch(() => undefined);
 
     if (!client) return undefined;
@@ -165,11 +170,12 @@ async function adoptManaged(
 }
 
 async function connectManaged(
-    config: Config,
-    deps  : ConnectorDeps,
-    signal: AbortSignal,
+    config : Config,
+    deps   : ConnectorDeps,
+    signal : AbortSignal,
+    traffic: TrafficObserver | undefined,
 ): Promise<BrowserHandle> {
-    const adopted = await adoptManaged(config, deps, signal);
+    const adopted = await adoptManaged(config, deps, signal, traffic);
 
     if (adopted) return adopted;
 
@@ -177,7 +183,7 @@ async function connectManaged(
     const launched = await deps.launch(config, {}, signal);
 
     try {
-        const client = await deps.connect(launched.webSocketUrl, undefined, signal);
+        const client = await deps.connect(launched.webSocketUrl, undefined, signal, traffic);
 
         return {
             client,
@@ -205,7 +211,9 @@ export function createConnector(overrides: Partial<ConnectorDeps> = {}): Browser
     const deps: ConnectorDeps = { ...defaultConnectorDeps, ...overrides };
 
     return async (config, hooks, signal) => {
-        if (config.mode === "managed") return connectManaged(config, deps, signal);
+        const traffic = config.cdpLog === undefined ? undefined : trafficFile(config.cdpLog);
+
+        if (config.mode === "managed") return connectManaged(config, deps, signal, traffic);
 
         let reportedUnreachable = false;
 
@@ -220,7 +228,7 @@ export function createConnector(overrides: Partial<ConnectorDeps> = {}): Browser
 
             try {
                 const budget = deps.handshakeMs ?? APPROVAL_HANDSHAKE_MS;
-                const client = await deps.connect(endpoint.webSocketUrl, budget, signal);
+                const client = await deps.connect(endpoint.webSocketUrl, budget, signal, traffic);
 
                 logDaemon(`Connected to Chrome on port ${endpoint.port}.`);
 

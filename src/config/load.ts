@@ -82,6 +82,7 @@ function envLayer(env: NodeJS.ProcessEnv): Layer {
     const tools = get("TOOLS");
     const excluded = get("EXCLUDE_TOOLS");
     const auditLog = get("AUDIT_LOG");
+    const cdpLog = get("CDP_LOG");
 
     return compact({
         browser     : get("BROWSER"),
@@ -95,6 +96,7 @@ function envLayer(env: NodeJS.ProcessEnv): Layer {
         tools       : tools === undefined ? undefined : toList(tools),
         excludeTools: excluded === undefined ? undefined : toList(excluded),
         auditLog    : auditLog,
+        cdpLog,
         safety      : {
             readOnly            : bool("READ_ONLY"),
             allowedDomains      : domains === undefined ? undefined : toList(domains),
@@ -129,6 +131,7 @@ function parseFlags(argv: string[]) {
                 tools                   : { type: "string" },
                 "exclude-tools"         : { type: "string" },
                 "audit-log"             : { type: "string" },
+                "cdp-log"               : { type: "string" },
                 "confirm-dangerous"     : { type: "boolean" },
                 "upload-dirs"           : { type: "string" },
             },
@@ -149,6 +152,7 @@ function argvLayer(argv: string[]): Layer {
     const tools = values.tools;
     const excluded = values["exclude-tools"];
     const auditLog = values["audit-log"];
+    const cdpLog = values["cdp-log"];
 
     return compact({
         browser     : values.browser,
@@ -162,6 +166,7 @@ function argvLayer(argv: string[]): Layer {
         tools       : typeof tools === "string" ? toList(tools) : tools,
         excludeTools: typeof excluded === "string" ? toList(excluded) : excluded,
         auditLog    : auditLog,
+        cdpLog,
         safety      : {
             readOnly            : values["read-only"],
             allowedDomains      : typeof domains === "string" ? toList(domains) : domains,
@@ -277,6 +282,13 @@ function validate(resolved: Resolved): Config {
             );
         }
 
+        if (
+            result.data.cdpLog !== undefined
+            && !pathFor(resolved.platform).isAbsolute(result.data.cdpLog)
+        ) {
+            throw new ConfigError("invalid configuration: cdpLog: must be an absolute path");
+        }
+
         return result.data;
     }
 
@@ -310,6 +322,7 @@ const FIELDS = [
     "tools",
     "excludeTools",
     "auditLog",
+    "cdpLog",
 ] as const;
 
 const SAFETY_FIELDS = [

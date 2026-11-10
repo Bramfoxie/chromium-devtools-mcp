@@ -125,6 +125,7 @@ Sources from lowest to highest priority: defaults, JSON file, `CHROMIUM_DEVTOOLS
 | `wsEndpoint`                  | `--ws-endpoint`            | unset, attach only      |
 | `allowFocus`                  | `--allow-focus`            | false                   |
 | `isolated`                    | `--isolated`               | false                   |
+| `cdpLog`                      | `--cdp-log`                | unset                   |
 | `safety.readOnly`             | `--read-only`              | false                   |
 | `safety.allowedDomains`       | `--allowed-domains`        | empty, no limit         |
 | `safety.deniedDomains`        | `--denied-domains`         | empty                   |

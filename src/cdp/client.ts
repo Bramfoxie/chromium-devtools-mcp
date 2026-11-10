@@ -6,6 +6,7 @@ import {
     CdpTimeoutError,
 } from "./errors.js";
 import { CdpSession } from "./session.js";
+import type { TrafficObserver } from "./traffic-log.js";
 import { type Transport, type TransportFactory, wsTransportFactory } from "./transport.js";
 import { isRecord } from "../util/is-record.js";
 import { messageOf } from "../util/message-of.js";
@@ -19,6 +20,7 @@ export interface ConnectOptions {
     createTransport? : TransportFactory;
     signal?          : AbortSignal;
     requestTimeoutMs?: number;
+    traffic?         : TrafficObserver;
 }
 
 export interface SendOptions {
@@ -79,6 +81,7 @@ export class CdpClient {
     private constructor(
         private readonly transport       : Transport,
         private readonly requestTimeoutMs: number,
+        private readonly traffic         : TrafficObserver | undefined,
     ) {
         transport.onMessage((data) => this.handleMessage(data));
         transport.onClose((reason) => this.shutdown(new CdpClosedError(reason)));
@@ -91,7 +94,7 @@ export class CdpClient {
         const createTransport = options.createTransport ?? wsTransportFactory;
         const transport = await createTransport(options.url, options.signal);
 
-        return new CdpClient(transport, requestTimeoutMs);
+        return new CdpClient(transport, requestTimeoutMs, options.traffic);
     }
 
     get closed(): boolean {
@@ -133,6 +136,7 @@ export class CdpClient {
             this.pending.set(id, { method, sessionId: options.sessionId, resolve, reject, timer });
 
             try {
+                this.observe({ direction: "sent", method, id, bytes: Buffer.byteLength(payload) });
                 this.transport.send(payload);
             } catch (error) {
                 clearTimeout(timer);
@@ -325,13 +329,28 @@ export class CdpClient {
         }
 
         if (typeof message.id === "number") {
+            this.observe({
+                direction: "received",
+                id       : message.id,
+                method   : this.pending.get(message.id)?.method,
+                bytes    : Buffer.byteLength(raw),
+            });
             this.handleResponse(message.id, message);
         } else if (typeof message.method === "string") {
+            this.observe({ direction: "received", method: message.method, bytes: Buffer.byteLength(raw) });
             const sessionId = typeof message.sessionId === "string" ? message.sessionId : undefined;
 
             this.dispatchEvent(message.method, message.params, sessionId);
         } else {
             logError("ignored a CDP message without an id and without a method");
+        }
+    }
+
+    private observe(entry: Parameters<TrafficObserver>[0]): void {
+        try {
+            this.traffic?.(entry);
+        } catch {
+            logError("could not record CDP traffic metadata");
         }
     }
 
