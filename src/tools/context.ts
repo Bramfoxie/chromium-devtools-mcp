@@ -173,6 +173,7 @@ export class ToolRuntime {
 
         this.webauthn.forget(targetId);
         this.downloadState.forget(targetId);
+        this.emulation.forgetOtherEmulation(targetId);
         await this.emulation.withGeolocation(async () => {
             const origin = this.emulation.snapshot(targetId).geolocation?.origin;
 
@@ -201,7 +202,8 @@ export class ToolRuntime {
         this.webauthn.reset();
         this.downloadState.reset();
 
-        await this.emulation.withGeolocation(async () => { this.emulation.reset(); });
+        this.emulation.reset();
+        await this.emulation.withGeolocation(async () => { this.emulation.resetGeolocations(); });
         await mock;
         await trace;
         await screencast;

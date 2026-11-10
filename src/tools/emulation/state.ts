@@ -117,6 +117,10 @@ export class EmulationState {
         return this.update(tab, { geolocation: undefined });
     }
 
+    resetGeolocations(): void {
+        for (const tab of this.tabs.keys()) this.resetGeolocation(tab);
+    }
+
     applyCpu(tab: string, cpu: CpuState): TabEmulation {
         return this.update(tab, { cpu: { ...cpu } });
     }
@@ -139,6 +143,13 @@ export class EmulationState {
 
     forget(tab: string): void {
         this.tabs.delete(tab);
+    }
+
+    forgetOtherEmulation(tab: string): void {
+        const geolocation = this.tabs.get(tab)?.geolocation;
+
+        this.tabs.delete(tab);
+        if (geolocation !== undefined) this.applyGeolocation(tab, geolocation);
     }
 
     reset(): void {
