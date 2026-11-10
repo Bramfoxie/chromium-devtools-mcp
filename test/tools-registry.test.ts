@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { RequestHandlerExtra } from "@modelcontextprotocol/sdk/shared/protocol.js";
@@ -110,7 +111,13 @@ const readOnly: Config = {
 };
 
 describe("tool declarations", () => {
-    it("declares fifty three tools with unique names, descriptions and access", () => {
+    it("states the real number of tools in the README", () => {
+        const text = readFileSync("README.md", "utf8");
+
+        expect(text).toContain(`${allTools.length} tools. Details and parameters`);
+    });
+
+    it("declares fifty six tools with unique names, descriptions and access", () => {
         expect(allTools.map((tool) => tool.name)).toEqual([
             "list_tabs",
             "popup_list",
@@ -685,7 +692,7 @@ describe("runTool", () => {
 });
 
 describe("tools/list", () => {
-    it("lists exactly the fifty three tools with their schemas", async () => {
+    it("lists exactly the fifty six tools with their schemas", async () => {
         const server = createMcpServer("1.0.0");
 
         registerTools({ server, tools: allTools, runtime: runtime() });

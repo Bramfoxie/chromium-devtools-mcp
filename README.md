@@ -79,7 +79,7 @@ Compared against Chrome DevTools MCP 1.12.0 (2026-10-22, [ChromeDevTools/chrome-
 
 ## Tools
 
-54 tools. Details and parameters are in [docs/tools.md](docs/tools.md).
+56 tools. Details and parameters are in [docs/tools.md](docs/tools.md).
 
 | Category    | Tools                                                                                                                                               |
 | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
