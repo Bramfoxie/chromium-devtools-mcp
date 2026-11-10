@@ -21,12 +21,12 @@ const PAGE_FUNCTION = `(kinds, limit, textChars, fieldLimit) => {
     try { return new URL(value == null ? "" : String(value), baseOf.call(document)).href; } catch (error) { return ""; }
   };
   const textOf = (node) => clip(typeof node.innerText === "string" && node.innerText !== "" ? node.innerText : node.textContent);
-  const take = (nodes, map) => {
+  const take = (nodes, map, cap = limit) => {
     const items = [];
     let total = 0;
     for (const node of Array.from(nodes)) {
       total += 1;
-      if (items.length < limit) items.push(map(node));
+      if (items.length < cap) items.push(map(node));
     }
     return { total, items };
   };
@@ -74,14 +74,14 @@ const PAGE_FUNCTION = `(kinds, limit, textChars, fieldLimit) => {
         name: clip(attr(control, "name")),
         label: labelOf(control),
         required: attr(control, "required") !== null,
-      }));
+      }), fieldLimit);
       return {
         id: clip(attr(form, "id")),
         name: clip(attr(form, "name")),
         method: clip(attr(form, "method") || "get").toLowerCase(),
         action: absolute(attr(form, "action")),
         fieldTotal: controls.total,
-        fields: controls.items.slice(0, fieldLimit),
+        fields: controls.items,
       };
     });
   }

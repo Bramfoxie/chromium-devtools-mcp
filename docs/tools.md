@@ -15,6 +15,9 @@ Every tool with its behavior. Element targeting is in [frames-and-shadow-dom.md]
 - `page_info`: read the URL, title, viewport, scroll position and emulation state of a tab.
 - `browser_info`: read the product and version, revision, real user agent, JavaScript engine version and protocol version of the browser the session is connected to, with the `browser` setting and the mode of the server. It is meant for bug reports. It reads the browser, not the page, so it carries no page content.
 - `page_extract`: read the links, headings, meta tags and forms of the top document of a tab as lists (`kinds` picks some of them, `limit` caps each list at up to 200 items, and each list says how many exist and whether it was cut). Addresses have secrets in them hidden, text is cut at 300 characters, the values of form controls, including passwords and hidden fields, are never read, and meta content is shown as `[hidden]` if any name attribute looks like a secret or exceeds 300 characters. The page is read through the built-in accessors of the document, so markup that reuses a property name (an input named `action`) does not disturb the result. Content of frames is not included.
+
+  Each listed form includes up to 50 controls independently of `limit`, and `fieldTotal` gives the total number of controls.
+
 - `page_navigate`: open a URL, go back or forward, or reload, waiting for the page to load. Back and forward refuse a history entry that is not an http, https or about:blank page.
 
 ## Inspection and navigation

@@ -100,6 +100,15 @@ describe.skipIf(!present)("page_extract in a real browser", () => {
         expect(page.headings).toBeUndefined();
     });
 
+    it("limits forms independently of their controls", async () => {
+        const tab = await env.open("/extract");
+        const page = await env.ok("page_extract", { tab, kinds: ["forms"], limit: 1 });
+        const forms = page.forms as { items: Array<{ fields: unknown[]; fieldTotal: number }> };
+
+        expect(forms.items[0]?.fieldTotal).toBe(5);
+        expect(forms.items[0]?.fields).toHaveLength(5);
+    });
+
     it("still lists a page whose markup shadows form properties and whose links sit in SVG", async () => {
         const tab = await env.open("/clobbered");
         const page = await env.ok("page_extract", { tab });
