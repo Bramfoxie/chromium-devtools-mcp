@@ -348,6 +348,8 @@ describe("attachBrowser", () => {
         await expect(attachBrowser(config, denied.value)).rejects.toThrow("stop");
         expect(waiting).toHaveLength(1);
         expect(waiting[0]).toContain(portFile);
+        expect(waiting[0]).toContain("is not allowed to read");
+        expect(waiting[0]).not.toContain("is running with remote debugging");
         expect(waiting[0]).toContain("Full Disk Access");
         expect(waiting[0]).toContain("daemon");
         expect(waiting[0]).not.toContain("remote debugging is not enabled");

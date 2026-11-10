@@ -250,7 +250,7 @@ export function accessDeniedInstructions(
     const steps = accessDeniedFix(platform);
 
     return [
-        `Cannot attach to ${label} yet: ${label} is running with remote debugging, but this process is not allowed to read ${file}, so the browser address is unknown. Waiting until the file can be read.`,
+        `Cannot attach to ${label} yet: this process is not allowed to read ${file}, so the address of a ${label} with remote debugging is unknown, even if it is running. Waiting until the file can be read.`,
         ...steps,
     ].join("\n");
 }
