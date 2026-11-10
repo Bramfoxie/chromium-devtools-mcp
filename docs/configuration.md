@@ -6,7 +6,7 @@ The file is `~/.config/chromium-devtools-mcp/config.json` on macOS and Linux and
 
 | Field                         | Flag                                                      | Env                                            | Values                                                                                                 | Default                                |
 | ----------------------------- | --------------------------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------ | -------------------------------------- |
-| `browser`                     | `--browser`                                               | `CHROMIUM_DEVTOOLS_MCP_BROWSER`                | `chrome`, more browsers later                                                                          | `chrome`                               |
+| `browser`                     | `--browser`                                               | `CHROMIUM_DEVTOOLS_MCP_BROWSER`                | `chrome`, `chrome-beta`, `chrome-dev`, `chrome-canary`, `chromium`, `edge`                             | `chrome`                               |
 | `mode`                        | `--mode`                                                  | `CHROMIUM_DEVTOOLS_MCP_MODE`                   | `attach` (your running browser) or `managed` (own persistent profile)                                  | `attach`                               |
 | `headless`                    | `--headless`, `--no-headless`                             | `CHROMIUM_DEVTOOLS_MCP_HEADLESS`               | true or false, managed mode only                                                                       | false                                  |
 | `profileDir`                  | `--profile-dir`                                           | `CHROMIUM_DEVTOOLS_MCP_PROFILE_DIR`            | absolute directory of the managed profile                                                              | see below                              |
@@ -43,3 +43,7 @@ An unknown flag, a missing value or a stray argument is an error, so a typo neve
 ## Client agreement
 
 Several MCP clients share one daemon, so some settings must match between them. See [daemon.md](daemon.md).
+
+## Browsers
+
+`browser` picks which browser the daemon finds, launches or attaches to: `chrome` (stable), `chrome-beta`, `chrome-dev`, `chrome-canary`, `chromium` and `edge`. Each one is looked for in its usual install locations on macOS, Windows and Linux (Chrome Canary has no Linux build) and uses its own user data directory for attach mode, so the port file is read from the right place. The error for a browser that is not found lists the locations that were checked. The locations follow the vendors' standard installs and are covered by tests with injected platforms; only stable Chrome has been run against the server. A snap or flatpak build may keep its profile elsewhere, in which case attach with `wsEndpoint` or `debugPort`.

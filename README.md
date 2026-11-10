@@ -4,7 +4,7 @@
 [![npm](https://img.shields.io/npm/v/chromium-devtools-mcp)](https://www.npmjs.com/package/chromium-devtools-mcp)
 [![license](https://img.shields.io/npm/l/chromium-devtools-mcp)](LICENSE)
 
-An MCP server that lets AI agents drive Chrome through the DevTools Protocol, either your running browser or a managed profile, without stealing focus.
+An MCP server that lets AI agents drive Chrome and other Chromium browsers through the DevTools Protocol, either your running browser or a managed profile, without stealing focus.
 
 ## Why
 

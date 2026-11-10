@@ -3,7 +3,14 @@ import { DOMAIN_RULE_FORMS, isValidDomainRule } from "../safety/index.js";
 import { AppError } from "../util/app-error.js";
 import { isValidWsEndpoint, WS_ENDPOINT_FORM } from "./ws-endpoint.js";
 
-export const browsers = ["chrome"] as const;
+export const browsers = [
+    "chrome",
+    "chrome-beta",
+    "chrome-dev",
+    "chrome-canary",
+    "chromium",
+    "edge",
+] as const;
 
 export const modes = ["attach", "managed"] as const;
 

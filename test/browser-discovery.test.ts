@@ -126,7 +126,9 @@ describe("browser table", () => {
     it.each(browsers)("describes %s on every platform", (browser) => {
         for (const context of [mac, linux, windows]) {
             expect(BROWSERS[browser].label).not.toBe("");
-            expect(browserCandidates(browser, context).length).toBeGreaterThan(0);
+            const noLinuxBuild = browser === "chrome-canary" && context === linux;
+
+            expect(browserCandidates(browser, context).length > 0).toBe(!noLinuxBuild);
             expect(BROWSERS[browser].userDataDir(context)).not.toBe("");
         }
 
