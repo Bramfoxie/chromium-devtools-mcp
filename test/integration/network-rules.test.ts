@@ -10,6 +10,7 @@ function safety(patch: Partial<Parameters<typeof startEnv>[0] & object>) {
         deniedDomains       : [] as string[],
         allowPrivateNetworks: false,
         confirmDangerous    : false,
+        uploadDirs          : [] as string[],
         ...patch,
     };
 }

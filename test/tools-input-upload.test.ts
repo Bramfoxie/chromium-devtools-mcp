@@ -520,3 +520,56 @@ describe("input_upload in frames", () => {
         }
     });
 });
+
+describe("validateUploadFiles with upload directories", () => {
+    const files = {
+        "/srv/up/a.txt"    : { file: true, size: 1, readable: true },
+        "/srv/up/sub/b.txt": { file: true, size: 2, readable: true },
+        "/srv/other/c.txt" : { file: true, size: 3, readable: true },
+        "/srv/up/link.txt" : { file: true, size: 4, readable: true },
+        "/srv/upload/d.txt": { file: true, size: 5, readable: true },
+        "/home/u/.ssh/key" : { file: true, size: 6, readable: true },
+    };
+    const env = (links: Record<string, string> = {}): UploadEnvironment => ({
+        fs  : memoryFs(files, links),
+        path: posix,
+    });
+
+    it("accepts files inside a listed directory, also nested ones", async () => {
+        await expect(
+            validateUploadFiles(env(), ["/srv/up/a.txt", "/srv/up/sub/b.txt"], ["/srv/up"]),
+        ).resolves.toHaveLength(2);
+    });
+
+    it("refuses a file outside every listed directory and names the option", async () => {
+        await expect(validateUploadFiles(env(), ["/srv/other/c.txt"], ["/srv/up"])).rejects.toThrow(
+            "safety.uploadDirs",
+        );
+        await expect(validateUploadFiles(env(), ["/srv/upload/d.txt"], ["/srv/up"])).rejects.toThrow(
+            "safety.uploadDirs",
+        );
+    });
+
+    it("judges a symbolic link by the file it points to", async () => {
+        await expect(
+            validateUploadFiles(env({ "/srv/up/link.txt": "/home/u/.ssh/key" }), ["/srv/up/link.txt"], ["/srv/up"]),
+        ).rejects.toThrow("safety.uploadDirs");
+    });
+
+    it("judges a listed directory that is a link by where it points", async () => {
+        await expect(
+            validateUploadFiles(env({ "/srv/up": "/srv/other" }), ["/srv/other/c.txt"], ["/srv/up"]),
+        ).resolves.toHaveLength(1);
+    });
+
+    it("applies no limit without directories and matches Windows paths without regard to case", async () => {
+        await expect(validateUploadFiles(env(), ["/home/u/.ssh/key"], [])).resolves.toHaveLength(1);
+
+        const windows: UploadEnvironment = {
+            fs  : memoryFs({ "C:\\Up\\a.txt": { file: true, size: 1, readable: true } }),
+            path: win32,
+        };
+
+        await expect(validateUploadFiles(windows, ["C:\\Up\\a.txt"], ["c:\\up"])).resolves.toHaveLength(1);
+    });
+});

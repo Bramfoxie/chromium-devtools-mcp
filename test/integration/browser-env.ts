@@ -153,6 +153,7 @@ export async function startEnv(
             deniedDomains       : [],
             allowPrivateNetworks: true,
             confirmDangerous    : false,
+            uploadDirs          : [],
         },
     };
     const options = await harness.options();

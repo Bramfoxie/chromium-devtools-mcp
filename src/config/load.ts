@@ -78,6 +78,7 @@ function envLayer(env: NodeJS.ProcessEnv): Layer {
     const port = get("DEBUG_PORT");
     const domains = get("ALLOWED_DOMAINS");
     const denied = get("DENIED_DOMAINS");
+    const uploads = get("UPLOAD_DIRS");
     const tools = get("TOOLS");
     const excluded = get("EXCLUDE_TOOLS");
     const auditLog = get("AUDIT_LOG");
@@ -100,6 +101,7 @@ function envLayer(env: NodeJS.ProcessEnv): Layer {
             deniedDomains       : denied === undefined ? undefined : toList(denied),
             allowPrivateNetworks: bool("ALLOW_PRIVATE_NETWORKS"),
             confirmDangerous    : bool("CONFIRM_DANGEROUS"),
+            uploadDirs          : uploads === undefined ? undefined : toList(uploads),
         },
     });
 }
@@ -128,6 +130,7 @@ function parseFlags(argv: string[]) {
                 "exclude-tools"         : { type: "string" },
                 "audit-log"             : { type: "string" },
                 "confirm-dangerous"     : { type: "boolean" },
+                "upload-dirs"           : { type: "string" },
             },
         });
     } catch (error) {
@@ -142,6 +145,7 @@ function argvLayer(argv: string[]): Layer {
     const port = values["debug-port"];
     const domains = values["allowed-domains"];
     const denied = values["denied-domains"];
+    const uploads = values["upload-dirs"];
     const tools = values.tools;
     const excluded = values["exclude-tools"];
     const auditLog = values["audit-log"];
@@ -164,6 +168,7 @@ function argvLayer(argv: string[]): Layer {
             deniedDomains       : typeof denied === "string" ? toList(denied) : denied,
             allowPrivateNetworks: values["allow-private-networks"],
             confirmDangerous    : values["confirm-dangerous"],
+            uploadDirs          : typeof uploads === "string" ? toList(uploads) : uploads,
         },
     });
 }
@@ -230,6 +235,7 @@ function resolveLayers(options: LoadOptions): Resolved {
             deniedDomains       : [],
             allowPrivateNetworks: false,
             confirmDangerous    : false,
+            uploadDirs          : [],
         },
     };
 
@@ -312,6 +318,7 @@ const SAFETY_FIELDS = [
     "deniedDomains",
     "allowPrivateNetworks",
     "confirmDangerous",
+    "uploadDirs",
 ] as const;
 
 // The effective configuration with the layer that set each value; the last layer that sets it wins.

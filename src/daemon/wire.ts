@@ -29,6 +29,7 @@ export const requestParamSchemas = {
             ).max(MAX_DOMAIN_RULES),
             allowPrivateNetworks: z.boolean(),
             confirmDangerous    : z.boolean(),
+            uploadDirs          : z.array(z.string().min(1).max(1024)).max(50),
         }).optional(),
     }),
     "session.list"  : z.strictObject({}),

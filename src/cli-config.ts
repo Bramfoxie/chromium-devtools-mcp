@@ -31,6 +31,7 @@ export function formatConfigReport(report: ConfigReport): string {
         ["safety.deniedDomains", config.safety.deniedDomains],
         ["safety.allowPrivateNetworks", config.safety.allowPrivateNetworks],
         ["safety.confirmDangerous", config.safety.confirmDangerous],
+        ["safety.uploadDirs", config.safety.uploadDirs],
     ];
     const nameWidth = Math.max(...rows.map(([name]) => name.length));
     const valueWidth = Math.max(...rows.map(([, value]) => show(value).length));

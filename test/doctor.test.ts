@@ -24,6 +24,7 @@ const attach: Config = {
         deniedDomains       : [],
         allowPrivateNetworks: true,
         confirmDangerous    : false,
+        uploadDirs          : [],
     },
 };
 const managed: Config = { ...attach, mode: "managed", debugPort: 0 };

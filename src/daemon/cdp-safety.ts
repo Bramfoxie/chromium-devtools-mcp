@@ -19,6 +19,7 @@ export const NO_SAFETY: SessionSafety = {
     deniedDomains       : [],
     allowPrivateNetworks: true,
     confirmDangerous    : false,
+    uploadDirs          : [],
 };
 
 type Guard = "cookie-read" | "cookie-write" | "file-attach";

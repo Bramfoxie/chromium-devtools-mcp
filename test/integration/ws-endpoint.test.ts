@@ -48,6 +48,7 @@ describe.skipIf(!present)("attach through an explicit endpoint in a real browser
                 deniedDomains       : [],
                 allowPrivateNetworks: true,
                 confirmDangerous    : false,
+                uploadDirs          : [],
             },
         };
         const waiting: string[] = [];

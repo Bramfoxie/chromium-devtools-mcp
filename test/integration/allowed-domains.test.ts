@@ -7,7 +7,7 @@ let env: Env;
 beforeAll(async () => {
     if (!present) return;
 
-    env = await startEnv({ readOnly: false, allowedDomains: ["127.0.0.1"], deniedDomains: [], allowPrivateNetworks: true, confirmDangerous: false });
+    env = await startEnv({ readOnly: false, allowedDomains: ["127.0.0.1"], deniedDomains: [], allowPrivateNetworks: true, confirmDangerous: false, uploadDirs: [] });
     env.fixture.pages.set("/a", html("<p id=a>a</p>"));
     env.fixture.pages.set(
         "/nested",

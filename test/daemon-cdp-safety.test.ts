@@ -25,7 +25,7 @@ describe("guarded CDP methods", () => {
         "Network.deleteCookies",
         "DOM.setFileInputFiles",
     ])("guards %s", (method) => {
-        const safety = safe({ confirmDangerous: true });
+        const safety = safe({ confirmDangerous: true, uploadDirs: [] });
 
         expect(refusal(() =>
             checkGuardedCall({ method, params: {}, safety, confirmed: false }),
@@ -50,7 +50,7 @@ describe("guarded CDP methods", () => {
     });
 
     it("needs confirmation for every guarded method when confirmDangerous is on", () => {
-        const safety = safe({ confirmDangerous: true });
+        const safety = safe({ confirmDangerous: true, uploadDirs: [] });
         const call = (method: string, confirmed: boolean) => () =>
             checkGuardedCall({ method, params: {}, safety, confirmed });
 
@@ -217,7 +217,7 @@ describe("session safety in the daemon", () => {
     });
 
     it("enforces the cookie and file policy with the real tab URL", async () => {
-        const { session, backend } = await open(safe({ allowedDomains: ["example.com"], deniedDomains: [], allowPrivateNetworks: true, confirmDangerous: true }));
+        const { session, backend } = await open(safe({ allowedDomains: ["example.com"], deniedDomains: [], allowPrivateNetworks: true, confirmDangerous: true, uploadDirs: [] }));
         const tab = await session.createTab("https://example.com/");
 
         const unconfirmed = await failure(session.send({ targetId: tab, method: "Network.setCookie", params: { name: "a", value: "b", url: "https://example.com/" } }));

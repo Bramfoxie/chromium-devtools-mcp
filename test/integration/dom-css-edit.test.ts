@@ -488,6 +488,7 @@ describe.skipIf(!present)("dom and css edits under safety options in a real brow
             readOnly            : true,
             allowedDomains      : [],
             deniedDomains       : [], allowPrivateNetworks: true, confirmDangerous    : false,
+            uploadDirs          : [],
         });
 
         try {
@@ -516,6 +517,7 @@ describe.skipIf(!present)("dom and css edits under safety options in a real brow
             readOnly            : false,
             allowedDomains      : ["127.0.0.1"],
             deniedDomains       : [], allowPrivateNetworks: true, confirmDangerous    : false,
+            uploadDirs          : [],
         });
 
         try {
@@ -559,6 +561,7 @@ describe.skipIf(!present)("dom and css edits under safety options in a real brow
             readOnly            : false,
             allowedDomains      : ["127.0.0.1"],
             deniedDomains       : [], allowPrivateNetworks: true, confirmDangerous    : false,
+            uploadDirs          : [],
         });
 
         try {

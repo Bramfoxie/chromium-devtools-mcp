@@ -37,11 +37,40 @@ interface ValidatedUpload {
     size: number;
 }
 
+async function realDirectories(
+    environment: UploadEnvironment,
+    dirs       : readonly string[],
+): Promise<string[]> {
+    const { fs, path } = environment;
+
+    return Promise.all(dirs.map(async (dir) => {
+        const resolved = path.resolve(dir);
+
+        try {
+            return await fs.realpath(resolved);
+        } catch {
+            return resolved;
+        }
+    }));
+}
+
+function isInside(environment: UploadEnvironment, dir: string, file: string): boolean {
+    const { path } = environment;
+    const relative = path.relative(dir, file);
+
+    return relative !== "" && relative !== ".." && !relative.startsWith(`..${path.sep}`)
+        && !path.isAbsolute(relative);
+}
+
 export async function validateUploadFiles(
     environment: UploadEnvironment,
     files      : string[],
+    uploadDirs : readonly string[] = [],
 ): Promise<ValidatedUpload[]> {
     const { fs, path } = environment;
+    const allowedDirs = uploadDirs.length === 0
+        ? []
+        : await realDirectories(environment, uploadDirs);
     const validated: ValidatedUpload[] = [];
     const seen = new Set<string>();
 
@@ -88,6 +117,14 @@ export async function validateUploadFiles(
         if (seen.has(real)) {
             throw new ToolError(
                 `The file ${JSON.stringify(file)} is listed more than once. Pass each file once.`,
+            );
+        }
+
+        const inside = allowedDirs.some((dir) => isInside(environment, dir, real));
+
+        if (allowedDirs.length > 0 && !inside) {
+            throw new ToolError(
+                `The file ${JSON.stringify(file)} is outside safety.uploadDirs. Move it into one of the allowed directories, or ask the owner to add its directory to safety.uploadDirs.`,
             );
         }
 
@@ -154,7 +191,11 @@ export const inputUpload = defineTool({
 
         await ensureNoDialog(context.dialogs, targetId);
 
-        const validated = await validateUploadFiles(context.upload, args.files);
+        const validated = await validateUploadFiles(
+            context.upload,
+            args.files,
+            context.config.safety.uploadDirs,
+        );
 
         await context.focus.ensure(context.access, targetId);
 

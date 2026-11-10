@@ -106,6 +106,7 @@ The tabs of your session are also MCP resources, for clients that attach resourc
 - `safety.deniedDomains` blocks hosts for mutating tools and navigation, and wins over the allow list.
 - `safety.allowPrivateNetworks` is off by default: `new_tab` and `page_navigate` refuse local and private network addresses (`localhost`, `192.168.x.x`, `169.254.169.254` and similar), also after a redirect. A host named in `safety.allowedDomains` is still opened.
 - Tool results that can carry page content start with an `untrusted` notice that tells the model to treat the values as data, not as instructions. Page text stays inside quoted JSON strings, so it cannot close the notice.
+- `safety.uploadDirs` limits `input_upload` to files inside the listed directories, after links are resolved.
 - `safety.confirmDangerous` asks the user through MCP elicitation before scripts, storage writes, cookie reads, file uploads, location emulation, heap snapshots that are saved and DOM edits that replace HTML or remove an element.
 
 The daemon enforces these per session. Limits and exact rules: [docs/safety.md](docs/safety.md).
@@ -129,6 +130,7 @@ Sources from lowest to highest priority: defaults, JSON file, `CHROMIUM_DEVTOOLS
 | `safety.deniedDomains`        | `--denied-domains`         | empty                   |
 | `safety.allowPrivateNetworks` | `--allow-private-networks` | false                   |
 | `safety.confirmDangerous`     | `--confirm-dangerous`      | false                   |
+| `safety.uploadDirs`           | `--upload-dirs`            | empty, no limit         |
 
 Env names, file paths and rules: [docs/configuration.md](docs/configuration.md).
 

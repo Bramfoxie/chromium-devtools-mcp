@@ -171,6 +171,7 @@ describe("permission.set on a session", () => {
                 deniedDomains       : [],
                 allowPrivateNetworks: true,
                 confirmDangerous    : false,
+                uploadDirs          : [],
             },
         });
 
@@ -183,7 +184,7 @@ describe("permission.set on a session", () => {
     it("is refused for an origin outside allowedDomains", async () => {
         const { backend, open } = setup();
         const session = await open("a", {
-            safety: { readOnly: false, allowedDomains: ["a.example"], deniedDomains: [], allowPrivateNetworks: true, confirmDangerous: false },
+            safety: { readOnly: false, allowedDomains: ["a.example"], deniedDomains: [], allowPrivateNetworks: true, confirmDangerous: false, uploadDirs: [] },
         });
 
         expect(await code(session.setPermission({ ...grant, origin: OTHER }))).toBe(

@@ -24,6 +24,7 @@ export const managedConfig: Config = {
         deniedDomains       : [],
         allowPrivateNetworks: true,
         confirmDangerous    : false,
+        uploadDirs          : [],
     },
 };
 

@@ -3,6 +3,12 @@ import { DOMAIN_RULE_FORMS, isValidDomainRule } from "../safety/index.js";
 import { AppError } from "../util/app-error.js";
 import { isValidWsEndpoint, WS_ENDPOINT_FORM } from "./ws-endpoint.js";
 
+const ABSOLUTE_DIR = /^(\/|[A-Za-z]:[\\/]|\\\\)/;
+
+function isAbsoluteDir(value: string): boolean {
+    return ABSOLUTE_DIR.test(value);
+}
+
 export const browsers = [
     "chrome",
     "chrome-beta",
@@ -47,6 +53,12 @@ export const configSchema = z.strictObject({
         ),
         allowPrivateNetworks: z.boolean(),
         confirmDangerous    : z.boolean(),
+        uploadDirs          : z.array(
+            z.string().min(1).max(1024).refine(isAbsoluteDir, {
+                error: (issue) =>
+                    `invalid entry ${JSON.stringify(issue.input)}, expected an absolute directory path`,
+            }),
+        ).max(50),
     }),
 }).refine((config) => config.wsEndpoint === undefined || config.mode === "attach", {
     path   : ["wsEndpoint"],
