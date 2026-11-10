@@ -116,3 +116,13 @@ export function isPrivateHost(hostname: string): boolean {
 
     return octets !== undefined && isPrivateIpv4(octets);
 }
+
+export function addressesArePrivate(addresses: readonly string[]): boolean {
+    return addresses.some((address) => {
+        const bare = address.split("%")[0] ?? "";
+
+        if (bare.includes(":")) return isPrivateHost(`[${bare}]`);
+
+        return ipv4Octets(bare) === undefined || isPrivateHost(bare);
+    });
+}

@@ -1,8 +1,9 @@
 import { confirmationRefusal } from "./confirmation.js";
 import type { ToolRuntime } from "./context.js";
 import type { AnyTool } from "./define-tool.js";
-import { isPolicyActive } from "../safety/index.js";
+import { describeUrlHost, isPolicyActive } from "../safety/index.js";
 import { checkSafety, type SafetyAccess, type SafetyDecision, type SafetyFrame } from "./safety.js";
+import { resolutionProblem } from "./resolution-check.js";
 import { safetyFramesOf } from "./safety-frame.js";
 import { accessFor, dangerousFor, tabUrlExemptFor } from "./tool-traits.js";
 
@@ -111,6 +112,18 @@ async function admitWithChecks(
     }
 
     if (!decision.allowed) return refusal(decision);
+
+    const opening = base.target?.url;
+    const problem = opening === undefined || access !== "mutate"
+        ? undefined
+        : await resolutionProblem(opening, runtime.config.safety, runtime.resolveHost);
+
+    if (problem !== undefined) {
+        return {
+            admitted: false,
+            message : `${tool.name} would open ${describeUrlHost(opening ?? "")}, ${problem.reason}. ${problem.hint}`,
+        };
+    }
 
     if (!dangerous || !runtime.config.safety.confirmDangerous) {
         return { admitted: true, confirmed: false };

@@ -1,6 +1,7 @@
 import { describeBlock, describeUrlHost, isPolicyActive, navigationBlock } from "../safety/index.js";
 import type { ToolContext } from "./define-tool.js";
 import { ToolError } from "./errors.js";
+import { resolutionProblem } from "./resolution-check.js";
 
 const PARK_TIMEOUT_MS = 5000;
 
@@ -24,8 +25,11 @@ export async function parkIfForbidden(
     const { safety } = context.config;
     const unknown = isPolicyActive(safety) ? "outside-allowed" : undefined;
     const block = url === "" ? unknown : navigationBlock(url, safety);
+    const described = block === undefined
+        ? url === "" ? undefined : await resolutionProblem(url, safety, context.resolveHost)
+        : describeBlock(block);
 
-    if (block === undefined) return undefined;
+    if (described === undefined) return undefined;
 
     const host = url === "" ? "an unknown page" : describeUrlHost(url);
     const parked = await context.access
@@ -39,8 +43,6 @@ export async function parkIfForbidden(
     const state = parked
         ? "The tab was moved to about:blank."
         : "The tab could not be moved away and still shows that page; close it with close_tab.";
-
-    const described = describeBlock(block);
 
     return `The navigation ended on ${host}, ${described.reason}. ${state} ${described.hint}`;
 }
