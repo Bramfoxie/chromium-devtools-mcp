@@ -3,7 +3,7 @@ import type { AnyTool } from "./define-tool.js";
 
 export const TOOL_GROUPS: Readonly<Record<string, readonly string[]>> = {
     tabs      : ["window_list", "popup_list", "list_tabs", "list_sessions", "select_tab", "new_tab", "close_tab", "bring_to_front"],
-    pages     : ["page_info", "page_extract", "page_navigate", "page_wait", "page_dialogs", "page_metrics", "page_pdf"],
+    pages     : ["page_info", "browser_info", "page_extract", "page_navigate", "page_wait", "page_dialogs", "page_metrics", "page_pdf"],
     inspection: [
         "dom_query",
         "dom_snapshot",

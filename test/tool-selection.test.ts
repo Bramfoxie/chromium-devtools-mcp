@@ -131,7 +131,7 @@ describe("the server with a tool selection", () => {
         const tools = (await client.listTools()).tools.map((tool) => tool.name);
 
         expect([...tools].sort()).toEqual(
-            ["page_dialogs", "page_extract", "page_info", "page_metrics", "page_navigate", "page_wait"],
+            ["browser_info", "page_dialogs", "page_extract", "page_info", "page_metrics", "page_navigate", "page_wait"],
         );
         await expect(client.callTool({ name: "click", arguments: {} })).resolves.toMatchObject({
             isError: true,

@@ -70,6 +70,8 @@ export { NAVIGATION_TIMING_EXPRESSION, pageMetrics, shapePerformanceMetrics } fr
 
 export { pageDetails, pageInfo, pageInfoExpression } from "./page-info.js";
 
+export { browserInfo } from "./browser-info.js";
+
 export { pageExtract } from "./page-extract.js";
 
 export { findInPage } from "./find-in-page.js";
