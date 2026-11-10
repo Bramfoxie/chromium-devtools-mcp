@@ -19,33 +19,52 @@ function setup(evaluate: unknown) {
 
 async function inEngine(expression: string): Promise<unknown> {
     const script = `
-const attrs = (map) => ({ getAttribute: (name) => map[name] ?? null, ...map.props });
+class Node { get baseURI() { return "https://a.example/page?x=1"; } }
+class Element extends Node {
+  constructor(tag, attrs = {}, props = {}) { super(); this.tag = tag; this.attrs = attrs; Object.assign(this, props); }
+  get tagName() { return this.tag; }
+  getAttribute(name) { return name in this.attrs ? this.attrs[name] : null; }
+}
+class HTMLFormElement extends Element { get elements() { return this.controls; } }
 const links = [
-  { ...attrs({ rel: "nofollow" }), href: "https://a.example/one", innerText: "  One \\n link ", tagName: "A" },
-  { ...attrs({ "aria-label": "Two label" }), href: "https://a.example/two", tagName: "A" },
-  { ...attrs({}), href: "https://a.example/three", innerText: "Three", tagName: "A" },
+  new Element("A", { href: "/one", rel: "nofollow" }, { innerText: "  One \\n link " }),
+  new Element("A", { href: "https://b.example/two", "aria-label": "Two label" }),
+  new Element("A", { href: "three" }, { innerText: "Three" }),
 ];
-const headings = [{ tagName: "H1", innerText: "Title" }, { tagName: "H3", textContent: "Sub" }];
-const metas = [{ ...attrs({ name: "description", content: "About it" }) }];
-const control = (map, props) => ({ tagName: "INPUT", labels: [], required: false, ...attrs(map), ...props });
-const form = {
-  id: "login", method: "post", action: "https://a.example/login",
-  getAttribute: (name) => (name === "name" ? "signin" : null),
-  elements: [
-    control({ type: "text", name: "user", placeholder: "User name" }, { required: true }),
-    control({ type: "password", name: "pass" }, { value: "SECRET-VALUE", labels: [{ innerText: "Password" }] }),
-    control({ type: "hidden", name: "csrf" }, { value: "HIDDEN-VALUE" }),
-  ],
+const headings = [
+  new Element("H1", {}, { innerText: "Title" }),
+  new Element("H3", {}, { textContent: "Sub" }),
+];
+const metas = [new Element("META", { name: "description", content: "About it" })];
+const control = (attrs, props = {}) => new Element("INPUT", attrs, { labels: [], ...props });
+const form = new HTMLFormElement("FORM", { id: "login", method: "POST", action: "/login", name: "signin" });
+form.controls = [
+  control({ type: "text", name: "user", placeholder: "User name", required: "" }, { value: "typed" }),
+  control({ type: "password", name: "pass" }, {
+    value: "SECRET-VALUE",
+    labels: [new Element("LABEL", {}, { innerText: "Password" })],
+  }),
+  control({ type: "hidden", name: "csrf" }, { value: "HIDDEN-VALUE" }),
+];
+const rootElement = new Element("HTML", { lang: "en" });
+const lists = {
+  "a[href]": links,
+  "h1,h2,h3,h4,h5,h6": headings,
+  "meta[name],meta[property],meta[http-equiv]": metas,
+  "link[rel~='canonical'][href]": [new Element("LINK", { href: "/c" })],
 };
-const lists = { "a[href]": links, "h1,h2,h3,h4,h5,h6": headings, "meta[name],meta[property],meta[http-equiv]": metas };
-const document = {
-  title: "T",
-  documentElement: { lang: "en" },
-  forms: [form],
-  querySelector: (selector) => (selector.includes("canonical") ? { href: "https://a.example/c" } : null),
-  querySelectorAll: (selector) => lists[selector] ?? [],
-};
-const location = { href: "https://a.example/page?x=1" };
+class Document extends Node {
+  get forms() { return [form]; }
+  get title() { return "T"; }
+  get documentElement() { return rootElement; }
+  querySelectorAll(selector) { return lists[selector] ?? []; }
+}
+globalThis.Element = Element;
+globalThis.Node = Node;
+globalThis.Document = Document;
+globalThis.HTMLFormElement = HTMLFormElement;
+globalThis.document = new Document();
+globalThis.location = { href: "https://a.example/page?x=1" };
 console.log(JSON.stringify(eval(${JSON.stringify(expression)})));`;
 
     const output = await new Promise<string>((resolve, reject) => {
@@ -72,7 +91,7 @@ describe("extractExpression", () => {
                 total: 3,
                 items: [
                     { text: "One link", href: "https://a.example/one", rel: "nofollow" },
-                    { text: "Two label", href: "https://a.example/two", rel: "" },
+                    { text: "Two label", href: "https://b.example/two", rel: "" },
                 ],
             },
             headings: { total: 2, items: [{ level: 1, text: "Title" }, { level: 3, text: "Sub" }] },
@@ -155,6 +174,34 @@ describe("page_extract", () => {
             links: { total: 5, truncated: true },
             forms: { total: 1, truncated: false },
         });
+    });
+
+    it("hides the content of meta tags whose name looks like a secret", async () => {
+        const { runtime } = setup({
+            result: {
+                type : "object",
+                value: {
+                    ...base,
+                    meta: {
+                        total: 3,
+                        items: [
+                            { name: "csrf-token", content: "CSRF-SECRET" },
+                            { name: "api_key", content: "KEY-SECRET" },
+                            { name: "description", content: "kept text" },
+                        ],
+                    },
+                },
+            },
+        });
+
+        await runTool(newTab, {}, extra(), runtime);
+
+        const result = await runTool(pageExtract, { kinds: ["meta"] }, extra(), runtime);
+        const text = JSON.stringify(result.structuredContent);
+
+        expect(text).not.toContain("CSRF-SECRET");
+        expect(text).not.toContain("KEY-SECRET");
+        expect(text).toContain("kept text");
     });
 
     it("reports a page exception and an unexpected answer as errors that say what to do", async () => {

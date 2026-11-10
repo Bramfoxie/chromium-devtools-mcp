@@ -23,11 +23,23 @@ const PAGE = `<!doctype html><html lang="de"><head><title>Extract page</title>
 <iframe srcdoc="<a href='/in-frame'>inside</a><h1>Frame heading</h1>"></iframe>
 </body></html>`;
 
+const CLOBBERED = `<!doctype html><title>Clobbered</title>
+<meta name="csrf-token" content="CSRF-SECRET">
+<meta name="description" content="kept">
+<svg width="20" height="20"><a href="/in-svg"><text y="15">svg link</text></a></svg>
+<form id="real" method="post" action="/real-action">
+  <input name="action" value="x"><input name="elements"><input name="id"><input name="method">
+  <input name="q" placeholder="Search">
+</form>
+<img name="forms" src="data:,">
+<a href="/after">After</a>`;
+
 beforeAll(async () => {
     if (!present) return;
 
     env = await startEnv();
     env.fixture.pages.set("/extract", html(PAGE));
+    env.fixture.pages.set("/clobbered", html(CLOBBERED));
 });
 
 afterAll(async () => {
@@ -84,5 +96,30 @@ describe.skipIf(!present)("page_extract in a real browser", () => {
         expect(page).toMatchObject({ links: { total: 2, truncated: true } });
         expect((page.links as { items: unknown[] }).items).toHaveLength(1);
         expect(page.headings).toBeUndefined();
+    });
+
+    it("still lists a page whose markup shadows form properties and whose links sit in SVG", async () => {
+        const tab = await env.open("/clobbered");
+        const page = await env.ok("page_extract", { tab });
+        const links = (page.links as { items: Array<{ text: string; href: string }> }).items;
+        const forms = (page.forms as { items: Array<Record<string, unknown>> }).items;
+
+        expect(links.map((link) => link.href.replace(/^https?:\/\/[^/]+/, ""))).toEqual([
+            "/in-svg",
+            "/after",
+        ]);
+        expect(forms).toHaveLength(1);
+        expect(forms[0]).toMatchObject({ id: "real", method: "post", fieldTotal: 5 });
+        expect(String(forms[0]?.action)).toMatch(/\/real-action$/);
+    });
+
+    it("hides the content of meta tags that look like secrets", async () => {
+        const tab = await env.open("/clobbered");
+        const page = await env.ok("page_extract", { tab, kinds: ["meta"] });
+        const text = JSON.stringify(page);
+
+        expect(text).not.toContain("CSRF-SECRET");
+        expect(text).toContain("csrf-token");
+        expect(text).toContain("kept");
     });
 });

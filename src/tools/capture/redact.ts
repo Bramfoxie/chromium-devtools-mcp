@@ -63,7 +63,7 @@ function nameTokens(name: string): string[] {
         .filter((token) => token !== "");
 }
 
-function sensitiveName(name: string): boolean {
+export function sensitiveName(name: string): boolean {
     const endsSensitive = (token: string): boolean =>
         SENSITIVE_SUFFIXES.some((suffix) => token.length > suffix.length && token.endsWith(suffix));
 

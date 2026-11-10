@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { redactUrl } from "./capture/redact.js";
+import { redactUrl, sensitiveName } from "./capture/redact.js";
 import { defineTool } from "./define-tool.js";
 import { ensureNoDialog } from "./dialogs.js";
 import { ToolError } from "./errors.js";
@@ -22,7 +22,7 @@ function text(): z.ZodType<string> {
 }
 
 function url(): z.ZodType<string> {
-    return z.string().transform((value) => redactUrl(value.slice(0, 2000)));
+    return z.string().transform((value) => redactUrl(value).slice(0, 2000));
 }
 
 function group<T extends z.ZodType>(item: T) {
@@ -57,6 +57,8 @@ const pageSchema = z.object({
         fields    : z.array(field),
     })).optional(),
 });
+
+const HIDDEN = "[hidden]";
 
 const evaluatedSchema = z.object({
     result          : z.object({ value: z.unknown().optional() }),
@@ -162,8 +164,19 @@ export const pageExtract = defineTool({
             canonical: data.canonical,
             links    : counted(data.links, limit),
             headings : counted(data.headings, limit),
-            meta     : counted(data.meta, limit),
-            forms    : counted(data.forms, limit),
+            meta     : counted(
+                data.meta === undefined
+                    ? undefined
+                    : {
+                        total: data.meta.total,
+                        items: data.meta.items.map((tag) => ({
+                            name   : tag.name,
+                            content: sensitiveName(tag.name) ? HIDDEN : tag.content,
+                        })),
+                    },
+                limit,
+            ),
+            forms: counted(data.forms, limit),
         };
     },
 });

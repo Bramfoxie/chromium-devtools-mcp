@@ -7,11 +7,24 @@ export const EXTRACT_TEXT_CHARS = 300;
 export const EXTRACT_FIELDS_PER_FORM = 50;
 
 const PAGE_FUNCTION = `(kinds, limit, textChars, fieldLimit) => {
+  const getter = (proto, name) => Object.getOwnPropertyDescriptor(proto, name).get;
+  const attr = (element, name) => Element.prototype.getAttribute.call(element, name);
+  const tagOf = getter(Element.prototype, "tagName");
+  const docForms = getter(Document.prototype, "forms");
+  const docTitle = getter(Document.prototype, "title");
+  const docRoot = getter(Document.prototype, "documentElement");
+  const baseOf = getter(Node.prototype, "baseURI");
+  const formControls = getter(HTMLFormElement.prototype, "elements");
+  const all = (selector) => Document.prototype.querySelectorAll.call(document, selector);
   const clip = (value) => String(value == null ? "" : value).replace(/\\s+/g, " ").trim().slice(0, textChars);
+  const absolute = (value) => {
+    try { return new URL(value == null ? "" : String(value), baseOf.call(document)).href; } catch (error) { return ""; }
+  };
+  const textOf = (node) => clip(typeof node.innerText === "string" && node.innerText !== "" ? node.innerText : node.textContent);
   const take = (nodes, map) => {
     const items = [];
     let total = 0;
-    for (const node of nodes) {
+    for (const node of Array.from(nodes)) {
       total += 1;
       if (items.length < limit) items.push(map(node));
     }
@@ -19,47 +32,49 @@ const PAGE_FUNCTION = `(kinds, limit, textChars, fieldLimit) => {
   };
   const labelOf = (control) => {
     const labelled = control.labels && control.labels[0];
-    return clip((labelled && (labelled.innerText || labelled.textContent)) || control.getAttribute("aria-label") || control.getAttribute("placeholder"));
+    return clip((labelled && textOf(labelled)) || attr(control, "aria-label") || attr(control, "placeholder"));
   };
+  const root = docRoot.call(document);
+  const canonical = all("link[rel~='canonical'][href]")[0];
   const out = {
-    url: location.href,
-    title: document.title,
-    lang: document.documentElement ? document.documentElement.lang : "",
-    canonical: (document.querySelector("link[rel~='canonical'][href]") || {}).href || "",
+    url: String(location.href),
+    title: clip(docTitle.call(document)),
+    lang: root ? clip(attr(root, "lang")) : "",
+    canonical: canonical ? absolute(attr(canonical, "href")) : "",
   };
   if (kinds.includes("links")) {
-    out.links = take(document.querySelectorAll("a[href]"), (a) => ({
-      text: clip(a.innerText || a.textContent || a.getAttribute("aria-label")),
-      href: a.href,
-      rel: clip(a.getAttribute("rel")),
+    out.links = take(all("a[href]"), (a) => ({
+      text: textOf(a) || clip(attr(a, "aria-label")),
+      href: absolute(attr(a, "href")),
+      rel: clip(attr(a, "rel")),
     }));
   }
   if (kinds.includes("headings")) {
-    out.headings = take(document.querySelectorAll("h1,h2,h3,h4,h5,h6"), (h) => ({
-      level: Number(h.tagName.charAt(1)),
-      text: clip(h.innerText || h.textContent),
+    out.headings = take(all("h1,h2,h3,h4,h5,h6"), (h) => ({
+      level: Number(tagOf.call(h).charAt(1)),
+      text: textOf(h),
     }));
   }
   if (kinds.includes("meta")) {
-    out.meta = take(document.querySelectorAll("meta[name],meta[property],meta[http-equiv]"), (m) => ({
-      name: clip(m.getAttribute("name") || m.getAttribute("property") || m.getAttribute("http-equiv")),
-      content: clip(m.getAttribute("content")),
+    out.meta = take(all("meta[name],meta[property],meta[http-equiv]"), (m) => ({
+      name: clip(attr(m, "name") || attr(m, "property") || attr(m, "http-equiv")),
+      content: clip(attr(m, "content")),
     }));
   }
   if (kinds.includes("forms")) {
-    out.forms = take(document.forms, (form) => {
-      const controls = take(form.elements, (control) => ({
-        tag: control.tagName.toLowerCase(),
-        type: clip(control.getAttribute("type")),
-        name: clip(control.getAttribute("name")),
+    out.forms = take(docForms.call(document), (form) => {
+      const controls = take(formControls.call(form), (control) => ({
+        tag: clip(tagOf.call(control)).toLowerCase(),
+        type: clip(attr(control, "type")),
+        name: clip(attr(control, "name")),
         label: labelOf(control),
-        required: control.required === true,
+        required: attr(control, "required") !== null,
       }));
       return {
-        id: clip(form.id),
-        name: clip(form.getAttribute("name")),
-        method: clip(form.method || "get").toLowerCase(),
-        action: form.action,
+        id: clip(attr(form, "id")),
+        name: clip(attr(form, "name")),
+        method: clip(attr(form, "method") || "get").toLowerCase(),
+        action: absolute(attr(form, "action")),
         fieldTotal: controls.total,
         fields: controls.items.slice(0, fieldLimit),
       };
