@@ -1,6 +1,6 @@
 {
   "name": "chromium-devtools-mcp",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "MCP server that lets AI agents drive your Chromium browser through the DevTools Protocol",
   "license": "MIT",
   "author": "Milana Kustinskaya <me@bramfoxie.com>",
