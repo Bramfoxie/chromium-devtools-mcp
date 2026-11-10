@@ -22,6 +22,7 @@ import { inputSelect } from "./input-select.js";
 import { inputKey, inputType } from "./input-text.js";
 import { inputUpload } from "./input-upload.js";
 import { fillForm } from "./fill-form.js";
+import { findInPage } from "./find-in-page.js";
 import { jsEvaluate } from "./js-evaluate.js";
 import { networkMock } from "./network-mock.js";
 import { downloads } from "./downloads.js";
@@ -63,6 +64,7 @@ export const allTools: AnyTool[] = [
     domSnapshot,
     a11ySnapshot,
     domSelector,
+    findInPage,
     domEdit,
     cssInspect,
     eventListeners,

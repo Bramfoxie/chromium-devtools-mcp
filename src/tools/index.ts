@@ -72,6 +72,10 @@ export { pageDetails, pageInfo, pageInfoExpression } from "./page-info.js";
 
 export { pageExtract } from "./page-extract.js";
 
+export { findInPage } from "./find-in-page.js";
+
+export { findExpression } from "./find-in-page-script.js";
+
 export { extractExpression } from "./page-extract-script.js";
 
 export { pageDialogs } from "./page-dialogs.js";

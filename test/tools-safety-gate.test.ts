@@ -68,6 +68,7 @@ const MUTATING: Case[] = [
     ["webauthn", { action: "add_authenticator" }],
     ["downloads", { action: "allow" }],
     ["downloads", { action: "deny" }],
+    ["find_in_page", { text: "x", scroll: true }],
 ];
 
 const READING: Case[] = [
@@ -81,6 +82,7 @@ const READING: Case[] = [
     ["dom_snapshot", { uid: "1_1" }],
     ["a11y_snapshot", {}],
     ["dom_selector", { target: { selector: "body" } }],
+    ["find_in_page", { text: "x" }],
     ["css_inspect", { uid: "1_1" }],
     ["event_listeners", { target: { uid: "1_1" } }],
     ["console_logs", {}],

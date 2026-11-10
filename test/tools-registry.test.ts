@@ -42,6 +42,8 @@ function minimalArgs(name: string): Record<string, unknown> {
             return { expression: "true" };
         case "dom_query":
             return { selector: "body" };
+        case "find_in_page":
+            return { text: "x" };
         case "dom_snapshot":
         case "css_inspect":
             return { uid: "1_1" };
@@ -117,7 +119,7 @@ describe("tool declarations", () => {
         expect(text).toContain(`${allTools.length} tools. Details and parameters`);
     });
 
-    it("declares fifty seven tools with unique names, descriptions and access", () => {
+    it("declares fifty eight tools with unique names, descriptions and access", () => {
         expect(allTools.map((tool) => tool.name)).toEqual([
             "list_tabs",
             "popup_list",
@@ -135,6 +137,7 @@ describe("tool declarations", () => {
             "dom_snapshot",
             "a11y_snapshot",
             "dom_selector",
+            "find_in_page",
             "dom_edit",
             "css_inspect",
             "event_listeners",
@@ -693,7 +696,7 @@ describe("runTool", () => {
 });
 
 describe("tools/list", () => {
-    it("lists exactly the fifty seven tools with their schemas", async () => {
+    it("lists exactly the fifty eight tools with their schemas", async () => {
         const server = createMcpServer("1.0.0");
 
         registerTools({ server, tools: allTools, runtime: runtime() });
@@ -720,6 +723,7 @@ describe("tools/list", () => {
             "dom_snapshot",
             "a11y_snapshot",
             "dom_selector",
+            "find_in_page",
             "dom_edit",
             "css_inspect",
             "event_listeners",

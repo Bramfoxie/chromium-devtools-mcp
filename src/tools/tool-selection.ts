@@ -9,6 +9,7 @@ export const TOOL_GROUPS: Readonly<Record<string, readonly string[]>> = {
         "dom_snapshot",
         "a11y_snapshot",
         "dom_selector",
+        "find_in_page",
         "dom_edit",
         "css_inspect",
         "event_listeners",
