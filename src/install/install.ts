@@ -93,6 +93,47 @@ function apply(
     }
 }
 
+function describeState(target: ClientTarget, deps: InstallDeps): boolean {
+    if (target.file === undefined || target.merge === undefined) {
+        deps.out(`${target.name}: no config file, add it in the app\n`);
+
+        return true;
+    }
+
+    const file = target.file(deps);
+    let text: string | undefined;
+
+    try {
+        text = deps.fs.read(file);
+    } catch (error) {
+        deps.err(`${target.name}: cannot read ${file}: ${(error as Error).message}\n`);
+
+        return false;
+    }
+
+    if (text === undefined) {
+        deps.out(`${target.name}: not installed (no file at ${file})\n`);
+
+        return true;
+    }
+
+    const result = target.merge(text, buildEntry(deps.platform, []));
+
+    if (result.status === "invalid") {
+        deps.err(`${target.name}: cannot read ${file} because ${result.reason}\n`);
+
+        return false;
+    }
+
+    const state = result.status === "unchanged"
+        ? "installed, up to date"
+        : result.action === "updated" ? "installed, differs from the current entry" : "not installed";
+
+    deps.out(`${target.name}: ${state} (${file})\n`);
+
+    return true;
+}
+
 export function runInstall(argv: string[], deps: InstallDeps): number {
     let args;
 
@@ -109,9 +150,15 @@ export function runInstall(argv: string[], deps: InstallDeps): number {
             });
         }
     } catch (error) {
-        deps.err(`${error instanceof ConfigError ? error.message : String(error)}\nUsage: chromium-devtools-mcp install --client <${CLIENTS.map((client) => client.name).join("|")}|all> [--dry-run] [--remove] [server options]\n`);
+        deps.err(`${error instanceof ConfigError ? error.message : String(error)}\nUsage: chromium-devtools-mcp install --client <${CLIENTS.map((client) => client.name).join("|")}|all> [--dry-run] [--remove] [server options]\n       chromium-devtools-mcp install --list\n`);
 
         return 2;
+    }
+
+    if (args.list) {
+        const states = CLIENTS.map((target) => describeState(target, deps));
+
+        return states.every(Boolean) ? 0 : 1;
     }
 
     const entry = args.remove ? undefined : buildEntry(deps.platform, args.serverFlags);

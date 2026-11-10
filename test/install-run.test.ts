@@ -36,6 +36,7 @@ describe("parseInstallArgs", () => {
             clients    : ["cursor"],
             dryRun     : true,
             remove     : false,
+            list       : false,
             serverFlags: ["--read-only"],
         });
     });
@@ -317,5 +318,54 @@ describe("clients configured by name", () => {
             "codex",
             "cherry-studio",
         ]);
+    });
+});
+
+describe("install --list", () => {
+    it("reports the state of the entry for every client without writing anything", () => {
+        const cursor = "/home/u/.cursor/mcp.json";
+        const gemini = "/home/u/.gemini/settings.json";
+        const windsurf = "/home/u/.codeium/windsurf/mcp_config.json";
+        const { out, err, writes, run } = setup(
+            {
+                [cursor]: JSON.stringify({
+                    mcpServers: { "chromium-devtools": { command: "npx", args: ["-y", "chromium-devtools-mcp"] } },
+                }),
+                [gemini]: JSON.stringify({
+                    mcpServers: { "chromium-devtools": { command: "npx", args: ["-y", "chromium-devtools-mcp", "--headless"] } },
+                }),
+                [windsurf]: "{ broken",
+            },
+            "linux",
+        );
+
+        expect(run(["--list"])).toBe(1);
+
+        const text = out.join("");
+
+        expect(writes).toEqual([]);
+        expect(text).toContain(`cursor: installed, up to date (${cursor})`);
+        expect(text).toContain(`gemini-cli: installed, differs from the current entry (${gemini})`);
+        expect(text).toContain("claude-code: not installed (no file at /home/u/.claude.json)");
+        expect(text).toContain("codex: not installed (no file at /home/u/.codex/config.toml)");
+        expect(text).toContain("cherry-studio: no config file, add it in the app");
+        expect(err.join("")).toContain(`windsurf: cannot read ${windsurf}`);
+    });
+
+    it("says not installed when the file exists without the entry and exits 0 when all is readable", () => {
+        const cursor = "/home/u/.cursor/mcp.json";
+        const { out, run } = setup({ [cursor]: '{"mcpServers":{"other":{"command":"x"}}}' }, "linux");
+
+        expect(run(["--list"])).toBe(0);
+        expect(out.join("")).toContain(`cursor: not installed (${cursor})`);
+    });
+
+    it("takes no client, flags or other options", () => {
+        const { err, run } = setup({}, "linux");
+
+        expect(run(["--list", "--client", "cursor"])).toBe(2);
+        expect(run(["--list", "--remove"])).toBe(2);
+        expect(run(["--list", "--headless"])).toBe(2);
+        expect(err.join("")).toContain("--list");
     });
 });

@@ -5,6 +5,7 @@ export interface InstallArgs {
     clients    : string[];
     dryRun     : boolean;
     remove     : boolean;
+    list       : boolean;
     serverFlags: string[];
 }
 
@@ -16,6 +17,14 @@ export function parseInstallArgs(argv: string[]): InstallArgs {
     const serverFlags: string[] = [];
     let dryRun = false;
     let remove = false;
+
+    if (argv.includes("--list")) {
+        if (argv.length > 1) {
+            throw new ConfigError("--list takes no other options");
+        }
+
+        return { clients: [], dryRun: false, remove: false, list: true, serverFlags: [] };
+    }
 
     for (let i = 0; i < argv.length; i += 1) {
         const arg = argv[i] as string;
@@ -50,5 +59,5 @@ export function parseInstallArgs(argv: string[]): InstallArgs {
         throw new ConfigError("--remove does not take server flags");
     }
 
-    return { clients: [...new Set(clients)], dryRun, remove, serverFlags };
+    return { clients: [...new Set(clients)], dryRun, remove, list: false, serverFlags };
 }

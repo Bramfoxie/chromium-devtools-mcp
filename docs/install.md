@@ -38,6 +38,8 @@ Edits are conservative:
 - `--dry-run` prints what would change and the entry, and writes nothing, not even a backup.
 - `--remove` deletes only the chromium-devtools entry.
 
+`npx chromium-devtools-mcp install --list` writes nothing and prints, for every client, whether the entry is installed (`installed, up to date`, `installed, differs from the current entry` or `not installed`) and the file it looked at. The comparison is with the entry the installer writes without server options, so an entry made with flags shows as different. It exits with 1 when a file cannot be read.
+
 Restart the client afterwards so it reads the new entry. If Claude Code is running while the installer edits `~/.claude.json`, it may rewrite the file and drop the entry, so install while it is closed.
 
 ## Manual entry
