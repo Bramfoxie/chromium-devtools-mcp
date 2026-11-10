@@ -79,11 +79,11 @@ Compared against Chrome DevTools MCP 1.12.0 (2026-10-22, [ChromeDevTools/chrome-
 
 ## Tools
 
-60 tools. Details and parameters are in [docs/tools.md](docs/tools.md).
+61 tools. Details and parameters are in [docs/tools.md](docs/tools.md).
 
 | Category    | Tools                                                                                                                                                               |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Tabs        | `list_tabs`, `popup_list`, `window_list`, `list_sessions`, `select_tab`, `new_tab`, `close_tab`, `bring_to_front`                                                   |
+| Tabs        | `list_tabs`, `popup_list`, `window_list`, `list_sessions`, `select_tab`, `new_tab`, `tab_duplicate`, `close_tab`, `bring_to_front`                                  |
 | Pages       | `page_info`, `browser_info`, `page_extract`, `page_navigate`, `page_wait`, `page_dialogs`, `page_metrics`, `page_pdf`                                               |
 | Inspection  | `dom_query`, `dom_snapshot`, `a11y_snapshot`, `dom_selector`, `find_in_page`, `dom_edit`, `css_inspect`, `event_listeners`, `css_edit`, `js_evaluate`, `screenshot` |
 | Input       | `click`, `input_click`, `input_hover`, `input_drag`, `input_type`, `input_key`, `input_scroll`, `input_select`, `input_upload`, `fill_form`                         |

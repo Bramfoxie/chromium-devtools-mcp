@@ -47,7 +47,7 @@ import { browserInfo } from "./browser-info.js";
 import { pageInfo } from "./page-info.js";
 import { pageMetrics } from "./page-metrics.js";
 import { pageNavigate } from "./page-navigate.js";
-import { closeTab, listSessions, listTabs, newTab, popupList, selectTab, windowList } from "./tabs.js";
+import { closeTab, listSessions, listTabs, newTab, popupList, selectTab, tabDuplicate, windowList } from "./tabs.js";
 
 export const allTools: AnyTool[] = [
     listTabs,
@@ -56,6 +56,7 @@ export const allTools: AnyTool[] = [
     listSessions,
     selectTab,
     newTab,
+    tabDuplicate,
     closeTab,
     bringToFront,
     pageInfo,

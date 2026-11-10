@@ -35,6 +35,7 @@ type Case = [tool: string, args: Record<string, unknown>];
 
 const MUTATING: Case[] = [
     ["new_tab", {}],
+    ["tab_duplicate", {}],
     ["select_tab", { tab: "tab1" }],
     ["close_tab", { tab: "tab1" }],
     ["bring_to_front", { tab: "tab1" }],

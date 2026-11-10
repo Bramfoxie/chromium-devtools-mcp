@@ -121,7 +121,7 @@ describe("tool declarations", () => {
         expect(text).toContain(`${allTools.length} tools. Details and parameters`);
     });
 
-    it("declares sixty tools with unique names, descriptions and access", () => {
+    it("declares sixty one tools with unique names, descriptions and access", () => {
         expect(allTools.map((tool) => tool.name)).toEqual([
             "list_tabs",
             "popup_list",
@@ -129,6 +129,7 @@ describe("tool declarations", () => {
             "list_sessions",
             "select_tab",
             "new_tab",
+            "tab_duplicate",
             "close_tab",
             "bring_to_front",
             "page_info",
@@ -224,6 +225,7 @@ describe("tool declarations", () => {
             "page_navigate",
             "select_tab",
             "storage_write",
+            "tab_duplicate",
         ]);
     });
 
@@ -703,7 +705,7 @@ describe("runTool", () => {
 });
 
 describe("tools/list", () => {
-    it("lists exactly the sixty tools with their schemas", async () => {
+    it("lists exactly the sixty one tools with their schemas", async () => {
         const server = createMcpServer("1.0.0");
 
         registerTools({ server, tools: allTools, runtime: runtime() });
@@ -720,6 +722,7 @@ describe("tools/list", () => {
             "list_sessions",
             "select_tab",
             "new_tab",
+            "tab_duplicate",
             "close_tab",
             "bring_to_front",
             "page_info",
