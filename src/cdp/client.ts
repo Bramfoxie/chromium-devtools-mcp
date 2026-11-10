@@ -136,11 +136,11 @@ export class CdpClient {
             this.pending.set(id, { method, sessionId: options.sessionId, resolve, reject, timer });
 
             try {
+                this.transport.send(payload);
+
                 if (this.traffic !== undefined) {
                     this.observe({ direction: "sent", method, id, bytes: Buffer.byteLength(payload) });
                 }
-
-                this.transport.send(payload);
             } catch (error) {
                 clearTimeout(timer);
                 this.pending.delete(id);

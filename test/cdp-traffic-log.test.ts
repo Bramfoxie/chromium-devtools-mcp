@@ -7,6 +7,24 @@ import { trafficFile, type TrafficFileIO } from "../src/cdp/traffic-log.js";
 import { loadConfig } from "../src/config/index.js";
 
 describe("CDP traffic log", () => {
+    it("does not record a request as sent when the transport rejects it", async () => {
+        const entries: unknown[] = [];
+        const transport: Transport = {
+            send     : () => { throw new Error("send failed"); },
+            close    : async () => undefined,
+            onMessage: () => undefined,
+            onClose  : () => undefined,
+        };
+        const client = await CdpClient.connect({
+            url            : "ws://unused",
+            createTransport: async () => transport,
+            traffic        : (entry) => { entries.push(entry); },
+        });
+
+        await expect(client.send("Page.enable")).rejects.toThrow();
+        expect(entries).toEqual([]);
+        await client.close();
+    });
     it("does not measure message sizes when logging is disabled", async () => {
         let receive: (raw: string) => void = () => undefined;
         const transport: Transport = {
@@ -39,8 +57,10 @@ describe("CDP traffic log", () => {
             send: (raw) => {
                 const id = (JSON.parse(raw) as { id: number }).id;
 
-                receive(JSON.stringify({ id, result: { value: "RESPONSE-SECRET" } }));
-                receive(JSON.stringify({ method: "Page.loadEventFired", params: { value: "EVENT-SECRET" } }));
+                queueMicrotask(() => {
+                    receive(JSON.stringify({ id, result: { value: "RESPONSE-SECRET" } }));
+                    receive(JSON.stringify({ method: "Page.loadEventFired", params: { value: "EVENT-SECRET" } }));
+                });
             },
             close    : async () => undefined,
             onMessage: (handler) => { receive = handler; },
