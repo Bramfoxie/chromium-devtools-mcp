@@ -3,6 +3,7 @@ import { defineTool } from "./define-tool.js";
 import { ensureNoDialog } from "./dialogs.js";
 import { assertElementOriginAllowed, elementAccess, elementTargetSchema, withElement } from "./element-target.js";
 import { ToolError } from "./errors.js";
+import { releaseQuietly } from "./remote-objects.js";
 import { resolveTab, tabSchema } from "./tab-target.js";
 
 const listenerSchema = z.object({
@@ -11,6 +12,25 @@ const listenerSchema = z.object({
     passive   : z.boolean(),
     once      : z.boolean(),
 });
+
+const handlerSchema = z.object({ objectId: z.string().optional() });
+const rawListenersSchema = z.object({
+    listeners: z.array(z.object({
+        handler        : handlerSchema.optional(),
+        originalHandler: handlerSchema.optional(),
+    }).loose()),
+}).loose();
+
+function handlerObjectIds(raw: unknown): string[] {
+    const parsed = rawListenersSchema.safeParse(raw);
+
+    if (!parsed.success) return [];
+
+    return parsed.data.listeners.flatMap((listener) =>
+        [listener.handler?.objectId, listener.originalHandler?.objectId]
+            .filter((id): id is string => id !== undefined),
+    );
+}
 
 export const eventListeners = defineTool({
     name       : "event_listeners",
@@ -36,13 +56,16 @@ export const eventListeners = defineTool({
                 await assertElementOriginAllowed(context, targetId, element);
             }
 
-            const reply = z.object({ listeners: z.array(listenerSchema) }).safeParse(
-                await elementAccess(context.access, element).send({
-                    targetId,
-                    method: "DOMDebugger.getEventListeners",
-                    params: { objectId: element.objectId, depth: 1, pierce: false },
-                }),
-            );
+            const access = elementAccess(context.access, element);
+            const raw = await access.send({
+                targetId,
+                method: "DOMDebugger.getEventListeners",
+                params: { objectId: element.objectId, depth: 1, pierce: false },
+            });
+
+            await releaseQuietly(access, targetId, handlerObjectIds(raw));
+
+            const reply = z.object({ listeners: z.array(listenerSchema) }).safeParse(raw);
 
             if (!reply.success) throw new ToolError("The browser sent an unexpected response to DOMDebugger.getEventListeners. Try the call again.");
 

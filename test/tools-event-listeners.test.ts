@@ -32,8 +32,8 @@ async function setup(reply: unknown) {
 describe("event_listeners", () => {
     it("returns only bounded listener metadata and releases the object", async () => {
         const { fake, runtime, uid } = await setup({ listeners: [
-            { type: "click", useCapture: true, passive: false, once: true, scriptId: "secret", handler: { objectId: "secret" } },
-            { type: "x".repeat(300), useCapture: false, passive: true, once: false },
+            { type: "click", useCapture: true, passive: false, once: true, scriptId: "secret", handler: { objectId: "h1" }, originalHandler: { objectId: "o1" } },
+            { type: "x".repeat(300), useCapture: false, passive: true, once: false, handler: { objectId: "h2" } },
         ] });
         const result = await runTool(
             eventListeners, { target: { uid }, limit: 1 }, extra(), runtime,
@@ -41,13 +41,20 @@ describe("event_listeners", () => {
 
         expect(result.structuredContent).toEqual({ listeners: [{ type: "click", useCapture: true, passive: false, once: true }], total: 2, truncated: true });
         expect(fake.sent).toContainEqual(expect.objectContaining({ method: "Runtime.releaseObject", params: { objectId: "object" } }));
+
+        const released = fake.sent
+            .filter((call) => call.method === "Runtime.releaseObject")
+            .map((call) => (call.params as { objectId: string }).objectId);
+
+        expect(released.sort()).toEqual(["h1", "h2", "o1", "object"]);
     });
 
     it("releases the object when the response is invalid", async () => {
-        const { fake, runtime, uid } = await setup({ listeners: [{}] });
+        const { fake, runtime, uid } = await setup({ listeners: [{ handler: { objectId: "h1" } }] });
         const result = await runTool(eventListeners, { target: { uid } }, extra(), runtime);
 
         expect(result.isError).toBe(true);
-        expect(fake.sent.some((call) => call.method === "Runtime.releaseObject")).toBe(true);
+        expect(fake.sent).toContainEqual(expect.objectContaining({ method: "Runtime.releaseObject", params: { objectId: "h1" } }));
+        expect(fake.sent).toContainEqual(expect.objectContaining({ method: "Runtime.releaseObject", params: { objectId: "object" } }));
     });
 });
