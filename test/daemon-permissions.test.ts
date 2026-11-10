@@ -255,6 +255,23 @@ describe("permission.set on a session", () => {
         expect(backend.permissions.size).toBe(1);
     });
 
+    it("refuses a private origin when private networks are disabled", async () => {
+        const { backend, open } = setup();
+        const session = await open("a", {
+            safety: {
+                readOnly            : false, allowedDomains      : [], deniedDomains       : [],
+                allowPrivateNetworks: false, confirmDangerous    : false, uploadDirs          : [],
+            },
+        });
+
+        const result = await code(session.setPermission({
+            name: "camera", setting: "granted", origin: "http://127.0.0.1", owner: "permissions",
+        }));
+
+        expect(result).toBe(ErrorCode.forbiddenMethod);
+        expect(backend.permissions.size).toBe(0);
+    });
+
     it("lets go of its grants when the session closes and leaves other sessions alone", async () => {
         const { backend, registry, open } = setup();
         const first = await open("a");

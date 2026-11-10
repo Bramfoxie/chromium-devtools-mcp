@@ -60,7 +60,7 @@ export function checkOpenUrl(what: string, url: string, safety: SessionSafety): 
 export function checkPermissionOrigin(origin: string, safety: SessionSafety): void {
     if (safety.readOnly) refuse("permission.set is refused because safety.readOnly is on.");
 
-    const block = domainBlock(origin, safety);
+    const block = navigationBlock(origin, safety);
 
     if (block !== undefined) outside("permission.set would act for", origin, block);
 }
