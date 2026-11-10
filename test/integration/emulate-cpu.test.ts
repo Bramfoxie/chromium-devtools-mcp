@@ -39,9 +39,14 @@ describe.skipIf(!present)("emulate_cpu in a real browser", () => {
         const normal = Math.min(await sample(), await sample(), await sample());
 
         await env.ok("emulate_cpu", { tab, slowdown: 6 });
-        const slow = Math.min(await sample(), await sample(), await sample());
 
-        expect(slow).toBeGreaterThan(normal * 2);
+        try {
+            const slow = Math.min(await sample(), await sample(), await sample());
+
+            expect(slow).toBeGreaterThan(normal * 2);
+        } finally {
+            await env.ok("emulate_cpu", { tab, reset: true });
+        }
     });
 
     it("makes the same work take clearly longer and restores full speed", async () => {
