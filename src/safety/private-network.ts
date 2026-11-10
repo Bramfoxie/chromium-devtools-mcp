@@ -117,8 +117,15 @@ export function isPrivateHost(hostname: string): boolean {
     return octets !== undefined && isPrivateIpv4(octets);
 }
 
+function isProxyPlaceholder(address: string): boolean {
+    const octets = ipv4Octets(address);
+
+    return octets !== undefined && octets[0] === 198 && (octets[1] === 18 || octets[1] === 19);
+}
+
+// Proxy and VPN tools answer public names with 198.18.0.0/15, so that range is not counted here.
 export function addressesArePrivate(addresses: readonly string[]): boolean {
-    return addresses.some((address) => {
+    return addresses.filter((address) => !isProxyPlaceholder(address)).some((address) => {
         const bare = address.split("%")[0] ?? "";
 
         if (bare.includes(":")) return isPrivateHost(`[${bare}]`);

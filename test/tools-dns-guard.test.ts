@@ -98,15 +98,53 @@ describe("a name that is fine", () => {
 });
 
 describe("a lookup that fails", () => {
-    it("refuses the navigation when the lookup times out or errors", async () => {
+    it("lets the navigation through, because the check is best effort", async () => {
         const { runtime, fake } = setup(guarded(), async () => {
             throw new Error("lookup timed out");
         });
-        const result = await runTool(newTab, { url: "https://slow.example/" }, extra(), runtime);
+        const result = await runTool(
+            newTab,
+            { url: "https://slow.example/", timeoutMs: 1 },
+            extra(),
+            runtime,
+        );
 
-        expect(result.isError).toBe(true);
-        expect(text(result)).toContain("could not be resolved");
-        expect(fake.tabs).toHaveLength(0);
+        expect(result.isError).toBeUndefined();
+        expect(fake.tabs).toHaveLength(1);
+    });
+
+    it("does not park a tab whose final address cannot be looked up", async () => {
+        const fake = new FakeAccess();
+        const runtime = new ToolRuntime({
+            access     : fake.asAccess(),
+            config     : guarded(),
+            resolveHost: async () => {
+                throw new Error("lookup timed out");
+            },
+        });
+
+        fake.respond = (_tab, method) =>
+            method === "Runtime.evaluate"
+                ? {
+                    result: {
+                        type : "object",
+                        value: { url: "https://landing.example/", title: "t", readyState: "complete" },
+                    },
+                }
+                : {};
+
+        await runTool(newTab, {}, extra(), runtime);
+
+        const result = await runTool(
+            pageNavigate,
+            { url: "https://start.example/", waitUntil: "none" },
+            extra(),
+            runtime,
+        );
+
+        expect(result.isError).toBeUndefined();
+        expect(fake.sent.some((call) => (call.params as { url?: string } | undefined)?.url === "about:blank"))
+            .toBe(false);
     });
 });
 

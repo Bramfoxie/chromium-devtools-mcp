@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addressesArePrivate, hostToResolve } from "../src/safety/index.js";
+import { addressesArePrivate, hostToResolve, isPrivateHost } from "../src/safety/index.js";
 
 const open = { allowedDomains: [], deniedDomains: [], allowPrivateNetworks: false };
 
@@ -38,6 +38,13 @@ describe("addressesArePrivate", () => {
     it("is false for public addresses and for none", () => {
         expect(addressesArePrivate(["93.184.216.34", "2606:2800:220:1:248:1893:25c8:1946"])).toBe(false);
         expect(addressesArePrivate([])).toBe(false);
+    });
+
+    it("ignores the 198.18.0.0/15 range that proxy tools hand out for public names", () => {
+        expect(addressesArePrivate(["198.18.0.7"])).toBe(false);
+        expect(addressesArePrivate(["198.19.255.1"])).toBe(false);
+        expect(addressesArePrivate(["198.18.0.7", "10.0.0.1"])).toBe(true);
+        expect(isPrivateHost("198.18.0.7")).toBe(true);
     });
 
     it("treats an address that cannot be read as private", () => {
