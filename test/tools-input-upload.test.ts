@@ -59,6 +59,7 @@ interface UploadWorld {
     files?           : number;
     hidden?          : boolean;
     navigateOnAttach?: boolean;
+    failCount?       : boolean;
 }
 
 function uploadFake(world: UploadWorld = {}): FakeAccess {
@@ -104,6 +105,7 @@ function uploadFake(world: UploadWorld = {}): FakeAccess {
 
                 if (declaration.includes("element.files")) {
                     if (navigated) throw new Error("Cannot find context with specified id");
+                    if (world.failCount) throw new Error("element detached");
 
                     return { result: { type: "object", value: { files: world.files ?? 2 } } };
                 }
@@ -385,8 +387,8 @@ describe("input_upload", () => {
         }
     });
 
-    it("reports when the page accepted fewer files", async () => {
-        const { runtime } = runtimeWith(uploadFake({ files: 1 }));
+    it.each([{ files: 1 }, { failCount: true }])("reports an unverified selection for %j", async (world) => {
+        const { runtime } = runtimeWith(uploadFake(world));
         const real = await import("node:os");
         const path = await import("node:path");
         const fs = await import("node:fs/promises");
@@ -405,8 +407,9 @@ describe("input_upload", () => {
                 runtime,
             );
 
-            expect(result.isError).toBe(true);
-            expect(contentOf(result)).toContain("accepted 1 of 2 files");
+            expect(result.isError).not.toBe(true);
+            expect(result.structuredContent).toMatchObject({ ok: true, inputFilesMatch: false });
+            expect(contentOf(result)).toContain("verify the attachment");
         } finally {
             await fs.rm(dir, { recursive: true, force: true });
         }

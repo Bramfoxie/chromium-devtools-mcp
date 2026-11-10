@@ -20,7 +20,7 @@ const UPLOAD_MAX_FILES = 20;
 export const UPLOAD_MAX_BYTES = 100 * 1024 * 1024;
 
 const UPLOAD_COUNT_EXPRESSION = `function (element) {
-  if (!(element instanceof HTMLInputElement) || element.type !== "file") return { files: -1 };
+  if (!(element instanceof HTMLInputElement) || element.type !== "file" || !element.isConnected) return { files: -1 };
   return { files: element.files === null ? 0 : element.files.length };
 }`;
 
@@ -175,13 +175,14 @@ export const inputUpload = defineTool({
         files : z.array(z.string().min(1).max(4096)).min(1).max(UPLOAD_MAX_FILES).describe("Absolute local paths to attach, at most 20. Each must be a readable file under 100 MiB."),
     }),
     output: z.strictObject({
-        ok    : z.boolean().describe("Whether the files were attached."),
-        target: targetSummarySchema.describe("The file input."),
-        effect: z.string().describe("Short summary of what happened."),
-        files : z.array(z.strictObject({
+        ok             : z.boolean().describe("Whether the browser accepted the file selection command."),
+        inputFilesMatch: z.boolean().describe("Whether the file input still contains the requested number of files."),
+        target         : targetSummarySchema.describe("The file input."),
+        effect         : z.string().describe("Short summary of what happened."),
+        files          : z.array(z.strictObject({
             name: z.string().describe("File name without directories."),
             size: z.number().describe("File size in bytes."),
-        })).describe("Attached files, names and sizes only, never contents."),
+        })).describe("Requested files, names and sizes only, never contents."),
         urlAfter: z.string().optional().describe("URL after the upload, present only when the page navigated."),
     }),
     handler: async (args, context) => {
@@ -233,21 +234,17 @@ export const inputUpload = defineTool({
             const changed = changedUrl(acted.urlBefore, acted.urlAfter);
             const navigatedAway = changed.urlAfter !== undefined;
             const count = navigatedAway
-                ? validated.length
-                : await attachedCount(owner, targetId, element);
-
-            if (count !== validated.length) {
-                throw new ToolError(
-                    `The page accepted ${count} of ${validated.length} files. The input may limit the file count or types.`,
-                );
-            }
+                ? undefined
+                : await attachedCount(owner, targetId, element).catch(() => undefined);
+            const verified = count === validated.length;
 
             return {
-                ok    : true,
-                target: summarizeTarget(args.target.uid, checked.state),
-                effect: validated.length === 1
-                    ? `The file ${JSON.stringify(validated[0]?.name ?? "")} was attached.`
-                    : `${validated.length} files were attached.`,
+                ok             : true,
+                inputFilesMatch: verified,
+                target         : summarizeTarget(args.target.uid, checked.state),
+                effect         : verified
+                    ? `${validated.length} file(s) are selected in the input.`
+                    : "The browser accepted the file selection, but the files could not be verified in the input. Check the page to verify the attachment before retrying.",
                 files: validated.map((file) => ({ name: file.name, size: file.size })),
                 ...changedUrl(acted.urlBefore, acted.urlAfter),
             };

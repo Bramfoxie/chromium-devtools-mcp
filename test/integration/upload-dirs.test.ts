@@ -36,6 +36,16 @@ beforeAll(async () => {
         uploadDirs          : [allowed],
     });
     env.fixture.pages.set("/form", html('<input id="f" type="file">'));
+    env.fixture.pages.set("/consumed", html(`<input id="f" type="file">
+        <script>document.querySelector('#f').addEventListener('change', (event) => {
+            document.body.dataset.received = event.target.files[0].name;
+            event.target.value = '';
+        });</script>`));
+    env.fixture.pages.set("/removed", html(`<input id="f" type="file">
+        <script>document.querySelector('#f').addEventListener('change', (event) => {
+            document.body.dataset.received = event.target.files[0].name;
+            event.target.remove();
+        });</script>`));
 });
 
 afterAll(async () => {
@@ -44,6 +54,22 @@ afterAll(async () => {
 });
 
 describe.skipIf(!present)("input_upload with safety.uploadDirs in a real browser", () => {
+    it("does not report a failure when the page consumes and clears the input", async () => {
+        const tab = await env.open("/consumed");
+        const result = await env.call("input_upload", {
+            tab,
+            target: { selector: "#f" },
+            files : [join(allowed, "ok.txt")],
+        });
+
+        expect(result.isError).toBe(false);
+        expect(result.data).toMatchObject({ ok: true, inputFilesMatch: false });
+        expect(result.data.effect).toContain("verify");
+        const page = await env.ok("js_evaluate", { tab, expression: "document.body.dataset.received" });
+
+        expect(page.value).toBe("ok.txt");
+    });
+
     it("attaches a file from an allowed directory", async () => {
         const tab = await env.open("/form");
         const attached = await env.ok("input_upload", {
@@ -53,6 +79,22 @@ describe.skipIf(!present)("input_upload with safety.uploadDirs in a real browser
         });
 
         expect(attached.files).toEqual([{ name: "ok.txt", size: 4 }]);
+        expect(attached.inputFilesMatch).toBe(true);
+    });
+
+    it("does not report a failure when the page removes the input after consuming it", async () => {
+        const tab = await env.open("/removed");
+        const result = await env.call("input_upload", {
+            tab,
+            target: { selector: "#f" },
+            files : [join(allowed, "ok.txt")],
+        });
+
+        expect(result.isError).toBe(false);
+        expect(result.data).toMatchObject({ ok: true, inputFilesMatch: false });
+        const page = await env.ok("js_evaluate", { tab, expression: "document.body.dataset.received" });
+
+        expect(page.value).toBe("ok.txt");
     });
 
     it("refuses a file outside the allowed directories and a link that leaves them", async () => {
