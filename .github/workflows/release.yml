@@ -25,7 +25,8 @@ jobs:
         run: |
           for attempt in $(seq 1 120); do
             runs=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$GITHUB_SHA" --json databaseId,attempt,status,conclusion --limit 1000) || { sleep 20; continue; }
-            if [ "$(printf '%s' "$runs" | jq 'length')" -ge 1000 ]; then
+            count=$(printf '%s' "$runs" | jq -e 'if type == "array" and all(.[]; (.databaseId | type == "number" and . > 0 and floor == .) and (.attempt | type == "number" and . > 0 and floor == .) and (.status | type == "string") and (.conclusion | type == "string" or . == null)) then length else error("Invalid CI runs") end') || { sleep 20; continue; }
+            if [ "$count" -ge 1000 ]; then
               echo "Too many CI runs to verify for ${GITHUB_SHA}."
               exit 1
             fi

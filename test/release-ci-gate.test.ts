@@ -12,7 +12,7 @@ afterEach(() => {
     }
 });
 
-function gate(runs: object[]): number | null {
+function gate(runs: object[], gh = 'cat "$RUNS_FILE"', jq?: string): number | null {
     const workflow = readFileSync(".github/workflows/release.yml", "utf8");
     const script = workflow.split("        run: |\n")[1]?.split("\n\n  publish:")[0];
 
@@ -22,7 +22,9 @@ function gate(runs: object[]): number | null {
 
     directories.push(directory);
     writeFileSync(join(directory, "runs.json"), JSON.stringify(runs));
-    writeFileSync(join(directory, "gh"), '#!/bin/sh\ncat "$RUNS_FILE"\n', { mode: 0o755 });
+    writeFileSync(join(directory, "gh"), `#!/bin/sh\n${gh}\n`, { mode: 0o755 });
+    if (jq !== undefined) writeFileSync(join(directory, "jq"), `#!/bin/sh\n${jq}\n`, { mode: 0o755 });
+
     writeFileSync(join(directory, "sleep"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
     const result = spawnSync("bash", ["-c", script], {
         env: { ...process.env, PATH: `${directory}:${process.env.PATH}`, RUNS_FILE: join(directory, "runs.json"), GITHUB_REPOSITORY: "owner/repo", GITHUB_SHA: "abc" },
@@ -46,6 +48,15 @@ describe.skipIf(process.platform === "win32")("release CI gate", () => {
     it("blocks a current failure even after an earlier success", () => {
         expect(gate([run(1, 1, "completed", "success"), run(1, 2, "completed", "failure")])).toBe(1);
     });
+
+    it("blocks runs without an attempt or database ID", () => {
+        expect(gate([{ status: "completed", conclusion: "success" }])).toBe(1);
+    }, 20000);
+
+    it("blocks errors from gh and jq", () => {
+        expect(gate([], "exit 1")).toBe(1);
+        expect(gate([], undefined, "exit 1")).toBe(1);
+    }, 20000);
 
     it("blocks a separate failed run", () => {
         expect(gate([run(1, 2, "completed", "success"), run(2, 1, "completed", "failure")])).toBe(1);
