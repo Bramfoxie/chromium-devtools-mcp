@@ -12,7 +12,7 @@ afterEach(() => {
     }
 });
 
-function gate(runs: object[], gh = 'cat "$RUNS_FILE"', jq?: string): number | null {
+function gate(runs: object[], gh = 'cat "$RUNS_FILE"', jq?: string): { status: number | null; output: string } {
     const workflow = readFileSync(".github/workflows/release.yml", "utf8");
     const script = workflow.split("        run: |\n")[1]?.split("\n\n  publish:")[0];
 
@@ -30,7 +30,7 @@ function gate(runs: object[], gh = 'cat "$RUNS_FILE"', jq?: string): number | nu
         env: { ...process.env, PATH: `${directory}:${process.env.PATH}`, RUNS_FILE: join(directory, "runs.json"), GITHUB_REPOSITORY: "owner/repo", GITHUB_SHA: "abc" },
     });
 
-    return result.status;
+    return { status: result.status, output: result.stdout.toString() };
 }
 
 const run = (databaseId: number, attempt: number, status: string, conclusion: string | null) => ({
@@ -42,28 +42,50 @@ const run = (databaseId: number, attempt: number, status: string, conclusion: st
 
 describe.skipIf(process.platform === "win32")("release CI gate", () => {
     it("ignores an earlier failure of the same workflow run", () => {
-        expect(gate([run(1, 1, "completed", "failure"), run(1, 2, "completed", "success")])).toBe(0);
+        expect(gate([run(1, 1, "completed", "failure"), run(1, 2, "completed", "success")]).status).toBe(0);
     });
 
     it("blocks a current failure even after an earlier success", () => {
-        expect(gate([run(1, 1, "completed", "success"), run(1, 2, "completed", "failure")])).toBe(1);
+        expect(gate([run(1, 1, "completed", "success"), run(1, 2, "completed", "failure")]).status).toBe(1);
     });
 
     it("blocks runs without an attempt or database ID", () => {
-        expect(gate([{ status: "completed", conclusion: "success" }])).toBe(1);
+        const result = gate([{ status: "completed", conclusion: "success" }]);
+
+        expect(result.status).toBe(1);
+        expect(result.output).toContain("did not finish");
+        expect(result.output).not.toContain("CI passed");
+    }, 20000);
+
+    it("blocks a reply that is not a list of runs", () => {
+        const result = gate([], 'echo "{}"');
+
+        expect(result.status).toBe(1);
+        expect(result.output).toContain("did not finish");
     }, 20000);
 
     it("blocks errors from gh and jq", () => {
-        expect(gate([], "exit 1")).toBe(1);
-        expect(gate([], undefined, "exit 1")).toBe(1);
+        expect(gate([], "exit 1").output).toContain("did not finish");
+        expect(gate([], undefined, "exit 1").output).toContain("did not finish");
     }, 20000);
 
     it("blocks a separate failed run", () => {
-        expect(gate([run(1, 2, "completed", "success"), run(2, 1, "completed", "failure")])).toBe(1);
+        const result = gate([run(1, 2, "completed", "success"), run(2, 1, "completed", "failure")]);
+
+        expect(result.status).toBe(1);
+        expect(result.output).toContain("CI did not pass");
     });
 
     it("blocks unfinished and missing runs", () => {
-        expect(gate([run(1, 1, "in_progress", null)])).toBe(1);
-        expect(gate([])).toBe(1);
+        expect(gate([run(1, 1, "in_progress", null)]).output).toContain("did not finish");
+        expect(gate([]).output).toContain("did not finish");
     }, 20000);
+
+    it("blocks a commit with too many runs to verify immediately", () => {
+        const runs = Array.from({ length: 1000 }, (_, index) => run(index + 1, 1, "completed", "success"));
+        const result = gate(runs);
+
+        expect(result.status).toBe(1);
+        expect(result.output).toContain("Too many CI runs");
+    });
 });
