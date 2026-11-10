@@ -233,6 +233,38 @@ describe("emulate_geolocation", () => {
         expect(fake.permissions.at(-1)).toEqual({ name: "geolocation", setting: "reset", origin: SITE });
     });
 
+    it("retries a failed permission cleanup after the tab closes", async () => {
+        const { fake, runtime } = setup();
+
+        await runTool(emulateGeolocation, { latitude: 1, longitude: 2 }, extra(), runtime);
+        fake.failPermission = new Error("reset failed");
+        await runtime.forgetTab("tab1");
+        fake.failPermission = undefined;
+        await runTool(emulateGeolocation, {
+            tab: "tab2", latitude: 3, longitude: 4, origin: OTHER,
+        }, extra(), runtime);
+
+        expect(fake.permissions.slice(-2)).toEqual([
+            { name: "geolocation", setting: "reset", origin: SITE },
+            { name: "geolocation", setting: "granted", origin: OTHER },
+        ]);
+    });
+
+    it("does not grant another origin while an earlier cleanup still fails", async () => {
+        const { fake, runtime } = setup();
+
+        await runTool(emulateGeolocation, { latitude: 1, longitude: 2 }, extra(), runtime);
+        fake.failPermission = new Error("reset failed");
+        await runtime.forgetTab("tab1");
+        const result = await runTool(emulateGeolocation, {
+            tab: "tab2", latitude: 3, longitude: 4, origin: OTHER,
+        }, extra(), runtime);
+
+        expect(result.isError).toBe(true);
+        expect(text(result)).toContain("previous geolocation permission");
+        expect(fake.permissions.some((entry) => entry.origin === OTHER)).toBe(false);
+    });
+
     it("moves the permission when the same tab is given another origin", async () => {
         const { fake, runtime } = setup();
 

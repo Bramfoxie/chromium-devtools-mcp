@@ -47,6 +47,19 @@ function emptyTab(): TabEmulation {
 export class EmulationState {
     private readonly tabs = new Map<string, TabEmulation>();
     private geolocationTail: Promise<void> = Promise.resolve();
+    private readonly pendingGeolocationCleanup = new Set<string>();
+
+    rememberGeolocationCleanup(origin: string): void {
+        this.pendingGeolocationCleanup.add(origin);
+    }
+
+    async retryGeolocationCleanup(release: (origin: string) => Promise<void>): Promise<void> {
+        for (const origin of this.pendingGeolocationCleanup) {
+            if (!this.geolocationOrigins().has(origin)) await release(origin);
+
+            this.pendingGeolocationCleanup.delete(origin);
+        }
+    }
 
     async withGeolocation<T>(run: () => Promise<T>): Promise<T> {
         const previous = this.geolocationTail;

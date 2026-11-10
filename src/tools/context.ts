@@ -21,6 +21,7 @@ import { FrameState } from "./frames.js";
 import { InterceptionManager } from "./mock/interception.js";
 import { type HostResolver, systemResolver } from "../safety/host-resolver.js";
 import { sleep } from "../util/sleep.js";
+import { logDaemon } from "../util/log.js";
 
 export type { ToolClock, ToolContext };
 
@@ -180,9 +181,12 @@ export class ToolRuntime {
             this.emulation.forget(targetId);
 
             if (origin !== undefined && !this.emulation.geolocationOrigins().has(origin)) {
-                await this.access
-                    .setPermission({ name: "geolocation", setting: "reset", origin })
-                    .catch(() => undefined);
+                try {
+                    await this.access.setPermission({ name: "geolocation", setting: "reset", origin });
+                } catch {
+                    this.emulation.rememberGeolocationCleanup(origin);
+                    logDaemon("could not release a geolocation permission; cleanup will be retried");
+                }
             }
         });
         await settled;

@@ -94,6 +94,16 @@ export const emulateGeolocation = defineTool({
 
         return context.emulation.withGeolocation(async () => {
             throwIfCancelled(context.signal);
+
+            try {
+                await context.emulation.retryGeolocationCleanup(async (origin) => {
+                    await context.access.setPermission({ name: "geolocation", setting: "reset", origin });
+                });
+            } catch {
+                throw new ToolError("A previous geolocation permission could not be released. Retry or end the session, then check the browser permissions.");
+            }
+
+            throwIfCancelled(context.signal);
             await ensureNoDialog(context.dialogs, targetId);
             throwIfCancelled(context.signal);
 
