@@ -66,6 +66,7 @@ const MUTATING: Case[] = [
     ["perf_trace_start", { reload: true }],
     ["lighthouse_audit", { url: "https://example.com/" }],
     ["webauthn", { action: "add_authenticator" }],
+    ["emulate_cpu", { slowdown: 4 }],
     ["downloads", { action: "allow" }],
     ["downloads", { action: "deny" }],
     ["find_in_page", { text: "x", scroll: true }],

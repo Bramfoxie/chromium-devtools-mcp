@@ -47,6 +47,7 @@ export const TOOL_GROUPS: Readonly<Record<string, readonly string[]>> = {
         "emulate_device",
         "emulate_media",
         "emulate_network",
+        "emulate_cpu",
         "emulate_locale",
         "emulate_geolocation",
     ],

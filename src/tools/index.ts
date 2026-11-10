@@ -188,6 +188,8 @@ export { checkNetworkInput, conditionsOf, emulateNetwork } from "./emulation/emu
 
 export { emulateGeolocation } from "./emulation/emulate-geolocation.js";
 
+export { emulateCpu } from "./emulation/emulate-cpu.js";
+
 export { checkAcceptLanguage, emulateLocale, hasLocaleSelection } from "./emulation/emulate-locale.js";
 
 export {

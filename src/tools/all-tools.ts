@@ -9,6 +9,7 @@ import { domQuery } from "./dom-query.js";
 import { a11ySnapshot } from "./a11y-snapshot.js";
 import { domSelector } from "./dom-selector.js";
 import { domSnapshot } from "./dom-snapshot.js";
+import { emulateCpu } from "./emulation/emulate-cpu.js";
 import { emulateDevice } from "./emulation/emulate-device.js";
 import { emulateGeolocation } from "./emulation/emulate-geolocation.js";
 import { emulateLocale } from "./emulation/emulate-locale.js";
@@ -94,6 +95,7 @@ export const allTools: AnyTool[] = [
     emulateDevice,
     emulateMedia,
     emulateNetwork,
+    emulateCpu,
     emulateLocale,
     emulateGeolocation,
     click,

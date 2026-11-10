@@ -38,6 +38,9 @@ export const emulationSummarySchema = z.strictObject({
         accuracy : z.number().describe("Emulated accuracy in meters."),
         origin   : z.string().describe("Origin that was allowed to read the position."),
     }).optional().describe("Geolocation override, when active."),
+    cpu: z.strictObject({
+        slowdown: z.number().describe("How many times slower the CPU runs than normal."),
+    }).optional().describe("CPU throttling, when active."),
 });
 
 type EmulationSummary = z.infer<typeof emulationSummarySchema>;
@@ -92,5 +95,6 @@ export function summarizeEmulation(state: TabEmulation): EmulationSummary {
                 origin   : state.geolocation.origin,
             },
         }),
+        ...(state.cpu === undefined ? {} : { cpu: { slowdown: state.cpu.slowdown } }),
     };
 }

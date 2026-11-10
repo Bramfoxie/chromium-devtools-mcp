@@ -70,6 +70,8 @@ function minimalArgs(name: string): Record<string, unknown> {
             return { reducedMotion: "reduce" };
         case "emulate_network":
             return { preset: "slow-3g" };
+        case "emulate_cpu":
+            return { slowdown: 4 };
         case "emulate_locale":
             return { locale: "de-DE" };
         case "emulate_geolocation":
@@ -119,7 +121,7 @@ describe("tool declarations", () => {
         expect(text).toContain(`${allTools.length} tools. Details and parameters`);
     });
 
-    it("declares fifty eight tools with unique names, descriptions and access", () => {
+    it("declares fifty nine tools with unique names, descriptions and access", () => {
         expect(allTools.map((tool) => tool.name)).toEqual([
             "list_tabs",
             "popup_list",
@@ -167,6 +169,7 @@ describe("tool declarations", () => {
             "emulate_device",
             "emulate_media",
             "emulate_network",
+            "emulate_cpu",
             "emulate_locale",
             "emulate_geolocation",
             "click",
@@ -199,6 +202,7 @@ describe("tool declarations", () => {
             "close_tab",
             "css_edit",
             "dom_edit",
+            "emulate_cpu",
             "emulate_device",
             "emulate_geolocation",
             "emulate_locale",
@@ -385,6 +389,7 @@ describe("open world annotation", () => {
     const CLOSED = [
         "bring_to_front",
         "close_tab",
+        "emulate_cpu",
         "emulate_device",
         "emulate_geolocation",
         "emulate_locale",
@@ -696,7 +701,7 @@ describe("runTool", () => {
 });
 
 describe("tools/list", () => {
-    it("lists exactly the fifty eight tools with their schemas", async () => {
+    it("lists exactly the fifty nine tools with their schemas", async () => {
         const server = createMcpServer("1.0.0");
 
         registerTools({ server, tools: allTools, runtime: runtime() });
@@ -753,6 +758,7 @@ describe("tools/list", () => {
             "emulate_device",
             "emulate_media",
             "emulate_network",
+            "emulate_cpu",
             "emulate_locale",
             "emulate_geolocation",
             "click",
