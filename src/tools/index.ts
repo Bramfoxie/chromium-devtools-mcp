@@ -18,6 +18,8 @@ export { safetyFrameOf, safetyFramesOf } from "./safety-frame.js";
 
 export { domQuery } from "./dom-query.js";
 
+export { eventListeners } from "./event-listeners.js";
+
 export { buildPiercedQueryScript, buildQueryScript, buildRowsFunction, clipValue, DEFAULT_QUERY_ATTRIBUTES, isPasswordInput, QUERY_MAX_TEXT_CANDIDATES, roundRect } from "./dom-query-rows.js";
 
 export { AX_NAME_CLIP, type AxNode, formatAxTree, toAxNodes } from "./ax-format.js";
@@ -116,7 +118,7 @@ export { perfTraceStart, perfTraceStop } from "./perf/perf-trace.js";
 
 export { inputDrag } from "./input-drag.js";
 
-export { closeTab, listSessions, listTabs, newTab, selectTab } from "./tabs.js";
+export { closeTab, listSessions, listTabs, newTab, popupList, selectTab, windowList } from "./tabs.js";
 
 export { assertElementOriginAllowed, boxOf, ElementRegistry, elementTargetSchema, MAX_UIDS_PER_TAB, rectOfQuad, resolveElement, revealElement, splitPierceChain, STALE_UID_MESSAGE, withElement } from "./element-target.js";
 

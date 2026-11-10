@@ -3,6 +3,8 @@ import {
     BROWSERS,
     BrowserNotFoundError,
     type BrowserName,
+    accessDeniedFix,
+    deniedPortFile,
     findAttachEndpoint,
     findBrowserExecutable,
     probePort,
@@ -42,6 +44,7 @@ export interface DoctorDeps {
     platform          : NodeJS.Platform;
     findBrowser       : (browser: BrowserName) => string;
     findAttachEndpoint: (config: Config) => Promise<AttachEndpoint | undefined>;
+    deniedPortFile    : (config: Config) => Promise<string | undefined>;
     isPortOpen        : (port: number) => Promise<boolean>;
     isWritable        : (dir: string) => Promise<boolean>;
     probeDaemon       : () => Promise<DaemonProbe>;
@@ -131,6 +134,7 @@ export function realDoctorDeps(): DoctorDeps {
         platform          : process.platform,
         findBrowser       : (browser) => findBrowserExecutable(browser),
         findAttachEndpoint: (config) => findAttachEndpoint(config),
+        deniedPortFile    : (config) => deniedPortFile(config),
         isPortOpen        : (port) => probePort(port),
         isWritable        : (dir) => writableOrCreatable(dir, process.platform),
         probeDaemon,
@@ -209,6 +213,16 @@ async function checkAttach(config: Config, deps: DoctorDeps): Promise<DoctorChec
     }
 
     const endpoint = await deps.findAttachEndpoint(config);
+    const denied = endpoint ? undefined : await deps.deniedPortFile(config);
+
+    if (denied !== undefined) {
+        return {
+            level : "fail",
+            title : "Browser endpoint",
+            detail: `the operating system does not let this process read ${denied}, so the browser address is unknown`,
+            fix   : accessDeniedFix(deps.platform),
+        };
+    }
 
     return endpoint
         ? {

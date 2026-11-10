@@ -131,6 +131,7 @@ export async function startEnv(
     allowFocus = false,
     video?     : VideoTools,
     lighthouse?: LighthouseTools,
+    forceHeadless = false,
 ): Promise<Env> {
     const harness = createSocketHarness();
     const home = await mkdtemp(path.join(os.tmpdir(), "cdm-it-home-"));
@@ -141,7 +142,7 @@ export async function startEnv(
     const config: Config = {
         browser   : "chrome",
         mode      : "managed",
-        headless  : process.env.CDM_IT_HEADED !== "1",
+        headless  : forceHeadless || process.env.CDM_IT_HEADED !== "1",
         profileDir: profile,
         debugPort : port,
         allowFocus,

@@ -10,7 +10,8 @@ const PAGE = `<!doctype html><title>Mine</title><h1 id="h">Mine page</h1>
 <button id="slow" onclick="const t = Date.now(); while (Date.now() - t < 260) {} this.textContent = 'done'">slow</button>
 <script>
   const t = Date.now(); while (Date.now() - t < 120) {}
-  setTimeout(() => document.body.insertAdjacentHTML("afterbegin", "<div style='height:80px'>shift</div>"), 300);
+  const shift = () => document.body.insertAdjacentHTML("afterbegin", "<div style='height:80px'>shift</div>");
+  addEventListener("load", () => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(shift, 100))));
 </script>`;
 
 const PIXEL = Buffer.from(

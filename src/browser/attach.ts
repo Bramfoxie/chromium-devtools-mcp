@@ -8,6 +8,7 @@ import { readIfExists } from "../util/read-if-exists.js";
 import { writeLogLine } from "../util/stderr.js";
 import { abortableSleep } from "../util/sleep.js";
 import { AppError } from "../util/app-error.js";
+import { messageOf } from "../util/message-of.js";
 
 const PORT_FILE_NAME = "DevToolsActivePort";
 const MAX_VERSION_BYTES = 64 * 1024;
@@ -75,34 +76,59 @@ function browserWebSocketUrl(version: unknown, port: number): string | undefined
     }
 }
 
+export type ProblemReporter = (message: string, deniedFile?: string) => void;
+
+function isAccessDenied(error: unknown): boolean {
+    const code = (error as NodeJS.ErrnoException | undefined)?.code;
+
+    return code === "EPERM" || code === "EACCES";
+}
+
 async function endpointInDir(
-    deps   : Pick<AttachDeps, "context" | "readFile" | "isPortOpen">,
-    dir    : string,
-    signal?: AbortSignal,
+    deps      : Pick<AttachDeps, "context" | "readFile" | "isPortOpen">,
+    dir       : string,
+    signal?   : AbortSignal,
+    onProblem?: ProblemReporter,
 ): Promise<AttachEndpoint | undefined> {
+    const file = pathFor(deps.context.platform).join(dir, PORT_FILE_NAME);
     let content: string | undefined;
 
     try {
-        content = await deps.readFile(pathFor(deps.context.platform).join(dir, PORT_FILE_NAME));
-    } catch {
+        content = await deps.readFile(file);
+    } catch (error) {
+        const denied = isAccessDenied(error) ? file : undefined;
+
+        onProblem?.(`Cannot read ${file}: ${messageOf(error)}`, denied);
+
         return undefined;
     }
 
-    const parsed = content === undefined ? undefined : parseActivePortFile(content);
+    if (content === undefined) return undefined;
 
-    if (parsed && (await deps.isPortOpen(parsed.port, signal).catch(() => false))) {
+    const parsed = parseActivePortFile(content);
+
+    if (parsed === undefined) {
+        onProblem?.(`${file} does not hold a port and a browser path.`);
+
+        return undefined;
+    }
+
+    if (await deps.isPortOpen(parsed.port, signal).catch(() => false)) {
         return { ...parsed, source: "port-file" };
     }
+
+    onProblem?.(`Port ${parsed.port} named in ${file} does not accept connections.`);
 
     return undefined;
 }
 
 async function portFileEndpoint(
-    deps   : AttachDeps,
-    browser: BrowserName,
-    signal?: AbortSignal,
+    deps      : AttachDeps,
+    browser   : BrowserName,
+    signal?   : AbortSignal,
+    onProblem?: ProblemReporter,
 ): Promise<AttachEndpoint | undefined> {
-    return endpointInDir(deps, browserUserDataDir(browser, deps.context), signal);
+    return endpointInDir(deps, browserUserDataDir(browser, deps.context), signal, onProblem);
 }
 
 // Finds a browser already running on the user data directory.
@@ -141,11 +167,12 @@ async function profileLocked(deps: AttachDeps, dir: string): Promise<boolean> {
 }
 
 export async function resolveAttachEndpoint(
-    config : AttachConfig,
-    deps   : AttachDeps,
-    signal?: AbortSignal,
+    config    : AttachConfig,
+    deps      : AttachDeps,
+    signal?   : AbortSignal,
+    onProblem?: ProblemReporter,
 ): Promise<AttachEndpoint | undefined> {
-    const fromFile = await portFileEndpoint(deps, config.browser, signal);
+    const fromFile = await portFileEndpoint(deps, config.browser, signal, onProblem);
 
     if (fromFile) return fromFile;
 
@@ -162,6 +189,23 @@ export async function resolveAttachEndpoint(
     if (webSocketUrl) return { port: config.debugPort, webSocketUrl, source: "debug-port" };
 
     return undefined;
+}
+
+export async function deniedPortFile(
+    config   : AttachConfig,
+    overrides: Partial<Pick<AttachDeps, "context" | "readFile">> = {},
+): Promise<string | undefined> {
+    const { context, readFile } = { ...defaultAttachDeps(), ...overrides };
+    const dir = browserUserDataDir(config.browser, context);
+    const file = pathFor(context.platform).join(dir, PORT_FILE_NAME);
+
+    try {
+        await readFile(file);
+
+        return undefined;
+    } catch (error) {
+        return isAccessDenied(error) ? file : undefined;
+    }
 }
 
 export function findAttachEndpoint(
@@ -188,16 +232,51 @@ export function setupInstructions(config: AttachConfig): string {
     ].join("\n");
 }
 
+export function accessDeniedFix(platform: NodeJS.Platform): string[] {
+    return platform === "darwin"
+        ? [
+            "macOS blocks apps from reading another app's data. Open System Settings > Privacy & Security > Full Disk Access, turn it on for the app that starts this server (the MCP client or the terminal), then restart that app.",
+            "Or start the daemon from a terminal that already has access, then restart the client: npx chromium-devtools-mcp daemon",
+        ]
+        : ["Check that the current user may read this file and the profile directory that holds it."];
+}
+
+export function accessDeniedInstructions(
+    config  : AttachConfig,
+    file    : string,
+    platform: NodeJS.Platform,
+): string {
+    const label = BROWSERS[config.browser].label;
+    const steps = accessDeniedFix(platform);
+
+    return [
+        `Cannot attach to ${label} yet: this process is not allowed to read ${file}, so the address of a ${label} with remote debugging is unknown, even if it is running. Waiting until the file can be read.`,
+        ...steps,
+    ].join("\n");
+}
+
 export async function attachBrowser(
     config   : AttachConfig,
     overrides: Partial<AttachDeps> = {},
     signal?  : AbortSignal,
 ): Promise<AttachEndpoint> {
     const deps: AttachDeps = { ...defaultAttachDeps(), ...overrides };
-    let instructed = false;
+    let instructed: string | undefined;
+    const reported = new Set<string>();
+    let deniedFile: string | undefined;
+    const onProblem: ProblemReporter = (message, denied) => {
+        deniedFile = denied;
+
+        if (reported.has(message)) return;
+
+        reported.add(message);
+        deps.log(message);
+    };
 
     while (!signal?.aborted) {
-        const endpoint = await resolveAttachEndpoint(config, deps, signal);
+        deniedFile = undefined;
+
+        const endpoint = await resolveAttachEndpoint(config, deps, signal, onProblem);
 
         if (endpoint) {
             deps.log(`Attaching to ${BROWSERS[config.browser].label} on port ${endpoint.port} (${endpoint.source}).`);
@@ -205,12 +284,15 @@ export async function attachBrowser(
             return endpoint;
         }
 
-        if (!instructed) {
-            const instructions = setupInstructions(config);
+        const instructions =
+            deniedFile === undefined
+                ? setupInstructions(config)
+                : accessDeniedInstructions(config, deniedFile, deps.context.platform);
 
+        if (instructions !== instructed) {
             deps.log(instructions);
             deps.onWaiting(instructions);
-            instructed = true;
+            instructed = instructions;
         }
 
         await deps.sleep(deps.pollIntervalMs, signal);

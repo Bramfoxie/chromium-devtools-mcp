@@ -49,6 +49,45 @@ async function settled(tab: string): Promise<void> {
 }
 
 describe.skipIf(!present)("allowed domains in a real browser", () => {
+    it("lists a popup after a real redirect to a forbidden domain without claiming it", async () => {
+        env.fixture.pages.set("/popup-redirect-opener", html("<button onclick=\"window.open('/redirect')\">Open</button>"));
+        const tab = await env.open("/popup-redirect-opener");
+
+        await env.ok("input_click", { tab, target: { selector: "button" } });
+        const popup = await eventually(async () => {
+            const result = await env.ok("popup_list", { tab });
+            const found = (result.popups as Array<{ tab: string; url: string; owned: boolean }>)[0];
+
+            return found?.url.startsWith(env.other.origin) ? found : undefined;
+        });
+
+        expect(popup.owned).toBe(false);
+        const selected = await env.call("select_tab", { tab: popup.tab });
+
+        expect(selected.isError).toBe(false);
+        const mutation = await env.call("input_key", { tab: popup.tab, key: "Enter" });
+
+        expect(mutation.isError).toBe(true);
+        expect(mutation.text).toContain("localhost");
+    });
+
+    it("refuses listener inspection in a forbidden cross-site frame", async () => {
+        const tab = await env.open("/nested");
+
+        await eventually(async () => {
+            const snapshot = await env.ok("dom_snapshot", { tab });
+
+            return (snapshot.frames as Array<{ isolated: boolean }>).some((frame) => frame.isolated)
+                ? true : undefined;
+        });
+        const result = await env.call("event_listeners", {
+            tab, target: { selector: "iframe", frame: "iframe[name=wrap]" },
+        });
+
+        expect(result.isError).toBe(true);
+        expect(result.text).toContain("localhost");
+    });
+
     it("reports a redirect to a forbidden host and parks the tab on about:blank", async () => {
         const tab = await env.open("/a");
         const outcome = await env.call("page_navigate", {

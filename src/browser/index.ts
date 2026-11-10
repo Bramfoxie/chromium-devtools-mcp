@@ -35,5 +35,7 @@ export {
     parseActivePortFile,
     resolveAttachEndpoint,
     runningInProfile,
+    accessDeniedFix,
+    deniedPortFile,
     setupInstructions,
 } from "./attach.js";

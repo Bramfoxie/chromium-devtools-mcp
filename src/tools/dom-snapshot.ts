@@ -221,7 +221,8 @@ export const domSnapshot = defineTool({
     input : z.strictObject({
         tab            : tabSchema,
         maxChars       : z.number().int().min(1).max(SNAPSHOT_MAX_CHARS).optional().describe("Maximum characters of the snapshot text. Defaults to 50000."),
-        interactiveOnly: z.boolean().optional().describe("List only interactive elements. Defaults to false."),
+        interactiveOnly: z.boolean().optional().describe("List interactive elements with ancestor context. Defaults to false."),
+        mode           : z.enum(["all", "interactive", "forms", "landmarks", "text"]).optional().describe("Choose which page content to show. Defaults to all, or interactive when interactiveOnly is true."),
         root           : elementTargetSchema.optional().describe("Limit the snapshot to the subtree of this element."),
         includeHidden  : z.boolean().optional().describe("Include hidden elements. Defaults to false."),
         maxFrames      : z.number().int().min(0).max(SNAPSHOT_MAX_FRAMES_LIMIT).optional().describe("Maximum iframe contents to include. Defaults to 20. Frames beyond the limit are listed with omitted true."),
@@ -249,6 +250,7 @@ export const domSnapshot = defineTool({
         const maxChars = args.maxChars ?? SNAPSHOT_DEFAULT_CHARS;
         const interactiveOnly = args.interactiveOnly ?? false;
         const includeHidden = args.includeHidden ?? false;
+        const mode = args.mode ?? (interactiveOnly ? "interactive" : "all");
         const maxFrames = args.maxFrames ?? SNAPSHOT_DEFAULT_MAX_FRAMES;
 
         let backendNodeId: number | undefined;
@@ -315,6 +317,7 @@ export const domSnapshot = defineTool({
 
         const formatted = formatAxTree(nodes, {
             interactiveOnly,
+            mode,
             includeHidden,
             uidFor: (id) =>
                 context.elements.assign(targetId, [{ backendNodeId: id, ...rootNode }])[0],
@@ -326,6 +329,7 @@ export const domSnapshot = defineTool({
         const collected = backendNodeId === undefined
             ? await frameSections(context, targetId, dom.root, maxFrames, {
                 interactiveOnly,
+                mode,
                 includeHidden,
             })
             : { sections: [], omitted: [] as string[], limited: false, domLimited: false };
@@ -359,6 +363,8 @@ export const domSnapshot = defineTool({
     },
 });
 
+type SnapshotMode = "all" | "interactive" | "forms" | "landmarks" | "text";
+
 interface FrameSection {
     frameId: string;
     text   : string;
@@ -370,7 +376,7 @@ async function frameSections(
     targetId : string,
     root     : unknown,
     maxFrames: number,
-    options  : { interactiveOnly: boolean; includeHidden: boolean },
+    options  : { interactiveOnly: boolean; mode: SnapshotMode; includeHidden: boolean },
 ): Promise<{
     sections  : FrameSection[];
     omitted   : string[];
@@ -410,9 +416,7 @@ async function frameSections(
 
         limited = limited || section.limited;
 
-        if (section.text !== "") {
-            sections.push({ frameId: doc.frameId, text: section.text, count: section.count });
-        }
+        sections.push({ frameId: doc.frameId, text: section.text, count: section.count });
     }
 
     const covered = new Set(docs.map((doc) => doc.frameId));
@@ -433,9 +437,7 @@ async function frameSections(
         limited = limited || section.limited;
         domLimited = domLimited || section.domLimited;
 
-        if (section.text !== "") {
-            sections.push({ frameId: frame.frameId, text: section.text, count: section.count });
-        }
+        sections.push({ frameId: frame.frameId, text: section.text, count: section.count });
     }
 
     return { sections, omitted, limited, domLimited };
@@ -445,7 +447,7 @@ async function isolatedSection(
     context : ToolContext,
     targetId: string,
     frameId : string,
-    options : { interactiveOnly: boolean; includeHidden: boolean },
+    options : { interactiveOnly: boolean; mode: SnapshotMode; includeHidden: boolean },
 ): Promise<
     { text: string; count: number; limited: boolean; domLimited: boolean } | undefined
 > {
@@ -469,6 +471,7 @@ async function frameTreeSection(
     frameId : string,
     options : {
         interactiveOnly: boolean;
+        mode           : SnapshotMode;
         includeHidden  : boolean;
         isolated       : boolean;
         dom?           : { info: Map<number, AxDomInfo>; owners: Map<number, string> };
@@ -492,6 +495,7 @@ async function frameTreeSection(
     const generation = context.frames.generation(targetId, frameId);
     const formatted = formatAxTree(capped.nodes, {
         interactiveOnly: options.interactiveOnly,
+        mode           : options.mode,
         includeHidden  : options.includeHidden,
         uidFor         : (id) =>
             context.elements.assign(targetId, [{

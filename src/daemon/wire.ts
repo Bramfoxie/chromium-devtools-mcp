@@ -39,6 +39,8 @@ export const requestParamSchemas = {
     }),
     "tab.create": z.strictObject({ url: z.string().min(1).max(MAX_URL_CHARS).optional() }),
     "tab.list"  : z.strictObject({ scope: z.enum(["owned", "available"]).optional() }),
+    "popup.list": z.strictObject({ targetId }),
+    "window.get": z.strictObject({ targetId }),
     "tab.claim" : z.strictObject({ targetId }),
     "tab.close" : z.strictObject({ targetId }),
     "frame.list": z.strictObject({ targetId }),

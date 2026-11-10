@@ -3,6 +3,7 @@ export interface TargetInfo {
     targetId : string;
     url      : string;
     title    : string;
+    openerId?: string;
     // undefined for the default browser context
     contextId: string | undefined;
 }
@@ -41,6 +42,11 @@ export const MAX_CHILD_SESSIONS_PER_TAB = 50;
 
 export const MAX_CHILD_ATTACH_DEPTH = 5;
 
+export interface WindowInfo {
+    windowId: number;
+    bounds  : { left?: number; top?: number; width?: number; height?: number; windowState?: "normal" | "minimized" | "maximized" | "fullscreen" };
+}
+
 export interface BrowserBackend {
     createContext(): Promise<string>;
     disposeContext(contextId: string): Promise<void>;
@@ -49,6 +55,7 @@ export interface BrowserBackend {
     closeTarget(targetId: string): Promise<void>;
     // page targets only
     listTargets(): Promise<TargetInfo[]>;
+    getWindowForTarget(targetId: string): Promise<WindowInfo>;
     attach(targetId: string): Promise<BackendSession>;
     setPermission(grant: PermissionGrant): Promise<void>;
     resetPermissions(contextId: string | undefined): Promise<void>;

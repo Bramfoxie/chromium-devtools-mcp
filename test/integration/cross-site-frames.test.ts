@@ -33,7 +33,14 @@ const FORMS = `<input id="t"><div id="out">idle</div>
 const nest = (deep: string) =>
     `<div style="height:20px"></div><iframe name="inner" style="margin-left:15px;border:2px solid blue;width:250px;height:150px" src="${deep}"></iframe>`;
 
-const DEEP = `<button id="d" style="margin:10px;width:60px;height:30px" onclick="this.textContent='deepclicked'">d</button>`;
+const DEEP = `<button id="d" style="margin:10px;width:60px;height:30px" onclick="this.textContent='deepclicked'">d</button>
+<input id="deep-input"><div id="deep-out">idle</div><div style="height:1500px"></div><button id="deep-far">far</button>
+<script>
+  document.addEventListener('wheel', e => { if (e.isTrusted) document.body.dataset.wheel = 'seen'; }, true);
+  document.querySelector('#deep-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') document.querySelector('#deep-out').textContent = 'enter';
+  });
+</script>`;
 
 const INNER = `<h1 id="inner">cross</h1><button id="go" onclick="this.textContent='clicked'">go</button>
 <script>addEventListener("message",()=>{fetch("/xdata");console.log("oopif-message")})</script>`;
@@ -218,6 +225,45 @@ describe.skipIf(!present)("cross-site iframe in a real browser", () => {
         expect(Number(scrolled.value)).toBeGreaterThan(0);
     });
 
+    it("reports trusted wheel delivery in a nested cross-site document", async () => {
+        const isolated = await startEnv(undefined, true, undefined, undefined, true);
+
+        try {
+            isolated.other.pages.set("/nest", html(nest(`${isolated.fixture.origin}/deep`)));
+            isolated.fixture.pages.set("/deep", html(DEEP));
+            isolated.fixture.pages.set("/xnested", html(`<iframe name="outer" style="margin:30px 0 0 25px;border:3px solid red;padding:5px;width:400px;height:300px" src="${isolated.other.origin}/nest"></iframe>`));
+            const tab = await isolated.open("/xnested");
+
+            await isolated.ok("bring_to_front", { tab });
+            const frame = await eventually(async () => {
+                const snap = await isolated.ok("dom_snapshot", { tab });
+                const frames = snap.frames as Row[];
+                const deep = frames.find((item) => String(item.url).endsWith("/deep"));
+
+                return frames.filter((item) => item.isolated === true).length >= 2 && deep
+                    ? String(deep.frameId)
+                    : undefined;
+            });
+
+            await eventually(async () => {
+                const ready = await isolated.ok("dom_query", { tab, selector: "#deep-input", frame });
+
+                return (ready.matches as Row[]).length === 1 ? true : undefined;
+            });
+            const result = await isolated.ok("input_scroll", { tab, at: { x: 100, y: 100 }, deltaY: 100 });
+            const deep = await isolated.ok("dom_query", { tab, selector: "body", frame, attributes: ["data-wheel"] });
+
+            const delivery = ((deep.matches as Row[])[0]?.attributes as Row | undefined)?.["data-wheel"];
+
+            expect([undefined, "seen"]).toContain(delivery);
+            expect(String(result.effect)).toContain(delivery === "seen"
+                ? "trusted wheel event was observed"
+                : "wheel delivery is unconfirmed");
+        } finally {
+            await isolated.stop();
+        }
+    });
+
     it("input_click reaches an element two cross-site frames deep", async () => {
         const tab = await crossTab("/xnested", 2);
         const frame = await frameIdOf(tab, "/deep");
@@ -225,6 +271,22 @@ describe.skipIf(!present)("cross-site iframe in a real browser", () => {
 
         expect(outcome.ok).toBe(true);
         expect(await textOf(tab, "#d", frame)).toBe("deepclicked");
+    });
+
+    it("types, sends a key and scrolls into view in nested cross-site frames", async () => {
+        const tab = await crossTab("/xnested", 2);
+        const frame = await frameIdOf(tab, "/deep");
+        const target = { selector: "#deep-input", frame };
+
+        const typed = await env.ok("input_type", { tab, target, text: "nested" });
+
+        expect(typed).toMatchObject({ ok: true, contains: true, valueLength: 6 });
+        await env.ok("input_key", { tab, target, key: "Enter" });
+        expect(await textOf(tab, "#deep-out", frame)).toBe("enter");
+        const scrolled = await env.ok("input_scroll", { tab, target: { selector: "#deep-far", frame } });
+
+        expect(scrolled).toMatchObject({ ok: true, method: "intoView" });
+        expect(Number(scrolled.y)).toBeGreaterThan(0);
     });
 
     it("input_click works whether the tab is hidden or visible", async () => {

@@ -131,10 +131,11 @@ interface TestClock {
 function runtimeWith(
     fake  : FakeAccess,
     clock?: TestClock,
+    config = managedConfig,
 ): { fake: FakeAccess; runtime: ToolRuntime } {
     const runtime = new ToolRuntime({
         access  : fake.asAccess(),
-        config  : managedConfig,
+        config,
         elements: new ElementRegistry(),
         clock   : clock ?? steppingClock(),
     });
@@ -205,6 +206,156 @@ describe("input_scroll", () => {
         });
     });
 
+    it("reports a trusted wheel observation without sending twice", async () => {
+        const fake = scrollFake();
+        const respond = fake.respond;
+
+        fake.respond = (tab, method, params) => {
+            if (method === "DOM.getNodeForLocation") return { backendNodeId: 1, frameId: "main" };
+            if (method === "Page.getFrameTree") return { frameTree: { frame: { id: "main", url: "https://page.example/" } } };
+            if (method === "Page.createIsolatedWorld") return { executionContextId: 42 };
+
+            if (method === "Runtime.evaluate" && String((params as { expression?: unknown }).expression).includes("cdmWheelProbe")) {
+                return { result: { value: true } };
+            }
+
+            return respond?.(tab, method, params);
+        };
+
+        const { runtime } = runtimeWith(fake);
+        const result = await runTool(inputScroll, { deltaY: 100 }, extra(), runtime);
+
+        expect(JSON.stringify(result.structuredContent)).toContain("trusted wheel event was observed");
+        expect(fake.sent.filter((entry) => entry.method === "Input.dispatchMouseEvent")).toHaveLength(1);
+        expect(fake.sent.some((entry) => entry.method === "Runtime.evaluate" && String((entry.params as { expression?: unknown }).expression).includes("cdmWheelProbeRemove"))).toBe(true);
+        expect(fake.sent.filter((entry) => entry.method === "Page.createIsolatedWorld").map((entry) => (entry.params as { worldName?: unknown }).worldName)).toEqual(["chromium-devtools-mcp-wheel"]);
+    });
+
+    it("does not dispatch a wheel when cancelled during probe installation", async () => {
+        const fake = scrollFake();
+        const respond = fake.respond;
+        const controller = new AbortController();
+
+        fake.respond = (tab, method, params) => {
+            if (method === "DOM.getNodeForLocation") return { backendNodeId: 1, frameId: "main" };
+            if (method === "Page.createIsolatedWorld") return { executionContextId: 42 };
+
+            if (method === "Runtime.evaluate" && String(params?.expression).includes("cdmWheelProbeInstall")) {
+                controller.abort();
+
+                return { result: { value: true } };
+            }
+
+            if (method === "Runtime.evaluate" && String(params?.expression).includes("cdmWheelProbeRemove")) return { result: { value: true } };
+
+            return respond?.(tab, method, params);
+        };
+
+        const { runtime } = runtimeWith(fake);
+        const result = await runTool(
+            inputScroll, { deltaY: 100 }, { signal: controller.signal } as Extra, runtime,
+        );
+
+        expect(result.isError).toBe(true);
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+        expect(fake.sent.filter((entry) => entry.method === "Input.dispatchMouseEvent")).toHaveLength(0);
+        expect(fake.sent.some((entry) => String(entry.params?.expression).includes("cdmWheelProbeRemove"))).toBe(true);
+    });
+
+    it("does not dispatch after cancellation while probe installation is pending", async () => {
+        const fake = scrollFake();
+        const respond = fake.respond;
+        const controller = new AbortController();
+        let release: (() => void) | undefined;
+        let started: (() => void) | undefined;
+        const pending = new Promise<void>((resolve) => { release = resolve; });
+        const installed = new Promise<void>((resolve) => { started = resolve; });
+
+        fake.respond = async (tab, method, params) => {
+            if (method === "DOM.getNodeForLocation") return { frameId: "main" };
+            if (method === "Page.createIsolatedWorld") return { executionContextId: 42 };
+
+            if (method === "Runtime.evaluate" && String(params?.expression).includes("cdmWheelProbeInstall")) {
+                started?.();
+                await pending;
+
+                return { result: { value: true } };
+            }
+
+            if (method === "Runtime.evaluate" && String(params?.expression).includes("cdmWheelProbeRemove")) return { result: { value: true } };
+
+            return respond?.(tab, method, params);
+        };
+
+        const { runtime } = runtimeWith(fake);
+        const result = runTool(
+            inputScroll, { deltaY: 100 }, { signal: controller.signal } as Extra, runtime,
+        );
+
+        await installed;
+        controller.abort();
+        release?.();
+        expect((await result).isError).toBe(true);
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+        expect(fake.sent.some((call) => call.method === "Input.dispatchMouseEvent")).toBe(false);
+        expect(fake.sent.filter((call) => String(call.params?.expression).includes("cdmWheelProbeRemove"))).toHaveLength(1);
+    });
+
+    it.each(["navigation", "target closed"])("reports an unknown wheel outcome after %s and attempts cleanup", async (failure) => {
+        const fake = scrollFake();
+        const respond = fake.respond;
+        let dispatched = false;
+
+        fake.respond = (tab, method, params) => {
+            if (method === "DOM.getNodeForLocation") return { frameId: "main" };
+            if (method === "Page.createIsolatedWorld") return { executionContextId: 42 };
+
+            if (method === "Runtime.evaluate" && String(params?.expression).includes("cdmWheelProbe")) {
+                if (dispatched) throw new Error(failure);
+
+                return { result: { value: true } };
+            }
+
+            if (method === "Input.dispatchMouseEvent") {
+                dispatched = true;
+
+                return {};
+            }
+
+            if (method === "Runtime.evaluate" && dispatched) throw new Error(failure);
+
+            return respond?.(tab, method, params);
+        };
+
+        const { runtime } = runtimeWith(fake);
+        const result = await runTool(inputScroll, { deltaY: 100 }, extra(), runtime);
+
+        expect(result.isError).toBe(true);
+        expect(contentOf(result)).toContain("outcome is unknown");
+        expect(fake.sent.filter((call) => call.method === "Input.dispatchMouseEvent")).toHaveLength(1);
+        expect(fake.sent.filter((call) => String(call.params?.expression).includes("cdmWheelProbeRemove"))).toHaveLength(1);
+    });
+
+    it.each(["allowedDomains", "deniedDomains"])("does not install a wheel probe with %s policy", async (field) => {
+        const fake = scrollFake();
+        const respond = fake.respond;
+
+        fake.respond = (tab, method, params) => {
+            if (method === "DOM.getNodeForLocation") throw new Error("No node found");
+
+            return respond?.(tab, method, params);
+        };
+
+        const config = { ...managedConfig, safety: { ...managedConfig.safety, [field]: [field === "allowedDomains" ? "page.example" : "other.example"] } };
+        const { runtime } = runtimeWith(fake, undefined, config);
+        const result = await runTool(inputScroll, { deltaY: 100 }, extra(), runtime);
+
+        expect(result.isError).not.toBe(true);
+        expect(fake.sent.filter((call) => call.method === "Input.dispatchMouseEvent")).toHaveLength(1);
+        expect(fake.sent.some((call) => call.method === "Page.createIsolatedWorld" || String(call.params?.expression).includes("cdmWheelProbe"))).toBe(false);
+        expect(JSON.stringify(result.structuredContent)).toContain("wheel delivery is unconfirmed");
+    });
+
     it("honours an explicit wheel point", async () => {
         const { fake, runtime } = runtimeWith(scrollFake());
 
@@ -237,13 +388,43 @@ describe("input_scroll", () => {
 
         expect(result.isError).not.toBe(true);
         expect(result.structuredContent).toMatchObject({ method: "wheel", y: 0 });
-        expect(JSON.stringify(result.structuredContent)).toContain("window did not move");
+        expect(JSON.stringify(result.structuredContent)).toContain("delivery is unconfirmed");
+        expect(fake.sent.filter((entry) => entry.method === "Input.dispatchMouseEvent")).toHaveLength(1);
         expect(
             fake.sent.filter((entry) =>
                 entry.method === "Runtime.evaluate" &&
                 String((entry.params as { expression?: unknown })?.expression).includes("scrollBy"),
             ),
         ).toHaveLength(0);
+    });
+
+    it("does not claim a wheel was requested when already at the edge", async () => {
+        const still = { x: 0, y: 0, maxX: 0, maxY: 1000, width: 800, height: 600 };
+        const { fake, runtime } = runtimeWith(scrollFake({ positions: [still] }));
+        const result = await runTool(inputScroll, { to: "top" }, extra(), runtime);
+
+        expect(JSON.stringify(result.structuredContent)).not.toContain("wheel delivery is unconfirmed");
+        expect(fake.sent.filter((entry) => entry.method === "Input.dispatchMouseEvent")).toHaveLength(0);
+    });
+
+    it("reports an uncertain outcome when a late edge observation fails", async () => {
+        const still = { x: 0, y: 0, maxX: 0, maxY: 1000, width: 800, height: 600 };
+        const fake = scrollFake({ positions: [still] });
+        const base = fake.respond ?? (() => ({}));
+        let reads = 0;
+
+        fake.respond = (targetId, method, params) => {
+            if (method === "Runtime.evaluate" && ++reads === 4) throw new Error("secret");
+
+            return base(targetId, method, params);
+        };
+
+        const { runtime } = runtimeWith(fake);
+        const result = await runTool(inputScroll, { to: "bottom" }, extra(), runtime);
+
+        expect(result.isError).toBe(true);
+        expect(contentOf(result)).toContain("outcome is unknown");
+        expect(contentOf(result)).not.toContain("secret");
     });
 
     it("scrolls to the top and the bottom through the wheel", async () => {
@@ -387,6 +568,27 @@ describe("input_scroll", () => {
         expect(call?.params).toMatchObject({
             arguments: [{ objectId: "obj-11" }, { value: "start" }],
         });
+    });
+
+    it("does not scroll an element after cancellation during actionability checks", async () => {
+        const fake = scrollFake();
+        const respond = fake.respond;
+        const controller = new AbortController();
+
+        fake.respond = (tab, method, params) => {
+            if (method === "Runtime.callFunctionOn" && !String(params?.functionDeclaration).includes("scrollIntoView")) {
+                controller.abort();
+            }
+
+            return respond?.(tab, method, params);
+        };
+
+        const { runtime } = runtimeWith(fake);
+        const result = await runTool(inputScroll, { target: { uid: "1_1" } }, { signal: controller.signal } as Extra, runtime);
+
+        expect(result.isError).toBe(true);
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+        expect(fake.sent.some((call) => String(call.params?.functionDeclaration).includes("scrollIntoView({"))).toBe(false);
     });
 
     it("requires exactly one scroll mode", async () => {

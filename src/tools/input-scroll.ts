@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isPolicyActive } from "../safety/index.js";
 import type { DaemonAccess } from "../mcp/index.js";
 import { ensureActionable } from "./actionability.js";
 import { defineTool, type ToolContext } from "./define-tool.js";
@@ -13,6 +14,8 @@ import {
 import { ToolError } from "./errors.js";
 import { frameChain, revealChain } from "./frame-geometry.js";
 import { summarizeTarget, targetSummarySchema } from "./input-outcome.js";
+import { ensurePointAllowed } from "./point-target.js";
+import { withWheelProbe } from "./wheel-probe.js";
 import { throwIfCancelled } from "./registry.js";
 import { resolveTab, tabSchema } from "./tab-target.js";
 
@@ -106,6 +109,7 @@ export function wheelParams(
 interface WheelScrollResult {
     position: ScrollPosition;
     method  : "wheel";
+    observed: boolean;
 }
 
 export function scrollMoved(before: ScrollPosition, after: ScrollPosition): boolean {
@@ -120,15 +124,32 @@ async function wheelScroll(
     deltaX  : number,
     deltaY  : number,
 ): Promise<WheelScrollResult> {
-    await context.access.send({
-        targetId,
-        method: "Input.dispatchMouseEvent",
-        params: wheelParams(point, deltaX, deltaY),
-    });
+    await ensurePointAllowed("input_scroll", context, targetId, point);
 
-    const after = await settleScroll(context, targetId);
+    const run = async (probe: () => Promise<boolean>): Promise<WheelScrollResult> => {
+        throwIfCancelled(context.signal);
 
-    return { position: after, method: "wheel" };
+        try {
+            await context.access.send({
+                targetId,
+                method: "Input.dispatchMouseEvent",
+                params: wheelParams(point, deltaX, deltaY),
+            });
+
+            const after = await settleScroll(context, targetId);
+            const observed = await probe();
+
+            return { position: after, method: "wheel", observed };
+        } catch {
+            throw new ToolError(
+                "The wheel outcome is unknown. The page or a scrollable container may have changed. Check the page state before trying again.",
+            );
+        }
+    };
+
+    if (isPolicyActive(context.config.safety)) return run(() => Promise.resolve(false));
+
+    return withWheelProbe(context.access, context.frames, targetId, point, run);
 }
 
 async function settleScroll(context: ToolContext, targetId: string): Promise<ScrollPosition> {
@@ -251,12 +272,13 @@ export const inputScroll = defineTool({
         const scrolled = await wheelScroll(context, targetId, state, point, deltaX, deltaY);
 
         const moved = scrollMoved(state, scrolled.position);
+        const delivery = scrolled.observed ? "a trusted wheel event was observed in the selected document" : "wheel delivery is unconfirmed";
 
         return {
             ok    : true,
             effect: moved
-                ? `The page was scrolled by (${deltaX}, ${deltaY}).`
-                : `The wheel event was sent by (${deltaX}, ${deltaY}) but the window did not move. A scrollable container under the point may have scrolled, or the page is at its edge.`,
+                ? `The window scroll position changed after requesting wheel deltas (${deltaX}, ${deltaY}); ${delivery}.`
+                : `The window scroll position did not change after requesting wheel deltas (${deltaX}, ${deltaY}); ${delivery}. A scrollable container may have changed.`,
             method: scrolled.method,
             x     : scrolled.position.x,
             y     : scrolled.position.y,
@@ -289,6 +311,7 @@ async function scrollToElement(
             checkDisabled: false,
         });
 
+        throwIfCancelled(context.signal);
         await owner.send({
             targetId,
             method: "Runtime.callFunctionOn",
@@ -345,15 +368,28 @@ async function scrollToEdge(
     const atEdge = (position: ScrollPosition): boolean =>
         to === "top" ? position.y <= 0 : position.y >= position.maxY;
     let current = before;
+    let requested = false;
     const method = "wheel" as const;
 
     for (let wheel = 0; wheel < EDGE_WHEEL_LIMIT && !atEdge(current); wheel += 1) {
         const remaining = to === "top" ? -current.y : current.maxY - current.y;
         const delta = clampDelta(remaining);
+
+        throwIfCancelled(context.signal);
+        requested = true;
         const scrolled = await wheelScroll(context, targetId, current, point, 0, delta);
-        const settled = scrollMoved(current, scrolled.position)
-            ? scrolled.position
-            : await awaitLateScroll(context, targetId, scrolled.position);
+        let settled: ScrollPosition;
+
+        try {
+            settled = scrollMoved(current, scrolled.position)
+                ? scrolled.position
+                : await awaitLateScroll(context, targetId, scrolled.position);
+        } catch {
+            throw new ToolError(
+                "The wheel outcome is unknown. The page or a scrollable container may have changed. Check the page state before trying again.",
+            );
+        }
+
         const progressed = scrollMoved(current, settled);
 
         current = settled;
@@ -366,9 +402,11 @@ async function scrollToEdge(
 
     return {
         ok    : reached,
-        effect: reached
-            ? `The page was scrolled to the ${edge}.`
-            : `The page stopped at y=${current.y} of ${current.maxY} before reaching the ${edge}.`,
+        effect: !requested
+            ? `The window is already at the ${edge}; no wheel was requested.`
+            : reached
+                ? `The window is at the ${edge}; wheel delivery is unconfirmed.`
+                : `The window is at y=${current.y} of ${current.maxY}, before the ${edge}; wheel delivery is unconfirmed and a scrollable container may have changed.`,
         method,
         x   : current.x,
         y   : current.y,

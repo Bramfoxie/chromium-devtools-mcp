@@ -129,6 +129,36 @@ describe("dom_snapshot", () => {
         expect(runtime.elements.lookup("tab1", old ?? "")).toBeUndefined();
     });
 
+    it("filters modes while retaining named ancestors and usable ids", async () => {
+        const tree = { nodes: [
+            { nodeId: "1", role: { value: "main" }, name: { value: "Content" }, childIds: ["2", "3", "4"], backendDOMNodeId: 11 },
+            { nodeId: "2", role: { value: "form" }, name: { value: "Sign in" }, childIds: ["5"], backendDOMNodeId: 12 },
+            { nodeId: "3", role: { value: "staticText" }, name: { value: "Hello" }, backendDOMNodeId: 13 },
+            { nodeId: "4", role: { value: "link" }, name: { value: "Elsewhere" }, backendDOMNodeId: 14 },
+            { nodeId: "5", role: { value: "textbox" }, name: { value: "Email" }, backendDOMNodeId: 15 },
+        ] };
+        const { runtime } = setup(snapshotFake(tree));
+
+        await runTool(newTab, {}, extra(), runtime);
+
+        for (const [mode, included, excluded] of [
+            ["interactive", "Email", "Hello"],
+            ["forms", "Email", "Elsewhere"],
+            ["landmarks", "Sign in", "Email"],
+            ["text", "Hello", "Elsewhere"],
+        ]) {
+            const result = await runTool(domSnapshot, { mode }, extra(), runtime);
+            const content = result.structuredContent as { snapshot: string; generation: number };
+
+            expect(content.snapshot).toContain("Content");
+            expect(content.snapshot).toContain(included);
+            expect(content.snapshot).not.toContain(excluded);
+            const uid = content.snapshot.match(/\[(\d+_\d+)\]/)?.[1] ?? "";
+
+            expect(runtime.elements.lookup("tab1", uid)).toEqual({ backendNodeId: 11 });
+        }
+    });
+
     it("truncates the text at maxChars with the marker", async () => {
         const fake = snapshotFake();
         const { runtime } = setup(fake);
@@ -521,7 +551,7 @@ describe("frame snapshot helpers", () => {
         const text = (result.structuredContent as { snapshot: string }).snapshot;
 
         expect(text).toContain('button "Pay"');
-        expect(text).not.toContain("Title text");
+        expect(text).toContain("Title text");
     });
 
     const OVER_CAP = SNAPSHOT_MAX_AX_NODES + 5;

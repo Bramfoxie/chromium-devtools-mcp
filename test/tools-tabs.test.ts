@@ -9,9 +9,11 @@ import {
     listTabs,
     mergeMedia,
     newTab,
+    popupList,
     runTool,
     selectTab,
     ToolRuntime,
+    windowList,
 } from "../src/tools/index.js";
 import { FakeAccess } from "./helpers/fake-access.js";
 import { managedConfig } from "./helpers/daemon-env.js";
@@ -30,6 +32,66 @@ function setup(config: Config = managedConfig, access?: FakeAccess) {
 function textOf(result: Awaited<ReturnType<typeof runTool>>): string {
     return JSON.stringify(result.content);
 }
+
+describe("window_list", () => {
+    it("does not return window data after cancellation during the last lookup", async () => {
+        const { fake, runtime } = setup();
+        const controller = new AbortController();
+
+        await fake.createTab();
+
+        fake.getWindow = async () => {
+            controller.abort();
+
+            return { windowId: 1, bounds: {} };
+        };
+
+        const result = await runTool(
+            windowList, {}, { signal: controller.signal } as Extra, runtime,
+        );
+
+        expect(result.isError).toBe(true);
+    });
+
+    it("looks up only owned tabs with active domain restrictions", async () => {
+        const config: Config = {
+            ...managedConfig,
+            safety: { ...managedConfig.safety, allowedDomains: ["allowed.example"] },
+        };
+        const { fake, runtime } = setup(config);
+        const first = await fake.createTab();
+        const second = await fake.createTab();
+
+        fake.tabs.push({ targetId: "foreign", url: "https://blocked.example/", title: "", owned: false, created: false });
+        const lookedUp: string[] = [];
+
+        fake.getWindow = async (id) => {
+            lookedUp.push(id);
+
+            return { windowId: id === first ? 1 : 2, bounds: {} };
+        };
+
+        const result = await runTool(windowList, {}, extra(), runtime);
+
+        expect(lookedUp).toEqual([first, second]);
+        expect(result.structuredContent).toEqual({
+            windows  : [{ windowId: 1, bounds: {} }, { windowId: 2, bounds: {} }],
+            total    : 2, truncated: false,
+        });
+    });
+
+    it("deduplicates owned windows and limits results", async () => {
+        const { fake, runtime } = setup();
+        const ids = await Promise.all([fake.createTab(), fake.createTab(), fake.createTab()]);
+
+        fake.getWindow = async (id) => ({ windowId: id === ids[2] ? 2 : 1, bounds: {} });
+        const result = await runTool(windowList, { limit: 1 }, extra(), runtime);
+
+        expect(result.structuredContent).toEqual({
+            windows: [{ windowId: 1, bounds: {} }], total: 2, truncated: true,
+        });
+    });
+});
 
 describe("list_tabs clipping", () => {
     it("clips titles and URLs on code points and marks the omission", async () => {
@@ -482,5 +544,109 @@ describe("frame tracking on tabs", () => {
         expect(runtime.frames.ensured("tab1")).toBe(true);
         await runTool(closeTab, {}, extra(), runtime);
         expect(runtime.frames.ensured("tab1")).toBe(false);
+    });
+});
+
+describe("popup_list", () => {
+    it("lists blank and redirected popup URLs under active domain rules", async () => {
+        const config: Config = {
+            ...managedConfig,
+            safety: { ...managedConfig.safety, allowedDomains: ["allowed.example"] },
+        };
+        const { fake, runtime } = setup(config);
+
+        await runTool(newTab, {}, extra(), runtime);
+        fake.tabs.push({ targetId: "popup", url: "about:blank", title: "", owned: false, created: false });
+        const blank = await runTool(popupList, {}, extra(), runtime);
+
+        expect(blank.structuredContent).toMatchObject({ popups: [{ url: "about:blank" }] });
+        const popup = fake.tabs.find((tab) => tab.targetId === "popup");
+
+        if (!popup) throw new Error("Missing popup");
+
+        popup.url = "https://blocked.example/redirected";
+        const redirected = await runTool(popupList, {}, extra(), runtime);
+
+        expect(redirected.structuredContent).toMatchObject({
+            popups: [{ url: "https://blocked.example/redirected" }],
+        });
+    });
+
+    it("cancels while waiting between discovery attempts", async () => {
+        const { runtime } = setup();
+
+        await runTool(newTab, {}, extra(), runtime);
+        const controller = new AbortController();
+        const listing = runTool(
+            popupList, { timeoutMs: 500 }, { signal: controller.signal } as Extra, runtime,
+        );
+
+        setTimeout(() => controller.abort(), 10);
+        expect((await listing).isError).toBe(true);
+    });
+
+    it("honors cancellation while popup discovery is pending", async () => {
+        const { fake, runtime } = setup();
+
+        await runTool(newTab, {}, extra(), runtime);
+        let release: () => void = () => undefined;
+        const gate = new Promise<void>((resolve) => { release = resolve; });
+
+        fake.listPopups = async () => {
+            await gate;
+
+            return [{ targetId: "popup", url: "about:blank", title: "", owned: false, created: false }];
+        };
+
+        const controller = new AbortController();
+        const listing = runTool(
+            popupList, { timeoutMs: 500 }, { signal: controller.signal } as Extra, runtime,
+        );
+
+        await Promise.resolve();
+        controller.abort();
+        release();
+        const result = await listing;
+
+        expect(result.isError).toBe(true);
+    });
+
+    it("limits returned popups and reports truncation", async () => {
+        const { fake, runtime } = setup();
+
+        await runTool(newTab, {}, extra(), runtime);
+
+        for (let i = 0; i < 101; i++) {
+            fake.tabs.push({ targetId: `popup${i}`, url: "about:blank", title: "", owned: false, created: false });
+        }
+
+        const result = await runTool(popupList, {}, extra(), runtime);
+        const content = result.structuredContent as {
+            popups: unknown[]; total: number; truncated: boolean;
+        };
+
+        expect(content.popups).toHaveLength(100);
+        expect(content.total).toBe(101);
+        expect(content.truncated).toBe(true);
+    });
+
+    it("filters baseline IDs and waits for a new popup without claiming it", async () => {
+        const { fake, runtime } = setup();
+
+        await runTool(newTab, {}, extra(), runtime);
+        fake.tabs.push({ targetId: "old", url: "about:blank", title: "", owned: false, created: false });
+        const initial = await runTool(popupList, {}, extra(), runtime);
+
+        expect(initial.structuredContent).toMatchObject({ popups: [{ tab: "old" }], timedOut: false });
+        setTimeout(() => fake.tabs.push({ targetId: "new", url: "about:blank", title: "", owned: false, created: false }), 20);
+        const result = await runTool(popupList, { baselineIds: ["old"], timeoutMs: 500 }, extra(), runtime);
+
+        expect(result.structuredContent).toMatchObject({ popups: [{ tab: "new" }], timedOut: false });
+        expect(fake.claimed).toEqual([]);
+        const timeout = await runTool(popupList, { baselineIds: ["old", "new"], timeoutMs: 10 }, extra(), runtime);
+
+        expect(timeout.structuredContent).toEqual({
+            popups: [], timedOut: true, total: 0, truncated: false,
+        });
     });
 });

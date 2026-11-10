@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { setTimeout as delay } from "node:timers/promises";
 import { RpcError, ErrorCode, normalizeUrl } from "../daemon/index.js";
 import { defineTool } from "./define-tool.js";
 import { parkIfForbidden } from "./final-url.js";
@@ -94,6 +95,86 @@ export const newTab = defineTool({
             ...(load?.navigationError === undefined
                 ? {}
                 : { navigationError: load.navigationError }),
+        };
+    },
+});
+
+export const windowList = defineTool({
+    name       : "window_list",
+    description: "List distinct windows containing tabs owned by this session without focusing them.",
+    access     : "read",
+    input      : z.strictObject({ limit: z.number().int().min(1).max(500).optional().describe("Maximum windows to return. Defaults to 100.") }),
+    output     : z.strictObject({
+        windows  : z.array(z.strictObject({ windowId: z.number().int(), bounds: z.strictObject({ left: z.number().optional(), top: z.number().optional(), width: z.number().optional(), height: z.number().optional(), windowState: z.enum(["normal", "minimized", "maximized", "fullscreen"]).optional() }) })),
+        total    : z.number(),
+        truncated: z.boolean(),
+    }),
+    handler: async (args, context) => {
+        const tabs = await context.access.listTabs("owned");
+        const windows = new Map<number, Awaited<ReturnType<typeof context.access.getWindow>>>();
+
+        for (const tab of tabs) {
+            context.signal.throwIfAborted();
+            const window = await context.access.getWindow(tab.targetId);
+
+            windows.set(window.windowId, window);
+        }
+
+        const limit = args.limit ?? 100;
+
+        return {
+            windows  : [...windows.values()].slice(0, limit),
+            total    : windows.size,
+            truncated: windows.size > limit,
+        };
+    },
+});
+
+export const popupList = defineTool({
+    name       : "popup_list",
+    description: "List available popups opened by an owned tab, optionally waiting for IDs absent from a baseline.",
+    access     : "read",
+    untrusted  : true,
+    input      : z.strictObject({
+        tab        : tabId.optional().describe("Opener tab id. Defaults to the selected tab."),
+        baselineIds: z.array(tabId).max(500).optional().describe("Previously observed popup IDs to exclude. Omit to list all available popups."),
+        timeoutMs  : z.number().int().min(0).max(30000).optional().describe("Maximum wait for a matching popup in milliseconds. Defaults to 0."),
+    }),
+    output: z.strictObject({
+        popups   : z.array(tabObject),
+        timedOut : z.boolean(),
+        total    : z.number().describe("Matching popups before the limit."),
+        truncated: z.boolean().describe("Whether the limit dropped popups."),
+    }),
+    handler: async (args, context) => {
+        const opener = resolveTab(args, context);
+        const baseline = new Set(args.baselineIds ?? []);
+        const deadline = Date.now() + (args.timeoutMs ?? 0);
+        let popups;
+
+        do {
+            context.signal.throwIfAborted();
+            popups = (await context.access.listPopups(opener))
+                .filter((popup) => !baseline.has(popup.targetId));
+            context.signal.throwIfAborted();
+            if (popups.length || Date.now() >= deadline) break;
+
+            await delay(Math.min(100, deadline - Date.now()), undefined, {
+                signal: context.signal,
+            });
+        } while (true);
+
+        return {
+            popups: popups.slice(0, 100).map((popup) => ({
+                tab    : popup.targetId,
+                url    : truncateText(popup.url, TAB_URL_MAX_CHARS).text,
+                title  : truncateText(popup.title, TAB_TITLE_MAX_CHARS).text,
+                owned  : false,
+                created: false,
+            })),
+            timedOut : popups.length === 0 && (args.timeoutMs ?? 0) > 0,
+            total    : popups.length,
+            truncated: popups.length > 100,
         };
     },
 });

@@ -11,6 +11,8 @@ const TIMEOUT_CLASSES = {
     "session.list"   : "plain",
     "permission.set" : "cdp-bound",
     "tab.create"     : "cdp-bound",
+    "popup.list"     : "cdp-bound",
+    "window.get"     : "cdp-bound",
     "tab.list"       : "multi-step",
     "tab.claim"      : "plain",
     "tab.close"      : "plain",

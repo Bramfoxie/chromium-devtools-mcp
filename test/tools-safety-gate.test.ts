@@ -72,6 +72,8 @@ const MUTATING: Case[] = [
 
 const READING: Case[] = [
     ["list_tabs", {}],
+    ["popup_list", { tab: "tab1" }],
+    ["window_list", {}],
     ["list_sessions", {}],
     ["page_info", {}],
     ["dom_query", { selector: "body" }],
@@ -79,6 +81,7 @@ const READING: Case[] = [
     ["a11y_snapshot", {}],
     ["dom_selector", { target: { selector: "body" } }],
     ["css_inspect", { uid: "1_1" }],
+    ["event_listeners", { target: { uid: "1_1" } }],
     ["console_logs", {}],
     ["network_requests", {}],
     ["network_har", {}],

@@ -142,9 +142,9 @@ describe("formatAxTree", () => {
 
         const result = formatAxTree(nodes, options({ interactiveOnly: true }));
 
-        expect(result.text).toBe('[1_1] textbox "Search"');
-        expect(result.nodeCount).toBe(1);
-        expect(result.omitted).toBe(1);
+        expect(result.text).toBe('[1_1] heading "Title"\n  [1_2] textbox "Search"');
+        expect(result.nodeCount).toBe(2);
+        expect(result.omitted).toBe(0);
     });
 
     it("skips hidden and ignored nodes unless asked", () => {

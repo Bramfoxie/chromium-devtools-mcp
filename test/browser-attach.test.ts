@@ -13,7 +13,7 @@ import {
     runningInProfile,
     setupInstructions,
 } from "../src/browser/index.js";
-import { fetchVersion, probePort } from "../src/browser/attach.js";
+import { deniedPortFile, fetchVersion, probePort } from "../src/browser/attach.js";
 import { readIfExists } from "../src/util/read-if-exists.js";
 import { abortableSleep } from "../src/util/sleep.js";
 
@@ -290,6 +290,83 @@ describe("attachBrowser", () => {
 
         await expect(attachBrowser(config, value)).resolves.toMatchObject({ source: "debug-port" });
         expect(logs).toEqual(["Attaching to Chrome on port 9222 (debug-port)."]);
+    });
+
+    it("logs once why the port file cannot be used while it keeps waiting", async () => {
+        const file = "/Users/u/Library/Application Support/Google/Chrome/DevToolsActivePort";
+        let polls = 0;
+        const unreadable = deps({}, {
+            readFile: async () => {
+                throw new Error("EPERM: operation not permitted");
+            },
+            sleep: async () => {
+                polls += 1;
+
+                if (polls > 2) throw new Error("stop");
+            },
+        });
+
+        await expect(attachBrowser(config, unreadable.value)).rejects.toThrow("stop");
+        expect(unreadable.logs.filter((line) => line.startsWith(`Cannot read ${file}`))).toEqual([
+            `Cannot read ${file}: EPERM: operation not permitted`,
+        ]);
+
+        const closed = deps({ files: { [file]: "9222\n/devtools/browser/abc" } }, {
+            sleep: async () => {
+                throw new Error("stop");
+            },
+        });
+
+        await expect(attachBrowser(config, closed.value)).rejects.toThrow("stop");
+        expect(closed.logs.join("\n")).toContain("Port 9222 named in");
+
+        const broken = deps({ files: { [file]: "garbage" } }, {
+            sleep: async () => {
+                throw new Error("stop");
+            },
+        });
+
+        await expect(attachBrowser(config, broken.value)).rejects.toThrow("stop");
+        expect(broken.logs.join("\n")).toContain("does not hold a port");
+    });
+
+    it("tells the waiting client the port file is unreadable instead of claiming debugging is off", async () => {
+        const waiting: string[] = [];
+        let polls = 0;
+        const denied = deps({}, {
+            readFile: async () => {
+                throw Object.assign(new Error("EPERM: operation not permitted, open"), { code: "EPERM" });
+            },
+            onWaiting: (text) => waiting.push(text),
+            sleep    : async () => {
+                polls += 1;
+
+                if (polls > 2) throw new Error("stop");
+            },
+        });
+
+        await expect(attachBrowser(config, denied.value)).rejects.toThrow("stop");
+        expect(waiting).toHaveLength(1);
+        expect(waiting[0]).toContain(portFile);
+        expect(waiting[0]).toContain("is not allowed to read");
+        expect(waiting[0]).not.toContain("is running with remote debugging");
+        expect(waiting[0]).toContain("Full Disk Access");
+        expect(waiting[0]).toContain("daemon");
+        expect(waiting[0]).not.toContain("remote debugging is not enabled");
+        expect(waiting[0]).toMatch(/^[\x20-\x7E\n]+$/);
+    });
+
+    it("keeps the generic instructions when the port file is simply missing", async () => {
+        const waiting: string[] = [];
+        const missing = deps({}, {
+            onWaiting: (text) => waiting.push(text),
+            sleep    : async () => {
+                throw new Error("stop");
+            },
+        });
+
+        await expect(attachBrowser(config, missing.value)).rejects.toThrow("stop");
+        expect(waiting[0]).toContain("remote debugging is not enabled");
     });
 
     it("does not swallow unexpected errors while waiting", async () => {
@@ -617,5 +694,19 @@ describe("default I/O", () => {
     it("reads an existing file and returns undefined for a missing one", async () => {
         expect(await readIfExists("/definitely/not/here")).toBeUndefined();
         expect(await readIfExists(fileURLToPath(import.meta.url))).toContain("default I/O");
+    });
+});
+
+describe("deniedPortFile", () => {
+    const failing = (code: string) => async (): Promise<string | undefined> => {
+        throw Object.assign(new Error(code), { code });
+    };
+    const ask = (readFile: AttachDeps["readFile"]) => deniedPortFile(config, { context: mac, readFile });
+
+    it("names the port file only when the operating system refuses to read it", async () => {
+        await expect(ask(failing("EPERM"))).resolves.toBe(portFile);
+        await expect(ask(failing("EACCES"))).resolves.toBe(portFile);
+        await expect(ask(failing("EIO"))).resolves.toBeUndefined();
+        await expect(ask(async () => undefined)).resolves.toBeUndefined();
     });
 });

@@ -66,6 +66,20 @@ describe("create", () => {
 });
 
 describe("contexts and targets", () => {
+    it("requests and validates a target window over CDP", async () => {
+        const { browser, backend } = await setup();
+        const targetId = await backend.createTarget("about:blank", undefined);
+
+        expect(await backend.getWindowForTarget(targetId)).toEqual({
+            windowId: 17, bounds: { left: 10, top: 20, width: 800, height: 600, windowState: "normal" },
+        });
+        expect(browser.calls.at(-1)).toMatchObject({
+            method: "Browser.getWindowForTarget", params: { targetId },
+        });
+        browser.malformed.add("Browser.getWindowForTarget");
+        await expect(backend.getWindowForTarget(targetId)).rejects.toBeInstanceOf(DaemonError);
+    });
+
     it("creates and disposes isolated contexts", async () => {
         const { browser, backend } = await setup();
         const id = await backend.createContext();
@@ -210,6 +224,22 @@ describe("contexts and targets", () => {
             "https://isolated.example/": context,
             "https://private.example/" : "someone-elses-context",
             "https://legacy.example/"  : undefined,
+        });
+    });
+
+    it("reports the opener of a page target", async () => {
+        const { browser, backend } = await setup();
+        const id = browser.addTarget("page", "https://popup.example/", browser.defaultContext);
+        const target = browser.targets.get(id);
+
+        if (target) Object.assign(target, { openerId: "opener" });
+
+        expect(await backend.listTargets()).toContainEqual({
+            targetId : id,
+            url      : "https://popup.example/",
+            title    : "title https://popup.example/",
+            openerId : "opener",
+            contextId: undefined,
         });
     });
 

@@ -111,6 +111,21 @@ export class DaemonAccess {
         return parse("tab.list", tabListSchema, result).tabs;
     }
 
+    async getWindow(targetId: string) {
+        const result = await this.request("window.get", { targetId });
+
+        return parse("window.get", z.strictObject({
+            windowId: z.number().int(),
+            bounds  : z.strictObject({ left: z.number().optional(), top: z.number().optional(), width: z.number().optional(), height: z.number().optional(), windowState: z.enum(["normal", "minimized", "maximized", "fullscreen"]).optional() }),
+        }), result);
+    }
+
+    async listPopups(targetId: string): Promise<DaemonTab[]> {
+        const result = await this.request("popup.list", { targetId });
+
+        return parse("popup.list", tabListSchema, result).tabs;
+    }
+
     async claimTab(targetId: string): Promise<void> {
         await this.request("tab.claim", { targetId });
     }

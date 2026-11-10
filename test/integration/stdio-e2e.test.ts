@@ -40,9 +40,7 @@ function isolatedEnv(root: string): Record<string, string> {
 beforeAll(async () => {
     if (!ready) return;
 
-    const base = process.platform === "win32" ? os.tmpdir() : "/tmp";
-
-    home = await mkdtemp(path.join(base, "cdme-"));
+    home = await mkdtemp(path.join(os.tmpdir(), "cdme-"));
     env = isolatedEnv(home);
     client = new Client({ name: "e2e", version: "0.0.0" });
     const transport = new StdioClientTransport({
@@ -91,6 +89,10 @@ describe.runIf(process.env.CI !== undefined && chromeAvailable())("the build for
 });
 
 describe.skipIf(!ready)("the built server over stdio", () => {
+    it("creates its home under the system temporary directory", () => {
+        expect(path.dirname(home)).toBe(os.tmpdir());
+    });
+
     it("lists the tools with their schemas", async () => {
         const listed = await (client as Client).listTools();
         const names = listed.tools.map((tool) => tool.name);

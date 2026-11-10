@@ -36,7 +36,7 @@ First run:
 - attach (default): the server connects to your running Chrome. If Chrome does not allow it yet, the server prints how to enable remote debugging at `chrome://inspect/#remote-debugging` and keeps waiting. It never falls back to another profile.
 - managed: pass `--mode managed`. The server launches Chrome with its own persistent profile, headed or with `--headless`.
 
-If something does not connect, run `npx chromium-devtools-mcp doctor` (add the same flags as in your client entry). It checks the setup and prints how to fix what it finds. `chromium-devtools-mcp config` (with the same flags) prints the effective configuration and which source set each value, and validates the config file. `daemon status`, `daemon stop` and `daemon logs` show and control the background daemon, see [docs/daemon.md](docs/daemon.md).
+If something does not connect, run `npx chromium-devtools-mcp doctor` (add the same flags as in your client entry). It checks the setup and prints how to fix what it finds. On macOS, when Chrome has remote debugging on but the client app that starts the server (Cherry Studio, Orca and similar) may not read Chrome's `DevToolsActivePort` file, the server and `doctor` say so and do not report that debugging is off; the fix is Full Disk Access for that app in System Settings, or starting `npx chromium-devtools-mcp daemon` once in a terminal that has access. `chromium-devtools-mcp config` (with the same flags) prints the effective configuration and which source set each value, and validates the config file. `daemon status`, `daemon stop` and `daemon logs` show and control the background daemon, see [docs/daemon.md](docs/daemon.md).
 
 ## Compared with the official Chrome DevTools MCP
 
@@ -79,21 +79,21 @@ Compared against Chrome DevTools MCP 1.12.0 (2026-10-22, [ChromeDevTools/chrome-
 
 ## Tools
 
-53 tools. Details and parameters are in [docs/tools.md](docs/tools.md).
+56 tools. Details and parameters are in [docs/tools.md](docs/tools.md).
 
-| Category    | Tools                                                                                                                                       |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| Tabs        | `list_tabs`, `list_sessions`, `select_tab`, `new_tab`, `close_tab`, `bring_to_front`                                                        |
-| Pages       | `page_info`, `page_navigate`, `page_wait`, `page_dialogs`, `page_metrics`, `page_pdf`                                                       |
-| Inspection  | `dom_query`, `dom_snapshot`, `a11y_snapshot`, `dom_selector`, `dom_edit`, `css_inspect`, `css_edit`, `js_evaluate`, `screenshot`            |
-| Input       | `click`, `input_click`, `input_hover`, `input_drag`, `input_type`, `input_key`, `input_scroll`, `input_select`, `input_upload`, `fill_form` |
-| Performance | `perf_trace_start`, `perf_trace_stop`, `heap_snapshot`, `screencast_start`, `screencast_stop`, `lighthouse_audit`                           |
-| Observation | `console_logs`, `network_requests`, `network_har`, `network_response_body`                                                                  |
-| Network     | `network_mock`                                                                                                                              |
-| Storage     | `storage_read`, `storage_write`, `downloads`                                                                                                |
-| Web auth    | `webauthn`                                                                                                                                  |
-| Web apps    | `pwa_info`                                                                                                                                  |
-| Emulation   | `list_devices`, `emulate_device`, `emulate_media`, `emulate_network`, `emulate_locale`, `emulate_geolocation`                               |
+| Category    | Tools                                                                                                                                               |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Tabs        | `list_tabs`, `popup_list`, `window_list`, `list_sessions`, `select_tab`, `new_tab`, `close_tab`, `bring_to_front`                                   |
+| Pages       | `page_info`, `page_navigate`, `page_wait`, `page_dialogs`, `page_metrics`, `page_pdf`                                                               |
+| Inspection  | `dom_query`, `dom_snapshot`, `a11y_snapshot`, `dom_selector`, `dom_edit`, `css_inspect`, `event_listeners`, `css_edit`, `js_evaluate`, `screenshot` |
+| Input       | `click`, `input_click`, `input_hover`, `input_drag`, `input_type`, `input_key`, `input_scroll`, `input_select`, `input_upload`, `fill_form`         |
+| Performance | `perf_trace_start`, `perf_trace_stop`, `heap_snapshot`, `screencast_start`, `screencast_stop`, `lighthouse_audit`                                   |
+| Observation | `console_logs`, `network_requests`, `network_har`, `network_response_body`                                                                          |
+| Network     | `network_mock`                                                                                                                                      |
+| Storage     | `storage_read`, `storage_write`, `downloads`                                                                                                        |
+| Web auth    | `webauthn`                                                                                                                                          |
+| Web apps    | `pwa_info`                                                                                                                                          |
+| Emulation   | `list_devices`, `emulate_device`, `emulate_media`, `emulate_network`, `emulate_locale`, `emulate_geolocation`                                       |
 
 ## Resources
 
@@ -148,6 +148,8 @@ Env names, file paths and rules: [docs/configuration.md](docs/configuration.md).
 - [Daemon and sessions](docs/daemon.md)
 - [Installer](docs/install.md)
 - [Contributing](CONTRIBUTING.md), [security policy](SECURITY.md) and [code of conduct](CODE_OF_CONDUCT.md)
+
+Wheel scrolling can experimentally observe a trusted event in the document under the point; an unconfirmed observation does not mean the event was not delivered. See [tool details](docs/tools.md).
 
 ## License
 

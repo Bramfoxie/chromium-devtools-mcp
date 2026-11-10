@@ -85,6 +85,7 @@ export interface AxDomInfo {
 
 interface AxFormatOptions {
     interactiveOnly : boolean;
+    mode?           : "all" | "interactive" | "forms" | "landmarks" | "text";
     includeHidden   : boolean;
     uidFor          : (backendNodeId: number) => string | undefined;
     domFor          : (backendNodeId: number) => AxDomInfo | undefined;
@@ -278,6 +279,40 @@ export function formatAxTree(nodes: AxNode[], options: AxFormatOptions): AxForma
     let nodeCount = 0;
     let omitted = 0;
 
+    const mode = options.mode ?? (options.interactiveOnly ? "interactive" : "all");
+    const formRoles = new Set(["form", "textbox", "searchbox", "combobox", "listbox", "checkbox", "radio", "switch", "slider", "spinbutton", "button"]);
+    const selected = (node: AxNode): boolean => {
+        if (isFrameRole(node.role)) return true;
+        if (mode === "all") return wantsUid(node);
+        if (mode === "interactive") return INTERACTIVE_ROLES.has(node.role);
+        if (mode === "forms") return formRoles.has(node.role);
+        if (mode === "landmarks") return LANDMARK_ROLES.has(node.role);
+
+        return node.role === "statictext" && node.name !== "";
+    };
+    const matching = new Set<string>();
+    const scanning = new Set<string>();
+    const scan = (node: AxNode): boolean => {
+        if (scanning.has(node.nodeId)) return false;
+
+        scanning.add(node.nodeId);
+        let found = (!node.ignored && !node.hidden || options.includeHidden) && selected(node);
+
+        for (const id of node.childIds) {
+            const child = byId.get(id);
+
+            if (child !== undefined && scan(child)) found = true;
+        }
+
+        if (found) matching.add(node.nodeId);
+
+        scanning.delete(node.nodeId);
+
+        return found;
+    };
+
+    if (mode !== "all") for (const node of roots.length === 0 ? nodes : roots) scan(node);
+
     const visit = (node: AxNode, depth: number): void => {
         if (visited.has(node.nodeId)) {
             omitted += 1;
@@ -289,9 +324,7 @@ export function formatAxTree(nodes: AxNode[], options: AxFormatOptions): AxForma
 
         const hidden = node.ignored || node.hidden;
         const wanted = (!hidden || options.includeHidden) &&
-            (!options.interactiveOnly || INTERACTIVE_ROLES.has(node.role) ||
-                isFrameRole(node.role)) &&
-            wantsUid(node);
+            (mode === "all" ? wantsUid(node) : matching.has(node.nodeId) && wantsUid(node));
 
         let uid: string | undefined;
 

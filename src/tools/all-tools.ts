@@ -2,6 +2,7 @@ import { bringToFront } from "./bring-to-front.js";
 import { consoleLogs } from "./console-logs.js";
 import { cssEdit } from "./css-edit.js";
 import { cssInspect } from "./css-inspect.js";
+import { eventListeners } from "./event-listeners.js";
 import { domEdit } from "./dom-edit.js";
 import type { AnyTool } from "./define-tool.js";
 import { domQuery } from "./dom-query.js";
@@ -42,10 +43,12 @@ import { screenshot } from "./screenshot.js";
 import { pageInfo } from "./page-info.js";
 import { pageMetrics } from "./page-metrics.js";
 import { pageNavigate } from "./page-navigate.js";
-import { closeTab, listSessions, listTabs, newTab, selectTab } from "./tabs.js";
+import { closeTab, listSessions, listTabs, newTab, popupList, selectTab, windowList } from "./tabs.js";
 
 export const allTools: AnyTool[] = [
     listTabs,
+    popupList,
+    windowList,
     listSessions,
     selectTab,
     newTab,
@@ -60,6 +63,7 @@ export const allTools: AnyTool[] = [
     domSelector,
     domEdit,
     cssInspect,
+    eventListeners,
     cssEdit,
     consoleLogs,
     networkRequests,

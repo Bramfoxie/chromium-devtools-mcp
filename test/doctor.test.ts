@@ -38,10 +38,11 @@ function deps(overrides: Partial<DoctorDeps> = {}): DoctorDeps {
             webSocketUrl: "ws://127.0.0.1:9222/devtools/browser/x",
             source      : "debug-port",
         }),
-        isPortOpen : async () => true,
-        isWritable : async () => true,
-        probeDaemon: async (): Promise<DaemonProbe> => ({ kind: "not-running" }),
-        findProgram: async (name) => `/usr/bin/${name}`,
+        deniedPortFile: async () => undefined,
+        isPortOpen    : async () => true,
+        isWritable    : async () => true,
+        probeDaemon   : async (): Promise<DaemonProbe> => ({ kind: "not-running" }),
+        findProgram   : async (name) => `/usr/bin/${name}`,
         ...overrides,
     };
 }
@@ -118,6 +119,20 @@ describe("doctor", () => {
         const checks = await runDoctor(managed, deps({ isWritable: async () => false }));
 
         expect(checks[3]).toMatchObject({ level: "fail", title: "Profile directory" });
+    });
+
+    it("reports an unreadable port file instead of disabled remote debugging", async () => {
+        const file = "/Users/u/Library/Application Support/Google/Chrome/DevToolsActivePort";
+        const checks = await runDoctor(
+            attach,
+            deps({ platform: "darwin", findAttachEndpoint: async () => undefined, deniedPortFile: async () => file }),
+        );
+        const endpoint = checks[2];
+
+        expect(endpoint?.level).toBe("fail");
+        expect(endpoint?.detail).toContain(file);
+        expect(endpoint?.detail).not.toContain("not enabled");
+        expect(endpoint?.fix?.join(" ")).toContain("Full Disk Access");
     });
 
     it("explains how to enable remote debugging when no browser is found", async () => {
