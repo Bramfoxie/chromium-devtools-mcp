@@ -109,7 +109,7 @@ describe("PermissionLedger", () => {
         expect(backend.log.some((line) => line.startsWith("resetPermissions"))).toBe(false);
     });
 
-    it("keeps going and logs when the browser refuses a reset", async () => {
+    it("reports a failed reset and allows the holder to retry", async () => {
         vi.spyOn(process.stderr, "write").mockImplementation(() => true);
         const backend = new FakeBackend();
         const ledger = new PermissionLedger(backend);
@@ -122,11 +122,72 @@ describe("PermissionLedger", () => {
             throw new Error("browser went away");
         };
 
-        await expect(ledger.release(holder, entry)).resolves.toBeUndefined();
+        await expect(ledger.release(holder, entry)).rejects.toThrow("browser went away");
+        expect(backend.permissions.size).toBe(1);
+
+        backend.resetPermissions = async () => { backend.permissions.clear(); };
+
+        await ledger.release(holder, entry);
+        expect(backend.permissions.size).toBe(0);
+    });
+
+    it("continues session cleanup when the browser refuses a reset", async () => {
+        const writes = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+        const backend = new FakeBackend();
+        const ledger = new PermissionLedger(backend);
+        const holder = {};
+
+        await ledger.grant(holder, { name: "geolocation", origin: SITE, contextId: undefined });
+
+        backend.resetPermissions = async () => { throw new Error("browser went away"); };
+
+        await expect(ledger.releaseAll(holder)).resolves.toBeUndefined();
+        expect(writes).toHaveBeenCalled();
     });
 });
 
 describe("permission.set on a session", () => {
+    it("keeps a geolocation grant when a separate permission override is reset", async () => {
+        const { backend, open } = setup();
+        const session = await open("a");
+
+        await session.setPermission({ ...grant, origin: SITE });
+        await session.setPermission({ ...grant, origin: SITE, owner: "permissions" });
+        await session.setPermission({ ...reset, origin: SITE, owner: "permissions" });
+        expect(backend.permissions.size).toBe(1);
+    });
+
+    it("refuses conflicting overrides held by different sessions", async () => {
+        const { backend, open } = setup();
+        const first = await open("a");
+        const second = await open("b");
+
+        await first.setPermission({ name: "camera", setting: "granted", origin: SITE, owner: "permissions" });
+        expect(await code(second.setPermission({ name: "camera", setting: "denied", origin: SITE, owner: "permissions" }))).toBe(ErrorCode.busy);
+        expect([...backend.permissions.values()][0]).toMatchObject({ name: "camera", setting: "granted" });
+    });
+
+    it("requires confirmation for a permission override when configured", async () => {
+        const { backend, open } = setup();
+        const session = await open("a", {
+            safety: {
+                readOnly            : false,
+                allowedDomains      : [],
+                deniedDomains       : [],
+                allowPrivateNetworks: true,
+                confirmDangerous    : true,
+                uploadDirs          : [],
+            },
+        });
+
+        expect(await code(session.setPermission({ name: "camera", setting: "granted", origin: SITE, owner: "permissions" }))).toBe(ErrorCode.forbiddenMethod);
+        expect(backend.permissions.size).toBe(0);
+        await session.setPermission({ name: "camera", setting: "granted", origin: SITE, owner: "permissions", confirmed: true });
+        expect(backend.permissions.size).toBe(1);
+        expect(await code(session.setPermission({ name: "camera", setting: "reset", origin: SITE, owner: "permissions" }))).toBe(ErrorCode.forbiddenMethod);
+        await session.setPermission({ name: "camera", setting: "reset", origin: SITE, owner: "permissions", confirmed: true });
+        expect(backend.permissions.size).toBe(0);
+    });
     it("grants geolocation for an origin and resets it", async () => {
         const { backend, open } = setup();
         const session = await open("a");

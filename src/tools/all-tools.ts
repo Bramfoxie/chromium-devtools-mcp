@@ -12,6 +12,7 @@ import { domSnapshot } from "./dom-snapshot.js";
 import { emulateCpu } from "./emulation/emulate-cpu.js";
 import { emulateDevice } from "./emulation/emulate-device.js";
 import { emulateGeolocation } from "./emulation/emulate-geolocation.js";
+import { permissions } from "./permissions.js";
 import { emulateLocale } from "./emulation/emulate-locale.js";
 import { emulateMedia } from "./emulation/emulate-media.js";
 import { emulateNetwork } from "./emulation/emulate-network.js";
@@ -101,6 +102,7 @@ export const allTools: AnyTool[] = [
     emulateCpu,
     emulateLocale,
     emulateGeolocation,
+    permissions,
     click,
     inputClick,
     inputHover,

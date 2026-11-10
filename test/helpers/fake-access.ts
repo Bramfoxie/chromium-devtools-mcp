@@ -130,9 +130,11 @@ export class FakeAccess {
     }
 
     async setPermission(request: {
-        name   : "geolocation";
-        setting: "granted" | "reset";
-        origin : string;
+        name      : "geolocation" | "notifications" | "camera" | "microphone" | "clipboard-read" | "clipboard-write";
+        setting   : "granted" | "denied" | "reset";
+        origin    : string;
+        owner?    : "geolocation" | "permissions";
+        confirmed?: boolean;
     }): Promise<void> {
         this.order.push(`permission ${request.setting}`);
 

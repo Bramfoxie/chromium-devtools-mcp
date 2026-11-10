@@ -100,6 +100,7 @@ export class ClientSession {
     readonly clientName         : string;
     private readonly safety     : SessionSafety;
     private readonly permissions: PermissionLedger;
+    private readonly directPermissions = {};
     private readonly traceLock  : TraceLock;
 
     constructor(init: ClientSessionInit) {
@@ -192,20 +193,34 @@ export class ClientSession {
     }
 
     async setPermission(request: {
-        name   : PermissionName;
-        setting: "granted" | "reset";
-        origin : string;
+        name      : PermissionName;
+        setting   : "granted" | "denied" | "reset";
+        origin    : string;
+        owner?    : "geolocation" | "permissions";
+        confirmed?: boolean;
     }): Promise<void> {
         this.ensureOpen();
+
+        if (request.owner !== "permissions" && (request.name !== "geolocation" || request.setting === "denied")) {
+            throw new RpcError(ErrorCode.badRequest, "Use the permissions owner for this permission change.");
+        }
+
         const origin = permissionOrigin(request.origin);
 
         checkPermissionOrigin(origin, this.safety);
 
-        const grant = { name: request.name, origin, contextId: this.contextId };
+        if ((request.owner === "permissions" || request.setting !== "reset") &&
+            this.safety.confirmDangerous && request.confirmed !== true) {
+            throw new RpcError(ErrorCode.forbiddenMethod, "Changing a permission needs the user's confirmation. Use a tool that asks for it.");
+        }
+
+        const grant = { name: request.name, origin, contextId: this.contextId,
+            ...(request.owner === "permissions" && request.setting !== "reset" ? { setting: request.setting } : {}) };
+        const holder = request.owner === "permissions" ? this.directPermissions : this;
 
         try {
-            if (request.setting === "granted") await this.permissions.grant(this, grant);
-            else await this.permissions.release(this, grant);
+            if (request.setting === "reset") await this.permissions.release(holder, grant);
+            else await this.permissions.grant(holder, grant);
         } catch (error) {
             throw translate(error);
         }
@@ -510,6 +525,7 @@ export class ClientSession {
         } finally {
             this.traceLock.release(this);
             await this.permissions.releaseAll(this, this.contextId);
+            await this.permissions.releaseAll(this.directPermissions, this.contextId);
 
             for (const [targetId] of entries) {
                 if (!claimed.has(targetId)) this.registry.releaseOwner(targetId, this);

@@ -98,16 +98,9 @@ export const emulateGeolocation = defineTool({
         const previous = context.emulation.snapshot(targetId).geolocation;
 
         if (reset) {
-            await runSteps(context.access, context.signal, targetId, [
-                {
-                    commands: buildGeolocationResetCommands(),
-                    record  : () => context.emulation.resetGeolocation(targetId),
-                },
-            ]);
-
             if (
                 previous !== undefined &&
-                !context.emulation.geolocationOrigins().has(previous.origin)
+                !context.emulation.geolocationOrigins(targetId).has(previous.origin)
             ) {
                 await context.access.setPermission({
                     name   : "geolocation",
@@ -115,6 +108,13 @@ export const emulateGeolocation = defineTool({
                     origin : previous.origin,
                 });
             }
+
+            await runSteps(context.access, context.signal, targetId, [
+                {
+                    commands: buildGeolocationResetCommands(),
+                    record  : () => context.emulation.resetGeolocation(targetId),
+                },
+            ]);
 
             return {
                 tab      : targetId,

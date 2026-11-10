@@ -50,6 +50,7 @@ export const TOOL_GROUPS: Readonly<Record<string, readonly string[]>> = {
         "emulate_cpu",
         "emulate_locale",
         "emulate_geolocation",
+        "permissions",
     ],
     slim: [
         "list_tabs",

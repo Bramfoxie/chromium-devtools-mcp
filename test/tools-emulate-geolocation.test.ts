@@ -159,6 +159,21 @@ describe("emulate_geolocation", () => {
         expect(fake.permissions.at(-1)).toEqual({ name: "geolocation", setting: "reset", origin: SITE });
     });
 
+    it("can retry a permission reset that the browser rejected", async () => {
+        const { fake, runtime } = setup();
+
+        await runTool(emulateGeolocation, { latitude: 1, longitude: 2 }, extra(), runtime);
+        fake.failPermission = new Error("reset failed");
+        const failed = await runTool(emulateGeolocation, { reset: true }, extra(), runtime);
+
+        expect(failed.isError).toBe(true);
+        fake.failPermission = undefined;
+        const retried = await runTool(emulateGeolocation, { reset: true }, extra(), runtime);
+
+        expect(retried.isError).not.toBe(true);
+        expect(fake.permissions.at(-1)).toEqual({ name: "geolocation", setting: "reset", origin: SITE });
+    });
+
     it("keeps the permission while another tab still uses the origin", async () => {
         const { fake, runtime } = setup();
 

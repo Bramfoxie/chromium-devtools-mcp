@@ -76,6 +76,8 @@ function minimalArgs(name: string): Record<string, unknown> {
             return { locale: "de-DE" };
         case "emulate_geolocation":
             return { latitude: 52.5, longitude: 13.4 };
+        case "permissions":
+            return { name: "camera", setting: "granted", origin: "https://example.com" };
         case "click":
         case "input_click":
         case "input_hover":
@@ -121,7 +123,7 @@ describe("tool declarations", () => {
         expect(text).toContain(`${allTools.length} tools. Details and parameters`);
     });
 
-    it("declares sixty one tools with unique names, descriptions and access", () => {
+    it("declares sixty two tools with unique names, descriptions and access", () => {
         expect(allTools.map((tool) => tool.name)).toEqual([
             "list_tabs",
             "popup_list",
@@ -174,6 +176,7 @@ describe("tool declarations", () => {
             "emulate_cpu",
             "emulate_locale",
             "emulate_geolocation",
+            "permissions",
             "click",
             "input_click",
             "input_hover",
@@ -223,6 +226,7 @@ describe("tool declarations", () => {
             "lighthouse_audit",
             "new_tab",
             "page_navigate",
+            "permissions",
             "select_tab",
             "storage_write",
             "tab_duplicate",
@@ -239,6 +243,7 @@ describe("tool declarations", () => {
             "heap_snapshot",
             "input_upload",
             "js_evaluate",
+            "permissions",
             "storage_write",
         ]);
     });
@@ -705,7 +710,7 @@ describe("runTool", () => {
 });
 
 describe("tools/list", () => {
-    it("lists exactly the sixty one tools with their schemas", async () => {
+    it("lists exactly the sixty two tools with their schemas", async () => {
         const server = createMcpServer("1.0.0");
 
         registerTools({ server, tools: allTools, runtime: runtime() });
@@ -767,6 +772,7 @@ describe("tools/list", () => {
             "emulate_cpu",
             "emulate_locale",
             "emulate_geolocation",
+            "permissions",
             "click",
             "input_click",
             "input_hover",
