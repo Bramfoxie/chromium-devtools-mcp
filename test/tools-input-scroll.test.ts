@@ -228,6 +228,7 @@ describe("input_scroll", () => {
         expect(JSON.stringify(result.structuredContent)).toContain("trusted wheel event was observed");
         expect(fake.sent.filter((entry) => entry.method === "Input.dispatchMouseEvent")).toHaveLength(1);
         expect(fake.sent.some((entry) => entry.method === "Runtime.evaluate" && String((entry.params as { expression?: unknown }).expression).includes("cdmWheelProbeRemove"))).toBe(true);
+        expect(fake.sent.filter((entry) => entry.method === "Page.createIsolatedWorld").map((entry) => (entry.params as { worldName?: unknown }).worldName)).toEqual(["chromium-devtools-mcp-wheel"]);
     });
 
     it("does not dispatch a wheel when cancelled during probe installation", async () => {

@@ -5,6 +5,8 @@ import { bindAccess } from "./frame-scope.js";
 import { ownerGeometry } from "./frame-geometry.js";
 import type { FrameState } from "./frames.js";
 
+const WORLD_NAME = "chromium-devtools-mcp-wheel";
+
 const hitSchema = z.object({ frameId: z.string(), backendNodeId: z.number().optional() });
 const describedSchema = z.object({ node: z.object({ frameId: z.string().optional() }) });
 const modelSchema = z.object({ model: z.object({
@@ -87,7 +89,7 @@ export async function withWheelProbe<T>(
                 const world = worldSchema.safeParse(await owner.send({
                     targetId: tab,
                     method  : "Page.createIsolatedWorld",
-                    params  : { frameId, worldName: key },
+                    params  : { frameId, worldName: WORLD_NAME },
                 }));
 
                 if (world.success) {
