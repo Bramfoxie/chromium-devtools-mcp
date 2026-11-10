@@ -272,6 +272,42 @@ describe("emulate_geolocation", () => {
         expect(fake.permissions.some((entry) => entry.origin === OTHER)).toBe(false);
     });
 
+    it("does not grant a new origin after cancellation during the previous reset", async () => {
+        const { fake, runtime } = setup();
+        const controller = new AbortController();
+        let unblock: () => void = () => undefined;
+        let started: () => void = () => undefined;
+        const entered = new Promise<void>((resolve) => { started = resolve; });
+        const gate = new Promise<void>((resolve) => { unblock = resolve; });
+
+        await runTool(emulateGeolocation, { latitude: 1, longitude: 2 }, extra(), runtime);
+        const original = fake.setPermission.bind(fake);
+
+        fake.setPermission = async (request) => {
+            if (request.setting === "reset") {
+                started();
+                await gate;
+            }
+
+            await original(request);
+        };
+
+        const call = runTool(emulateGeolocation, {
+            latitude: 3, longitude: 4, origin: OTHER,
+        }, { signal: controller.signal } as Extra, runtime);
+
+        await entered;
+        controller.abort();
+        unblock();
+        await call;
+        await runtime.emulation.withGeolocation(async () => undefined);
+
+        expect(fake.permissions).not.toContainEqual({
+            name: "geolocation", setting: "granted", origin: OTHER,
+        });
+        expect(fake.permissions.at(-1)).toEqual({ name: "geolocation", setting: "granted", origin: SITE });
+    });
+
     it("warns when the new permission cannot be cleaned up after an emulation failure", async () => {
         const { fake, runtime } = setup();
         const original = fake.setPermission.bind(fake);

@@ -95,6 +95,7 @@ export const emulateGeolocation = defineTool({
         return context.emulation.withGeolocation(async () => {
             throwIfCancelled(context.signal);
             await ensureNoDialog(context.dialogs, targetId);
+            throwIfCancelled(context.signal);
 
             const previous = context.emulation.snapshot(targetId).geolocation;
 
@@ -138,6 +139,8 @@ export const emulateGeolocation = defineTool({
             const releasePrevious = previous !== undefined && previous.origin !== origin &&
                 !context.emulation.geolocationOrigins(targetId).has(previous.origin);
 
+            throwIfCancelled(context.signal);
+
             if (releasePrevious) {
                 await context.access.setPermission({ name: "geolocation", setting: "reset", origin: previous.origin });
             }
@@ -145,6 +148,7 @@ export const emulateGeolocation = defineTool({
             let granted = false;
 
             try {
+                throwIfCancelled(context.signal);
                 await context.access.setPermission({ name: "geolocation", setting: "granted", origin });
                 granted = true;
                 await runSteps(context.access, context.signal, targetId, [
