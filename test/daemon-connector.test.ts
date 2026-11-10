@@ -343,6 +343,7 @@ describe("attach mode with an explicit endpoint", () => {
 
         expect(attempts).toBe(3);
         expect(hooks.onWaiting).toHaveBeenCalledTimes(1);
-        expect(hooks.onWaiting).toHaveBeenCalledWith(endpointUnreachableMessage(endpoint));
+        expect(hooks.onWaiting).toHaveBeenCalledWith(endpointUnreachableMessage());
+        expect(hooks.onWaiting.mock.calls[0]?.[0]).not.toContain("given");
     });
 });

@@ -153,7 +153,8 @@ describe("doctor", () => {
 
         expect(isPortOpen).toHaveBeenCalledWith(9444);
         expect(findAttachEndpoint).not.toHaveBeenCalled();
-        expect(checks[1]?.detail).toContain("endpoint ws://127.0.0.1:9444/devtools/browser/abc");
+        expect(checks[1]?.detail).toContain("endpoint on port 9444");
+        expect(checks[1]?.detail).not.toContain("abc");
         expect(checks[2]).toMatchObject({ level: "fail", detail: "nothing listens on port 9444" });
         expect(checks[2]?.fix?.join(" ")).toContain("changes every time the browser starts");
     });

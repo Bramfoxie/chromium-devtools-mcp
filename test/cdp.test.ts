@@ -262,6 +262,15 @@ describe("requests", () => {
 });
 
 describe("connect", () => {
+    it("does not expose the endpoint path when a connection fails", async () => {
+        const { server, url } = await startServer(echo);
+
+        server.close();
+        const failure = await CdpClient.connect({ url: `${url}/devtools/browser/private-id` }).catch((error: unknown) => error);
+
+        expect((failure as Error).message).not.toContain("private-id");
+    });
+
     it("rejects with CdpClosedError when the endpoint is unreachable", async () => {
         const { server, url } = await startServer(echo);
 

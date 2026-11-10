@@ -230,7 +230,7 @@ export function createConnector(overrides: Partial<ConnectorDeps> = {}): Browser
 
                 if (endpoint.source === "ws-endpoint" && !reportedUnreachable) {
                     reportedUnreachable = true;
-                    hooks.onWaiting(endpointUnreachableMessage(endpoint.webSocketUrl));
+                    hooks.onWaiting(endpointUnreachableMessage());
                 }
 
                 logDaemon(`could not connect to the browser yet, retrying: ${describeError(error)}`);

@@ -219,8 +219,8 @@ export function explicitEndpoint(webSocketUrl: string): AttachEndpoint {
     return { port: Number(new URL(webSocketUrl).port), webSocketUrl, source: "ws-endpoint" };
 }
 
-export function endpointUnreachableMessage(webSocketUrl: string): string {
-    return `Cannot connect to ${webSocketUrl} yet. Check that the browser is running with remote debugging and that wsEndpoint is its current address, which changes when the browser restarts. Waiting until it answers.`;
+export function endpointUnreachableMessage(): string {
+    return "Cannot connect to the browser yet. Check that the browser is running with remote debugging and that wsEndpoint is its current address, which changes when the browser restarts. Waiting until it answers.";
 }
 
 export function setupInstructions(config: AttachConfig): string {
