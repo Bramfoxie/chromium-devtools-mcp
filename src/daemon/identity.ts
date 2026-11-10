@@ -54,7 +54,11 @@ export function describeIdentity(
     identity: DaemonIdentity,
     fields  : readonly IdentityField[] = FIELDS,
 ): string {
-    return fields.map((field) => `${field} ${String(identity[field] ?? "unset")}`).join(", ");
+    return fields.map((field) => {
+        const value = identity[field];
+
+        return `${field} ${field === "wsEndpoint" && value !== undefined ? "(set)" : String(value ?? "unset")}`;
+    }).join(", ");
 }
 
 export function describeSettings(identity: DaemonIdentity): string {

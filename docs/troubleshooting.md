@@ -16,7 +16,7 @@ Add to `doctor` the same flags as in your client entry, so it checks the same se
 - Starting Chrome with `--remote-debugging-port` works only together with `--user-data-dir` pointing to another directory, because Chrome 136 and newer ignore the flag on the default profile.
 - On macOS the message may say that Chrome's `DevToolsActivePort` file cannot be read. That is the operating system refusing the app that starts the server (the MCP client), not a sign that debugging is off. Turn on Full Disk Access for that app in System Settings, Privacy & Security, then restart it. As an alternative, run `npx chromium-devtools-mcp daemon` once in a terminal that has access.
 - With `wsEndpoint` set the daemon connects to that address and never prints the setup steps. A browser that asks for approval of that connection can still be answered within 120 seconds.
-- Connection errors do not include the browser WebSocket address. Check the configured `wsEndpoint` locally when diagnosing a failed connection.
+- Connection errors and daemon settings do not include the browser WebSocket address. Check the configured `wsEndpoint` locally when diagnosing a failed connection.
 
 ## A client gets an error about differing settings
 

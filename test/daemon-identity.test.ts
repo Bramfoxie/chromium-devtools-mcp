@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { daemonIdentity, describeSettings, differingFields } from "../src/daemon/identity.js";
+import { daemonIdentity, describeIdentity, describeSettings, differingFields } from "../src/daemon/identity.js";
 
 const attach = {
     browser   : "chrome",
@@ -32,6 +32,13 @@ describe("daemon identity with an explicit endpoint", () => {
 });
 
 describe("describing the settings of a daemon", () => {
+    it("hides the endpoint in settings and mismatch descriptions", () => {
+        const identity = daemonIdentity({ ...attach, wsEndpoint: "ws://127.0.0.1:9444/devtools/browser/private-id" });
+
+        expect(describeSettings(identity)).not.toContain("private-id");
+        expect(describeIdentity(identity, ["wsEndpoint"])).toBe("wsEndpoint (set)");
+    });
+
     it("lists only the settings that are set", () => {
         expect(describeSettings(daemonIdentity(attach))).toBe(
             "browser chrome, mode attach, debugPort 9222, allowFocus false",
