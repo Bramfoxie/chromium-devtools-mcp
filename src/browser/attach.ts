@@ -76,7 +76,13 @@ function browserWebSocketUrl(version: unknown, port: number): string | undefined
     }
 }
 
-export type ProblemReporter = (message: string) => void;
+export type ProblemReporter = (message: string, deniedFile?: string) => void;
+
+function isAccessDenied(error: unknown): boolean {
+    const code = (error as NodeJS.ErrnoException | undefined)?.code;
+
+    return code === "EPERM" || code === "EACCES";
+}
 
 async function endpointInDir(
     deps      : Pick<AttachDeps, "context" | "readFile" | "isPortOpen">,
@@ -90,7 +96,9 @@ async function endpointInDir(
     try {
         content = await deps.readFile(file);
     } catch (error) {
-        onProblem?.(`Cannot read ${file}: ${messageOf(error)}`);
+        const denied = isAccessDenied(error) ? file : undefined;
+
+        onProblem?.(`Cannot read ${file}: ${messageOf(error)}`, denied);
 
         return undefined;
     }
@@ -183,6 +191,23 @@ export async function resolveAttachEndpoint(
     return undefined;
 }
 
+export async function deniedPortFile(
+    config   : AttachConfig,
+    overrides: Partial<Pick<AttachDeps, "context" | "readFile">> = {},
+): Promise<string | undefined> {
+    const { context, readFile } = { ...defaultAttachDeps(), ...overrides };
+    const dir = browserUserDataDir(config.browser, context);
+    const file = pathFor(context.platform).join(dir, PORT_FILE_NAME);
+
+    try {
+        await readFile(file);
+
+        return undefined;
+    } catch (error) {
+        return isAccessDenied(error) ? file : undefined;
+    }
+}
+
 export function findAttachEndpoint(
     config   : AttachConfig,
     overrides: Partial<AttachDeps> = {},
@@ -207,15 +232,41 @@ export function setupInstructions(config: AttachConfig): string {
     ].join("\n");
 }
 
+export function accessDeniedFix(platform: NodeJS.Platform): string[] {
+    return platform === "darwin"
+        ? [
+            "macOS blocks apps from reading another app's data. Open System Settings > Privacy & Security > Full Disk Access, turn it on for the app that starts this server (the MCP client or the terminal), then restart that app.",
+            "Or start the daemon from a terminal that already has access, then restart the client: npx chromium-devtools-mcp daemon",
+        ]
+        : ["Check that the current user may read this file and the profile directory that holds it."];
+}
+
+export function accessDeniedInstructions(
+    config  : AttachConfig,
+    file    : string,
+    platform: NodeJS.Platform,
+): string {
+    const label = BROWSERS[config.browser].label;
+    const steps = accessDeniedFix(platform);
+
+    return [
+        `Cannot attach to ${label} yet: ${label} is running with remote debugging, but this process is not allowed to read ${file}, so the browser address is unknown. Waiting until the file can be read.`,
+        ...steps,
+    ].join("\n");
+}
+
 export async function attachBrowser(
     config   : AttachConfig,
     overrides: Partial<AttachDeps> = {},
     signal?  : AbortSignal,
 ): Promise<AttachEndpoint> {
     const deps: AttachDeps = { ...defaultAttachDeps(), ...overrides };
-    let instructed = false;
+    let instructed: string | undefined;
     const reported = new Set<string>();
-    const onProblem: ProblemReporter = (message) => {
+    let deniedFile: string | undefined;
+    const onProblem: ProblemReporter = (message, denied) => {
+        deniedFile = denied;
+
         if (reported.has(message)) return;
 
         reported.add(message);
@@ -223,6 +274,8 @@ export async function attachBrowser(
     };
 
     while (!signal?.aborted) {
+        deniedFile = undefined;
+
         const endpoint = await resolveAttachEndpoint(config, deps, signal, onProblem);
 
         if (endpoint) {
@@ -231,12 +284,15 @@ export async function attachBrowser(
             return endpoint;
         }
 
-        if (!instructed) {
-            const instructions = setupInstructions(config);
+        const instructions =
+            deniedFile === undefined
+                ? setupInstructions(config)
+                : accessDeniedInstructions(config, deniedFile, deps.context.platform);
 
+        if (instructions !== instructed) {
             deps.log(instructions);
             deps.onWaiting(instructions);
-            instructed = true;
+            instructed = instructions;
         }
 
         await deps.sleep(deps.pollIntervalMs, signal);
