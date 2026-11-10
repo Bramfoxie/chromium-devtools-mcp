@@ -56,10 +56,15 @@ const PAGE_FUNCTION = `(kinds, limit, textChars, fieldLimit) => {
     }));
   }
   if (kinds.includes("meta")) {
-    out.meta = take(all("meta[name],meta[property],meta[http-equiv]"), (m) => ({
-      name: clip(attr(m, "name") || attr(m, "property") || attr(m, "http-equiv")),
-      content: clip(attr(m, "content")),
-    }));
+    out.meta = take(all("meta[name],meta[property],meta[http-equiv]"), (m) => {
+      const names = [attr(m, "name"), attr(m, "property"), attr(m, "http-equiv")].filter((v) => v !== null);
+      return {
+        name: clip(names.find((v) => v) || ""),
+        names: names.map(clip),
+        longName: names.some((v) => v.length > textChars),
+        content: clip(attr(m, "content")),
+      };
+    });
   }
   if (kinds.includes("forms")) {
     out.forms = take(docForms.call(document), (form) => {

@@ -47,8 +47,13 @@ const pageSchema = z.object({
     canonical: url(),
     links    : group(z.object({ text: text(), href: url(), rel: text() })).optional(),
     headings : group(z.object({ level: z.number().int().min(1).max(6), text: text() })).optional(),
-    meta     : group(z.object({ name: text(), content: text() })).optional(),
-    forms    : group(z.object({
+    meta     : group(z.object({
+        name    : text(),
+        names   : z.array(text()).max(3).default([]),
+        longName: z.boolean().default(false),
+        content : text(),
+    })).optional(),
+    forms: group(z.object({
         id        : text(),
         name      : text(),
         method    : text(),
@@ -171,7 +176,9 @@ export const pageExtract = defineTool({
                         total: data.meta.total,
                         items: data.meta.items.map((tag) => ({
                             name   : tag.name,
-                            content: sensitiveName(tag.name) ? HIDDEN : tag.content,
+                            content: tag.longName || [tag.name, ...tag.names].some(sensitiveName)
+                                ? HIDDEN
+                                : tag.content,
                         })),
                     },
                 limit,

@@ -25,6 +25,8 @@ const PAGE = `<!doctype html><html lang="de"><head><title>Extract page</title>
 
 const CLOBBERED = `<!doctype html><title>Clobbered</title>
 <meta name="csrf-token" content="CSRF-SECRET">
+<meta name="description" property="access-token" content="OTHER-SECRET">
+<meta name="${"x".repeat(300)}-token" content="LONG-SECRET">
 <meta name="description" content="kept">
 <svg width="20" height="20"><a href="/in-svg"><text y="15">svg link</text></a></svg>
 <form id="real" method="post" action="/real-action">
@@ -119,6 +121,8 @@ describe.skipIf(!present)("page_extract in a real browser", () => {
         const text = JSON.stringify(page);
 
         expect(text).not.toContain("CSRF-SECRET");
+        expect(text).not.toContain("OTHER-SECRET");
+        expect(text).not.toContain("LONG-SECRET");
         expect(text).toContain("csrf-token");
         expect(text).toContain("kept");
     });
