@@ -134,9 +134,18 @@ export const emulateGeolocation = defineTool({
             origin,
         };
 
-        await context.access.setPermission({ name: "geolocation", setting: "granted", origin });
+        const releasePrevious = previous !== undefined && previous.origin !== origin &&
+            !context.emulation.geolocationOrigins(targetId).has(previous.origin);
+
+        if (releasePrevious) {
+            await context.access.setPermission({ name: "geolocation", setting: "reset", origin: previous.origin });
+        }
+
+        let granted = false;
 
         try {
+            await context.access.setPermission({ name: "geolocation", setting: "granted", origin });
+            granted = true;
             await runSteps(context.access, context.signal, targetId, [
                 {
                     commands: buildGeolocationCommands(next),
@@ -152,23 +161,29 @@ export const emulateGeolocation = defineTool({
             ]);
         } catch (error) {
             const stillUsed = context.emulation.geolocationOrigins().has(origin);
+            let cleanupFailed = false;
 
-            if (!stillUsed && previous?.origin !== origin) {
-                await context.access
-                    .setPermission({ name: "geolocation", setting: "reset", origin })
-                    .catch(() => undefined);
+            if (granted && !stillUsed && previous?.origin !== origin) {
+                try {
+                    await context.access.setPermission({ name: "geolocation", setting: "reset", origin });
+                } catch {
+                    cleanupFailed = true;
+                }
+            }
+
+            if (releasePrevious) {
+                try {
+                    await context.access.setPermission({ name: "geolocation", setting: "granted", origin: previous.origin });
+                } catch {
+                    cleanupFailed = true;
+                }
+            }
+
+            if (cleanupFailed) {
+                throw new ToolError("The geolocation change failed and permission cleanup was incomplete. End this session to release its permissions, then check the browser settings.");
             }
 
             throw error;
-        }
-
-        if (
-            previous !== undefined && previous.origin !== origin &&
-            !context.emulation.geolocationOrigins().has(previous.origin)
-        ) {
-            await context.access
-                .setPermission({ name: "geolocation", setting: "reset", origin: previous.origin })
-                .catch(() => undefined);
         }
 
         const reported = await readGeolocation(context.access, targetId, origin, context.signal);

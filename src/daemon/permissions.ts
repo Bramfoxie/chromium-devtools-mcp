@@ -28,6 +28,7 @@ function keyOf(grant: PermissionGrant): string {
 // Counts the holders of an override and removes it when the last one lets go.
 export class PermissionLedger {
     private readonly entries = new Map<string, Entry>();
+    private readonly pendingCleanup = new Set<string | undefined>();
     private queue: Promise<unknown> = Promise.resolve();
 
     constructor(private readonly backend: PermissionBackend) {}
@@ -53,6 +54,7 @@ export class PermissionLedger {
     }
 
     private async doGrant(holder: object, grant: PermissionGrant): Promise<void> {
+        await this.repair(grant.contextId);
         const key = keyOf(grant);
         const previous = this.entries.get(key);
         const requested = grant.setting ?? "granted";
@@ -71,6 +73,7 @@ export class PermissionLedger {
     }
 
     private async doRelease(holder: object, grant: PermissionGrant): Promise<void> {
+        await this.repair(grant.contextId);
         const key = keyOf(grant);
         const entry = this.entries.get(key);
 
@@ -89,13 +92,24 @@ export class PermissionLedger {
         } catch (error) {
             this.entries.set(key, entry);
 
+            if (!await this.restore(grant.contextId)) {
+                this.pendingCleanup.add(grant.contextId);
+
+                throw new RpcError(ErrorCode.cdpError, "The permission reset failed and some overrides could not be restored. Check the browser permissions and retry.");
+            }
+
             throw error;
         }
     }
 
     // A disposed context takes its overrides with it, so it needs no reset.
     private async doReleaseAll(holder: object, disposedContextId?: string): Promise<void> {
-        const contexts = new Set<string | undefined>();
+        const contexts = new Set(this.pendingCleanup);
+
+        if (disposedContextId !== undefined) {
+            contexts.delete(disposedContextId);
+            this.pendingCleanup.delete(disposedContextId);
+        }
 
         for (const [key, entry] of [...this.entries]) {
             if (!entry.holders.delete(holder) || entry.holders.size > 0) continue;
@@ -110,7 +124,10 @@ export class PermissionLedger {
         for (const contextId of contexts) {
             try {
                 await this.rebuild(contextId);
+                this.pendingCleanup.delete(contextId);
             } catch (error) {
+                this.pendingCleanup.add(contextId);
+                await this.restore(contextId);
                 logDaemon(`could not reset the browser permissions: ${describeError(error)}`);
             }
         }
@@ -121,6 +138,35 @@ export class PermissionLedger {
 
         for (const { grant } of this.entries.values()) {
             if (grant.contextId === contextId) await this.backend.setPermission(grant);
+        }
+    }
+
+    private async restore(contextId: string | undefined): Promise<boolean> {
+        let restored = true;
+
+        for (const { grant } of this.entries.values()) {
+            if (grant.contextId !== contextId) continue;
+
+            try {
+                await this.backend.setPermission(grant);
+            } catch {
+                restored = false;
+            }
+        }
+
+        return restored;
+    }
+
+    private async repair(contextId: string | undefined): Promise<void> {
+        if (!this.pendingCleanup.has(contextId)) return;
+
+        try {
+            await this.rebuild(contextId);
+            this.pendingCleanup.delete(contextId);
+        } catch {
+            await this.restore(contextId);
+
+            throw new RpcError(ErrorCode.cdpError, "Previous permission cleanup is incomplete. Check the browser permissions and retry.");
         }
     }
 }

@@ -144,6 +144,94 @@ describe("PermissionLedger", () => {
         await expect(ledger.releaseAll(holder)).resolves.toBeUndefined();
         expect(writes).toHaveBeenCalled();
     });
+
+    it("retries failed session cleanup before accepting another override", async () => {
+        vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+        const backend = new FakeBackend();
+        const ledger = new PermissionLedger(backend);
+        const first = {};
+        const second = {};
+        const old = { name: "camera", setting: "denied", origin: SITE, contextId: undefined } as const;
+        const next = { name: "microphone", setting: "granted", origin: OTHER, contextId: undefined } as const;
+
+        await ledger.grant(first, old);
+        const reset = backend.resetPermissions.bind(backend);
+
+        backend.resetPermissions = async () => { throw new Error("reset failed"); };
+
+        await ledger.releaseAll(first);
+        backend.resetPermissions = reset;
+        await ledger.grant(second, next);
+        expect([...backend.permissions.values()]).toEqual([next]);
+    });
+
+    it("refuses new overrides while earlier cleanup still fails", async () => {
+        vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+        const backend = new FakeBackend();
+        const ledger = new PermissionLedger(backend);
+        const first = {};
+        const old = { name: "camera", setting: "denied", origin: SITE, contextId: undefined } as const;
+        const next = { name: "microphone", setting: "granted", origin: OTHER, contextId: undefined } as const;
+
+        await ledger.grant(first, old);
+
+        backend.resetPermissions = async () => { throw new Error("reset failed"); };
+
+        await ledger.releaseAll(first);
+        await expect(ledger.grant({}, next)).rejects.toThrow("cleanup is incomplete");
+        expect([...backend.permissions.values()]).toEqual([old]);
+    });
+
+    it("restores tracked overrides when reapplying one fails during a reset", async () => {
+        const backend = new FakeBackend();
+        const ledger = new PermissionLedger(backend);
+        const first = {};
+        const second = {};
+        const denied = { name: "camera", setting: "denied", origin: SITE, contextId: undefined } as const;
+        const other = { name: "microphone", setting: "granted", origin: OTHER, contextId: undefined } as const;
+
+        await ledger.grant(first, denied);
+        await ledger.grant(second, other);
+        const set = backend.setPermission.bind(backend);
+        let fail = true;
+
+        backend.setPermission = async (grant) => {
+            if (grant.name === "microphone" && fail) {
+                fail = false;
+
+                throw new Error("reapply failed");
+            }
+
+            await set(grant);
+        };
+
+        await expect(ledger.release(first, denied)).rejects.toThrow("reapply failed");
+        expect([...backend.permissions.values()]).toEqual(expect.arrayContaining([denied, other]));
+        await ledger.release(first, denied);
+        expect([...backend.permissions.values()]).toEqual([other]);
+    });
+
+    it("reports incomplete restoration and still attempts every tracked override", async () => {
+        const backend = new FakeBackend();
+        const ledger = new PermissionLedger(backend);
+        const first = {};
+        const second = {};
+        const denied = { name: "camera", setting: "denied", origin: SITE, contextId: undefined } as const;
+        const other = { name: "microphone", setting: "granted", origin: OTHER, contextId: undefined } as const;
+
+        await ledger.grant(first, denied);
+        await ledger.grant(second, other);
+        const set = backend.setPermission.bind(backend);
+
+        backend.setPermission = async (grant) => {
+            if (grant.name === "microphone") throw new Error("reapply failed");
+
+            await set(grant);
+        };
+
+        await expect(ledger.release(first, denied)).rejects.toThrow("could not be restored");
+        expect([...backend.permissions.values()]).toContainEqual(denied);
+    });
 });
 
 describe("permission.set on a session", () => {
