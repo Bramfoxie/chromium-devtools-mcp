@@ -1472,6 +1472,31 @@ describe("state shared with cross site frame sessions", () => {
         );
     });
 
+    it("applies CPU throttling to existing and new child sessions", async () => {
+        const { a, tab, handle } = await tabWithChild();
+        const child = handle?.addChild("cross", true, CROSS);
+
+        await handle?.settled();
+        await a.send({ targetId: tab, method: "Emulation.setCPUThrottlingRate", params: { rate: 6 } });
+        const late = handle?.addChild("late", true, CROSS);
+
+        await handle?.settled();
+
+        for (const frame of [child, late]) {
+            expect(frame?.sent).toContainEqual(
+                expect.objectContaining({ method: "Emulation.setCPUThrottlingRate", params: { rate: 6 } }),
+            );
+        }
+
+        await a.send({ targetId: tab, method: "Emulation.setCPUThrottlingRate", params: { rate: 1 } });
+        const afterReset = handle?.addChild("after-reset", true, CROSS);
+
+        await handle?.settled();
+        expect(afterReset?.sent).toContainEqual(
+            expect.objectContaining({ method: "Emulation.setCPUThrottlingRate", params: { rate: 1 } }),
+        );
+    });
+
     it("sends the replayed commands to a new child without waiting for each reply", async () => {
         const { a, tab, handle } = await tabWithChild();
 

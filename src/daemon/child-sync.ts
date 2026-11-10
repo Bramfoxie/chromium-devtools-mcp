@@ -11,6 +11,7 @@ const REPLICATED = new Set([
     "Emulation.setTimezoneOverride",
     "Emulation.setEmulatedMedia",
     "Emulation.setGeolocationOverride",
+    "Emulation.setCPUThrottlingRate",
 ]);
 
 const REQUEST_ROUTED = new Set([
