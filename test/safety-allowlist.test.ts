@@ -64,3 +64,22 @@ describe("isHostAllowed and describeUrlHost", () => {
         expect(describeUrlHost("garbage")).toBe("an unknown page");
     });
 });
+
+describe("rules written in a non-canonical address form", () => {
+    it("matches an IPv6 rule written in full against the compressed address", () => {
+        expect(allow("http://[::1]/", "[0:0:0:0:0:0:0:1]")).toBe(true);
+        expect(allow("http://[0:0:0:0:0:0:0:1]:80/", "[::1]")).toBe(true);
+        expect(allow("http://[::2]/", "[0:0:0:0:0:0:0:1]")).toBe(false);
+    });
+
+    it("matches a shortened IPv4 rule against the dotted address", () => {
+        expect(allow("http://127.0.0.1/", "127.1")).toBe(true);
+        expect(allow("http://127.0.0.2/", "127.1")).toBe(false);
+        expect(isHostAllowed("127.0.0.1", ["127.1"])).toBe(true);
+    });
+
+    it("keeps ordinary names untouched", () => {
+        expect(allow("http://a1.example.com/", "a1.example.com")).toBe(true);
+        expect(allow("http://example.com/", "example.com.")).toBe(true);
+    });
+});

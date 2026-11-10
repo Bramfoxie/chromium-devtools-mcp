@@ -8,14 +8,26 @@ interface Rule {
     port?    : string;
 }
 
+const NUMERIC_OR_V6_HOST = /^(\[[0-9a-f:.]+\]|[0-9.]+)$/;
+
+function canonicalHost(host: string): string | undefined {
+    if (!NUMERIC_OR_V6_HOST.test(host)) return host;
+
+    try {
+        return new URL(`http://${host}/`).hostname;
+    } catch {
+        return undefined;
+    }
+}
+
 function parseRule(pattern: string): Rule | undefined {
     const match = PATTERN.exec(pattern.trim().toLowerCase());
 
     if (match === null) return undefined;
 
-    const host = (match[2] ?? "").replace(/\.$/, "");
+    const host = canonicalHost((match[2] ?? "").replace(/\.$/, ""));
 
-    if (host === "") return undefined;
+    if (host === undefined || host === "") return undefined;
 
     return {
         host,
