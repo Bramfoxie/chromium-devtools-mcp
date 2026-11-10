@@ -413,6 +413,18 @@ describe("permission.set on a session", () => {
         expect(backend.permissions.size).toBe(0);
     });
 
+    it("clears isolated permissions when context disposal fails", async () => {
+        const { backend, open } = setup();
+        const session = await open("a", { isolated: true });
+
+        await session.setPermission({ ...grant, origin: SITE });
+        vi.spyOn(backend, "disposeContext").mockRejectedValue(new Error("dispose failed"));
+        await session.close();
+
+        expect(backend.permissions.size).toBe(0);
+        expect(backend.log).toContain("resetPermissions ctx1");
+    });
+
     it("does not reset the browser when an isolated session closes", async () => {
         const { backend, registry, open } = setup();
         const session = await open("a", { isolated: true });

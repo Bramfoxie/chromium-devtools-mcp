@@ -533,12 +533,16 @@ export class ClientSession {
             }),
         );
 
+        let disposedContextId: string | undefined;
+
         try {
-            await Promise.all([this.dispose(entries), within(detaches, DETACH_GRACE_MS)]);
+            [disposedContextId] = await Promise.all([
+                this.dispose(entries), within(detaches, DETACH_GRACE_MS),
+            ]);
         } finally {
             this.traceLock.release(this);
-            await this.permissions.releaseAll(this, this.contextId);
-            await this.permissions.releaseAll(this.directPermissions, this.contextId);
+            await this.permissions.releaseAll(this, disposedContextId);
+            await this.permissions.releaseAll(this.directPermissions, disposedContextId);
 
             for (const [targetId] of entries) {
                 if (!claimed.has(targetId)) this.registry.releaseOwner(targetId, this);
@@ -546,15 +550,15 @@ export class ClientSession {
         }
     }
 
-    private async dispose(entries: Array<[string, OwnedTab]>): Promise<void> {
+    private async dispose(entries: Array<[string, OwnedTab]>): Promise<string | undefined> {
         if (this.contextId !== undefined) {
             const contextId = this.contextId;
 
-            await this.attempt("dispose the browser context", () =>
+            const disposed = await this.attempt("dispose the browser context", () =>
                 this.backend.disposeContext(contextId),
             );
 
-            return;
+            return disposed ? contextId : undefined;
         }
 
         await Promise.all(
@@ -562,17 +566,23 @@ export class ClientSession {
                 .filter(([, tab]) => tab.created)
                 .map(([targetId]) => this.attempt("close a tab", () => this.backend.closeTarget(targetId))),
         );
+
+        return undefined;
     }
 
     private isAvailable(target: TargetInfo): boolean {
         return target.contextId === this.contextId && !this.registry.ownerOf(target.targetId);
     }
 
-    private async attempt(what: string, action: () => Promise<void>): Promise<void> {
+    private async attempt(what: string, action: () => Promise<void>): Promise<boolean> {
         try {
             await action();
+
+            return true;
         } catch (error) {
             logDaemon(`could not ${what}: ${describeError(error)}`);
+
+            return false;
         }
     }
 
