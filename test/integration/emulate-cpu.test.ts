@@ -47,6 +47,7 @@ describe.skipIf(!present)("emulate_cpu in a real browser", () => {
             expect(slow).toBeGreaterThan(normal * 2);
         } finally {
             await env.ok("emulate_cpu", { tab, reset: true });
+            await env.ok("close_tab", { tab });
         }
     });
 
