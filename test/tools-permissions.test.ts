@@ -113,4 +113,22 @@ describe("permissions", () => {
         expect(result.isError).toBe(true);
         expect(fake.permissions).toEqual([]);
     });
+
+    it("allows releasing an override when its origin resolves to a private address", async () => {
+        const fake = new FakeAccess();
+        const config = {
+            ...managedConfig, safety: { ...managedConfig.safety, allowPrivateNetworks: false },
+        };
+        const runtime = new ToolRuntime({
+            access: fake.asAccess(), config, resolveHost: async () => ["127.0.0.1"],
+        });
+        const result = await runTool(permissions, {
+            name: "camera", setting: "reset", origin: "https://example.com",
+        }, extra(), runtime);
+
+        expect(result.isError).not.toBe(true);
+        expect(fake.permissions).toContainEqual({
+            name: "camera", setting: "reset", origin: "https://example.com", owner: "permissions",
+        });
+    });
 });

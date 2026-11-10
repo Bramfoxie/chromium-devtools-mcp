@@ -397,6 +397,23 @@ describe("permission.set on a session", () => {
         expect(backend.permissions.size).toBe(1);
     });
 
+    it("releases an override when its origin later resolves to a private address", async () => {
+        let addresses = ["8.8.8.8"];
+        const { backend, open } = setup(async () => addresses);
+        const session = await open("a", {
+            safety: {
+                readOnly            : false, allowedDomains      : [], deniedDomains       : [],
+                allowPrivateNetworks: false, confirmDangerous    : false, uploadDirs          : [],
+            },
+        });
+
+        await session.setPermission({ name: "camera", setting: "granted", origin: SITE, owner: "permissions" });
+        addresses = ["192.168.1.20"];
+        await session.setPermission({ name: "camera", setting: "reset", origin: SITE, owner: "permissions" });
+
+        expect(backend.permissions.size).toBe(0);
+    });
+
     it("lets go of its grants when the session closes and leaves other sessions alone", async () => {
         const { backend, registry, open } = setup();
         const first = await open("a");

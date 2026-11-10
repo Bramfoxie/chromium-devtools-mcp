@@ -212,7 +212,7 @@ export class ClientSession {
 
         checkPermissionOrigin(origin, this.safety);
 
-        const problem = await resolutionProblem(
+        const problem = request.setting === "reset" ? undefined : await resolutionProblem(
             origin, this.safety, this.options.resolveHost ?? systemResolver(),
         );
 

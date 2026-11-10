@@ -114,7 +114,9 @@ async function admitWithChecks(
     if (!decision.allowed) return refusal(decision);
 
     const opening = base.target?.url;
-    const problem = opening === undefined || access !== "mutate"
+    const permissionReset = tool.name === "permissions" &&
+        (args as { setting?: unknown } | null)?.setting === "reset";
+    const problem = opening === undefined || access !== "mutate" || permissionReset
         ? undefined
         : await resolutionProblem(opening, runtime.config.safety, runtime.resolveHost);
 
