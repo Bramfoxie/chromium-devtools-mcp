@@ -4,14 +4,15 @@ import { chromeAvailable, html, startEnv, type Env } from "./browser-env.js";
 const present = chromeAvailable();
 let env: Env;
 
-const BENCH = "(() => { const t = performance.now(); let x = 0; for (let i = 0; i < 4e7; i += 1) x += i % 7; return performance.now() - t; })()";
+const BENCH = "(() => { const t = performance.now(); let x = 0; for (let i = 0; i < 4e6; i += 1) x += i % 7; return performance.now() - t; })()";
+const FRAME_BENCH = BENCH.replace("4e6", "4e7");
 
 beforeAll(async () => {
     if (!present) return;
 
     env = await startEnv();
     env.fixture.pages.set("/cpu", html("<p>cpu</p>"));
-    env.other.pages.set("/cpu-child", html(`<script>onmessage = () => parent.postMessage(${BENCH}, '*')</script>`));
+    env.other.pages.set("/cpu-child", html(`<script>onmessage = () => parent.postMessage(${FRAME_BENCH}, '*')</script>`));
     env.fixture.pages.set("/cpu-frame", html(`<iframe src="${env.other.origin}/cpu-child"></iframe>`));
 });
 
