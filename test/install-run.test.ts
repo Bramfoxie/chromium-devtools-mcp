@@ -20,6 +20,7 @@ function setup(files: Record<string, string> = {}, platform: NodeJS.Platform = "
     const deps: InstallDeps = {
         fs,
         home,
+        cwd: platform === "win32" ? "C:\\work\\app" : "/work/app",
         platform,
         env,
         now: () => new Date("2026-01-02T03:04:05.678Z"),
@@ -37,6 +38,7 @@ describe("parseInstallArgs", () => {
             dryRun     : true,
             remove     : false,
             list       : false,
+            scope      : "user",
             serverFlags: ["--read-only"],
         });
     });
@@ -182,7 +184,7 @@ describe("runInstall", () => {
         const t = setup();
         const deps: InstallDeps = {
             fs      : { read: () => { throw new Error("EACCES"); }, writeFile: () => undefined, copy: () => undefined },
-            home    : "/h", platform: "linux", env     : {}, now     : () => new Date(0),
+            home    : "/h", cwd     : "/w", platform: "linux", env     : {}, now     : () => new Date(0),
             out     : () => undefined, err     : (text) => void t.err.push(text),
         };
 
@@ -367,5 +369,67 @@ describe("install --list", () => {
         expect(run(["--list", "--remove"])).toBe(2);
         expect(run(["--list", "--headless"])).toBe(2);
         expect(err.join("")).toContain("--list");
+    });
+});
+
+describe("--scope project", () => {
+    function withCwd(files: Record<string, string> = {}, platform: NodeJS.Platform = "linux") {
+        const harness = setup(files, platform);
+
+        return harness;
+    }
+
+    const entry = { command: "npx", args: ["-y", "chromium-devtools-mcp"] };
+
+    it("parses the scope and refuses an unknown one or a client without a project file", () => {
+        expect(parseInstallArgs(["--client", "cursor", "--scope", "project"]).scope).toBe("project");
+        expect(parseInstallArgs(["--client", "cursor"]).scope).toBe("user");
+        expect(() => parseInstallArgs(["--client", "cursor", "--scope", "team"])).toThrow(/--scope/);
+        expect(() => parseInstallArgs(["--client", "cursor", "--scope"])).toThrow(/--scope/);
+    });
+
+    it.each([
+        ["claude-code", "/work/app/.mcp.json", { mcpServers: { "chromium-devtools": { type: "stdio", ...entry } } }],
+        ["cursor", "/work/app/.cursor/mcp.json", { mcpServers: { "chromium-devtools": entry } }],
+        ["vscode", "/work/app/.vscode/mcp.json", { servers: { "chromium-devtools": { type: "stdio", ...entry } } }],
+    ])("writes %s into the project directory", (client, file, expected) => {
+        const { store, run, err } = withCwd();
+
+        expect(run(["--client", client, "--scope", "project"])).toBe(0);
+        expect(err).toEqual([]);
+        expect(JSON.parse(store.get(file) ?? "{}")).toEqual(expected);
+        expect([...store.keys()].every((key) => key.startsWith("/work/app/"))).toBe(true);
+    });
+
+    it("keeps other servers of the project file and removes only its own entry", () => {
+        const file = "/work/app/.mcp.json";
+        const { store, run } = withCwd({
+            [file]: JSON.stringify({ mcpServers: { other: { command: "x" } } }),
+        });
+
+        run(["--client", "claude-code", "--scope", "project"]);
+        expect(JSON.parse(store.get(file) ?? "{}").mcpServers).toMatchObject({
+            other              : { command: "x" },
+            "chromium-devtools": { type: "stdio" },
+        });
+
+        run(["--client", "claude-code", "--scope", "project", "--remove"]);
+        expect(JSON.parse(store.get(file) ?? "{}")).toEqual({ mcpServers: { other: { command: "x" } } });
+    });
+
+    it("says that a client has no project file and fails, without touching anything", () => {
+        const { store, run, err } = withCwd();
+
+        expect(run(["--client", "codex", "--scope", "project"])).toBe(1);
+        expect(err.join("")).toContain("codex: has no project scope");
+        expect(store.size).toBe(0);
+    });
+
+    it("does not let all create files for clients without a project file", () => {
+        const { store, run, err } = withCwd();
+
+        expect(run(["--client", "all", "--scope", "project"])).toBe(1);
+        expect([...store.keys()].sort()).toEqual(["/work/app/.cursor/mcp.json", "/work/app/.mcp.json"]);
+        expect(err.join("")).toContain("codex: has no project scope");
     });
 });

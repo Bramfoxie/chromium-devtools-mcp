@@ -12,6 +12,8 @@ npx chromium-devtools-mcp install --client codex --remove
 
 `--client` takes `claude-code`, `cursor`, `codex`, `cherry-studio`, `claude-desktop`, `windsurf`, `gemini-cli`, `vscode`, `vscode-insiders` or `all`, and may be repeated. `all` means the first four; the others are named explicitly so that no folder is created for a program you do not use. Each client is handled on its own: one failure does not stop the others and makes the exit code 1. A usage error exits with 2.
 
+`--scope project` writes the entry into the current directory instead of your user configuration, for the clients that read a project file: Claude Code (`.mcp.json`), Cursor (`.cursor/mcp.json`) and VS Code (`.vscode/mcp.json`). Any other client reports that it has no project scope and the exit code is 1. `--remove` and `--dry-run` work the same way. The file is meant to be committed with the project, so pass server flags only when they are safe for everyone who uses it.
+
 | Client                    | What the installer changes                                                                                                                                                                                       |
 | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Claude Code               | `mcpServers` in `~/.claude.json` (user scope), or `$CLAUDE_CONFIG_DIR/.claude.json` when that is set                                                                                                             |

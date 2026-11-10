@@ -40,6 +40,7 @@ const defaults: CliDeps = {
         runInstall(argv, {
             fs      : realFs,
             home    : os.homedir(),
+            cwd     : process.cwd(),
             platform: process.platform,
             env     : process.env,
             now     : () => new Date(),

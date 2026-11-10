@@ -31,15 +31,24 @@ function apply(
     target: ClientTarget,
     entry : ServerEntry | undefined,
     dryRun: boolean,
+    scope : "user" | "project",
     deps  : InstallDeps,
 ): boolean {
-    if (target.file === undefined || target.merge === undefined) {
+    const locate = scope === "project" ? target.projectFile : target.file;
+
+    if (scope === "project" && (locate === undefined || target.merge === undefined)) {
+        deps.err(`${target.name}: has no project scope. Install it with the default user scope.\n`);
+
+        return false;
+    }
+
+    if (locate === undefined || target.merge === undefined) {
         manual(target, entry, deps);
 
         return true;
     }
 
-    const file = target.file(deps);
+    const file = locate(deps);
     let text: string | undefined;
 
     try {
@@ -150,7 +159,7 @@ export function runInstall(argv: string[], deps: InstallDeps): number {
             });
         }
     } catch (error) {
-        deps.err(`${error instanceof ConfigError ? error.message : String(error)}\nUsage: chromium-devtools-mcp install --client <${CLIENTS.map((client) => client.name).join("|")}|all> [--dry-run] [--remove] [server options]\n       chromium-devtools-mcp install --list\n`);
+        deps.err(`${error instanceof ConfigError ? error.message : String(error)}\nUsage: chromium-devtools-mcp install --client <${CLIENTS.map((client) => client.name).join("|")}|all> [--scope user|project] [--dry-run] [--remove] [server options]\n       chromium-devtools-mcp install --list\n`);
 
         return 2;
     }
@@ -165,7 +174,7 @@ export function runInstall(argv: string[], deps: InstallDeps): number {
     const results = args.clients.map((name) => {
         const target = CLIENTS.find((client) => client.name === name) as ClientTarget;
 
-        return apply(target, entry, args.dryRun, deps);
+        return apply(target, entry, args.dryRun, args.scope, deps);
     });
 
     return results.every(Boolean) ? 0 : 1;
