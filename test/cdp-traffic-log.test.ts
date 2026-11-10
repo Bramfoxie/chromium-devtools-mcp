@@ -1,12 +1,36 @@
 import { chmodSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { CdpClient, type Transport } from "../src/cdp/index.js";
 import { trafficFile, type TrafficFileIO } from "../src/cdp/traffic-log.js";
 import { loadConfig } from "../src/config/index.js";
 
 describe("CDP traffic log", () => {
+    it("does not measure message sizes when logging is disabled", async () => {
+        let receive: (raw: string) => void = () => undefined;
+        const transport: Transport = {
+            send: (raw) => {
+                const id = (JSON.parse(raw) as { id: number }).id;
+
+                receive(JSON.stringify({ id, result: {} }));
+            },
+            close    : async () => undefined,
+            onMessage: (handler) => { receive = handler; },
+            onClose  : () => undefined,
+        };
+        const client = await CdpClient.connect({ url: "ws://unused", createTransport: async () => transport });
+        const measure = vi.spyOn(Buffer, "byteLength");
+
+        try {
+            await client.send("Page.enable");
+            expect(measure).not.toHaveBeenCalled();
+        } finally {
+            measure.mockRestore();
+            await client.close();
+        }
+    });
+
     it("records only method, id, direction and message size", async () => {
         const dir = mkdtempSync(path.join(os.tmpdir(), "cdm-traffic-"));
         const file = path.join(dir, "traffic.jsonl");

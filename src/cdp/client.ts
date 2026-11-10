@@ -136,7 +136,10 @@ export class CdpClient {
             this.pending.set(id, { method, sessionId: options.sessionId, resolve, reject, timer });
 
             try {
-                this.observe({ direction: "sent", method, id, bytes: Buffer.byteLength(payload) });
+                if (this.traffic !== undefined) {
+                    this.observe({ direction: "sent", method, id, bytes: Buffer.byteLength(payload) });
+                }
+
                 this.transport.send(payload);
             } catch (error) {
                 clearTimeout(timer);
@@ -329,15 +332,21 @@ export class CdpClient {
         }
 
         if (typeof message.id === "number") {
-            this.observe({
-                direction: "received",
-                id       : message.id,
-                method   : this.pending.get(message.id)?.method,
-                bytes    : Buffer.byteLength(raw),
-            });
+            if (this.traffic !== undefined) {
+                this.observe({
+                    direction: "received",
+                    id       : message.id,
+                    method   : this.pending.get(message.id)?.method,
+                    bytes    : Buffer.byteLength(raw),
+                });
+            }
+
             this.handleResponse(message.id, message);
         } else if (typeof message.method === "string") {
-            this.observe({ direction: "received", method: message.method, bytes: Buffer.byteLength(raw) });
+            if (this.traffic !== undefined) {
+                this.observe({ direction: "received", method: message.method, bytes: Buffer.byteLength(raw) });
+            }
+
             const sessionId = typeof message.sessionId === "string" ? message.sessionId : undefined;
 
             this.dispatchEvent(message.method, message.params, sessionId);
