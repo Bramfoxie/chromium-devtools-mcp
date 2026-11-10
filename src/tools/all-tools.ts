@@ -40,6 +40,7 @@ import { pwaInfo } from "./pwa-info.js";
 import { webauthn } from "./webauthn.js";
 import { pageWait } from "./page-wait.js";
 import { screenshot } from "./screenshot.js";
+import { pageExtract } from "./page-extract.js";
 import { pageInfo } from "./page-info.js";
 import { pageMetrics } from "./page-metrics.js";
 import { pageNavigate } from "./page-navigate.js";
@@ -55,6 +56,7 @@ export const allTools: AnyTool[] = [
     closeTab,
     bringToFront,
     pageInfo,
+    pageExtract,
     pageNavigate,
     jsEvaluate,
     domQuery,

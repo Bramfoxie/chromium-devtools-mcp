@@ -70,6 +70,10 @@ export { NAVIGATION_TIMING_EXPRESSION, pageMetrics, shapePerformanceMetrics } fr
 
 export { pageDetails, pageInfo, pageInfoExpression } from "./page-info.js";
 
+export { pageExtract } from "./page-extract.js";
+
+export { extractExpression } from "./page-extract-script.js";
+
 export { pageDialogs } from "./page-dialogs.js";
 
 export { checkConditions, pageWait } from "./page-wait.js";

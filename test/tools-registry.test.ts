@@ -117,7 +117,7 @@ describe("tool declarations", () => {
         expect(text).toContain(`${allTools.length} tools. Details and parameters`);
     });
 
-    it("declares fifty six tools with unique names, descriptions and access", () => {
+    it("declares fifty seven tools with unique names, descriptions and access", () => {
         expect(allTools.map((tool) => tool.name)).toEqual([
             "list_tabs",
             "popup_list",
@@ -128,6 +128,7 @@ describe("tool declarations", () => {
             "close_tab",
             "bring_to_front",
             "page_info",
+            "page_extract",
             "page_navigate",
             "js_evaluate",
             "dom_query",
@@ -692,7 +693,7 @@ describe("runTool", () => {
 });
 
 describe("tools/list", () => {
-    it("lists exactly the fifty six tools with their schemas", async () => {
+    it("lists exactly the fifty seven tools with their schemas", async () => {
         const server = createMcpServer("1.0.0");
 
         registerTools({ server, tools: allTools, runtime: runtime() });
@@ -712,6 +713,7 @@ describe("tools/list", () => {
             "close_tab",
             "bring_to_front",
             "page_info",
+            "page_extract",
             "page_navigate",
             "js_evaluate",
             "dom_query",
