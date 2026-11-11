@@ -117,22 +117,26 @@ const selectedBoundsSchema = z.object({
 
 const SELECTED_BOUNDS = `function() {
   let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
-  const queue = [this];
+  const roots = [this];
   let visited = 0;
   const add = (rect) => {
     if (rect.width <= 0 || rect.height <= 0) return;
     left = Math.min(left, rect.left); top = Math.min(top, rect.top);
     right = Math.max(right, rect.right); bottom = Math.max(bottom, rect.bottom);
   };
-  while (queue.length) {
-    const node = queue.pop();
+  const visit = (node) => {
     if (++visited > 5000) throw new Error("Too many elements to mask");
     add(Element.prototype.getBoundingClientRect.call(node));
+    if (node.shadowRoot) roots.push(node.shadowRoot);
+  };
+  while (roots.length) {
+    const root = roots.pop();
     const range = document.createRange();
-    range.selectNodeContents(node);
+    range.selectNodeContents(root);
     add(range.getBoundingClientRect());
-    for (const child of node.children) queue.push(child);
-    if (node.shadowRoot) for (const child of node.shadowRoot.children) queue.push(child);
+    if (root.nodeType === Node.ELEMENT_NODE) visit(root);
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
+    while (walker.nextNode()) visit(walker.currentNode);
   }
   if (!Number.isFinite(left)) throw new Error("No visible bounds");
   return { x: left, y: top, width: right - left, height: bottom - top };
@@ -259,9 +263,14 @@ export async function selectedBoxes(
             if (!parsed.success) throw maskError();
 
             const border = bounds(parsed.data.model.border);
-            const frame = element.frameId ?? await mainFrameId(context, tab);
+            const main = await mainFrameId(context, tab);
+            const frame = element.frameId ?? main;
 
-            if (frame === undefined) throw maskError();
+            if (frame === undefined || main === undefined) throw maskError();
+
+            if (frame !== main && element.isolated !== true) {
+                throw new ToolError("Masking a selected element in a same process frame is not supported. Capture the frame separately or choose another element.");
+            }
 
             const extent = await selectedBounds(owner, tab, element.backendNodeId, frame);
             const descendants = await descendantBounds(owner, tab, element.backendNodeId);

@@ -142,6 +142,54 @@ describe.skipIf(!present)("password masking in a real browser", () => {
         expect(data[(20 * info.width + 70) * info.channels]).toBeLessThan(10);
     });
 
+    it.each(["wide", "deep"])("refuses a %s element tree beyond the mask limit", async (shape) => {
+        env.fixture.pages.set("/mask-large", html(`<div id="private"></div><script>
+            let parent = document.querySelector('#private');
+            for (let i = 0; i < 5100; i++) {
+              const child = document.createElement('span');
+              parent.appendChild(child);
+              if (${JSON.stringify(shape)} === 'deep') parent = child;
+            }
+        </script>`));
+        const tab = await env.open("/mask-large");
+        const result = await env.client.callTool({
+            name: "screenshot", arguments: { tab, maskElements: [{ selector: "#private" }] },
+        });
+
+        expect(result.isError).toBe(true);
+        expect((result.content as Array<{ type: string }>).some((item) => item.type === "image")).toBe(false);
+    });
+
+    it("covers overflow inside an offset same site frame", async () => {
+        env.fixture.pages.set("/same-mask-inner", html(`<style>body { margin: 0 }
+            #private { position: absolute; left: 10px; top: 10px; width: 20px; height: 20px }
+            #secret { position: absolute; left: 50px; top: 0; width: 20px; height: 20px; background: red }</style>
+            <div id="private"><span id="secret"></span></div>`));
+        env.fixture.pages.set("/same-mask-outer", html(`<style>body { margin: 0; background: white }
+            iframe { position: absolute; left: 100px; top: 100px; width: 150px; height: 100px; border: 0 }</style>
+            <iframe src="/same-mask-inner"></iframe>`));
+        const tab = await env.open("/same-mask-outer");
+        const result = await env.client.callTool({
+            name     : "screenshot", arguments: {
+                tab, format      : "png", clip        : { x: 0, y: 0, width: 300, height: 250 },
+                maskElements: [{ selector: "#private", frame: "iframe" }],
+            },
+        });
+        const image = (result.content as Array<{ type: string; data?: string }>)
+            .find((entry) => entry.type === "image");
+
+        if (result.isError) {
+            expect(image).toBeUndefined();
+
+            return;
+        }
+
+        const { data, info } = await sharp(Buffer.from(image?.data ?? "", "base64"))
+            .removeAlpha().raw().toBuffer({ resolveWithObject: true });
+
+        expect(data[(120 * info.width + 170) * info.channels]).toBeLessThan(10);
+    });
+
     it("does not expose a child outside the selected element box", async () => {
         env.fixture.pages.set("/overflow-mask", html(`<style>body { margin: 0; background: white }
             #private { position: absolute; left: 10px; top: 10px; width: 20px; height: 20px }
