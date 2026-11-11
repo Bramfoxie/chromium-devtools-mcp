@@ -29,6 +29,7 @@ export async function loadInTab(
             url,
             undefined,
             "load",
+            undefined,
         );
 
         return {
@@ -59,18 +60,27 @@ export async function loadInTab(
 }
 
 export async function navigate(
-    context    : ToolContext,
-    deadline   : Deadline,
-    targetId   : string,
-    action     : "url" | "back" | "forward" | "reload",
-    url        : string | undefined,
-    ignoreCache: boolean | undefined,
+    context     : ToolContext,
+    deadline    : Deadline,
+    targetId    : string,
+    action      : "url" | "back" | "forward" | "reload" | "history",
+    url         : string | undefined,
+    ignoreCache : boolean | undefined,
+    historyIndex: number | undefined,
 ): Promise<string | undefined> {
     switch (action) {
         case "back":
 
-        case "forward": {
-            const entryId = await historyEntryId(context, targetId, action);
+        case "forward":
+
+        case "history": {
+            if (action === "history" && historyIndex === undefined) {
+                throw new ToolError("The history action needs a historyIndex.");
+            }
+
+            const entryId = await historyEntryId(
+                context, targetId, action === "history" ? historyIndex ?? -1 : action,
+            );
 
             throwIfCancelled(deadline.signal);
             await sendWithin(context.access, deadline, targetId, "Page.navigateToHistoryEntry", {
@@ -122,13 +132,14 @@ export async function navigate(
 }
 
 export async function navigateAndWait(
-    context    : ToolContext,
-    deadline   : Deadline,
-    targetId   : string,
-    action     : "url" | "back" | "forward" | "reload",
-    url        : string | undefined,
-    ignoreCache: boolean | undefined,
-    wait       : Exclude<WaitUntil, "none">,
+    context     : ToolContext,
+    deadline    : Deadline,
+    targetId    : string,
+    action      : "url" | "back" | "forward" | "reload" | "history",
+    url         : string | undefined,
+    ignoreCache : boolean | undefined,
+    wait        : Exclude<WaitUntil, "none">,
+    historyIndex: number | undefined,
 ): Promise<NavigationWaitState> {
     const frameId = await mainFrameId(context, targetId);
     let state = navigationWaitStart();
@@ -175,7 +186,9 @@ export async function navigateAndWait(
 
         state = navigationWaitStart();
 
-        const started = await navigate(context, deadline, targetId, action, url, ignoreCache);
+        const started = await navigate(
+            context, deadline, targetId, action, url, ignoreCache, historyIndex,
+        );
 
         if (started !== undefined && state.loaderId === undefined) {
             state = { ...state, loaderId: started };

@@ -80,6 +80,26 @@ describe("a public name that resolves to a private address", () => {
         expect(fake.sent.some((call) => call.method === "Page.navigateToHistoryEntry")).toBe(false);
     });
 
+    it("refuses a selected history entry that resolves to a private address", async () => {
+        const { fake, runtime } = setup(guarded(), async () => ["10.1.2.3"]);
+
+        await runTool(newTab, {}, extra(), runtime);
+        fake.respond = () => ({
+            currentIndex: 1,
+            entries     : [
+                { id: 1, url: "https://rebind.example/", title: "old" },
+                { id: 2, url: "about:blank", title: "current" },
+            ],
+        });
+        fake.sent.length = 0;
+        const result = await runTool(pageNavigate, {
+            action: "history", historyIndex: 0, waitUntil: "none",
+        }, extra(), runtime);
+
+        expect(result.isError).toBe(true);
+        expect(fake.sent.some((call) => call.method === "Page.navigateToHistoryEntry")).toBe(false);
+    });
+
     it("is refused when one of several addresses is private", async () => {
         const { runtime } = setup(guarded(), async () => ["93.184.216.34", "192.168.0.9"]);
         const result = await runTool(newTab, { url: "https://mixed.example/" }, extra(), runtime);

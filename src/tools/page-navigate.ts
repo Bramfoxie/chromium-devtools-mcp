@@ -17,15 +17,16 @@ export const NAVIGATE_MAX_TIMEOUT_MS = 120_000;
 export const pageNavigate = defineTool({
     name: "page_navigate",
     description:
-        "Navigate a tab to a URL, go back or forward, reload it, or stop its loading.",
+        "Navigate a tab to a URL, go back or forward, reload it, open a history entry, or stop its loading.",
     access: "mutate",
     input : z.strictObject({
-        tab        : tabSchema,
-        action     : z.enum(["url", "back", "forward", "reload", "stop"]).optional().describe("What to do. Defaults to url."),
-        url        : z.string().min(1).max(2048).optional().describe("URL to open, http, https or about:blank. Required for the url action."),
-        waitUntil  : waitUntilSchema.optional().describe("Wait for the load event, DOMContentLoaded, or return at once. Defaults to load."),
-        timeoutMs  : z.number().int().min(1).max(NAVIGATE_MAX_TIMEOUT_MS).optional().describe(`How long to wait for the page. Defaults to ${NAVIGATE_DEFAULT_TIMEOUT_MS} ms.`),
-        ignoreCache: z.boolean().optional().describe("Reload ignoring the cache. Only for the reload action."),
+        tab         : tabSchema,
+        action      : z.enum(["url", "back", "forward", "reload", "stop", "history"]).optional().describe("What to do. Defaults to url."),
+        url         : z.string().min(1).max(2048).optional().describe("URL to open, http, https or about:blank. Required for the url action."),
+        waitUntil   : waitUntilSchema.optional().describe("Wait for the load event, DOMContentLoaded, or return at once. Defaults to load."),
+        timeoutMs   : z.number().int().min(1).max(NAVIGATE_MAX_TIMEOUT_MS).optional().describe(`How long to wait for the page. Defaults to ${NAVIGATE_DEFAULT_TIMEOUT_MS} ms.`),
+        historyIndex: z.number().int().min(0).optional().describe("Entry index from page_history. Only for the history action."),
+        ignoreCache : z.boolean().optional().describe("Reload ignoring the cache. Only for the reload action."),
     }),
     output: z.strictObject({
         tab           : z.string().describe("Tab id."),
@@ -47,6 +48,14 @@ export const pageNavigate = defineTool({
         const targetId = resolveTab(args, context);
 
         const action = args.action ?? "url";
+
+        if (action === "history" && args.historyIndex === undefined) {
+            throw new ToolError("The history action needs a historyIndex from page_history.");
+        }
+
+        if (args.historyIndex !== undefined && action !== "history") {
+            throw new ToolError("historyIndex is only available for the history action.");
+        }
 
         if (args.ignoreCache !== undefined && action !== "reload") {
             throw new ToolError("ignoreCache is only available for the reload action.");
@@ -82,7 +91,10 @@ export const pageNavigate = defineTool({
             }
 
             if (waitUntil === "none") {
-                await navigate(context, deadline, targetId, action, args.url, args.ignoreCache);
+                await navigate(
+                    context, deadline, targetId, action, args.url,
+                    args.ignoreCache, args.historyIndex,
+                );
                 const page = await currentPage(context, targetId);
 
                 await requireAllowedFinalUrl(context, targetId, page.url);
@@ -104,6 +116,7 @@ export const pageNavigate = defineTool({
                 args.url,
                 args.ignoreCache,
                 waitUntil,
+                args.historyIndex,
             );
             const page = await currentPage(context, targetId);
 

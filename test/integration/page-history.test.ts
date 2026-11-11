@@ -28,5 +28,14 @@ describe.skipIf(!present)("page history in a real browser", () => {
             `${env.fixture.origin}/history-a`, `${env.fixture.origin}/history-b`,
         ]));
         expect(entries[result.currentIndex as number]?.url).toBe(`${env.fixture.origin}/history-b`);
+        const index = entries.findIndex((entry) => entry.url === `${env.fixture.origin}/history-a`);
+
+        expect(index).toBeGreaterThanOrEqual(0);
+        const first = (result.entries as Array<{ index: number }>)[index];
+
+        expect(first).toBeDefined();
+        const moved = await env.ok("page_navigate", { tab, action: "history", historyIndex: first?.index });
+
+        expect(moved.url).toBe(`${env.fixture.origin}/history-a`);
     });
 });
