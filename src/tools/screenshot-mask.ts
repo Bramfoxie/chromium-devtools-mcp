@@ -131,19 +131,21 @@ const SELECTED_BOUNDS = `function() {
   };
   while (roots.length) {
     const root = roots.pop();
-    const range = document.createRange();
-    range.selectNodeContents(root);
-    add(range.getBoundingClientRect());
     if (root.nodeType === Node.ELEMENT_NODE) visit(root);
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
     while (walker.nextNode()) visit(walker.currentNode);
+    const range = document.createRange();
+    range.selectNodeContents(root);
+    add(range.getBoundingClientRect());
   }
   if (!Number.isFinite(left)) throw new Error("No visible bounds");
   return { x: left, y: top, width: right - left, height: bottom - top };
 }`;
 
 const descendantSnapshotSchema = z.object({
+    strings  : z.array(z.string()),
     documents: z.array(z.object({
+        frameId      : z.number().int().nonnegative(),
         scrollOffsetX: z.number().optional(), scrollOffsetY: z.number().optional(),
         nodes        : z.object({
             backendNodeId: z.array(z.number()), parentIndex: z.array(z.number()),
@@ -154,16 +156,21 @@ const descendantSnapshotSchema = z.object({
     })),
 });
 
-async function descendantBounds(
-    access: DaemonAccess, tab: string, backendNodeId: number,
-): Promise<Rect[]> {
+async function readDescendantSnapshot(access: DaemonAccess, tab: string) {
     const snapshot = descendantSnapshotSchema.safeParse(await access.send({
-        targetId: tab, method: "DOMSnapshot.captureSnapshot", params: { computedStyles: [] },
+        targetId : tab, method   : "DOMSnapshot.captureSnapshot", params   : { computedStyles: [] },
+        timeoutMs: 5000,
     }));
 
     if (!snapshot.success) throw maskError();
 
-    for (const doc of snapshot.data.documents) {
+    return snapshot.data;
+}
+
+function descendantBounds(
+    snapshot: z.infer<typeof descendantSnapshotSchema>, backendNodeId: number,
+): Rect[] {
+    for (const doc of snapshot.documents) {
         const root = doc.nodes.backendNodeId.indexOf(backendNodeId);
 
         if (root < 0) continue;
@@ -252,6 +259,7 @@ export async function selectedBoxes(
     context: ToolContext, tab: string, targets: readonly ElementTarget[],
 ): Promise<Rect[]> {
     const boxes: Rect[] = [];
+    const snapshots = new Map<string, Promise<z.infer<typeof descendantSnapshotSchema>>>();
 
     for (const target of targets) {
         const box = await withElement(context, tab, target, async (element) => {
@@ -264,16 +272,34 @@ export async function selectedBoxes(
 
             const border = bounds(parsed.data.model.border);
             const main = await mainFrameId(context, tab);
-            const frame = element.frameId ?? main;
+            const sessionKey = element.isolated === true ? element.frameId : "top";
 
-            if (frame === undefined || main === undefined) throw maskError();
+            if (main === undefined || sessionKey === undefined) throw maskError();
+
+            let pendingSnapshot = snapshots.get(sessionKey);
+
+            if (pendingSnapshot === undefined) {
+                pendingSnapshot = readDescendantSnapshot(owner, tab);
+                snapshots.set(sessionKey, pendingSnapshot);
+            }
+
+            const snapshot = await pendingSnapshot;
+            const doc = snapshot.documents.find(
+                (item) => item.nodes.backendNodeId.includes(element.backendNodeId),
+            );
+            const frame = doc === undefined ? undefined : snapshot.strings[doc.frameId];
+
+            if (frame === undefined ||
+                (element.frameId !== undefined && element.frameId !== frame)) {
+                throw maskError();
+            }
 
             if (frame !== main && element.isolated !== true) {
                 throw new ToolError("Masking a selected element in a same process frame is not supported. Capture the frame separately or choose another element.");
             }
 
             const extent = await selectedBounds(owner, tab, element.backendNodeId, frame);
-            const descendants = await descendantBounds(owner, tab, element.backendNodeId);
+            const descendants = descendantBounds(snapshot, element.backendNodeId);
             const all = [border, extent, ...descendants];
             const left = Math.min(...all.map((box) => box.x));
             const top = Math.min(...all.map((box) => box.y));

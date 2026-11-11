@@ -160,6 +160,68 @@ describe.skipIf(!present)("password masking in a real browser", () => {
         expect((result.content as Array<{ type: string }>).some((item) => item.type === "image")).toBe(false);
     });
 
+    it("does not expose overflow through a pierced same site frame", async () => {
+        env.fixture.pages.set("/pierced-inner", html(`<style>body { margin: 0 }
+            #private { position: absolute; left: 10px; top: 10px; width: 20px; height: 20px }
+            #secret { position: absolute; left: 50px; width: 20px; height: 20px; background: red }</style>
+            <div id="private"><span id="secret"></span></div>`));
+        env.fixture.pages.set("/pierced-outer", html(`<style>body { margin: 0; background: white }
+            iframe { position: absolute; left: 100px; top: 100px; width: 150px; height: 100px; border: 0 }</style>
+            <iframe src="/pierced-inner"></iframe>`));
+        const tab = await env.open("/pierced-outer");
+        const result = await env.client.callTool({
+            name     : "screenshot", arguments: {
+                tab, format      : "png", clip        : { x: 0, y: 0, width: 300, height: 250 },
+                maskElements: [{ selector: "#private", pierce: true }],
+            },
+        });
+        const image = (result.content as Array<{ type: string; data?: string }>)
+            .find((entry) => entry.type === "image");
+
+        if (result.isError) {
+            expect(image).toBeUndefined();
+
+            return;
+        }
+
+        const { data, info } = await sharp(Buffer.from(image?.data ?? "", "base64"))
+            .removeAlpha().raw().toBuffer({ resolveWithObject: true });
+
+        expect(data[(120 * info.width + 170) * info.channels]).toBeLessThan(10);
+    });
+
+    it("does not return an unsafe mask for a uid in a same site frame", async () => {
+        env.fixture.pages.set("/uid-inner", html(`<style>body { margin: 0 }
+            #private { position: absolute; left: 10px; top: 10px; width: 20px; height: 20px }
+            #secret { position: absolute; left: 50px; width: 20px; height: 20px; background: red }</style>
+            <div id="private"><span id="secret"></span></div>`));
+        env.fixture.pages.set("/uid-outer", html(`<style>body { margin: 0 }
+            iframe { position: absolute; left: 100px; top: 100px; width: 150px; height: 100px; border: 0 }</style>
+            <iframe src="/uid-inner"></iframe>`));
+        const tab = await env.open("/uid-outer");
+        const query = await env.ok("dom_query", { tab, selector: "#private", frame: "iframe" });
+        const uid = String((query.matches as Array<{ uid: string }>)[0]?.uid);
+        const result = await env.client.callTool({
+            name     : "screenshot", arguments: {
+                tab, format      : "png", clip        : { x: 0, y: 0, width: 300, height: 250 },
+                maskElements: [{ uid }],
+            },
+        });
+        const image = (result.content as Array<{ type: string; data?: string }>)
+            .find((entry) => entry.type === "image");
+
+        if (result.isError) {
+            expect(image).toBeUndefined();
+
+            return;
+        }
+
+        const { data, info } = await sharp(Buffer.from(image?.data ?? "", "base64"))
+            .removeAlpha().raw().toBuffer({ resolveWithObject: true });
+
+        expect(data[(120 * info.width + 170) * info.channels]).toBeLessThan(10);
+    });
+
     it("covers overflow inside an offset same site frame", async () => {
         env.fixture.pages.set("/same-mask-inner", html(`<style>body { margin: 0 }
             #private { position: absolute; left: 10px; top: 10px; width: 20px; height: 20px }
