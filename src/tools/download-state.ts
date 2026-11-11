@@ -165,7 +165,7 @@ export class DownloadState {
         found.delivered = true;
 
         if (found.state === "completed" && found.path === undefined) {
-            await this.locate(state, found);
+            await this.queueLocate(state, found);
         }
 
         return publicItem(found);
@@ -228,13 +228,19 @@ export class DownloadState {
         if (parsed.data.totalBytes > 0) entry.totalBytes = parsed.data.totalBytes;
 
         if (entry.state === "completed") {
-            const turn = this.locating.then(() => this.locate(state, entry));
-
-            this.locating = turn.catch(() => undefined);
-            await turn;
+            await this.queueLocate(state, entry);
         }
 
         if (entry.state !== "inProgress") for (const wake of [...state.waiters]) wake();
+    }
+
+    private queueLocate(state: TabDownloads, entry: Entry): Promise<void> {
+        const turn = this.locating.then(() =>
+            entry.path === undefined ? this.locate(state, entry) : undefined);
+
+        this.locating = turn.catch(() => undefined);
+
+        return turn;
     }
 
     private async choose(

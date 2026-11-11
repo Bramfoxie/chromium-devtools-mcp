@@ -272,6 +272,50 @@ describe("DownloadState file lookup", () => {
 });
 
 describe("DownloadState concurrency", () => {
+    it("allows repeated waits for the same explicit download ID", async () => {
+        const fake = new FakeAccess();
+        const value = new DownloadState(fake.asAccess());
+
+        value.attach();
+        value.allow("tab1", "/d");
+        begin(fake, "a", "a.txt");
+        progress(fake, "a", "canceled", 0);
+        const first = value.next("tab1", 0, async () => undefined, "a");
+        const second = value.next("tab1", 0, async () => undefined, "a");
+
+        expect((await first)?.id).toBe("a");
+        expect((await second)?.id).toBe("a");
+    });
+
+    it("does not assign the same file to concurrent download waits", async () => {
+        const fake = new FakeAccess();
+        let release: () => void = () => undefined;
+        const gate = new Promise<void>((resolve) => (release = resolve));
+        const value = new DownloadState(fake.asAccess(), {
+            list: async () => {
+                await gate;
+
+                return ["only.txt"];
+            },
+            size: async () => 1,
+        }, async () => undefined);
+
+        value.attach();
+        value.allow("tab1", "/d");
+        begin(fake, "a", "a.txt");
+        begin(fake, "b", "b.txt");
+        progress(fake, "a", "completed", 1, 1);
+        progress(fake, "b", "completed", 1, 1);
+        const first = value.next("tab1", 0, async () => undefined, "a");
+        const second = value.next("tab1", 0, async () => undefined, "b");
+
+        release();
+        const results = await Promise.all([first, second]);
+        const paths = results.map((item) => item?.path).filter((file) => file !== undefined);
+
+        expect(paths).toEqual([path.join("/d", "only.txt")]);
+    });
+
     it("hands a completed download to only one concurrent waiter", async () => {
         const fake = new FakeAccess();
         let release: () => void = () => undefined;
