@@ -25,7 +25,9 @@ export class SessionRegistry<K> implements Ownership {
     private readonly sessions = new Map<K, ClientSession>();
     private readonly owners = new Map<string, ClientSession>();
     private readonly opening = new Map<K, symbol>();
+    private readonly openingTasks = new Set<Promise<ClientSession>>();
     private readonly sessionIds = new Map<ClientSession, string>();
+    private readonly closing = new Set<Promise<void>>();
     private nextSessionId = 1;
     private readonly destroyed = new Set<string>();
     private readonly stopListening: () => void;
@@ -64,7 +66,21 @@ export class SessionRegistry<K> implements Ownership {
         return this.destroyed.has(targetId);
     }
 
-    async open(key: K, emit: Emit, options: SessionOpenOptions): Promise<ClientSession> {
+    open(key: K, emit: Emit, options: SessionOpenOptions): Promise<ClientSession> {
+        const opening = this.openSession(key, emit, options);
+
+        this.openingTasks.add(opening);
+        void opening.then(
+            () => this.openingTasks.delete(opening),
+            () => this.openingTasks.delete(opening),
+        );
+
+        return opening;
+    }
+
+    private async openSession(
+        key: K, emit: Emit, options: SessionOpenOptions,
+    ): Promise<ClientSession> {
         if (this.shuttingDown) throw closedError();
 
         if (this.sessions.has(key) || this.opening.has(key)) {
@@ -142,7 +158,7 @@ export class SessionRegistry<K> implements Ownership {
 
         this.sessions.delete(key);
         this.sessionIds.delete(session);
-        await session.close();
+        await this.closeSession(session);
     }
 
     async closeAll(): Promise<void> {
@@ -153,7 +169,26 @@ export class SessionRegistry<K> implements Ownership {
 
         this.sessions.clear();
         this.sessionIds.clear();
-        await Promise.all(sessions.map((session) => session.close()));
+        for (const session of sessions) void this.closeSession(session);
+        const [closed] = await Promise.all([
+            Promise.allSettled(this.closing),
+            Promise.allSettled(this.openingTasks),
+        ]);
+        const failure = closed.find((result) => result.status === "rejected");
+
+        if (failure?.status === "rejected") throw failure.reason;
+    }
+
+    private closeSession(session: ClientSession): Promise<void> {
+        const closing = session.close();
+
+        this.closing.add(closing);
+        void closing.then(
+            () => this.closing.delete(closing),
+            () => this.closing.delete(closing),
+        );
+
+        return closing;
     }
 
     private remember(targetId: string): void {

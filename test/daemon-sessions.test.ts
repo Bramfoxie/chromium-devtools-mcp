@@ -477,6 +477,81 @@ describe("tab ownership", () => {
 });
 
 describe("closing a session", () => {
+    it("waits for other sessions when a session cleanup fails", async () => {
+        const { backend, registry, open } = setup();
+        const first = await open("a");
+        const second = await open("b");
+
+        await second.createTab("about:blank");
+        vi.spyOn(first, "close").mockRejectedValue(new Error("cleanup failed"));
+        let release: () => void = () => undefined;
+
+        backend.gates.closeTarget = new Promise<void>((resolve) => (release = resolve));
+        let settled = false;
+        const stopping = registry.closeAll().then(
+            () => { settled = true;
+
+                return undefined; },
+            (error: unknown) => { settled = true;
+
+                return error; },
+        );
+
+        try {
+            await new Promise<void>((resolve) => setImmediate(resolve));
+            expect(settled).toBe(false);
+        } finally {
+            release();
+        }
+
+        expect(await stopping).toEqual(new Error("cleanup failed"));
+    });
+
+    it("waits for an opening isolated session to dispose its context on shutdown", async () => {
+        const { backend, registry, open } = setup();
+        let release: () => void = () => undefined;
+
+        backend.gates.createContext = new Promise<void>((resolve) => (release = resolve));
+        const opening = code(open("a", true));
+        let stopped = false;
+        const stopping = registry.closeAll().then(() => { stopped = true; });
+
+        try {
+            await new Promise<void>((resolve) => setImmediate(resolve));
+            expect(stopped).toBe(false);
+        } finally {
+            release();
+            await stopping;
+        }
+
+        expect(await opening).toBe(ErrorCode.sessionClosed);
+        expect(backend.contexts.size).toBe(0);
+    });
+
+    it("waits for a session already closing when shutting down", async () => {
+        const { backend, registry, open } = setup();
+        const session = await open("a");
+
+        await session.createTab("about:blank");
+        let release: () => void = () => undefined;
+
+        backend.gates.closeTarget = new Promise<void>((resolve) => (release = resolve));
+        const closing = registry.close("a");
+        let stopped = false;
+        const stopping = registry.closeAll().then(() => { stopped = true; });
+        let stoppedAgain = false;
+        const stoppingAgain = registry.closeAll().then(() => { stoppedAgain = true; });
+
+        try {
+            await new Promise<void>((resolve) => setImmediate(resolve));
+            expect(stopped).toBe(false);
+            expect(stoppedAgain).toBe(false);
+        } finally {
+            release();
+            await Promise.all([closing, stopping, stoppingAgain]);
+        }
+    });
+
     it("closes the tabs it created in the shared context, detaches and frees ownership", async () => {
         const { backend, registry, open } = setup();
         const a = await open("a");
