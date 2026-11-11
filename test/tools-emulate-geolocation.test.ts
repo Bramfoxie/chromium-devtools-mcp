@@ -174,6 +174,72 @@ describe("emulate_geolocation", () => {
         expect(fake.permissions.at(-1)).toEqual({ name: "geolocation", setting: "reset", origin: SITE });
     });
 
+    it("restores the permission when resetting the browser emulation fails", async () => {
+        const { fake, runtime } = setup();
+
+        await runTool(emulateGeolocation, { latitude: 1, longitude: 2 }, extra(), runtime);
+        fake.failSend = (_tab, method) => method === "Emulation.setGeolocationOverride"
+            ? new Error("reset failed") : undefined;
+        const result = await runTool(emulateGeolocation, { reset: true }, extra(), runtime);
+
+        expect(result.isError).toBe(true);
+        expect(fake.permissions.at(-1)).toEqual({ name: "geolocation", setting: "granted", origin: SITE });
+        expect(runtime.emulation.snapshot("tab1").geolocation?.origin).toBe(SITE);
+    });
+
+    it("reports when a failed reset cannot restore the previous permission", async () => {
+        const { fake, runtime } = setup();
+
+        await runTool(emulateGeolocation, { latitude: 1, longitude: 2 }, extra(), runtime);
+        const original = fake.setPermission.bind(fake);
+
+        fake.setPermission = async (request) => {
+            if (request.setting === "granted") throw new Error("grant failed");
+
+            await original(request);
+        };
+
+        fake.failSend = (_tab, method) => method === "Emulation.setGeolocationOverride"
+            ? new Error("reset failed") : undefined;
+        const result = await runTool(emulateGeolocation, { reset: true }, extra(), runtime);
+
+        expect(result.isError).toBe(true);
+        expect(text(result)).toContain("previous permission could not be restored");
+    });
+
+    it("restores the permission when reset is cancelled while releasing it", async () => {
+        const { fake, runtime } = setup();
+        const controller = new AbortController();
+        let unblock: () => void = () => undefined;
+        let started: () => void = () => undefined;
+        const entered = new Promise<void>((resolve) => { started = resolve; });
+        const gate = new Promise<void>((resolve) => { unblock = resolve; });
+
+        await runTool(emulateGeolocation, { latitude: 1, longitude: 2 }, extra(), runtime);
+        const original = fake.setPermission.bind(fake);
+
+        fake.setPermission = async (request) => {
+            if (request.setting === "reset") {
+                started();
+                await gate;
+            }
+
+            await original(request);
+        };
+
+        const call = runTool(emulateGeolocation, { reset: true },
+            { signal: controller.signal } as Extra, runtime);
+
+        await entered;
+        controller.abort();
+        unblock();
+        await call;
+        await runtime.emulation.withGeolocation(async () => undefined);
+
+        expect(fake.permissions.at(-1)).toEqual({ name: "geolocation", setting: "granted", origin: SITE });
+        expect(runtime.emulation.snapshot("tab1").geolocation?.origin).toBe(SITE);
+    });
+
     it("keeps the permission while another tab still uses the origin", async () => {
         const { fake, runtime } = setup();
 

@@ -110,10 +110,10 @@ export const emulateGeolocation = defineTool({
             const previous = context.emulation.snapshot(targetId).geolocation;
 
             if (reset) {
-                if (
-                    previous !== undefined &&
-                    !context.emulation.geolocationOrigins(targetId).has(previous.origin)
-                ) {
+                const release = previous !== undefined &&
+                    !context.emulation.geolocationOrigins(targetId).has(previous.origin);
+
+                if (release) {
                     await context.access.setPermission({
                         name   : "geolocation",
                         setting: "reset",
@@ -121,12 +121,29 @@ export const emulateGeolocation = defineTool({
                     });
                 }
 
-                await runSteps(context.access, context.signal, targetId, [
-                    {
-                        commands: buildGeolocationResetCommands(),
-                        record  : () => context.emulation.resetGeolocation(targetId),
-                    },
-                ]);
+                try {
+                    await runSteps(context.access, context.signal, targetId, [
+                        {
+                            commands: buildGeolocationResetCommands(),
+                            record  : () => context.emulation.resetGeolocation(targetId),
+                            ...(previous === undefined
+                                ? {}
+                                : { undo: buildGeolocationCommands(previous) }),
+                        },
+                    ]);
+                } catch (error) {
+                    if (release) {
+                        try {
+                            await context.access.setPermission({
+                                name: "geolocation", setting: "granted", origin: previous.origin,
+                            });
+                        } catch {
+                            throw new ToolError("The geolocation reset failed and the previous permission could not be restored. Check the browser permissions and retry.");
+                        }
+                    }
+
+                    throw error;
+                }
 
                 return {
                     tab      : targetId,
