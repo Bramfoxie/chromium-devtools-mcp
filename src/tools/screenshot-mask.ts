@@ -105,6 +105,50 @@ export async function passwordBoxes(context: ToolContext, tab: string): Promise<
     }
 }
 
+const selectedBoundsSchema = z.object({
+    result: z.object({ value: z.object({
+        x     : z.number().finite(), y     : z.number().finite(),
+        width : z.number().finite().nonnegative(), height: z.number().finite().nonnegative(),
+    }).optional() }),
+    exceptionDetails: z.unknown().optional(),
+});
+
+const SELECTED_BOUNDS = `function() {
+  let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
+  const queue = [this];
+  let visited = 0;
+  const add = (rect) => {
+    if (rect.width <= 0 || rect.height <= 0) return;
+    left = Math.min(left, rect.left); top = Math.min(top, rect.top);
+    right = Math.max(right, rect.right); bottom = Math.max(bottom, rect.bottom);
+  };
+  while (queue.length) {
+    const node = queue.pop();
+    if (++visited > 5000) throw new Error("Too many elements to mask");
+    add(Element.prototype.getBoundingClientRect.call(node));
+    const range = document.createRange();
+    range.selectNodeContents(node);
+    add(range.getBoundingClientRect());
+    for (const child of node.children) queue.push(child);
+    if (node.shadowRoot) for (const child of node.shadowRoot.children) queue.push(child);
+  }
+  if (!Number.isFinite(left)) throw new Error("No visible bounds");
+  return { x: left, y: top, width: right - left, height: bottom - top };
+}`;
+
+async function selectedBounds(access: DaemonAccess, tab: string, objectId: string): Promise<Rect> {
+    const parsed = selectedBoundsSchema.safeParse(await access.send({
+        targetId: tab,
+        method  : "Runtime.callFunctionOn",
+        params  : { objectId, functionDeclaration: SELECTED_BOUNDS, returnByValue: true },
+    }));
+
+    if (!parsed.success || parsed.data.exceptionDetails !== undefined ||
+        parsed.data.result.value === undefined) throw maskError();
+
+    return parsed.data.result.value;
+}
+
 export async function selectedBoxes(
     context: ToolContext, tab: string, targets: readonly ElementTarget[],
 ): Promise<Rect[]> {
@@ -120,6 +164,12 @@ export async function selectedBoxes(
             if (!parsed.success) throw maskError();
 
             const border = bounds(parsed.data.model.border);
+            const extent = await selectedBounds(owner, tab, element.objectId);
+            const left = Math.min(border.x, extent.x);
+            const top = Math.min(border.y, extent.y);
+            const right = Math.max(border.x + border.width, extent.x + extent.width);
+            const bottom = Math.max(border.y + border.height, extent.y + extent.height);
+            const combined = { x: left, y: top, width: right - left, height: bottom - top };
 
             if (border.width <= 0 || border.height <= 0) {
                 throw new ToolError("The selected element has no visible box to mask.");
@@ -141,7 +191,7 @@ export async function selectedBoxes(
             }
 
             const mapped = chain === undefined
-                ? border : mapRect((await measureChain(chain, tab)).toTop, border);
+                ? combined : mapRect((await measureChain(chain, tab)).toTop, combined);
             const margin = 4 + 2 * (chain?.links.length ?? 0);
 
             return {

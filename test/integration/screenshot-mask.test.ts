@@ -93,6 +93,33 @@ describe.skipIf(!present)("password masking in a real browser", () => {
         expect(data[(120 * info.width + 120) * info.channels]).toBeLessThan(10);
     });
 
+    it("does not expose a child outside the selected element box", async () => {
+        env.fixture.pages.set("/overflow-mask", html(`<style>body { margin: 0; background: white }
+            #private { position: absolute; left: 10px; top: 10px; width: 20px; height: 20px }
+            #secret { position: absolute; left: 50px; top: 0; width: 20px; height: 20px; background: red }</style>
+            <div id="private"><span id="secret"></span></div>`));
+        const tab = await env.open("/overflow-mask");
+        const result = await env.client.callTool({
+            name     : "screenshot", arguments: {
+                tab, format      : "png", clip        : { x: 0, y: 0, width: 100, height: 100 },
+                maskElements: [{ selector: "#private" }],
+            },
+        });
+        const image = (result.content as Array<{ type: string; data?: string }>)
+            .find((entry) => entry.type === "image");
+
+        if (result.isError) {
+            expect(image).toBeUndefined();
+
+            return;
+        }
+
+        const { data, info } = await sharp(Buffer.from(image?.data ?? "", "base64"))
+            .removeAlpha().raw().toBuffer({ resolveWithObject: true });
+
+        expect(data[(20 * info.width + 70) * info.channels]).toBeLessThan(10);
+    });
+
     it("does not return an image when a selected element is missing", async () => {
         const tab = await env.open("/mask");
         const result = await env.client.callTool({
