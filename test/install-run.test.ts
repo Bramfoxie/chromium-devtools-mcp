@@ -8,6 +8,7 @@ function setup(files: Record<string, string> = {}, platform: NodeJS.Platform = "
     const writes: string[] = [];
     const out: string[] = [];
     const err: string[] = [];
+    const locks = new Set<string>();
     const fs: InstallFs = {
         read     : (file) => store.get(file),
         writeFile: (file, text) => {
@@ -18,6 +19,13 @@ function setup(files: Record<string, string> = {}, platform: NodeJS.Platform = "
             if (store.has(to)) throw Object.assign(new Error("exists"), { code: "EEXIST" });
 
             store.set(to, store.get(from) ?? "");
+        },
+        lock: (file) => {
+            if (locks.has(file)) throw new Error("another installer is running");
+
+            locks.add(file);
+
+            return () => void locks.delete(file);
         },
     };
     const home = platform === "win32" ? "C:\\Users\\u" : "/home/u";
@@ -32,7 +40,7 @@ function setup(files: Record<string, string> = {}, platform: NodeJS.Platform = "
         err: (text) => void err.push(text),
     };
 
-    return { store, writes, out, err, run: (argv: string[]) => runInstall(argv, deps) };
+    return { store, writes, out, err, fs, deps, run: (argv: string[]) => runInstall(argv, deps) };
 }
 
 describe("parseInstallArgs", () => {
@@ -69,6 +77,66 @@ describe("parseInstallArgs", () => {
 });
 
 describe("runInstall", () => {
+    it("refuses a concurrent installer before it can overwrite the other change", () => {
+        const file = "/home/u/.cursor/mcp.json";
+        const t = setup({ [file]: '{"mcpServers":{}}' });
+        const write = t.fs.writeFile;
+        let nestedResult: number | undefined;
+        let nested = false;
+
+        t.fs.writeFile = (path, text) => {
+            if (!nested) {
+                nested = true;
+                nestedResult = t.run(["--client", "cursor", "--headless"]);
+            }
+
+            write(path, text);
+        };
+
+        expect(t.run(["--client", "cursor", "--read-only"])).toBe(0);
+        expect(nestedResult).toBe(1);
+        expect(t.store.get(file)).toContain("--read-only");
+        expect(t.err.join("")).toContain("another installer");
+    });
+
+    it("re-reads a configuration changed before the lock was acquired", () => {
+        const file = "/home/u/.cursor/mcp.json";
+        const t = setup({ [file]: '{"mcpServers":{}}' });
+        const lock = t.fs.lock;
+
+        t.fs.lock = (name) => {
+            t.store.set(file, '{"mcpServers":{},"other":true}');
+
+            return lock(name);
+        };
+
+        expect(t.run(["--client", "cursor"])).toBe(0);
+        expect(JSON.parse(t.store.get(file) ?? "").other).toBe(true);
+        expect(t.store.get(`${file}.bak-20260102T030405Z`)).toBe('{"mcpServers":{},"other":true}');
+    });
+
+    it("reports that the configuration may have changed if releasing the lock fails", () => {
+        const file = "/home/u/.cursor/mcp.json";
+        const t = setup({ [file]: '{"mcpServers":{}}' });
+
+        t.fs.lock = () => () => { throw new Error("cannot release"); };
+
+        expect(t.run(["--client", "cursor"])).toBe(1);
+        expect(t.store.get(file)).toContain("chromium-devtools");
+        expect(t.err.join("")).toContain("may have changed");
+    });
+
+    it("requires a lock even when an existing entry is up to date", () => {
+        const t = setup();
+
+        expect(t.run(["--client", "cursor"])).toBe(0);
+
+        t.fs.lock = () => { throw new Error("EACCES"); };
+
+        expect(t.run(["--client", "cursor"])).toBe(1);
+        expect(t.err.join("")).toContain("EACCES");
+    });
+
     it("writes the Cursor file, creating it", () => {
         const t = setup();
 
@@ -217,7 +285,7 @@ describe("runInstall", () => {
     it("reports a read error without throwing", () => {
         const t = setup();
         const deps: InstallDeps = {
-            fs      : { read: () => { throw new Error("EACCES"); }, writeFile: () => undefined, copy: () => undefined },
+            fs      : { read: () => { throw new Error("EACCES"); }, writeFile: () => undefined, copy: () => undefined, lock: () => () => undefined },
             home    : "/h", cwd     : "/w", platform: "linux", env     : {}, now     : () => new Date(0),
             out     : () => undefined, err     : (text) => void t.err.push(text),
         };

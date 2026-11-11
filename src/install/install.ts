@@ -53,6 +53,7 @@ function apply(
     dryRun: boolean,
     scope : "user" | "project",
     deps  : InstallDeps,
+    locked = false,
 ): boolean {
     const locate = scope === "project" ? target.projectFile : target.file;
 
@@ -85,6 +86,34 @@ function apply(
         deps.err(`${target.name}: ${file} was not changed because ${result.reason}. Fix or move the file and run again.\n`);
 
         return false;
+    }
+
+    if (!dryRun && !locked && (text !== undefined || result.status !== "unchanged")) {
+        let release: () => void;
+
+        try {
+            release = deps.fs.lock(file);
+        } catch (error) {
+            deps.err(`${target.name}: cannot lock ${file}: ${(error as Error).message}.\n`);
+
+            return false;
+        }
+
+        let releaseFailed = false;
+        let applied: boolean;
+
+        try {
+            applied = apply(target, entry, false, scope, deps, true);
+        } finally {
+            try {
+                release();
+            } catch (error) {
+                releaseFailed = true;
+                deps.err(`${target.name}: ${file} may have changed, but the installer lock could not be removed: ${(error as Error).message}. Check the file and lock before retrying.\n`);
+            }
+        }
+
+        return applied && !releaseFailed;
     }
 
     if (result.status === "unchanged") {

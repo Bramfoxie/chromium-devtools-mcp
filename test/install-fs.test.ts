@@ -78,4 +78,40 @@ describe("realFs", () => {
         expect(() => realFs.copy(source, backup)).toThrow();
         expect(nodeFs.readFileSync(backup, "utf8")).toBe("original");
     });
+
+    it("excludes another installer and releases the lock", () => {
+        const file = path.join(temp(), "config.json");
+        const release = realFs.lock(file);
+
+        expect(() => realFs.lock(file)).toThrow(/another installer/);
+        release();
+        const next = realFs.lock(file);
+
+        next();
+        expect(nodeFs.existsSync(`${file}.chromium-devtools-install.lock`)).toBe(false);
+    });
+
+    it.skipIf(process.platform === "win32")("locks the same config through a symbolic link", () => {
+        const dir = temp();
+        const file = path.join(dir, "config.json");
+        const link = path.join(dir, "linked.json");
+
+        nodeFs.writeFileSync(file, "{}");
+        nodeFs.symlinkSync(file, link);
+        const release = realFs.lock(file);
+
+        try {
+            expect(() => realFs.lock(link)).toThrow(/another installer/);
+        } finally {
+            release();
+        }
+    });
+
+    it.skipIf(process.platform === "win32")("refuses a dangling config symbolic link", () => {
+        const dir = temp();
+        const link = path.join(dir, "linked.json");
+
+        nodeFs.symlinkSync(path.join(dir, "missing.json"), link);
+        expect(() => realFs.lock(link)).toThrow();
+    });
 });

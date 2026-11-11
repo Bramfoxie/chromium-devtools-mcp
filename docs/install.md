@@ -42,7 +42,7 @@ Edits are conservative:
 
 `npx chromium-devtools-mcp install --list` writes nothing and prints, for every client, whether the entry is installed (`installed, up to date`, `installed, differs from the current entry` or `not installed`) and the file it looked at. The comparison is with the entry the installer writes without server options, so an entry made with flags shows as different. It exits with 1 when a file cannot be read.
 
-Run only one installer at a time for a given config file, and close the client before installing if it can write that file. Concurrent changes are not coordinated and may overwrite one another. Restart the client afterwards so it reads the new entry.
+Installers use a lock beside the resolved configuration path and refuse overlapping changes to that path. Different hard link paths do not share a lock, and replacing one path separates it from the other links. Checking an existing entry also requires permission to create the lock, even when the entry is already up to date. If an installer exits unexpectedly, its lock may remain; remove it only after confirming that no installer is running. Close the client before installing if it can write the file: other applications do not use the installer lock, so their concurrent changes can still be overwritten. Restart the client afterwards so it reads the new entry.
 
 ## Manual entry
 
