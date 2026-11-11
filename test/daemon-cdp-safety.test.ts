@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ErrorCode, RpcError } from "../src/daemon/index.js";
 import { SessionRegistry } from "../src/daemon/sessions.js";
 import { checkGuardedCall, NO_SAFETY, type SessionSafety } from "../src/daemon/cdp-safety.js";
+import { checkUploadPaths } from "../src/daemon/upload-safety.js";
 import { FakeBackend } from "./helpers/fake-backend.js";
 
 const safe = (patch: Partial<SessionSafety>): SessionSafety => ({ ...NO_SAFETY, ...patch });
@@ -138,47 +139,31 @@ describe("session safety in the daemon", () => {
     });
 
     it("checks real paths and permits files inside the upload directories", async () => {
-        const { session } = await open(safe({ uploadDirs: ["/allowed"] }), {
-            platform         : "linux",
-            resolveUploadPath: async (path) => path === "/allowed/link" ? "/outside/secret" : path,
-        });
-        const tab = await session.createTab("https://example.com/");
-        const attach = (file: string) => session.send({
-            targetId: tab, method: "DOM.setFileInputFiles", params: { files: [file], nodeId: 1 },
-        });
+        const resolve = async (path: string) => path === "/allowed/link" ? "/outside/secret" : path;
 
-        expect((await failure(attach("/allowed/link")))?.code).toBe(ErrorCode.forbiddenMethod);
-        expect((await failure(attach("/allowed-other/file")))?.code).toBe(ErrorCode.forbiddenMethod);
-        await expect(attach("/allowed/file")).resolves.toMatchObject({ echoed: "DOM.setFileInputFiles" });
+        await expect(checkUploadPaths(["/allowed/link"], ["/allowed"], "linux", resolve)).rejects.toThrow();
+        await expect(checkUploadPaths(["/allowed-other/file"], ["/allowed"], "linux", resolve)).rejects.toThrow();
+        await expect(checkUploadPaths(["/allowed/file"], ["/allowed"], "linux", resolve)).resolves.toEqual(["/allowed"]);
     });
 
     it("checks Windows paths without depending on the host platform", async () => {
-        const { session } = await open(safe({ uploadDirs: ["C:\\Allowed"] }), {
-            platform: "win32", resolveUploadPath: async (path) => path,
-        });
-        const tab = await session.createTab("https://example.com/");
-        const attach = (file: string) => session.send({
-            targetId: tab, method: "DOM.setFileInputFiles", params: { files: [file], nodeId: 1 },
-        });
+        const resolve = async (path: string) => path;
 
-        await expect(attach("c:\\allowed\\file.txt")).resolves.toMatchObject({ echoed: "DOM.setFileInputFiles" });
-        expect((await failure(attach("C:\\Outside\\file.txt")))?.code).toBe(ErrorCode.forbiddenMethod);
+        await expect(checkUploadPaths(["c:\\allowed\\file.txt"], ["C:\\Allowed"], "win32", resolve))
+            .resolves.toEqual(["C:\\Allowed"]);
+        await expect(checkUploadPaths(["C:\\Outside\\file.txt"], ["C:\\Allowed"], "win32", resolve))
+            .rejects.toThrow();
     });
 
     it("uses a valid upload directory even when another cannot be resolved", async () => {
-        const { session } = await open(safe({ uploadDirs: ["/missing", "/allowed"] }), {
-            platform         : "linux", resolveUploadPath: async (path) => {
-                if (path === "/missing") throw new Error("missing");
+        const resolve = async (path: string) => {
+            if (path === "/missing") throw new Error("missing");
 
-                return path;
-            },
-        });
-        const tab = await session.createTab("https://example.com/");
+            return path;
+        };
 
-        await expect(session.send({
-            targetId: tab, method  : "DOM.setFileInputFiles",
-            params  : { files: ["/allowed/file"], nodeId: 1 },
-        })).resolves.toMatchObject({ echoed: "DOM.setFileInputFiles" });
+        await expect(checkUploadPaths(["/allowed/file"], ["/missing", "/allowed"], "linux", resolve))
+            .resolves.toEqual(["/allowed"]);
     });
 
     it("refuses malformed or unresolvable paths when upload directories are set", async () => {

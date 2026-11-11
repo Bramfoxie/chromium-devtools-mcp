@@ -22,6 +22,9 @@ import { type PermissionLedger, type PermissionName } from "./permissions.js";
 import type { TraceLock } from "./trace-lock.js";
 import { type OwnedTab, type Subscription, TabFrames } from "./tab-frames.js";
 import { checkUploadPaths, type UploadPathResolver } from "./upload-safety.js";
+import { prepareUploadCopies, type UploadCopies } from "./upload-copies.js";
+import { pinUploadRoots, type UploadRoot } from "./upload-roots.js";
+import { UploadSourceUnavailableError } from "./upload-source.js";
 
 const DETACH_GRACE_MS = 2000;
 
@@ -54,6 +57,12 @@ export interface ClientSessionInit {
     safety?    : SessionSafety;
     permissions: PermissionLedger;
     traceLock  : TraceLock;
+}
+
+interface PreparedUpload {
+    cancelled: boolean;
+    consumed : boolean;
+    copies?  : UploadCopies;
 }
 
 export type Emit = (event: string, params?: unknown) => void;
@@ -107,6 +116,7 @@ export class ClientSession {
     private readonly permissions: PermissionLedger;
     private readonly directPermissions = {};
     private readonly traceLock  : TraceLock;
+    private readonly uploads = new Map<string, PreparedUpload>();
 
     constructor(init: ClientSessionInit) {
         this.backend = init.backend;
@@ -241,6 +251,103 @@ export class ClientSession {
         }
     }
 
+    async prepareUploads(request: {
+        ticket: string; files: string[]; confirmed?: boolean | undefined;
+    }): Promise<Array<{ path: string; size: number }>> {
+        this.ensureOpen();
+
+        if (this.safety.readOnly) {
+            throw new RpcError(ErrorCode.forbiddenMethod, "File attachment is refused because safety.readOnly is on.");
+        }
+
+        if (this.safety.confirmDangerous && request.confirmed !== true) {
+            throw new RpcError(ErrorCode.forbiddenMethod, "File attachment needs the user's confirmation.");
+        }
+
+        if (this.safety.uploadDirs.length === 0 || this.options.downloadsRoot === undefined) {
+            throw new RpcError(ErrorCode.forbiddenMethod, "Upload preparation needs safety.uploadDirs and a private artifact directory.");
+        }
+
+        if (this.uploads.has(request.ticket)) throw new RpcError(ErrorCode.badRequest, "This upload ticket is already in use.");
+
+        const entry: PreparedUpload = { cancelled: false, consumed: false };
+
+        this.uploads.set(request.ticket, entry);
+        let pinned: UploadRoot[] = [];
+
+        try {
+            pinned = await pinUploadRoots(
+                this.safety.uploadDirs, this.options.platform ?? process.platform,
+            );
+            const roots = await checkUploadPaths(
+                request.files, this.safety.uploadDirs,
+                this.options.platform ?? process.platform, this.options.resolveUploadPath,
+            );
+            const copies = await prepareUploadCopies(
+                request.files, roots, this.options.downloadsRoot,
+                this.options.platform ?? process.platform, () => entry.cancelled || this.isClosed,
+                undefined, pinned,
+            );
+
+            if (entry.cancelled || this.isClosed) {
+                await copies.discard();
+
+                throw new Error("Upload preparation cancelled.");
+            }
+
+            entry.copies = copies;
+
+            return copies.files;
+        } catch (error) {
+            this.uploads.delete(request.ticket);
+            if (error instanceof RpcError) throw error;
+
+            if (error instanceof UploadSourceUnavailableError) {
+                throw new RpcError(ErrorCode.forbiddenMethod, "Restricted file attachment needs native upload support. Reinstall with optional dependencies enabled.");
+            }
+
+            throw new RpcError(ErrorCode.forbiddenMethod, "File attachment could not be safely prepared against safety.uploadDirs. Check the files and allowed directories, then retry.");
+        } finally {
+            await Promise.allSettled(pinned.map(async (root) => root.close()));
+        }
+    }
+
+    async cancelUploads(ticket: string): Promise<void> {
+        const entry = this.uploads.get(ticket);
+
+        if (entry === undefined || entry.consumed) return;
+
+        entry.cancelled = true;
+
+        if (entry.copies !== undefined) {
+            this.uploads.delete(ticket);
+
+            try {
+                await entry.copies.discard();
+            } catch {
+                logDaemon("could not remove unused upload copies");
+
+                throw new RpcError(ErrorCode.internal, "Could not remove unused upload copies. Check the artifact directory.");
+            }
+        }
+    }
+
+    private usePreparedUploads(files: unknown, consume = false): void {
+        if (this.safety.uploadDirs.length === 0) return;
+        if (Array.isArray(files) && files.length === 0) return;
+
+        const entry = [...this.uploads.values()].find((candidate) =>
+            !candidate.cancelled && candidate.copies !== undefined && Array.isArray(files) &&
+            candidate.copies.files.length === files.length &&
+            candidate.copies.files.every((file, index) => file.path === files[index]));
+
+        if (entry === undefined) {
+            throw new RpcError(ErrorCode.forbiddenMethod, "Prepare file attachments against safety.uploadDirs before sending them to the browser.");
+        }
+
+        if (consume) entry.consumed = true;
+    }
+
     async closeTab(targetId: string): Promise<void> {
         this.ensureOpen();
         const tab = this.owned(targetId);
@@ -344,6 +451,9 @@ export class ClientSession {
                 ? await this.frames.routedChild(tab, method, checked)
                 : undefined;
 
+            this.assertCurrent(targetId, tab);
+            if (method === "DOM.setFileInputFiles") this.usePreparedUploads(checked?.files, true);
+
             const result = routed === undefined
                 ? await session.send(method, checked, timeoutMs)
                 : await routed.send(method, checked, timeoutMs);
@@ -408,11 +518,7 @@ export class ClientSession {
         });
 
         if (method === "DOM.setFileInputFiles") {
-            await checkUploadPaths(
-                params?.files, this.safety.uploadDirs,
-                this.options.platform ?? process.platform, this.options.resolveUploadPath,
-            );
-            this.assertCurrent(targetId, tab);
+            this.usePreparedUploads(params?.files);
         }
     }
 
@@ -518,6 +624,15 @@ export class ClientSession {
         if (this.isClosed) return;
 
         this.isClosed = true;
+
+        for (const entry of this.uploads.values()) {
+            entry.cancelled = true;
+            const cleanup = entry.consumed ? entry.copies?.release() : entry.copies?.discard();
+
+            await cleanup?.catch(() => logDaemon("could not clean upload copies"));
+        }
+
+        this.uploads.clear();
         const entries = [...this.tabs.entries()];
 
         this.tabs.clear();

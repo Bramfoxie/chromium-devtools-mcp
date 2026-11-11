@@ -235,6 +235,94 @@ describe("validateUploadFiles", () => {
 });
 
 describe("input_upload", () => {
+    it("does not attach a prepared file after cancellation", async () => {
+        const fake = uploadFake({ files: 1 });
+        const access = fake.asAccess();
+        const controller = new AbortController();
+        let cleaned: () => void = () => undefined;
+        const cleanup = new Promise<void>((resolve) => { cleaned = resolve; });
+
+        access.prepareUploads = async () => {
+            controller.abort();
+
+            return { ticket: "a".repeat(32), files: [{ path: "/private/copy", size: 5 }] };
+        };
+
+        access.cancelUploads = async () => { cleaned(); };
+
+        const config = { ...managedConfig, safety: { ...managedConfig.safety, uploadDirs: ["/tmp"] } };
+        const upload = {
+            fs: memoryFs({ "/tmp/file.txt": { file: true, size: 5, readable: true } }), path: posix,
+        };
+        const runtime = new ToolRuntime({
+            access, config, upload, elements: new ElementRegistry(),
+        });
+
+        runtime.tabs.refresh(
+            [{ targetId: "tab1", url: "https://page.example/", title: "t", owned: true, created: true }],
+            "tab1",
+        );
+        runtime.elements.nextGeneration("tab1");
+        runtime.elements.assign("tab1", [{ backendNodeId: 101 }]);
+        await runTool(inputUpload, { target: { uid: "1_1" }, files: ["/tmp/file.txt"] },
+            { signal: controller.signal } as Extra, runtime);
+        await cleanup;
+        expect(fake.sent.some((call) => call.method === "DOM.setFileInputFiles")).toBe(false);
+    });
+
+    it("cancels prepared files while the attachment request is in flight", async () => {
+        const fake = uploadFake({ files: 1 });
+        const access = fake.asAccess();
+        const controller = new AbortController();
+        let started: () => void = () => undefined;
+        let cleaned: () => void = () => undefined;
+        let finish: () => void = () => undefined;
+        const entered = new Promise<void>((resolve) => { started = resolve; });
+        const cleanup = new Promise<void>((resolve) => { cleaned = resolve; });
+        const gate = new Promise<void>((resolve) => { finish = resolve; });
+        const respond = fake.respond;
+
+        fake.respond = (tab, method, params) => {
+            if (method === "DOM.setFileInputFiles") {
+                started();
+
+                return gate;
+            }
+
+            return respond?.(tab, method, params);
+        };
+
+        access.prepareUploads = async () => ({
+            ticket: "a".repeat(32), files: [{ path: "/private/copy", size: 5 }],
+        });
+
+        access.cancelUploads = async () => { cleaned(); };
+
+        const config = { ...managedConfig, safety: { ...managedConfig.safety, uploadDirs: ["/tmp"] } };
+        const upload = {
+            fs: memoryFs({ "/tmp/file.txt": { file: true, size: 5, readable: true } }), path: posix,
+        };
+        const runtime = new ToolRuntime({
+            access, config, upload, elements: new ElementRegistry(),
+        });
+
+        runtime.tabs.refresh(
+            [{ targetId: "tab1", url: "https://page.example/", title: "t", owned: true, created: true }],
+            "tab1",
+        );
+        runtime.elements.nextGeneration("tab1");
+        runtime.elements.assign("tab1", [{ backendNodeId: 101 }]);
+        const call = runTool(inputUpload, { target: { uid: "1_1" }, files: ["/tmp/file.txt"] },
+            { signal: controller.signal } as Extra, runtime);
+
+        await entered;
+        controller.abort();
+        await call;
+        await cleanup;
+        finish();
+        expect(fake.sent.some((entry) => entry.method === "DOM.setFileInputFiles")).toBe(true);
+    });
+
     it("is a dangerous mutate tool", () => {
         const dangerous = allTools
             .filter((tool) => tool.dangerous === true)

@@ -45,6 +45,11 @@ export function confirmedAccess(access: DaemonAccess): DaemonAccess {
                     access.setPermission({ ...request, confirmed: true });
             }
 
+            if (property === "prepareUploads") {
+                return (request: Parameters<DaemonAccess["prepareUploads"]>[0]) =>
+                    access.prepareUploads({ ...request, confirmed: true });
+            }
+
             const value: unknown = Reflect.get(target, property, target);
 
             return typeof value === "function" ? value.bind(target) : value;

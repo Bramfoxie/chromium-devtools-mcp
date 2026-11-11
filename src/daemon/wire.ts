@@ -33,6 +33,12 @@ export const requestParamSchemas = {
         }).optional(),
     }),
     "session.list"  : z.strictObject({}),
+    "upload.prepare": z.strictObject({
+        ticket   : z.string().regex(/^[a-f0-9]{32}$/),
+        files    : z.array(z.string().min(1).max(4096)).min(1).max(20),
+        confirmed: z.boolean().optional(),
+    }),
+    "upload.cancel" : z.strictObject({ ticket: z.string().regex(/^[a-f0-9]{32}$/) }),
     "permission.set": z.strictObject({
         name     : z.enum(["geolocation", "notifications", "camera", "microphone", "clipboard-read", "clipboard-write"]),
         setting  : z.enum(["granted", "denied", "reset"]),

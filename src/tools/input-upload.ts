@@ -219,35 +219,75 @@ export const inputUpload = defineTool({
                 );
             }
 
-            throwIfCancelled(context.signal);
+            let prepared: Awaited<ReturnType<DaemonAccess["prepareUploads"]>> | undefined;
+            let dispatched = false;
+            let cancelOnAbort: (() => void) | undefined;
 
-            const acted = await navigationOf(context.access, targetId, async () => {
-                await owner.send({
-                    targetId,
-                    method: "DOM.setFileInputFiles",
-                    params: {
-                        backendNodeId: element.backendNodeId,
-                        files        : validated.map((file) => file.path),
-                    },
+            try {
+                throwIfCancelled(context.signal);
+
+                if (context.config.safety.uploadDirs.length > 0) {
+                    prepared = await context.access.prepareUploads({
+                        files: validated.map((file) => file.path), signal: context.signal,
+                    });
+
+                    if (prepared.files.length !== validated.length) {
+                        throw new ToolError("The daemon returned an unexpected upload preparation result. Retry the upload.");
+                    }
+
+                    const ticket = prepared.ticket;
+
+                    cancelOnAbort = () => {
+                        void context.access.cancelUploads(ticket).catch(() => undefined);
+                    };
+
+                    context.signal.addEventListener("abort", cancelOnAbort, { once: true });
+                    if (context.signal.aborted) cancelOnAbort();
+                }
+
+                throwIfCancelled(context.signal);
+                const acted = await navigationOf(context.access, targetId, async () => {
+                    throwIfCancelled(context.signal);
+                    dispatched = true;
+                    await owner.send({
+                        targetId,
+                        method: "DOM.setFileInputFiles",
+                        params: {
+                            backendNodeId: element.backendNodeId,
+                            files        : prepared?.files.map((file) => file.path) ??
+                                validated.map((file) => file.path),
+                        },
+                        signal: context.signal,
+                    });
                 });
-            });
-            const changed = changedUrl(acted.urlBefore, acted.urlAfter);
-            const navigatedAway = changed.urlAfter !== undefined;
-            const count = navigatedAway
-                ? undefined
-                : await attachedCount(owner, targetId, element).catch(() => undefined);
-            const verified = count === validated.length;
+                const changed = changedUrl(acted.urlBefore, acted.urlAfter);
+                const navigatedAway = changed.urlAfter !== undefined;
+                const count = navigatedAway
+                    ? undefined
+                    : await attachedCount(owner, targetId, element).catch(() => undefined);
+                const verified = count === validated.length;
 
-            return {
-                ok             : true,
-                inputFilesMatch: verified,
-                target         : summarizeTarget(args.target.uid, checked.state),
-                effect         : verified
-                    ? `${validated.length} file(s) are selected in the input.`
-                    : "The browser accepted the file selection, but the files could not be verified in the input. Check the page to verify the attachment before retrying.",
-                files: validated.map((file) => ({ name: file.name, size: file.size })),
-                ...changedUrl(acted.urlBefore, acted.urlAfter),
-            };
+                return {
+                    ok             : true,
+                    inputFilesMatch: verified,
+                    target         : summarizeTarget(args.target.uid, checked.state),
+                    effect         : verified
+                        ? `${validated.length} file(s) are selected in the input.`
+                        : "The browser accepted the file selection, but the files could not be verified in the input. Check the page to verify the attachment before retrying.",
+                    files: validated.map((file, index) => ({
+                        name: file.name, size: prepared?.files[index]?.size ?? file.size,
+                    })),
+                    ...changedUrl(acted.urlBefore, acted.urlAfter),
+                };
+            } finally {
+                if (cancelOnAbort !== undefined) {
+                    context.signal.removeEventListener("abort", cancelOnAbort);
+                }
+
+                if (prepared !== undefined && !dispatched) {
+                    await context.access.cancelUploads(prepared.ticket).catch(() => undefined);
+                }
+            }
         });
     },
 });

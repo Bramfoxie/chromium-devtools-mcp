@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -19,6 +19,7 @@ beforeAll(async () => {
     await mkdir(allowed);
     await mkdir(outside);
     await writeFile(join(allowed, "ok.txt"), "fine");
+    await writeFile(join(allowed, "stable.txt"), "original");
     await writeFile(join(outside, "secret.txt"), "secret");
 
     try {
@@ -80,6 +81,25 @@ describe.skipIf(!present)("input_upload with safety.uploadDirs in a real browser
 
         expect(attached.files).toEqual([{ name: "ok.txt", size: 4 }]);
         expect(attached.inputFilesMatch).toBe(true);
+    });
+
+    it("keeps selected contents available after the original file changes", async () => {
+        const tab = await env.open("/form");
+        const file = join(allowed, "stable.txt");
+        const modified = (await stat(file)).mtimeMs;
+
+        await env.ok("input_upload", { tab, target: { selector: "#f" }, files: [file] });
+        const metadata = await env.ok("js_evaluate", {
+            tab, expression: "document.querySelector('#f').files[0].lastModified",
+        });
+
+        expect(Math.abs(Number(metadata.value) - modified)).toBeLessThan(2);
+        await writeFile(file, "replacement");
+        const result = await env.ok("js_evaluate", {
+            tab, expression: "document.querySelector('#f').files[0].text()",
+        });
+
+        expect(result.value).toBe("original");
     });
 
     it("does not report a failure when the page removes the input after consuming it", async () => {
