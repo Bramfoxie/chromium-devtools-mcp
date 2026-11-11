@@ -19,7 +19,7 @@ export const emulateCpu = defineTool({
         tab     : tabSchema,
         slowdown: z.number().min(1).max(CPU_SLOWDOWN_MAX).optional()
             .describe(`Requested slowdown, from 1 to ${CPU_SLOWDOWN_MAX}. 1 removes the override.`),
-        reset: z.boolean().optional().describe("Restore full speed. Defaults to false."),
+        reset: z.boolean().optional().describe("Remove the CPU throttling override. Defaults to false."),
     }),
     output: z.strictObject({
         tab      : z.string().describe("Tab id."),
