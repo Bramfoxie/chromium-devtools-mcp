@@ -76,6 +76,20 @@ describe("usage", () => {
         expect(output.join("")).toContain(`--browser ${browsers.join("|")},`);
     });
 
+    it("includes the upload directory restriction in the usage", async () => {
+        const { output, run } = harness();
+
+        await run(["--help"]);
+        expect(output.join("")).toContain("--upload-dirs");
+    });
+
+    it("includes the installer scope in the usage", async () => {
+        const { output, run } = harness();
+
+        await run(["--help"]);
+        expect(output.join("")).toContain("--scope user|project");
+    });
+
     it("honors help in any position and mentions it in the usage", async () => {
         const load = vi.fn(() => cannedConfig());
         const { output, run, served } = harness({ load });
