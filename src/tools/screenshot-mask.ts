@@ -2,6 +2,8 @@ import { z } from "zod";
 import type { DaemonAccess } from "../mcp/index.js";
 import type { ToolContext } from "./define-tool.js";
 import { elementAccess, withElement, type ElementTarget } from "./element-target.js";
+import { mainFrameId } from "./page-navigate-state.js";
+import { releaseQuietly } from "./remote-objects.js";
 import { ToolError } from "./errors.js";
 import { frameChain, mapRect, measureChain } from "./frame-geometry.js";
 import { bindAccess } from "./frame-scope.js";
@@ -136,17 +138,110 @@ const SELECTED_BOUNDS = `function() {
   return { x: left, y: top, width: right - left, height: bottom - top };
 }`;
 
-async function selectedBounds(access: DaemonAccess, tab: string, objectId: string): Promise<Rect> {
-    const parsed = selectedBoundsSchema.safeParse(await access.send({
-        targetId: tab,
-        method  : "Runtime.callFunctionOn",
-        params  : { objectId, functionDeclaration: SELECTED_BOUNDS, returnByValue: true },
+const descendantSnapshotSchema = z.object({
+    documents: z.array(z.object({
+        scrollOffsetX: z.number().optional(), scrollOffsetY: z.number().optional(),
+        nodes        : z.object({
+            backendNodeId: z.array(z.number()), parentIndex: z.array(z.number()),
+        }),
+        layout: z.object({
+            nodeIndex: z.array(z.number()), bounds: z.array(z.array(z.number()).length(4)),
+        }),
+    })),
+});
+
+async function descendantBounds(
+    access: DaemonAccess, tab: string, backendNodeId: number,
+): Promise<Rect[]> {
+    const snapshot = descendantSnapshotSchema.safeParse(await access.send({
+        targetId: tab, method: "DOMSnapshot.captureSnapshot", params: { computedStyles: [] },
     }));
 
-    if (!parsed.success || parsed.data.exceptionDetails !== undefined ||
-        parsed.data.result.value === undefined) throw maskError();
+    if (!snapshot.success) throw maskError();
 
-    return parsed.data.result.value;
+    for (const doc of snapshot.data.documents) {
+        const root = doc.nodes.backendNodeId.indexOf(backendNodeId);
+
+        if (root < 0) continue;
+
+        const parents = doc.nodes.parentIndex;
+
+        if (parents.length !== doc.nodes.backendNodeId.length || parents.length > 50000 ||
+            doc.layout.nodeIndex.length !== doc.layout.bounds.length) throw maskError();
+
+        const included = new Set<number>([root]);
+
+        for (let i = root + 1; i < parents.length; i += 1) {
+            const parent = parents[i];
+
+            if (parent === undefined || parent >= i) throw maskError();
+            if (included.has(parent)) included.add(i);
+        }
+
+        const boxes: Rect[] = [];
+
+        for (let i = 0; i < doc.layout.nodeIndex.length; i += 1) {
+            const index = doc.layout.nodeIndex[i];
+            const rect = doc.layout.bounds[i];
+
+            if (index === undefined || rect === undefined || index < 0 || index >= parents.length) {
+                throw maskError();
+            }
+
+            if (!included.has(index)) continue;
+
+            const [x, y, width, height] = rect;
+
+            if (x === undefined || y === undefined || width === undefined || height === undefined ||
+                ![x, y, width, height].every(Number.isFinite)) throw maskError();
+            if (width <= 0 || height <= 0) continue;
+
+            boxes.push({
+                x: x - (doc.scrollOffsetX ?? 0), y: y - (doc.scrollOffsetY ?? 0), width, height,
+            });
+        }
+
+        return boxes;
+    }
+
+    throw maskError();
+}
+
+async function selectedBounds(
+    access: DaemonAccess, tab: string, backendNodeId: number, frameId: string,
+): Promise<Rect> {
+    const world = z.object({ executionContextId: z.number() }).safeParse(await access.send({
+        targetId: tab, method  : "Page.createIsolatedWorld",
+        params  : { frameId, worldName: "chromium-devtools-mcp-mask" },
+    }));
+
+    if (!world.success) throw maskError();
+
+    const resolved = z.object({ object: z.object({ objectId: z.string() }) }).safeParse(
+        await access.send({
+            targetId: tab, method  : "DOM.resolveNode",
+            params  : { backendNodeId, executionContextId: world.data.executionContextId },
+        }),
+    );
+
+    if (!resolved.success) throw maskError();
+
+    const objectId = resolved.data.object.objectId;
+
+    try {
+        const parsed = selectedBoundsSchema.safeParse(await access.send({
+            targetId: tab,
+            method  : "Runtime.callFunctionOn",
+            params  : { objectId, functionDeclaration: SELECTED_BOUNDS, returnByValue: true },
+        }));
+
+        if (!parsed.success || parsed.data.exceptionDetails !== undefined ||
+            parsed.data.result.value === undefined) throw maskError();
+
+        return parsed.data.result.value;
+    } finally {
+        await releaseQuietly(access, tab, [objectId]);
+    }
 }
 
 export async function selectedBoxes(
@@ -164,11 +259,17 @@ export async function selectedBoxes(
             if (!parsed.success) throw maskError();
 
             const border = bounds(parsed.data.model.border);
-            const extent = await selectedBounds(owner, tab, element.objectId);
-            const left = Math.min(border.x, extent.x);
-            const top = Math.min(border.y, extent.y);
-            const right = Math.max(border.x + border.width, extent.x + extent.width);
-            const bottom = Math.max(border.y + border.height, extent.y + extent.height);
+            const frame = element.frameId ?? await mainFrameId(context, tab);
+
+            if (frame === undefined) throw maskError();
+
+            const extent = await selectedBounds(owner, tab, element.backendNodeId, frame);
+            const descendants = await descendantBounds(owner, tab, element.backendNodeId);
+            const all = [border, extent, ...descendants];
+            const left = Math.min(...all.map((box) => box.x));
+            const top = Math.min(...all.map((box) => box.y));
+            const right = Math.max(...all.map((box) => box.x + box.width));
+            const bottom = Math.max(...all.map((box) => box.y + box.height));
             const combined = { x: left, y: top, width: right - left, height: bottom - top };
 
             if (border.width <= 0 || border.height <= 0) {

@@ -93,6 +93,55 @@ describe.skipIf(!present)("password masking in a real browser", () => {
         expect(data[(120 * info.width + 120) * info.channels]).toBeLessThan(10);
     });
 
+    it("does not invoke page overrides while measuring selected elements", async () => {
+        env.fixture.pages.set("/mask-overrides", html(`<div id="private">secret</div><script>
+            window.sideEffects = 0;
+            const original = Document.prototype.createRange;
+            Document.prototype.createRange = function() { window.sideEffects++; return original.call(this); };
+        </script>`));
+        const tab = await env.open("/mask-overrides");
+        const result = await env.client.callTool({
+            name: "screenshot", arguments: { tab, maskElements: [{ selector: "#private" }] },
+        });
+        const count = await env.ok("js_evaluate", { tab, expression: "window.sideEffects" });
+
+        expect(result.isError, JSON.stringify(result.content)).not.toBe(true);
+        expect(count.value).toBe(0);
+    });
+
+    it.each(["closed shadow", "pseudo element"])("does not expose overflow from %s", async (kind) => {
+        const contents = kind === "closed shadow"
+            ? `<div id="private"></div><script>
+                document.querySelector('#private').attachShadow({mode:'closed'}).innerHTML =
+                  '<span style="position:absolute;left:50px;top:0;width:20px;height:20px;background:red"></span>';
+              </script>`
+            : `<style>#private::after { content: ''; position: absolute; left: 50px; top: 0;
+                  width: 20px; height: 20px; background: red }</style><div id="private"></div>`;
+
+        env.fixture.pages.set("/mask-special", html(`<style>body { margin: 0; background: white }
+            #private { position: absolute; left: 10px; top: 10px; width: 20px; height: 20px }</style>${contents}`));
+        const tab = await env.open("/mask-special");
+        const result = await env.client.callTool({
+            name     : "screenshot", arguments: {
+                tab, format      : "png", clip        : { x: 0, y: 0, width: 100, height: 100 },
+                maskElements: [{ selector: "#private" }],
+            },
+        });
+        const image = (result.content as Array<{ type: string; data?: string }>)
+            .find((entry) => entry.type === "image");
+
+        if (result.isError) {
+            expect(image).toBeUndefined();
+
+            return;
+        }
+
+        const { data, info } = await sharp(Buffer.from(image?.data ?? "", "base64"))
+            .removeAlpha().raw().toBuffer({ resolveWithObject: true });
+
+        expect(data[(20 * info.width + 70) * info.channels]).toBeLessThan(10);
+    });
+
     it("does not expose a child outside the selected element box", async () => {
         env.fixture.pages.set("/overflow-mask", html(`<style>body { margin: 0; background: white }
             #private { position: absolute; left: 10px; top: 10px; width: 20px; height: 20px }
