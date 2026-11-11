@@ -67,6 +67,32 @@ describe.skipIf(!present)("password masking in a real browser", () => {
         expect(data[(80 * info.width + 80) * info.channels]).toBeGreaterThan(245);
     });
 
+    it("covers a selected element in a cross site frame", async () => {
+        const tab = await env.open("/mask");
+
+        await eventually(async () => {
+            const snapshot = await env.ok("dom_snapshot", { tab });
+            const frames = snapshot.frames as Array<{ isolated?: boolean }>;
+
+            return frames.some((frame) => frame.isolated === true) ? true : undefined;
+        });
+        const result = await env.client.callTool({
+            name     : "screenshot", arguments: {
+                tab, format      : "png", clip        : { x: 0, y: 0, width: 260, height: 200 },
+                maskElements: [{ selector: "input", frame: "iframe" }],
+            },
+        });
+        const image = (result.content as Array<{ type: string; data?: string }>)
+            .find((entry) => entry.type === "image");
+
+        expect(result.isError, JSON.stringify(result.content)).not.toBe(true);
+        expect(result.structuredContent).toMatchObject({ maskedElements: 1 });
+        const { data, info } = await sharp(Buffer.from(image?.data ?? "", "base64"))
+            .removeAlpha().raw().toBuffer({ resolveWithObject: true });
+
+        expect(data[(120 * info.width + 120) * info.channels]).toBeLessThan(10);
+    });
+
     it("does not return an image when a selected element is missing", async () => {
         const tab = await env.open("/mask");
         const result = await env.client.callTool({
