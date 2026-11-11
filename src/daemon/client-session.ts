@@ -21,14 +21,16 @@ import type { TabInfo } from "./wire.js";
 import { type PermissionLedger, type PermissionName } from "./permissions.js";
 import type { TraceLock } from "./trace-lock.js";
 import { type OwnedTab, type Subscription, TabFrames } from "./tab-frames.js";
+import { checkUploadPaths, type UploadPathResolver } from "./upload-safety.js";
 
 const DETACH_GRACE_MS = 2000;
 
 export interface SessionOptions {
-    allowFocus    : boolean;
-    downloadsRoot?: string;
-    platform?     : NodeJS.Platform;
-    resolveHost?  : HostResolver;
+    allowFocus        : boolean;
+    downloadsRoot?    : string;
+    platform?         : NodeJS.Platform;
+    resolveHost?      : HostResolver;
+    resolveUploadPath?: UploadPathResolver;
 }
 
 export type TabScope = "owned" | "available";
@@ -404,6 +406,14 @@ export class ClientSession {
             tabUrl,
             frameUrl: frameId === undefined ? undefined : tab.frames.get(frameId)?.summary.url,
         });
+
+        if (method === "DOM.setFileInputFiles") {
+            await checkUploadPaths(
+                params?.files, this.safety.uploadDirs,
+                this.options.platform ?? process.platform, this.options.resolveUploadPath,
+            );
+            this.assertCurrent(targetId, tab);
+        }
     }
 
     async subscribe(targetId: string, event: string, frameId?: string): Promise<void> {

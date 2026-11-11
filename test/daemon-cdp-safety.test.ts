@@ -103,9 +103,12 @@ describe("guarded CDP methods", () => {
 });
 
 describe("session safety in the daemon", () => {
-    async function open(safety: SessionSafety) {
+    async function open(safety: SessionSafety, options: {
+        platform?         : NodeJS.Platform;
+        resolveUploadPath?: (path: string) => Promise<string>;
+    } = {}) {
         const backend = new FakeBackend();
-        const registry = new SessionRegistry<string>(backend, { allowFocus: false });
+        const registry = new SessionRegistry<string>(backend, { allowFocus: false, ...options });
         const session = await registry.open("a", () => undefined, {
             isolated  : false,
             clientName: "a",
@@ -120,6 +123,77 @@ describe("session safety in the daemon", () => {
 
         return error instanceof RpcError ? error : undefined;
     }
+
+    it("refuses a direct file attachment outside the upload directories", async () => {
+        const { session, backend } = await open(safe({ uploadDirs: ["/allowed"] }), {
+            platform: "linux", resolveUploadPath: async (path) => path,
+        });
+        const tab = await session.createTab("https://example.com/");
+        const result = await failure(session.send({
+            targetId: tab, method: "DOM.setFileInputFiles", params: { files: ["/outside/secret"], nodeId: 1 },
+        }));
+
+        expect(result?.code).toBe(ErrorCode.forbiddenMethod);
+        expect(backend.log.some((entry) => entry.includes("DOM.setFileInputFiles"))).toBe(false);
+    });
+
+    it("checks real paths and permits files inside the upload directories", async () => {
+        const { session } = await open(safe({ uploadDirs: ["/allowed"] }), {
+            platform         : "linux",
+            resolveUploadPath: async (path) => path === "/allowed/link" ? "/outside/secret" : path,
+        });
+        const tab = await session.createTab("https://example.com/");
+        const attach = (file: string) => session.send({
+            targetId: tab, method: "DOM.setFileInputFiles", params: { files: [file], nodeId: 1 },
+        });
+
+        expect((await failure(attach("/allowed/link")))?.code).toBe(ErrorCode.forbiddenMethod);
+        expect((await failure(attach("/allowed-other/file")))?.code).toBe(ErrorCode.forbiddenMethod);
+        await expect(attach("/allowed/file")).resolves.toMatchObject({ echoed: "DOM.setFileInputFiles" });
+    });
+
+    it("checks Windows paths without depending on the host platform", async () => {
+        const { session } = await open(safe({ uploadDirs: ["C:\\Allowed"] }), {
+            platform: "win32", resolveUploadPath: async (path) => path,
+        });
+        const tab = await session.createTab("https://example.com/");
+        const attach = (file: string) => session.send({
+            targetId: tab, method: "DOM.setFileInputFiles", params: { files: [file], nodeId: 1 },
+        });
+
+        await expect(attach("c:\\allowed\\file.txt")).resolves.toMatchObject({ echoed: "DOM.setFileInputFiles" });
+        expect((await failure(attach("C:\\Outside\\file.txt")))?.code).toBe(ErrorCode.forbiddenMethod);
+    });
+
+    it("uses a valid upload directory even when another cannot be resolved", async () => {
+        const { session } = await open(safe({ uploadDirs: ["/missing", "/allowed"] }), {
+            platform         : "linux", resolveUploadPath: async (path) => {
+                if (path === "/missing") throw new Error("missing");
+
+                return path;
+            },
+        });
+        const tab = await session.createTab("https://example.com/");
+
+        await expect(session.send({
+            targetId: tab, method  : "DOM.setFileInputFiles",
+            params  : { files: ["/allowed/file"], nodeId: 1 },
+        })).resolves.toMatchObject({ echoed: "DOM.setFileInputFiles" });
+    });
+
+    it("refuses malformed or unresolvable paths when upload directories are set", async () => {
+        const { session } = await open(safe({ uploadDirs: ["/allowed"] }), {
+            platform: "linux", resolveUploadPath: async () => { throw new Error("unavailable"); },
+        });
+        const tab = await session.createTab("https://example.com/");
+        const attach = (files: unknown) => session.send({
+            targetId: tab, method: "DOM.setFileInputFiles", params: { files, nodeId: 1 },
+        });
+
+        expect((await failure(attach([12])))?.code).toBe(ErrorCode.forbiddenMethod);
+        expect((await failure(attach(["/allowed/file"])))?.code).toBe(ErrorCode.forbiddenMethod);
+        await expect(attach([])).resolves.toMatchObject({ echoed: "DOM.setFileInputFiles" });
+    });
 
     it("refuses tab creation in read-only mode and outside the allowlist", async () => {
         const readOnly = await open(safe({ readOnly: true }));

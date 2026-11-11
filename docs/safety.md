@@ -19,7 +19,7 @@ With a list set:
 - The URL is read when the tool starts, so a page that navigates itself later is caught at the next mutating call.
 - `storage_write` reads the page URL again right before it writes and refuses when it is outside the list.
 
-`safety.uploadDirs` is a list of absolute directories that `input_upload` may take files from. With an empty list (the default) any readable file can be attached, as before. With a list, a file must lie inside one of the directories after symbolic links are resolved, for the file and for the directory, so a link inside an allowed directory that points elsewhere is refused. The check is made by the tool; a client that talks to the daemon directly is not limited by it. Entries must be absolute paths of either platform style, and a relative entry is rejected at startup.
+`safety.uploadDirs` is a list of absolute directories that `input_upload` may take files from. With an empty list (the default) any readable file can be attached, as before. With a list, a file must lie inside one of the directories after symbolic links are resolved, for the file and for the directory, so a link inside an allowed directory that points elsewhere is refused. The tool and the daemon both check the paths; the daemon also checks direct requests in sessions that provide these settings and refuses paths it cannot resolve. A direct client supplies its own session settings. Entries must be absolute paths of either platform style, and a relative entry is rejected at startup.
 
 The directory check is not atomic with the browser opening the file. A local process that can replace a checked file or a directory on its path can redirect the upload after the check. Use directories that untrusted local processes cannot modify.
 
