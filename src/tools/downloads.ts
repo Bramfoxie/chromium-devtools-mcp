@@ -59,12 +59,24 @@ export const downloads = defineTool({
                 method: "Page.enable",
                 params: {},
             });
-            await context.access.send({
-                targetId,
-                method: "Page.setDownloadBehavior",
-                params: { behavior: "allow", downloadPath: directory.path },
-            });
+            const previous = state.directoryOf(targetId);
+
             state.allow(targetId, directory.path);
+
+            try {
+                await context.access.send({
+                    targetId,
+                    method: "Page.setDownloadBehavior",
+                    params: { behavior: "allow", downloadPath: directory.path },
+                });
+            } catch (error) {
+                if (state.directoryOf(targetId) === directory.path) {
+                    if (previous === undefined) state.deny(targetId);
+                    else state.allow(targetId, previous);
+                }
+
+                throw error;
+            }
 
             return { tab: targetId, enabled: true, directory: directory.path };
         }

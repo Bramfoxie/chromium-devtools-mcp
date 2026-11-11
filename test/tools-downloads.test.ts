@@ -66,6 +66,40 @@ const progress = (
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe("downloads allow and deny", () => {
+    it.each([undefined, "/old"])("restores the directory after allow fails from %s", async (old) => {
+        const { fake, runtime } = setup();
+
+        if (old !== undefined) runtime.downloadState.allow("tab1", old);
+
+        fake.failSend = (_target, method) =>
+            method === "Page.setDownloadBehavior" ? new Error("failed") : undefined;
+        const result = await runTool(downloads, { action: "allow" }, extra(), runtime);
+
+        expect(result.isError).toBe(true);
+        expect(runtime.downloadState.directoryOf("tab1")).toBe(old);
+    });
+
+    it.each([undefined, "/old"])("sets the directory before enabling downloads from %s", async (old) => {
+        const { fake, runtime } = setup();
+        let seen: string | undefined;
+
+        if (old !== undefined) runtime.downloadState.allow("tab1", old);
+
+        fake.respond = (_target, method) => {
+            if (method === "Page.setDownloadBehavior") {
+                seen = runtime.downloadState.directoryOf("tab1");
+                begin(fake, "during-allow");
+            }
+
+            return {};
+        };
+
+        await runTool(downloads, { action: "allow" }, extra(), runtime);
+
+        expect(seen).toBe(DIR);
+        expect(runtime.downloadState.list("tab1").map((item) => item.id)).toContain("during-allow");
+    });
+
     it("saves into a new private directory and subscribes to the download events", async () => {
         const { fake, runtime } = setup();
         const result = await runTool(downloads, { action: "allow" }, extra(), runtime);
