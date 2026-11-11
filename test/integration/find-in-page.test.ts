@@ -7,6 +7,7 @@ let env: Env;
 const PAGE = `<!doctype html><title>Find</title>
 <style>.gap { height: 3000px }</style>
 <p id="top">Alpha needle at the top</p>
+<p id="unicode">&#304; MIXED unicode</p>
 <p style="display:none">hidden needle</p>
 <p style="visibility:hidden">invisible needle</p>
 <script>document.write("<scr" + "ipt>var inScript = 'script needle'</scr" + "ipt>")</script>
@@ -24,6 +25,7 @@ beforeAll(async () => {
 
     env = await startEnv();
     env.fixture.pages.set("/find", html(PAGE));
+    env.fixture.pages.set("/find-unicode", html("<!doctype html><p>&#128512;&#304;&#304;&#128512;</p>"));
 });
 
 afterAll(async () => {
@@ -31,6 +33,31 @@ afterAll(async () => {
 });
 
 describe.skipIf(!present)("find_in_page in a real browser", () => {
+    it("finds case insensitive matches after a character with a longer lowercase form", async () => {
+        const tab = await env.open("/find");
+        const result = await env.ok("find_in_page", { tab, text: "mixed" });
+        const folded = await env.ok("find_in_page", { tab, text: "i\u0307" });
+        const exact = await env.ok("find_in_page", { tab, text: "\u0130", caseSensitive: true });
+
+        expect(result).toMatchObject({ total: 1, matches: [{ context: expect.stringContaining("MIXED") }] });
+        expect(folded).toMatchObject({ total: 1 });
+        expect((folded.matches as Array<{ rect: unknown }>)[0]?.rect)
+            .toEqual((exact.matches as Array<{ rect: unknown }>)[0]?.rect);
+    });
+
+    it("maps adjacent expanded characters and supplementary characters to their original ranges", async () => {
+        const tab = await env.open("/find-unicode");
+        const partial = await env.ok("find_in_page", { tab, text: "\u0307" });
+        const exact = await env.ok("find_in_page", { tab, text: "\u0130", caseSensitive: true });
+        const combined = await env.ok("find_in_page", { tab, text: "\ud83d\ude00i\u0307" });
+
+        expect(partial).toMatchObject({ total: 2 });
+        expect(exact).toMatchObject({ total: 2 });
+        expect((partial.matches as Array<{ rect: unknown }>).map((match) => match.rect))
+            .toEqual((exact.matches as Array<{ rect: unknown }>).map((match) => match.rect));
+        expect(combined).toMatchObject({ total: 1 });
+    });
+
     it("lists visible matches only, in document order, including a shadow root", async () => {
         const tab = await env.open("/find");
         const page = await env.ok("find_in_page", { tab, text: "needle" });
