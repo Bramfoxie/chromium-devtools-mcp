@@ -39,8 +39,8 @@ export const emulationSummarySchema = z.strictObject({
         origin   : z.string().describe("Origin that was allowed to read the position."),
     }).optional().describe("Geolocation override, when active."),
     cpu: z.strictObject({
-        slowdown: z.number().describe("How many times slower the CPU runs than normal."),
-    }).optional().describe("CPU throttling, when active."),
+        slowdown: z.number().describe("Requested CPU slowdown factor, not a measured value."),
+    }).optional().describe("Requested CPU throttling override, when set."),
 });
 
 type EmulationSummary = z.infer<typeof emulationSummarySchema>;
