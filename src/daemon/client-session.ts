@@ -591,6 +591,8 @@ export class ClientSession {
             if (subscription.mirror !== undefined) {
                 const children = await this.frames.childrenOf(targetId, tab).catch(() => undefined);
 
+                if (tab.subscriptions.get(key) !== subscription) return;
+
                 for (const child of children?.children() ?? []) subscription.mirror(child);
             }
         } catch (error) {

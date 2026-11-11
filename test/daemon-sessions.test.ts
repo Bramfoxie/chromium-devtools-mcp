@@ -1631,6 +1631,44 @@ describe("state shared with cross site frame sessions", () => {
         expect(child?.listenerCount("Network.requestWillBeSent")).toBe(0);
     });
 
+    it("does not restore child listeners after unsubscribe during attachment", async () => {
+        const { backend, open, emitted } = setup();
+        const a = await open("a");
+        const tab = await a.createTab("https://example.com/");
+        const original = backend.attachChildren.bind(backend);
+        let release: () => void = () => undefined;
+        let entered: () => void = () => undefined;
+        const gate = new Promise<void>((resolve) => { release = resolve; });
+        const started = new Promise<void>((resolve) => { entered = resolve; });
+
+        vi.spyOn(backend, "attachChildren").mockImplementation(async (session, options) => {
+            const handle = await original(session, options);
+
+            backend.childHandles.at(-1)?.addChild("cross", true, CROSS);
+            entered();
+            await gate;
+
+            return handle;
+        });
+
+        try {
+            const subscribing = a.subscribe(tab, "Network.requestWillBeSent");
+
+            await started;
+            a.unsubscribe(tab, "Network.requestWillBeSent");
+            release();
+            await subscribing;
+            const child = backend.childHandles[0]?.childrenOf.get("cross");
+
+            child?.emit("Network.requestWillBeSent", { requestId: "1" });
+            expect(child?.listenerCount("Network.requestWillBeSent")).toBe(0);
+            expect(emitted.a).toHaveLength(0);
+        } finally {
+            release();
+            await a.close();
+        }
+    });
+
     it("answers a paused request on the child session that raised it", async () => {
         const { a, tab, handle, backend } = await tabWithChild();
 
