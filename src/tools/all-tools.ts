@@ -45,6 +45,7 @@ import { pageWait } from "./page-wait.js";
 import { screenshot } from "./screenshot.js";
 import { pageExtract } from "./page-extract.js";
 import { browserInfo } from "./browser-info.js";
+import { pageHistory } from "./page-history.js";
 import { pageInfo } from "./page-info.js";
 import { pageMetrics } from "./page-metrics.js";
 import { pageNavigate } from "./page-navigate.js";
@@ -61,6 +62,7 @@ export const allTools: AnyTool[] = [
     closeTab,
     bringToFront,
     pageInfo,
+    pageHistory,
     browserInfo,
     pageExtract,
     pageNavigate,
