@@ -18,7 +18,8 @@ export interface DownloadItem {
 }
 
 interface Entry extends DownloadItem {
-    delivered: boolean;
+    delivered : boolean;
+    directory?: string;
 }
 
 interface TabDownloads {
@@ -210,6 +211,7 @@ export class DownloadState {
                 state        : "inProgress",
                 receivedBytes: 0,
                 delivered    : false,
+                ...(state.directory === undefined ? {} : { directory: state.directory }),
             });
 
             return;
@@ -235,13 +237,13 @@ export class DownloadState {
     }
 
     private queueLocate(state: TabDownloads, entry: Entry): Promise<void> {
-        const directory = state.directory;
+        const directory = entry.directory;
 
         if (directory === undefined) return Promise.resolve();
 
         const turn = (this.locating.get(directory) ?? Promise.resolve()).then(() =>
-            entry.path === undefined && state.directory === directory
-                ? this.locate(state, entry)
+            entry.path === undefined
+                ? this.locate(state, entry, directory)
                 : undefined);
         const next = turn.catch(() => undefined);
 
@@ -275,10 +277,7 @@ export class DownloadState {
         return free.includes(exact) ? exact : free.length === 1 ? free[0] : undefined;
     }
 
-    private async locate(state: TabDownloads, entry: Entry): Promise<void> {
-        if (state.directory === undefined) return;
-
-        const directory = state.directory;
+    private async locate(state: TabDownloads, entry: Entry, directory: string): Promise<void> {
         let chosen: string | undefined | null;
 
         for (let attempt = 0; chosen === undefined && attempt < LOCATE_ATTEMPTS; attempt += 1) {

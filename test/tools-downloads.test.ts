@@ -272,6 +272,32 @@ describe("DownloadState file lookup", () => {
 });
 
 describe("DownloadState concurrency", () => {
+    it("finds a queued download in the directory where it began", async () => {
+        const fake = new FakeAccess();
+        let release: () => void = () => undefined;
+        const gate = new Promise<void>((resolve) => (release = resolve));
+        const value = new DownloadState(fake.asAccess(), {
+            list: async (directory) => {
+                if (directory === "/old") await gate;
+
+                return directory === "/old" ? ["a.txt", "b.txt"] : [];
+            },
+            size: async () => 1,
+        }, async () => undefined);
+
+        value.attach();
+        value.allow("tab1", "/old");
+        begin(fake, "a", "a.txt");
+        begin(fake, "b", "b.txt");
+        progress(fake, "a", "completed", 1, 1);
+        progress(fake, "b", "completed", 1, 1);
+        const pending = value.next("tab1", 0, async () => undefined, "b");
+
+        value.allow("tab1", "/new");
+        release();
+        expect((await pending)?.path).toBe(path.join("/old", "b.txt"));
+    });
+
     it("does not block a tab on another tab's file lookup", async () => {
         const fake = new FakeAccess();
         let release: () => void = () => undefined;
