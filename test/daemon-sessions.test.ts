@@ -477,6 +477,59 @@ describe("tab ownership", () => {
 });
 
 describe("closing a session", () => {
+    it("waits for an opening session during reentrant shutdown", async () => {
+        const { backend, registry, open } = setup();
+        let release: () => void = () => undefined;
+        let stopping: Promise<void> | undefined;
+        let stopped = false;
+        const gate = new Promise<void>((resolve) => { release = resolve; });
+        const createContext = backend.createContext.bind(backend);
+
+        vi.spyOn(backend, "createContext").mockImplementation(async () => {
+            stopping = registry.closeAll().then(() => { stopped = true; });
+            await gate;
+
+            return createContext();
+        });
+        const opening = code(open("a", true));
+
+        try {
+            await new Promise<void>((resolve) => setImmediate(resolve));
+            expect(stopped).toBe(false);
+        } finally {
+            release();
+            await Promise.all([opening, stopping]);
+        }
+
+        expect(await opening).toBe(ErrorCode.sessionClosed);
+        expect(backend.contexts.size).toBe(0);
+    });
+
+    it("waits for session cleanup during reentrant shutdown", async () => {
+        const { registry, open } = setup();
+        const session = await open("a");
+        let release: () => void = () => undefined;
+        let stopping: Promise<void> | undefined;
+        let stopped = false;
+        const gate = new Promise<void>((resolve) => { release = resolve; });
+        const close = session.close.bind(session);
+
+        vi.spyOn(session, "close").mockImplementation(() => {
+            stopping = registry.closeAll().then(() => { stopped = true; });
+
+            return gate.then(() => close());
+        });
+        const closing = registry.close("a");
+
+        try {
+            await new Promise<void>((resolve) => setImmediate(resolve));
+            expect(stopped).toBe(false);
+        } finally {
+            release();
+            await Promise.all([closing, stopping]);
+        }
+    });
+
     it("waits for other sessions when a session cleanup fails", async () => {
         const { backend, registry, open } = setup();
         const first = await open("a");

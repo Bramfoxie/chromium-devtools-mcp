@@ -15,6 +15,29 @@ import { closedError, translate } from "./rpc-errors.js";
 
 const MAX_REMEMBERED_DESTROYED = 512;
 
+function trackOperation<T>(pending: Set<Promise<T>>, run: () => Promise<T>): Promise<T> {
+    let fulfill: (value: T | PromiseLike<T>) => void = () => undefined;
+    let fail: (error: unknown) => void = () => undefined;
+    const tracked = new Promise<T>((resolve, reject) => {
+        fulfill = resolve;
+        fail = reject;
+    });
+
+    pending.add(tracked);
+    void tracked.then(
+        () => pending.delete(tracked),
+        () => pending.delete(tracked),
+    );
+
+    try {
+        void run().then(fulfill, fail);
+    } catch (error) {
+        fail(error);
+    }
+
+    return tracked;
+}
+
 export interface SessionOpenOptions {
     isolated  : boolean;
     clientName: string;
@@ -67,15 +90,7 @@ export class SessionRegistry<K> implements Ownership {
     }
 
     open(key: K, emit: Emit, options: SessionOpenOptions): Promise<ClientSession> {
-        const opening = this.openSession(key, emit, options);
-
-        this.openingTasks.add(opening);
-        void opening.then(
-            () => this.openingTasks.delete(opening),
-            () => this.openingTasks.delete(opening),
-        );
-
-        return opening;
+        return trackOperation(this.openingTasks, () => this.openSession(key, emit, options));
     }
 
     private async openSession(
@@ -180,15 +195,7 @@ export class SessionRegistry<K> implements Ownership {
     }
 
     private closeSession(session: ClientSession): Promise<void> {
-        const closing = session.close();
-
-        this.closing.add(closing);
-        void closing.then(
-            () => this.closing.delete(closing),
-            () => this.closing.delete(closing),
-        );
-
-        return closing;
+        return trackOperation(this.closing, () => session.close());
     }
 
     private remember(targetId: string): void {
