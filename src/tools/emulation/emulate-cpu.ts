@@ -13,12 +13,12 @@ export const emulateCpu = defineTool({
     untrusted  : false,
     closedWorld: true,
     description:
-        "Slow the CPU of a tab down by a factor to test how a page behaves on weak devices; a slowdown of 1 or reset restores full speed.",
+        "Request CPU throttling for a tab; the observed slowdown depends on the browser and workload.",
     access: "mutate",
     input : z.strictObject({
         tab     : tabSchema,
         slowdown: z.number().min(1).max(CPU_SLOWDOWN_MAX).optional()
-            .describe(`How many times slower, from 1 to ${CPU_SLOWDOWN_MAX}. 1 restores full speed.`),
+            .describe(`Requested slowdown, from 1 to ${CPU_SLOWDOWN_MAX}. 1 removes the override.`),
         reset: z.boolean().optional().describe("Restore full speed. Defaults to false."),
     }),
     output: z.strictObject({
