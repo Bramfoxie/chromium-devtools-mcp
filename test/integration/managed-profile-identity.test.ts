@@ -1,4 +1,4 @@
-import { copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -6,7 +6,6 @@ import { describe, expect, it } from "vitest";
 import { launchManaged, type ManagedBrowser } from "../../src/browser/index.js";
 import { CdpClient } from "../../src/cdp/index.js";
 import { createConnector, type BrowserHandle } from "../../src/daemon/runner.js";
-import { findManagedBrowser } from "../../src/daemon/managed-binding.js";
 import { chromeAvailable } from "./browser-env.js";
 
 async function freePort(): Promise<number> {
@@ -71,18 +70,55 @@ describe.skipIf(!chromeAvailable())("managed browser profile identity", () => {
         const first = path.join(root, "first");
         const second = path.join(root, "second");
         let browser: ManagedBrowser | undefined;
+        let client: CdpClient | undefined;
+        let other: BrowserHandle | undefined;
 
         try {
             await mkdir(second);
             browser = await launchManaged({ browser: "chrome", headless: true, profileDir: first, debugPort: 0 });
             const endpoint = new URL(browser.webSocketUrl);
+            const contents = `${endpoint.port}\n${endpoint.pathname}\n`;
+            const fixture = path.join(root, "port-fixture");
 
-            await writeFile(path.join(first, "DevToolsActivePort"), `${endpoint.port}\n${endpoint.pathname}\n`);
-            await copyFile(path.join(first, "DevToolsActivePort"), path.join(second, "DevToolsActivePort"));
-            expect(await findManagedBrowser(second, { browser: "chrome", headless: true }, {
-                directory: path.join(root, "private"), platform: process.platform, uid: process.getuid?.(),
-            })).toBeUndefined();
+            await writeFile(fixture, contents);
+            await copyFile(fixture, path.join(second, "DevToolsActivePort"));
+            expect(await readFile(path.join(second, "DevToolsActivePort"), "utf8")).toBe(contents);
+            client = await CdpClient.connect({ url: browser.webSocketUrl });
+            const created = await client.send("Target.createTarget", { url: "about:blank" }) as {
+                targetId: string;
+            };
+            const before = await client.send("SystemInfo.getProcessInfo") as {
+                processInfo: Array<{ type: string; id: number }>;
+            };
+
+            other = await createConnector()({
+                browser   : "chrome", mode      : "managed", headless  : true,
+                profileDir: second, debugPort : 0, allowFocus: false, isolated  : false,
+                safety    : {
+                    readOnly            : false, allowedDomains      : [], deniedDomains       : [],
+                    allowPrivateNetworks: true, confirmDangerous    : false,
+                    uploadDirs          : [],
+                },
+            }, {
+                onWaiting     : () => undefined,
+                managedBinding: {
+                    directory: path.join(root, "private"), platform: process.platform, uid: process.getuid?.(),
+                },
+            }, new AbortController().signal);
+            const after = await other.client.send("SystemInfo.getProcessInfo") as {
+                processInfo: Array<{ type: string; id: number }>;
+            };
+            const targets = await client.send("Target.getTargets") as {
+                targetInfos: Array<{ targetId: string }>;
+            };
+
+            expect(after.processInfo.find((info) => info.type === "browser")?.id)
+                .not.toBe(before.processInfo.find((info) => info.type === "browser")?.id);
+            expect(targets.targetInfos.some((target) => target.targetId === created.targetId))
+                .toBe(true);
         } finally {
+            await other?.stop();
+            await client?.close();
             await browser?.stop();
             await rm(root, { recursive: true, force: true, maxRetries: 40, retryDelay: 250 });
         }
