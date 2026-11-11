@@ -272,6 +272,50 @@ describe("DownloadState file lookup", () => {
 });
 
 describe("DownloadState concurrency", () => {
+    it("does not block a tab on another tab's file lookup", async () => {
+        const fake = new FakeAccess();
+        let release: () => void = () => undefined;
+        const gate = new Promise<void>((resolve) => (release = resolve));
+        const value = new DownloadState(fake.asAccess(), {
+            list: async (directory) => {
+                if (directory === "/slow") await gate;
+
+                return ["a.txt"];
+            },
+            size: async () => 1,
+        }, async () => undefined);
+
+        value.attach();
+        value.allow("tab1", "/slow");
+        value.allow("tab2", "/fast");
+        begin(fake, "a", "a.txt");
+        progress(fake, "a", "completed", 1, 1);
+        fake.emit("cdp.event", {
+            targetId: "tab2",
+            event   : "Page.downloadWillBegin",
+            params  : { guid: "b", url: "https://a.example/", suggestedFilename: "a.txt" },
+        });
+        fake.emit("cdp.event", {
+            targetId: "tab2",
+            event   : "Page.downloadProgress",
+            params  : { guid: "b", state: "completed", receivedBytes: 1, totalBytes: 1 },
+        });
+        let settled = false;
+        const pending = value.next("tab2", 0, async () => undefined).then((result) => {
+            settled = true;
+
+            return result;
+        });
+
+        try {
+            await tick();
+            expect(settled).toBe(true);
+        } finally {
+            release();
+            await pending;
+        }
+    });
+
     it("allows repeated waits for the same explicit download ID", async () => {
         const fake = new FakeAccess();
         const value = new DownloadState(fake.asAccess());

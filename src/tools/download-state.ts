@@ -75,7 +75,7 @@ export class DownloadState {
     private readonly tabs = new Map<string, TabDownloads>();
     private readonly subscribed = new Map<string, Set<string>>();
     private attached = false;
-    private locating: Promise<void> = Promise.resolve();
+    private readonly locating = new Map<string, Promise<void>>();
 
     constructor(
         private readonly access: DaemonAccess,
@@ -235,10 +235,20 @@ export class DownloadState {
     }
 
     private queueLocate(state: TabDownloads, entry: Entry): Promise<void> {
-        const turn = this.locating.then(() =>
-            entry.path === undefined ? this.locate(state, entry) : undefined);
+        const directory = state.directory;
 
-        this.locating = turn.catch(() => undefined);
+        if (directory === undefined) return Promise.resolve();
+
+        const turn = (this.locating.get(directory) ?? Promise.resolve()).then(() =>
+            entry.path === undefined && state.directory === directory
+                ? this.locate(state, entry)
+                : undefined);
+        const next = turn.catch(() => undefined);
+
+        this.locating.set(directory, next);
+        void next.then(() => {
+            if (this.locating.get(directory) === next) this.locating.delete(directory);
+        });
 
         return turn;
     }
