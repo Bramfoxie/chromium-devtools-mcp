@@ -15,13 +15,23 @@ import { closedError, translate } from "./rpc-errors.js";
 
 const MAX_REMEMBERED_DESTROYED = 512;
 
-function trackOperation<T>(pending: Set<Promise<T>>, run: () => Promise<T>): Promise<T> {
+function deferred<T>(): {
+    promise: Promise<T>;
+    fulfill: (value: T | PromiseLike<T>) => void;
+    fail   : (error: unknown) => void;
+} {
     let fulfill: (value: T | PromiseLike<T>) => void = () => undefined;
     let fail: (error: unknown) => void = () => undefined;
-    const tracked = new Promise<T>((resolve, reject) => {
+    const promise = new Promise<T>((resolve, reject) => {
         fulfill = resolve;
         fail = reject;
     });
+
+    return { promise, fulfill, fail };
+}
+
+function trackOperation<T>(pending: Set<Promise<T>>, run: () => Promise<T>): Promise<T> {
+    const { promise: tracked, fulfill, fail } = deferred<T>();
 
     pending.add(tracked);
     void tracked.then(
@@ -55,6 +65,7 @@ export class SessionRegistry<K> implements Ownership {
     private readonly destroyed = new Set<string>();
     private readonly stopListening: () => void;
     private shuttingDown = false;
+    private shutdownPromise       : Promise<void> | undefined;
     private readonly permissions  : PermissionLedger;
     private readonly traceLock = new TraceLock();
 
@@ -176,7 +187,18 @@ export class SessionRegistry<K> implements Ownership {
         await this.closeSession(session);
     }
 
-    async closeAll(): Promise<void> {
+    closeAll(): Promise<void> {
+        if (this.shutdownPromise) return this.shutdownPromise;
+
+        const { promise, fulfill, fail } = deferred<void>();
+
+        this.shutdownPromise = promise;
+        void this.shutdownAll().then(fulfill, fail);
+
+        return promise;
+    }
+
+    private async shutdownAll(): Promise<void> {
         this.shuttingDown = true;
         this.stopListening();
         this.opening.clear();

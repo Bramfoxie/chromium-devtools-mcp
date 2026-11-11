@@ -477,6 +477,56 @@ describe("tab ownership", () => {
 });
 
 describe("closing a session", () => {
+    it("shares a later cleanup failure with reentrant shutdown", async () => {
+        const { registry, open } = setup();
+        const first = await open("a");
+        const second = await open("b");
+        const failure = new Error("cleanup failed");
+        const close = first.close.bind(first);
+        let reentrant: Promise<void> | undefined;
+
+        vi.spyOn(first, "close").mockImplementation(() => {
+            reentrant = registry.closeAll();
+
+            return close();
+        });
+        vi.spyOn(second, "close").mockRejectedValue(failure);
+        const stopping = registry.closeAll();
+
+        expect(reentrant).toBe(stopping);
+        await expect(stopping).rejects.toBe(failure);
+        await expect(reentrant).rejects.toBe(failure);
+    });
+
+    it("waits for every session during reentrant shutdown", async () => {
+        const { backend, registry, open } = setup();
+        const first = await open("a");
+        const second = await open("b");
+
+        await second.createTab("about:blank");
+        let release: () => void = () => undefined;
+
+        backend.gates.closeTarget = new Promise<void>((resolve) => { release = resolve; });
+        let reentrant: Promise<void> | undefined;
+        let stopped = false;
+        const close = first.close.bind(first);
+
+        vi.spyOn(first, "close").mockImplementation(() => {
+            reentrant = registry.closeAll().then(() => { stopped = true; });
+
+            return close();
+        });
+        const stopping = registry.closeAll();
+
+        try {
+            await new Promise<void>((resolve) => setImmediate(resolve));
+            expect(stopped).toBe(false);
+        } finally {
+            release();
+            await Promise.all([stopping, reentrant]);
+        }
+    });
+
     it("waits for an opening session during reentrant shutdown", async () => {
         const { backend, registry, open } = setup();
         let release: () => void = () => undefined;
