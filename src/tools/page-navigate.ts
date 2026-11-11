@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { defineTool } from "./define-tool.js";
-import { createDeadline } from "./deadline.js";
+import { createDeadline, sendWithin } from "./deadline.js";
 import { ensureNoDialog } from "./dialogs.js";
 import { DomainRefusal, requireAllowedFinalUrl } from "./final-url.js";
 import { ToolError } from "./errors.js";
@@ -17,11 +17,11 @@ export const NAVIGATE_MAX_TIMEOUT_MS = 120_000;
 export const pageNavigate = defineTool({
     name: "page_navigate",
     description:
-        "Navigate a tab to a URL, back, forward or reload it, waiting for the page to load.",
+        "Navigate a tab to a URL, go back or forward, reload it, or stop its loading.",
     access: "mutate",
     input : z.strictObject({
         tab        : tabSchema,
-        action     : z.enum(["url", "back", "forward", "reload"]).optional().describe("What to do. Defaults to url."),
+        action     : z.enum(["url", "back", "forward", "reload", "stop"]).optional().describe("What to do. Defaults to url."),
         url        : z.string().min(1).max(2048).optional().describe("URL to open, http, https or about:blank. Required for the url action."),
         waitUntil  : waitUntilSchema.optional().describe("Wait for the load event, DOMContentLoaded, or return at once. Defaults to load."),
         timeoutMs  : z.number().int().min(1).max(NAVIGATE_MAX_TIMEOUT_MS).optional().describe(`How long to wait for the page. Defaults to ${NAVIGATE_DEFAULT_TIMEOUT_MS} ms.`),
@@ -66,6 +66,21 @@ export const pageNavigate = defineTool({
         const deadline = createDeadline(context.signal, timeoutMs, () => context.clock.now());
 
         try {
+            if (action === "stop") {
+                await sendWithin(context.access, deadline, targetId, "Page.stopLoading", {});
+                const page = await currentPage(context, targetId);
+
+                await requireAllowedFinalUrl(context, targetId, page.url);
+
+                return {
+                    tab           : targetId,
+                    url           : page.url,
+                    title         : page.title,
+                    waited        : "none" as const,
+                    navigationType: action,
+                };
+            }
+
             if (waitUntil === "none") {
                 await navigate(context, deadline, targetId, action, args.url, args.ignoreCache);
                 const page = await currentPage(context, targetId);

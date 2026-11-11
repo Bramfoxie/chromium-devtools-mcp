@@ -19,7 +19,7 @@ Every tool with its behavior. Element targeting is in [frames-and-shadow-dom.md]
 
   Each listed form includes up to 50 controls independently of `limit`, and `fieldTotal` gives the total number of controls.
 
-- `page_navigate`: open a URL, go back or forward, or reload, waiting for the page to load. Back and forward refuse a history entry that is not an http, https or about:blank page. `ignoreCache` is available only for reload.
+- `page_navigate`: open a URL, go back or forward, reload, or stop loading. Navigation can wait for the page to load; stopping returns without waiting for a load event. Back and forward refuse a history entry that is not an http, https or about:blank page. `ignoreCache` is available only for reload.
 
 ## Inspection and navigation
 

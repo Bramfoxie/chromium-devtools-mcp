@@ -203,6 +203,24 @@ describe("navigationWaitReduce", () => {
 });
 
 describe("page_navigate", () => {
+    it("stops loading without waiting for a navigation event", async () => {
+        const fake = new FakeAccess();
+
+        fake.respond = (_targetId, method) => method === "Runtime.evaluate"
+            ? pageState("https://example.org/", "Example", "loading")
+            : {};
+        const { runtime } = setup(fake);
+
+        await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+        const result = await runTool(pageNavigate, { action: "stop" }, extra(), runtime);
+
+        expect(result.structuredContent).toMatchObject({
+            tab: "tab1", url: "https://example.org/", waited: "none", navigationType: "stop",
+        });
+        expect(fake.sent.map((call) => call.method)).toEqual(["Page.stopLoading", "Runtime.evaluate"]);
+    });
+
     it("rejects ignoreCache outside reload before sending a navigation", async () => {
         const { fake, runtime } = setup();
 

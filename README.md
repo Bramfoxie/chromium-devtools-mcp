@@ -89,6 +89,8 @@ Compared against Chrome DevTools MCP 1.13.0 (2026-11-11, [ChromeDevTools/chrome-
 
 ## Tools
 
+`page_navigate` can also stop a tab loading with `action: "stop"`.
+
 62 tools. Details and parameters are in [docs/tools.md](docs/tools.md).
 
 | Category    | Tools                                                                                                                                                               |

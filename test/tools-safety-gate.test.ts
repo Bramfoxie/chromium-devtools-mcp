@@ -40,6 +40,7 @@ const MUTATING: Case[] = [
     ["close_tab", { tab: "tab1" }],
     ["bring_to_front", { tab: "tab1" }],
     ["page_navigate", { url: "https://example.com/" }],
+    ["page_navigate", { action: "stop" }],
     ["js_evaluate", { expression: "1" }],
     ["page_wait", { expression: "true" }],
     ["page_dialogs", { action: "accept" }],
