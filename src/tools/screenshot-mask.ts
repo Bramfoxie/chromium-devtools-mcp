@@ -111,6 +111,7 @@ const selectedBoundsSchema = z.object({
     result: z.object({ value: z.object({
         x     : z.number().finite(), y     : z.number().finite(),
         width : z.number().finite().nonnegative(), height: z.number().finite().nonnegative(),
+        self  : z.object({ x: z.number(), y: z.number(), width: z.number(), height: z.number() }),
     }).optional() }),
     exceptionDetails: z.unknown().optional(),
 });
@@ -139,7 +140,9 @@ const SELECTED_BOUNDS = `function() {
     add(range.getBoundingClientRect());
   }
   if (!Number.isFinite(left)) throw new Error("No visible bounds");
-  return { x: left, y: top, width: right - left, height: bottom - top };
+  const self = Element.prototype.getBoundingClientRect.call(this);
+  return { x: left, y: top, width: right - left, height: bottom - top,
+    self: { x: self.x, y: self.y, width: self.width, height: self.height } };
 }`;
 
 const descendantSnapshotSchema = z.object({
@@ -220,7 +223,7 @@ function descendantBounds(
 
 async function selectedBounds(
     access: DaemonAccess, tab: string, backendNodeId: number, frameId: string,
-): Promise<Rect> {
+): Promise<Rect & { self: Rect }> {
     const world = z.object({ executionContextId: z.number() }).safeParse(await access.send({
         targetId: tab, method  : "Page.createIsolatedWorld",
         params  : { frameId, worldName: "chromium-devtools-mcp-mask" },
@@ -252,6 +255,55 @@ async function selectedBounds(
         return parsed.data.result.value;
     } finally {
         await releaseQuietly(access, tab, [objectId]);
+    }
+}
+
+async function assertUnscaledFrames(
+    context: ToolContext, tab: string, frame: string, main: string,
+) {
+    const frames = await context.frames.refresh(tab);
+    let current = frame;
+    const visited = new Set<string>();
+    const quad = z.array(z.number()).length(8);
+    const schema = z.object({ model: z.object({
+        border: quad, content: quad, width: z.number(), height: z.number(),
+    }) });
+
+    while (current !== main) {
+        if (visited.has(current) || visited.size >= 10) throw maskError();
+
+        visited.add(current);
+        const info = frames.find((item) => item.frameId === current);
+
+        if (info === undefined || info.isolated ||
+            info.parentFrameId === undefined || info.truncated) {
+            throw maskError();
+        }
+
+        const owner = z.object({ backendNodeId: z.number() }).safeParse(await context.access.send({
+            targetId: tab, method: "DOM.getFrameOwner", params: { frameId: current },
+        }));
+
+        if (!owner.success) throw maskError();
+
+        const model = schema.safeParse(await context.access.send({
+            targetId: tab, method: "DOM.getBoxModel", params: { backendNodeId: owner.data.backendNodeId },
+        }));
+
+        if (!model.success) throw maskError();
+
+        const { border, content, width, height } = model.data.model;
+        const b = bounds(border);
+        const q = (a: number, b: number) => Math.abs(a - b) < 1e-6;
+        const aligned = (v: number[]) => q(v[1] ?? 0, v[3] ?? 0) && q(v[5] ?? 0, v[7] ?? 0) &&
+            q(v[0] ?? 0, v[6] ?? 0) && q(v[2] ?? 0, v[4] ?? 0);
+
+        if (!aligned(border) || !aligned(content) || width < 1 || height < 1 ||
+            Math.abs(b.width / width - 1) > 1e-6 || Math.abs(b.height / height - 1) > 1e-6) {
+            throw maskError();
+        }
+
+        current = info.parentFrameId;
     }
 }
 
@@ -294,13 +346,24 @@ export async function selectedBoxes(
                 throw maskError();
             }
 
-            if (frame !== main && element.isolated !== true) {
-                throw new ToolError("Masking a selected element in a same process frame is not supported. Capture the frame separately or choose another element.");
-            }
-
             const extent = await selectedBounds(owner, tab, element.backendNodeId, frame);
             const descendants = descendantBounds(snapshot, element.backendNodeId);
-            const all = [border, extent, ...descendants];
+            let measured = [extent, ...descendants];
+
+            if (frame !== main && element.isolated !== true) {
+                await assertUnscaledFrames(context, tab, frame, main);
+                if (!axisAligned(parsed.data.model.border) ||
+                    extent.self.width < 1 || extent.self.height < 1 ||
+                    Math.abs(border.width / extent.self.width - 1) > 1e-6 ||
+                    Math.abs(border.height / extent.self.height - 1) > 1e-6) throw maskError();
+
+                const dx = border.x - extent.self.x;
+                const dy = border.y - extent.self.y;
+
+                measured = measured.map((box) => ({ ...box, x: box.x + dx, y: box.y + dy }));
+            }
+
+            const all = [border, ...measured];
             const left = Math.min(...all.map((box) => box.x));
             const top = Math.min(...all.map((box) => box.y));
             const right = Math.max(...all.map((box) => box.x + box.width));

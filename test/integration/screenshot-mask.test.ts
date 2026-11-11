@@ -178,11 +178,7 @@ describe.skipIf(!present)("password masking in a real browser", () => {
         const image = (result.content as Array<{ type: string; data?: string }>)
             .find((entry) => entry.type === "image");
 
-        if (result.isError) {
-            expect(image).toBeUndefined();
-
-            return;
-        }
+        expect(result.isError, JSON.stringify(result.content)).not.toBe(true);
 
         const { data, info } = await sharp(Buffer.from(image?.data ?? "", "base64"))
             .removeAlpha().raw().toBuffer({ resolveWithObject: true });
@@ -210,11 +206,7 @@ describe.skipIf(!present)("password masking in a real browser", () => {
         const image = (result.content as Array<{ type: string; data?: string }>)
             .find((entry) => entry.type === "image");
 
-        if (result.isError) {
-            expect(image).toBeUndefined();
-
-            return;
-        }
+        expect(result.isError, JSON.stringify(result.content)).not.toBe(true);
 
         const { data, info } = await sharp(Buffer.from(image?.data ?? "", "base64"))
             .removeAlpha().raw().toBuffer({ resolveWithObject: true });
@@ -240,16 +232,24 @@ describe.skipIf(!present)("password masking in a real browser", () => {
         const image = (result.content as Array<{ type: string; data?: string }>)
             .find((entry) => entry.type === "image");
 
-        if (result.isError) {
-            expect(image).toBeUndefined();
-
-            return;
-        }
+        expect(result.isError, JSON.stringify(result.content)).not.toBe(true);
 
         const { data, info } = await sharp(Buffer.from(image?.data ?? "", "base64"))
             .removeAlpha().raw().toBuffer({ resolveWithObject: true });
 
         expect(data[(120 * info.width + 170) * info.channels]).toBeLessThan(10);
+    });
+
+    it("refuses a scaled same site frame", async () => {
+        env.fixture.pages.set("/scaled-inner", html('<div id="private" style="width:20px;height:20px">secret</div>'));
+        env.fixture.pages.set("/scaled-outer", html('<iframe style="transform:scale(1.1)" src="/scaled-inner"></iframe>'));
+        const tab = await env.open("/scaled-outer");
+        const result = await env.client.callTool({
+            name: "screenshot", arguments: { tab, maskElements: [{ selector: "#private", frame: "iframe" }] },
+        });
+
+        expect(result.isError).toBe(true);
+        expect((result.content as Array<{ type: string }>).some((item) => item.type === "image")).toBe(false);
     });
 
     it("does not expose a child outside the selected element box", async () => {
