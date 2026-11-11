@@ -1084,6 +1084,83 @@ describe("subscriptions", () => {
         );
     });
 
+    it("does not restore a subscription cancelled while the tab attaches", async () => {
+        const { backend, emitted, open } = setup();
+        const session = await open("a");
+        const tab = await session.createTab("about:blank");
+        let release: () => void = () => undefined;
+
+        backend.gates.attach = new Promise<void>((resolve) => { release = resolve; });
+        const subscribing = session.subscribe(tab, "Page.loadEventFired");
+
+        session.unsubscribe(tab, "Page.loadEventFired");
+        release();
+        await subscribing;
+        backend.sessions.get(tab)?.emit("Page.loadEventFired", {});
+        expect(backend.sessions.get(tab)?.listenerCount("Page.loadEventFired")).toBe(0);
+        expect(emitted.a).toEqual([]);
+    });
+
+    it("keeps one of two pending subscriptions after one unsubscribe", async () => {
+        const { backend, open } = setup();
+        const session = await open("a");
+        const tab = await session.createTab("about:blank");
+        let release: () => void = () => undefined;
+
+        backend.gates.attach = new Promise<void>((resolve) => { release = resolve; });
+        const first = session.subscribe(tab, "Page.loadEventFired");
+        const second = session.subscribe(tab, "Page.loadEventFired");
+        let secondDone = false;
+
+        void second.then(() => { secondDone = true; });
+        session.unsubscribe(tab, "Page.loadEventFired");
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        expect(secondDone).toBe(false);
+        release();
+        await Promise.all([first, second]);
+        expect(backend.sessions.get(tab)?.listenerCount("Page.loadEventFired")).toBe(1);
+        session.unsubscribe(tab, "Page.loadEventFired");
+        expect(backend.sessions.get(tab)?.listenerCount("Page.loadEventFired")).toBe(0);
+    });
+
+    it("does not cancel a new subscription after cancelling a pending one", async () => {
+        const { backend, open } = setup();
+        const session = await open("a");
+        const tab = await session.createTab("about:blank");
+        let release: () => void = () => undefined;
+
+        backend.gates.attach = new Promise<void>((resolve) => { release = resolve; });
+        const first = session.subscribe(tab, "Page.loadEventFired");
+
+        session.unsubscribe(tab, "Page.loadEventFired");
+        const second = session.subscribe(tab, "Page.loadEventFired");
+
+        release();
+        await Promise.all([first, second]);
+        expect(backend.sessions.get(tab)?.listenerCount("Page.loadEventFired")).toBe(1);
+        session.unsubscribe(tab, "Page.loadEventFired");
+        expect(backend.sessions.get(tab)?.listenerCount("Page.loadEventFired")).toBe(0);
+    });
+
+    it("rejects all pending subscribers after an attach failure and allows retry", async () => {
+        const { backend, open } = setup();
+        const session = await open("a");
+        const tab = await session.createTab("about:blank");
+        let release: () => void = () => undefined;
+
+        backend.gates.attach = new Promise<void>((resolve) => { release = resolve; });
+        backend.failures.attach = [new Error("attach failed")];
+        const first = session.subscribe(tab, "Page.loadEventFired");
+        const second = session.subscribe(tab, "Page.loadEventFired");
+        const outcomes = Promise.allSettled([first, second]);
+
+        release();
+        expect((await outcomes).map((result) => result.status)).toEqual(["rejected", "rejected"]);
+        await session.subscribe(tab, "Page.loadEventFired");
+        expect(backend.sessions.get(tab)?.listenerCount("Page.loadEventFired")).toBe(1);
+        session.unsubscribe(tab, "Page.loadEventFired");
+    });
+
     it("does not subscribe twice and stops after unsubscribe", async () => {
         const { backend, emitted, open } = setup();
         const a = await open("a");

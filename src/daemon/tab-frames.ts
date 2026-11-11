@@ -22,6 +22,7 @@ export interface FrameEntry {
 
 export interface Subscription {
     count  : number;
+    ready  : Promise<void>;
     off    : () => void;
     mirror?: (child: FrameChildSession) => void;
     mirrors: Map<string, () => void>;

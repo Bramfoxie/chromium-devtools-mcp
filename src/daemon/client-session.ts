@@ -548,20 +548,47 @@ export class ClientSession {
         if (known !== undefined) {
             known.count += 1;
 
-            return;
+            return known.ready;
         }
 
+        let resolve: () => void = () => undefined;
+        let reject: (error: unknown) => void = () => undefined;
+        const ready = new Promise<void>((done, fail) => { resolve = done; reject = fail; });
+        let stop: () => void = () => undefined;
+        const mirrors = new Map<string, () => void>();
+        const subscription: Subscription = {
+            count: 1,
+            ready,
+            off  : () => {
+                stop();
+                for (const off of mirrors.values()) off();
+                mirrors.clear();
+            },
+            mirrors,
+        };
+
+        tab.subscriptions.set(key, subscription);
+        void this.installSubscription(
+            targetId, tab, event, frameId, key, subscription, (off) => { stop = off; },
+        ).then(resolve, reject);
+
+        return ready;
+    }
+
+    private async installSubscription(
+        targetId    : string,
+        tab         : OwnedTab,
+        event       : string,
+        frameId     : string | undefined,
+        key         : string,
+        subscription: Subscription,
+        setStop     : (off: () => void) => void,
+    ): Promise<void> {
         try {
             const session = await this.frames.sessionFor(targetId, tab, frameId);
 
             this.assertCurrent(targetId, tab);
-            const current = tab.subscriptions.get(key);
-
-            if (current !== undefined) {
-                current.count += 1;
-
-                return;
-            }
+            if (tab.subscriptions.get(key) !== subscription) return;
 
             const stop = session.on(event, (params) =>
                 this.emit("cdp.event", {
@@ -570,23 +597,19 @@ export class ClientSession {
                     params,
                     ...(frameId === undefined ? {} : { frameId }),
                 }));
-            const mirrors = new Map<string, () => void>();
-            const subscription: Subscription = {
-                count: 1,
-                off  : () => {
-                    stop();
-                    for (const off of mirrors.values()) off();
-                    mirrors.clear();
-                },
-                mirrors,
-            };
+
+            setStop(stop);
+
+            if (tab.subscriptions.get(key) !== subscription) {
+                stop();
+
+                return;
+            }
 
             if (frameId === undefined && isMirroredEvent(event)) {
                 subscription.mirror = (child) =>
                     this.frames.mirror(targetId, tab, subscription, event, child);
             }
-
-            tab.subscriptions.set(key, subscription);
 
             if (subscription.mirror !== undefined) {
                 const children = await this.frames.childrenOf(targetId, tab).catch(() => undefined);
@@ -596,6 +619,11 @@ export class ClientSession {
                 for (const child of children?.children() ?? []) subscription.mirror(child);
             }
         } catch (error) {
+            if (tab.subscriptions.get(key) === subscription) {
+                tab.subscriptions.delete(key);
+                subscription.off();
+            }
+
             throw translate(error);
         }
     }
