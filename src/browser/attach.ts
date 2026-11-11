@@ -241,6 +241,8 @@ export async function attachBrowser(
 
         const endpoint = await resolveAttachEndpoint(config, deps, signal, onProblem);
 
+        if (signal?.aborted) break;
+
         if (endpoint) {
             deps.log(`Attaching to ${BROWSERS[config.browser].label} on port ${endpoint.port} (${endpoint.source}).`);
 

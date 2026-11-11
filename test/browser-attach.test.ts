@@ -403,8 +403,23 @@ describe("attachBrowser", () => {
 
         expect(failure).toBeInstanceOf(AttachError);
         expect(fetches).toBe(2);
-        expect(sleeps).toBe(2);
+        expect(sleeps).toBe(1);
         expect(logs).toHaveLength(1);
+    });
+
+    it("does not return an endpoint discovered after cancellation", async () => {
+        const controller = new AbortController();
+        const { value } = deps({}, {
+            fetchVersion: async () => {
+                controller.abort();
+
+                return version;
+            },
+        });
+
+        await expect(attachBrowser(config, value, controller.signal)).rejects.toBeInstanceOf(
+            AttachError,
+        );
     });
 
     it("passes the abort signal to the probes and the sleep", async () => {
