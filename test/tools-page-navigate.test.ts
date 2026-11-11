@@ -203,6 +203,20 @@ describe("navigationWaitReduce", () => {
 });
 
 describe("page_navigate", () => {
+    it("rejects ignoreCache outside reload before sending a navigation", async () => {
+        const { fake, runtime } = setup();
+
+        await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+        const result = await runTool(pageNavigate, {
+            url: "https://example.org/", ignoreCache: true, waitUntil: "none",
+        }, extra(), runtime);
+
+        expect(result.isError).toBe(true);
+        expect(JSON.stringify(result)).toContain("ignoreCache");
+        expect(fake.sent.some((call) => call.method === "Page.navigate")).toBe(false);
+    });
+
     it("navigates to a url and waits for the load event of the new loader", async () => {
         const fake = new FakeAccess();
         const { clock } = trackingSleep();

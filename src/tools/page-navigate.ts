@@ -48,6 +48,10 @@ export const pageNavigate = defineTool({
 
         const action = args.action ?? "url";
 
+        if (args.ignoreCache !== undefined && action !== "reload") {
+            throw new ToolError("ignoreCache is only available for the reload action.");
+        }
+
         if (action === "url" && args.url === undefined) {
             throw new ToolError("The url action needs a url to open.");
         }
