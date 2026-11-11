@@ -615,6 +615,56 @@ describe("bare sockets", () => {
 });
 
 describe("events", () => {
+    it("does not deliver the current event to a handler removed during delivery", async () => {
+        const server = await startServer();
+        const client = await connectClient(server);
+        const later = vi.fn();
+        let off: () => void = () => undefined;
+
+        client.on("tick", () => off());
+        off = client.on("tick", later);
+        server.ready[0]?.sendEvent("tick");
+        await client.request("echo");
+        expect(later).not.toHaveBeenCalled();
+    });
+
+    it("keeps duplicate registrations independent across unsubscribe and re-registration", async () => {
+        const server = await startServer();
+        const client = await connectClient(server);
+        const handler = vi.fn();
+        const other = vi.fn();
+        const first = client.on("tick", handler);
+        const second = client.on("tick", handler);
+
+        client.on("tick", other);
+        server.ready[0]?.sendEvent("tick");
+        await client.request("echo");
+        expect(handler).toHaveBeenCalledTimes(2);
+        handler.mockClear();
+        other.mockClear();
+        first();
+        client.on("tick", handler);
+        second();
+        server.ready[0]?.sendEvent("tick");
+        await client.request("echo");
+        expect(handler).toHaveBeenCalledTimes(1);
+        expect(other).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not let a repeated unsubscribe remove a newer subscription", async () => {
+        const server = await startServer();
+        const client = await connectClient(server);
+        const handler = vi.fn();
+        const off = client.on("tick", handler);
+
+        off();
+        client.on("tick", handler);
+        off();
+        server.ready[0]?.sendEvent("tick");
+        await client.request("echo");
+        expect(handler).toHaveBeenCalledTimes(1);
+    });
+
     it("delivers server events to subscribers and stops after unsubscribe", async () => {
         const server = await startServer();
         const client = await connectClient(server);

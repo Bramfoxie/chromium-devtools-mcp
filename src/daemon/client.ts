@@ -172,14 +172,20 @@ export class IpcClient {
             this.handlers.set(event, set);
         }
 
-        set.add(handler);
+        const listener: IpcEventHandler = (params) => handler(params);
+
+        set.add(listener);
+        let active = true;
 
         return () => {
+            if (!active) return;
+
+            active = false;
             const current = this.handlers.get(event);
 
-            if (!current) return;
+            if (!current || current !== set) return;
 
-            current.delete(handler);
+            current.delete(listener);
             if (current.size === 0) this.handlers.delete(event);
         };
     }
@@ -232,7 +238,11 @@ export class IpcClient {
                 if (failure.success) this.reportedFailure = failure.data.message;
             }
 
-            for (const handler of [...(this.handlers.get(message.event) ?? [])]) {
+            const handlers = this.handlers.get(message.event);
+
+            for (const handler of [...(handlers ?? [])]) {
+                if (this.isClosed || !handlers?.has(handler)) continue;
+
                 try {
                     handler(message.params);
                 } catch (error) {

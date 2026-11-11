@@ -158,14 +158,20 @@ export class CdpClient {
             this.listeners.set(key, handlers);
         }
 
-        handlers.add(handler);
+        const listener: EventHandler = (params, id) => handler(params, id);
+
+        handlers.add(listener);
+        let active = true;
 
         return () => {
+            if (!active) return;
+
+            active = false;
             const current = this.listeners.get(key);
 
-            if (!current) return;
+            if (!current || current !== handlers) return;
 
-            current.delete(handler);
+            current.delete(listener);
             if (current.size === 0) this.listeners.delete(key);
         };
     }
@@ -254,8 +260,11 @@ export class CdpClient {
     dropSession(sessionId: string): void {
         const prefix = `${sessionId}|`;
 
-        for (const key of this.listeners.keys()) {
-            if (key.startsWith(prefix)) this.listeners.delete(key);
+        for (const [key, handlers] of this.listeners) {
+            if (!key.startsWith(prefix)) continue;
+
+            handlers.clear();
+            this.listeners.delete(key);
         }
 
         const gone = (name: string) =>

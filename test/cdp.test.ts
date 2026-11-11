@@ -316,6 +316,72 @@ describe("connect", () => {
 });
 
 describe("events", () => {
+    it("stops delivering the current event when its session is dropped", async () => {
+        const { client } = await connect((rpc, socket) => {
+            emit(socket, "Page.loadEventFired", {}, "session1");
+            reply(socket, rpc.id, null);
+        });
+        const later = vi.fn();
+
+        client.on("Page.loadEventFired", () => client.dropSession("session1"), "session1");
+        client.on("Page.loadEventFired", later, "session1");
+        await client.send("Go");
+        expect(later).not.toHaveBeenCalled();
+    });
+
+    it("keeps duplicate registrations independent across unsubscribe and re-registration", async () => {
+        const { client } = await connect((rpc, socket) => {
+            emit(socket, "Page.loadEventFired", {});
+            reply(socket, rpc.id, null);
+        });
+        const handler = vi.fn();
+        const other = vi.fn();
+        const first = client.on("Page.loadEventFired", handler);
+        const second = client.on("Page.loadEventFired", handler);
+
+        client.on("Page.loadEventFired", other);
+        await client.send("Go");
+        expect(handler).toHaveBeenCalledTimes(2);
+        handler.mockClear();
+        other.mockClear();
+        first();
+        client.on("Page.loadEventFired", handler);
+        second();
+        await client.send("Go");
+        expect(handler).toHaveBeenCalledTimes(1);
+        expect(other).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not let a repeated unsubscribe remove a newer subscription", async () => {
+        const { client } = await connect((rpc, socket) => {
+            emit(socket, "Page.loadEventFired", {});
+            reply(socket, rpc.id, null);
+        });
+        const handler = vi.fn();
+        const off = client.on("Page.loadEventFired", handler);
+
+        off();
+        client.on("Page.loadEventFired", handler);
+        off();
+        await client.send("Go");
+        expect(handler).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not let an old unsubscribe remove a subscription after session cleanup", async () => {
+        const { client } = await connect((rpc, socket) => {
+            emit(socket, "Page.loadEventFired", {}, "session1");
+            reply(socket, rpc.id, null);
+        });
+        const handler = vi.fn();
+        const off = client.on("Page.loadEventFired", handler, "session1");
+
+        client.dropSession("session1");
+        client.on("Page.loadEventFired", handler, "session1");
+        off();
+        await client.send("Go");
+        expect(handler).toHaveBeenCalledTimes(1);
+    });
+
     it("delivers events to subscribers and stops after unsubscribe", async () => {
         const { client } = await connect((rpc, socket) => {
             emit(socket, "Page.loadEventFired", { n: 1 });
