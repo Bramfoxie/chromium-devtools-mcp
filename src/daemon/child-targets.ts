@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { CdpClient, CdpSession } from "../cdp/index.js";
+import { CdpClosedError, CdpProtocolError, CdpSessionDetachedError } from "../cdp/index.js";
 import {
     MAX_CHILD_ATTACH_DEPTH,
     MAX_CHILD_SESSIONS_PER_TAB,
@@ -105,12 +106,20 @@ export class ChildTargets implements ChildSessionHandle {
         const handle = new ChildTargets(options, deps);
 
         handle.listen(peer, 0);
-        await deps.send(peer, "Target.setAutoAttach", {
-            autoAttach            : true,
-            waitForDebuggerOnStart: true,
-            flatten               : true,
-            filter                : [{ type: "iframe", exclude: false }],
-        });
+
+        try {
+            await deps.send(peer, "Target.setAutoAttach", {
+                autoAttach            : true,
+                waitForDebuggerOnStart: true,
+                flatten               : true,
+                filter                : [{ type: "iframe", exclude: false }],
+            });
+        } catch (error) {
+            if (error instanceof CdpProtocolError || error instanceof CdpClosedError ||
+                error instanceof CdpSessionDetachedError) await handle.detachAll();
+
+            throw error;
+        }
 
         return handle;
     }
@@ -153,6 +162,15 @@ export class ChildTargets implements ChildSessionHandle {
 
         this.known.clear();
         this.unmatched.clear();
+
+        for (const known of sessions) {
+            try {
+                this.options.onDetached(known.child);
+            } catch (error) {
+                this.deps.log(`a child detach handler threw: ${describeError(error)}`);
+            }
+        }
+
         await Promise.all(sessions.map((known) => known.session.detach().catch(() => undefined)));
     }
 
@@ -252,6 +270,8 @@ export class ChildTargets implements ChildSessionHandle {
                 .catch((error: unknown) => this.deps.log(`could not auto attach an iframe: ${describeError(error)}`));
 
             try {
+                if (this.closed || !this.known.has(known.child.sessionId)) return;
+
                 const handled = await withinBound(
                     this.options.onAttached?.(wrap(adopted, known.child)),
                     CHILD_ATTACH_HANDLER_TIMEOUT_MS,

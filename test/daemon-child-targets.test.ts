@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { CdpSession } from "../src/cdp/index.js";
+import { CdpProtocolError, type CdpSession } from "../src/cdp/index.js";
 import { CHILD_ATTACH_HANDLER_TIMEOUT_MS, CHILD_AUTO_ATTACH_TIMEOUT_MS, ChildTargets, type ChildTargetsDeps } from "../src/daemon/child-targets.js";
 import { MAX_CHILD_ATTACH_DEPTH, MAX_CHILD_SESSIONS_PER_TAB } from "../src/daemon/browser-backend.js";
 
@@ -90,6 +90,104 @@ function setup() {
 }
 
 describe("ChildTargets.attach", () => {
+    it("removes listeners and detaches children when auto attach is rejected", async () => {
+        const { peer, deps, attach, detached } = setup();
+        const unsubscribe: Array<ReturnType<typeof vi.fn>> = [];
+        const failing: ChildTargetsDeps = {
+            ...deps,
+            on: (session, event, handler) => {
+                const off = vi.fn(deps.on(session, event, handler));
+
+                unsubscribe.push(off);
+
+                return off;
+            },
+            send: async (session, method, params, timeoutMs) => {
+                if (session === peer && method === "Target.setAutoAttach") {
+                    attach("child", "child-session", peer);
+
+                    throw new CdpProtocolError(method, -32000, "rejected");
+                }
+
+                return deps.send(session, method, params, timeoutMs);
+            },
+        };
+
+        await expect(ChildTargets.attach(peer, { onDetached: () => undefined }, failing))
+            .rejects.toThrow();
+        expect(detached).toContain("child-session");
+        expect(unsubscribe.length).toBe(4);
+        expect(unsubscribe.every((off) => off.mock.calls.length === 1)).toBe(true);
+    });
+
+    it("does not initialize a child after its failed parent attachment is cleaned up", async () => {
+        const { peer, deps, attach } = setup();
+        let resume: () => void = () => undefined;
+        const gate = new Promise<void>((resolve) => { resume = resolve; });
+        const onAttached = vi.fn();
+        const failing: ChildTargetsDeps = {
+            ...deps,
+            send: async (session, method, params, timeoutMs) => {
+                if (session === peer && method === "Target.setAutoAttach") {
+                    attach("child", "child-session", peer);
+
+                    throw new CdpProtocolError(method, -32000, "rejected");
+                }
+
+                if (session !== peer && method === "Target.setAutoAttach") await gate;
+
+                return deps.send(session, method, params, timeoutMs);
+            },
+        };
+
+        try {
+            const attaching = ChildTargets.attach(
+                peer, { onDetached: () => undefined, onAttached }, failing,
+            );
+
+            await expect(attaching).rejects.toThrow();
+            resume();
+            await new Promise<void>((resolve) => setImmediate(resolve));
+            expect(onAttached).not.toHaveBeenCalled();
+        } finally {
+            resume();
+        }
+    });
+
+    it("reports a detached child if its initialization already started", async () => {
+        const { peer, deps, attach } = setup();
+        let started: () => void = () => undefined;
+        let resume: () => void = () => undefined;
+        const entered = new Promise<void>((resolve) => { started = resolve; });
+        const gate = new Promise<void>((resolve) => { resume = resolve; });
+        const detached: string[] = [];
+        const failing: ChildTargetsDeps = {
+            ...deps,
+            send: async (session, method, params, timeoutMs) => {
+                if (session === peer && method === "Target.setAutoAttach") {
+                    attach("child", "child-session", peer);
+                    await entered;
+
+                    throw new CdpProtocolError(method, -32000, "rejected");
+                }
+
+                return deps.send(session, method, params, timeoutMs);
+            },
+        };
+
+        try {
+            const attaching = ChildTargets.attach(peer, {
+                onDetached: (child) => { detached.push(child.sessionId); },
+                onAttached: async () => { started(); await gate; },
+            }, failing);
+
+            await expect(attaching).rejects.toThrow();
+            expect(detached).toEqual(["child-session"]);
+        } finally {
+            resume();
+        }
+    });
+
     it("enables auto attach for iframe targets only", async () => {
         const { sent, peer, deps } = setup();
 
