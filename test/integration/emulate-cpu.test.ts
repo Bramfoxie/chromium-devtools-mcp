@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { chromeAvailable, html, startEnv, type Env } from "./browser-env.js";
+import { chromeAvailable, eventually, html, startEnv, type Env } from "./browser-env.js";
 
 const present = chromeAvailable();
 let env: Env;
@@ -35,6 +35,13 @@ async function elapsed(tab: string): Promise<number> {
 describe.skipIf(!present)("emulate_cpu in a real browser", () => {
     it("slows work in a cross site frame", async () => {
         const tab = await env.open("/cpu-frame");
+
+        await eventually(async () => {
+            const snapshot = await env.ok("dom_snapshot", { tab });
+            const frames = snapshot.frames as Array<{ isolated?: boolean }>;
+
+            return frames.some((frame) => frame.isolated === true) ? true : undefined;
+        });
         const expression = "new Promise(resolve => { addEventListener('message', e => resolve(e.data), { once: true }); frames[0].postMessage('run', '*'); })";
         const sample = async () => Number((await env.ok("js_evaluate", { tab, expression })).value);
         const normal = Math.min(await sample(), await sample(), await sample());
