@@ -15,6 +15,26 @@ function stamp(date: Date): string {
     return date.toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "Z");
 }
 
+function backupFile(file: string, deps: InstallDeps): string {
+    const base = `${file}.bak-${stamp(deps.now())}`;
+
+    for (let index = 0; index < 1000; index += 1) {
+        const backup = index === 0 ? base : `${base}-${index}`;
+
+        try {
+            deps.fs.copy(file, backup);
+
+            return backup;
+        } catch (error) {
+            if (typeof error !== "object" || error === null || !("code" in error) || error.code !== "EEXIST") {
+                throw error;
+            }
+        }
+    }
+
+    throw new Error("Could not create a unique backup name.");
+}
+
 function manual(target: ClientTarget, entry: ServerEntry | undefined, deps: InstallDeps): void {
     if (entry === undefined) {
         deps.out(`${target.name}: ${target.label} keeps its servers in its own settings. Remove chromium-devtools in Settings, MCP Servers.\n`);
@@ -87,8 +107,7 @@ function apply(
         let backup = "";
 
         if (text !== undefined) {
-            backup = `${file}.bak-${stamp(deps.now())}`;
-            deps.fs.copy(file, backup);
+            backup = backupFile(file, deps);
         }
 
         deps.fs.writeFile(file, result.text);

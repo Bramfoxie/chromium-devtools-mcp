@@ -67,4 +67,15 @@ describe("realFs", () => {
 
         expect(nodeFs.readFileSync(path.join(dir, "b"), "utf8")).toBe("data");
     });
+
+    it("does not overwrite an existing backup", () => {
+        const dir = temp();
+        const source = path.join(dir, "source");
+        const backup = path.join(dir, "backup");
+
+        nodeFs.writeFileSync(source, "new");
+        nodeFs.writeFileSync(backup, "original");
+        expect(() => realFs.copy(source, backup)).toThrow();
+        expect(nodeFs.readFileSync(backup, "utf8")).toBe("original");
+    });
 });

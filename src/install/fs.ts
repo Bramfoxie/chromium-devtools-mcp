@@ -32,5 +32,5 @@ export const realFs: InstallFs = {
             throw error;
         }
     },
-    copy: (from, to) => nodeFs.copyFileSync(from, to),
+    copy: (from, to) => nodeFs.copyFileSync(from, to, nodeFs.constants.COPYFILE_EXCL),
 };

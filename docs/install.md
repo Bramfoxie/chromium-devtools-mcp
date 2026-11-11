@@ -34,7 +34,7 @@ The entry is `npx -y chromium-devtools-mcp`, followed by any server flags you pa
 Edits are conservative:
 
 - Everything else in the file is kept, including other servers. The Codex file is edited as text, so it stays byte-identical outside the chromium-devtools table. Claude Code and Cursor files are rewritten as JSON with two-space indentation.
-- A timestamped copy `<file>.bak-<time>` is made before an existing file is changed, and the new content is written through a temporary file and a rename.
+- A timestamped copy `<file>.bak-<time>` is made before an existing file is changed, and the new content is written through a temporary file and a rename. If that backup name already exists, a numeric suffix is added without overwriting it.
 - A file that is not valid JSON, or a Codex file with a duplicated chromium-devtools table, is refused and left untouched.
 - Running the same command again changes nothing and says so. Running it with different flags updates the existing entry in place and keeps extra keys you added to it.
 - `--dry-run` prints what would change and the entry, and writes nothing, not even a backup.
@@ -42,7 +42,7 @@ Edits are conservative:
 
 `npx chromium-devtools-mcp install --list` writes nothing and prints, for every client, whether the entry is installed (`installed, up to date`, `installed, differs from the current entry` or `not installed`) and the file it looked at. The comparison is with the entry the installer writes without server options, so an entry made with flags shows as different. It exits with 1 when a file cannot be read.
 
-Restart the client afterwards so it reads the new entry. If Claude Code is running while the installer edits `~/.claude.json`, it may rewrite the file and drop the entry, so install while it is closed.
+Run only one installer at a time for a given config file, and close the client before installing if it can write that file. Concurrent changes are not coordinated and may overwrite one another. Restart the client afterwards so it reads the new entry.
 
 ## Manual entry
 

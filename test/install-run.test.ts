@@ -14,7 +14,11 @@ function setup(files: Record<string, string> = {}, platform: NodeJS.Platform = "
             writes.push(file);
             store.set(file, text);
         },
-        copy: (from, to) => void store.set(to, store.get(from) ?? ""),
+        copy: (from, to) => {
+            if (store.has(to)) throw Object.assign(new Error("exists"), { code: "EEXIST" });
+
+            store.set(to, store.get(from) ?? "");
+        },
     };
     const home = platform === "win32" ? "C:\\Users\\u" : "/home/u";
     const deps: InstallDeps = {
@@ -116,6 +120,36 @@ describe("runInstall", () => {
 
         expect(t.store.get(`${file}.bak-20260102T030405Z`)).toBe('{"mcpServers":{}}');
         expect(t.out.join("")).toContain("backup:");
+    });
+
+    it("keeps each backup when changes happen in the same second", () => {
+        const file = "/home/u/.cursor/mcp.json";
+        const original = '{"mcpServers":{}}';
+        const t = setup({ [file]: original });
+
+        expect(t.run(["--client", "cursor"])).toBe(0);
+        const firstChange = t.store.get(file);
+
+        expect(t.run(["--client", "cursor", "--headless"])).toBe(0);
+        expect(t.store.get(`${file}.bak-20260102T030405Z`)).toBe(original);
+        expect(t.store.get(`${file}.bak-20260102T030405Z-1`)).toBe(firstChange);
+    });
+
+    it("leaves the configuration unchanged when every backup name is occupied", () => {
+        const file = "/home/u/.cursor/mcp.json";
+        const original = '{"mcpServers":{}}';
+        const files: Record<string, string> = { [file]: original };
+
+        for (let i = 0; i < 1000; i += 1) {
+            files[`${file}.bak-20260102T030405Z${i === 0 ? "" : `-${i}`}`] = "keep";
+        }
+
+        const t = setup(files);
+
+        expect(t.run(["--client", "cursor"])).toBe(1);
+        expect(t.store.get(file)).toBe(original);
+        expect(t.writes).toEqual([]);
+        expect(t.err.join("")).toContain("unique backup name");
     });
 
     it("does not back up when it creates the file", () => {
