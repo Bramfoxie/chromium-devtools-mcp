@@ -1791,6 +1791,31 @@ describe("state shared with cross site frame sessions", () => {
     const sentMethods = (session: { sent: Array<{ method: string }> } | undefined): string[] =>
         session?.sent.map((call) => call.method) ?? [];
 
+    it("initializes a child that attaches during a failed tab close", async () => {
+        const { a, backend, emitted, tab, handle } = await tabWithChild();
+        let release: () => void = () => undefined;
+
+        await a.subscribe(tab, "Network.requestWillBeSent");
+        await a.send({ targetId: tab, method: "Network.enable", params: {} });
+        backend.gates.closeTarget = new Promise<void>((resolve) => { release = resolve; });
+        backend.failures.closeTarget = [new Error("close failed")];
+        const closing = code(a.closeTab(tab));
+        const child = handle?.addChild("during-close", true, CROSS);
+
+        try {
+            await handle?.settled();
+            release();
+            expect(await closing).toBe("other");
+            child?.emit("Network.requestWillBeSent", { requestId: "1" });
+            expect(sentMethods(child)).toContain("Network.enable");
+            expect(emitted.a?.filter((item) => item.event === "cdp.event")).toHaveLength(1);
+        } finally {
+            release();
+            await closing;
+            await a.close();
+        }
+    });
+
     it("applies capture and emulation commands to children that attach later", async () => {
         const { a, tab, handle } = await tabWithChild();
 

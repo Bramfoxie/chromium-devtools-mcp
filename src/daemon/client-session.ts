@@ -129,8 +129,12 @@ export class ClientSession {
         this.safety = init.safety ?? NO_SAFETY;
         this.permissions = init.permissions;
         this.traceLock = init.traceLock;
-        this.frames = new TabFrames(this.backend, this.emit, (targetId, tab) =>
-            this.assertCurrent(targetId, tab));
+        this.frames = new TabFrames(
+            this.backend,
+            this.emit,
+            (targetId, tab) => this.assertCurrent(targetId, tab),
+            (targetId, tab) => this.assertRetained(targetId, tab),
+        );
     }
 
     get isolated(): boolean {
@@ -772,8 +776,13 @@ export class ClientSession {
     }
 
     private assertCurrent(targetId: string, tab: OwnedTab): void {
+        this.assertRetained(targetId, tab);
+        if (tab.closing) throw tabGone();
+    }
+
+    private assertRetained(targetId: string, tab: OwnedTab): void {
         this.ensureOpen();
-        if (this.tabs.get(targetId) !== tab || tab.closing) throw tabGone();
+        if (this.tabs.get(targetId) !== tab) throw tabGone();
     }
 
     private owned(targetId: string): OwnedTab {

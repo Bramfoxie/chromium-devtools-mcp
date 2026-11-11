@@ -44,9 +44,10 @@ function unknownFrame(): RpcError {
 
 export class TabFrames {
     constructor(
-        private readonly backend      : BrowserBackend,
-        private readonly emit         : Emit,
-        private readonly assertCurrent: (targetId: string, tab: OwnedTab) => void,
+        private readonly backend       : BrowserBackend,
+        private readonly emit          : Emit,
+        private readonly assertCurrent : (targetId: string, tab: OwnedTab) => void,
+        private readonly assertRetained: (targetId: string, tab: OwnedTab) => void,
     ) {}
 
     async list(targetId: string, tab: OwnedTab): Promise<FrameSummary[]> {
@@ -242,7 +243,7 @@ export class TabFrames {
         tab     : OwnedTab,
         child   : FrameChildSession,
     ): Promise<void> {
-        this.assertCurrent(targetId, tab);
+        this.assertRetained(targetId, tab);
         for (const subscription of tab.subscriptions.values()) subscription.mirror?.(child);
 
         await Promise.all(tab.sync.replay().map((command) =>
