@@ -859,6 +859,28 @@ describe("close ordering", () => {
 });
 
 describe("onClose", () => {
+    it("keeps repeated registrations independent", async () => {
+        const { client } = await connect(echo);
+        const handler = vi.fn();
+        const off = client.onClose(handler);
+
+        client.onClose(handler);
+        off();
+        await client.close();
+        expect(handler).toHaveBeenCalledTimes(1);
+    });
+
+    it("honors unsubscribe during close notification", async () => {
+        const { client } = await connect(echo);
+        const handler = vi.fn();
+        let off: () => void = () => undefined;
+
+        client.onClose(() => off());
+        off = client.onClose(handler);
+        await client.close();
+        expect(handler).not.toHaveBeenCalled();
+    });
+
     it("notifies once when the server drops the connection", async () => {
         const { client } = await connect((_rpc, socket) => socket.terminate());
         const handler = vi.fn();

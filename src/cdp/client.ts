@@ -233,9 +233,11 @@ export class CdpClient {
             };
         }
 
-        this.closeHandlers.add(handler);
+        const listener = () => handler();
 
-        return () => void this.closeHandlers.delete(handler);
+        this.closeHandlers.add(listener);
+
+        return () => void this.closeHandlers.delete(listener);
     }
 
     async attach(targetId: string): Promise<CdpSession> {
@@ -316,7 +318,11 @@ export class CdpClient {
         this.pending.clear();
         for (const waiter of [...this.closeWaiters]) waiter.fail(error);
         this.closeWaiters.clear();
-        for (const handler of [...this.closeHandlers]) this.runCloseHandler(handler);
+
+        for (const handler of [...this.closeHandlers]) {
+            if (this.closeHandlers.has(handler)) this.runCloseHandler(handler);
+        }
+
         this.closeHandlers.clear();
         this.listeners.clear();
     }
