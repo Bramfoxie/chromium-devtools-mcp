@@ -72,6 +72,7 @@ export async function navigate(
         case "forward": {
             const entryId = await historyEntryId(context, targetId, action);
 
+            throwIfCancelled(deadline.signal);
             await sendWithin(context.access, deadline, targetId, "Page.navigateToHistoryEntry", {
                 entryId,
             });

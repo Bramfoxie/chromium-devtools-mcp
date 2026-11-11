@@ -2,6 +2,7 @@ import { z } from "zod";
 import { normalizeUrl } from "../daemon/index.js";
 import { type ToolContext } from "./define-tool.js";
 import { describeBlock, describeUrlHost, navigationBlock } from "../safety/index.js";
+import { resolutionProblem } from "../safety/resolution-check.js";
 import { ToolError } from "./errors.js";
 
 const historyEntry = z.object({ id: z.number(), url: z.string(), title: z.string() });
@@ -133,6 +134,14 @@ export async function historyEntryId(
     if (!isOpenableUrl(entry.url)) {
         throw new ToolError(
             `The ${direction === "back" ? "previous" : "next"} history entry is not an http, https or about:blank page. Only http, https and about:blank URLs can be opened.`,
+        );
+    }
+
+    const problem = await resolutionProblem(entry.url, context.config.safety, context.resolveHost);
+
+    if (problem !== undefined) {
+        throw new ToolError(
+            `The history entry is on ${describeUrlHost(entry.url)}, ${problem.reason}. ${problem.hint}`,
         );
     }
 
