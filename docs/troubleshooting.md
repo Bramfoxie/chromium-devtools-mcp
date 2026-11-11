@@ -26,6 +26,7 @@ All clients of one daemon must agree on `browser`, `mode`, `debugPort` and `allo
 
 - The browser must be installed; `doctor` checks that and that the profile directory can be written.
 - One profile directory belongs to one browser instance. If another Chrome already uses the `profileDir`, give this server another directory.
+- A managed browser left running can be reused only when its private profile identity record is available. If it is missing, including after an upgrade from a version without identity records, close that browser before starting the daemon again. A fixed debug port or a copied `DevToolsActivePort` file does not identify its profile.
 - The daemon log shows why a start failed: `daemon logs`.
 
 ## A page is refused because it is local

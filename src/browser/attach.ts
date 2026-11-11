@@ -1,4 +1,3 @@
-import { lstat } from "node:fs/promises";
 import http from "node:http";
 import net from "node:net";
 import os from "node:os";
@@ -16,7 +15,7 @@ const VERSION_TIMEOUT_MS = 1000;
 const PORT_PROBE_TIMEOUT_MS = 500;
 const DEFAULT_POLL_INTERVAL_MS = 1000;
 
-export type EndpointSource = "port-file" | "debug-port" | "ws-endpoint";
+export type EndpointSource = "port-file" | "debug-port" | "ws-endpoint" | "managed-binding";
 
 export interface AttachEndpoint {
     port        : number;
@@ -29,7 +28,6 @@ export type AttachConfig = Pick<Config, "browser" | "debugPort">;
 export interface AttachDeps {
     context       : DiscoveryContext;
     readFile      : (file: string) => Promise<string | undefined>;
-    hasFile       : (file: string) => Promise<boolean>;
     isPortOpen    : (port: number, signal?: AbortSignal) => Promise<boolean>;
     fetchVersion  : (port: number, signal?: AbortSignal) => Promise<unknown>;
     sleep         : (ms: number, signal?: AbortSignal) => Promise<void>;
@@ -129,41 +127,6 @@ async function portFileEndpoint(
     onProblem?: ProblemReporter,
 ): Promise<AttachEndpoint | undefined> {
     return endpointInDir(deps, browserUserDataDir(browser, deps.context), signal, onProblem);
-}
-
-// Finds a browser already running on the user data directory.
-export async function runningInProfile(
-    dir      : string,
-    debugPort: number,
-    overrides: Partial<
-        Pick<AttachDeps, "context" | "readFile" | "hasFile" | "isPortOpen" | "fetchVersion">
-    > = {},
-): Promise<AttachEndpoint | undefined> {
-    const deps: AttachDeps = { ...defaultAttachDeps(), ...overrides };
-
-    const fromFile = await endpointInDir(deps, dir);
-
-    if (fromFile) return fromFile;
-
-    if (debugPort === 0 || !(await profileLocked(deps, dir))) return undefined;
-
-    let version: unknown;
-
-    try {
-        version = await deps.fetchVersion(debugPort);
-    } catch {
-        return undefined;
-    }
-
-    const webSocketUrl = browserWebSocketUrl(version, debugPort);
-
-    return webSocketUrl ? { port: debugPort, webSocketUrl, source: "debug-port" } : undefined;
-}
-
-async function profileLocked(deps: AttachDeps, dir: string): Promise<boolean> {
-    const name = deps.context.platform === "win32" ? "lockfile" : "SingletonSocket";
-
-    return deps.hasFile(pathFor(deps.context.platform).join(dir, name));
 }
 
 export async function resolveAttachEndpoint(
@@ -301,16 +264,6 @@ export async function attachBrowser(
     throw new AttachError("Attach was cancelled before the browser allowed remote debugging.");
 }
 
-export async function fileExists(file: string): Promise<boolean> {
-    try {
-        await lstat(file);
-
-        return true;
-    } catch {
-        return false;
-    }
-}
-
 // Probes and fetches use 127.0.0.1 only.
 export function probePort(port: number, signal?: AbortSignal): Promise<boolean> {
     return new Promise((resolve) => {
@@ -418,7 +371,6 @@ function defaultAttachDeps(): AttachDeps {
     return {
         context       : { env: process.env, platform: process.platform, homedir: os.homedir() },
         readFile      : readIfExists,
-        hasFile       : fileExists,
         isPortOpen    : probePort,
         fetchVersion,
         sleep         : abortableSleep,

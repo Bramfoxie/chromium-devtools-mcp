@@ -34,7 +34,6 @@ export {
     type EndpointSource,
     parseActivePortFile,
     resolveAttachEndpoint,
-    runningInProfile,
     accessDeniedFix,
     deniedPortFile,
     setupInstructions,

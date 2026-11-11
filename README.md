@@ -34,7 +34,7 @@ npx chromium-devtools-mcp install --client claude-code
 First run:
 
 - attach (default): the server connects to your running Chrome. If Chrome does not allow it yet, the server prints how to enable remote debugging at `chrome://inspect/#remote-debugging` and keeps waiting. It never falls back to another profile.
-- managed: pass `--mode managed`. The server launches Chrome with its own persistent profile, headed or with `--headless`.
+- managed: pass `--mode managed`. The server launches Chrome with its own persistent profile, headed or with `--headless`. Reusing an existing managed browser requires a private profile identity record; see [configuration.md](docs/configuration.md).
 
 If something does not connect, run `npx chromium-devtools-mcp doctor` (add the same flags as in your client entry). It checks the setup and prints how to fix what it finds. On macOS, when Chrome has remote debugging on but the client app that starts the server (Cherry Studio, Orca and similar) may not read Chrome's `DevToolsActivePort` file, the server and `doctor` say so and do not report that debugging is off; the fix is Full Disk Access for that app in System Settings, or starting `npx chromium-devtools-mcp daemon` once in a terminal that has access. `chromium-devtools-mcp config` (with the same flags) prints the effective configuration and which source set each value, and validates the config file. `daemon status`, `daemon stop` and `daemon logs` show and control the background daemon, see [docs/daemon.md](docs/daemon.md).
 
