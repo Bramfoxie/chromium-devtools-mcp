@@ -83,6 +83,21 @@ describe.skipIf(!present)("input_upload with safety.uploadDirs in a real browser
         expect(attached.inputFilesMatch).toBe(true);
     });
 
+    it.skipIf(process.platform === "win32")("reports the name the page receives for a symbolic link", async () => {
+        const alias = join(allowed, "alias.txt");
+
+        await symlink(join(allowed, "ok.txt"), alias);
+        const tab = await env.open("/form");
+        const attached = await env.ok("input_upload", {
+            tab, target: { selector: "#f" }, files: [alias],
+        });
+        const page = await env.ok("js_evaluate", {
+            tab, expression: "document.querySelector('#f').files[0].name",
+        });
+
+        expect(attached.files).toEqual([{ name: page.value, size: 4 }]);
+    });
+
     it("keeps selected contents available after the original file changes", async () => {
         const tab = await env.open("/form");
         const file = join(allowed, "stable.txt");

@@ -129,7 +129,7 @@ export async function validateUploadFiles(
         }
 
         seen.add(real);
-        validated.push({ path: real, name: path.basename(resolved), size: info.size });
+        validated.push({ path: real, name: path.basename(real), size: info.size });
     }
 
     return validated;

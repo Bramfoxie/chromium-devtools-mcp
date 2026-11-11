@@ -192,7 +192,7 @@ describe("validateUploadFiles", () => {
         ));
 
         await expect(validateUploadFiles(linked, ["/tmp/link.txt"])).resolves.toEqual([
-            { path: "/data/real.txt", name: "link.txt", size: 3 },
+            { path: "/data/real.txt", name: "real.txt", size: 3 },
         ]);
     });
 
