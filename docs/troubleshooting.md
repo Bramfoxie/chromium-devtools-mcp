@@ -22,6 +22,8 @@ Add to `doctor` the same flags as in your client entry, so it checks the same se
 
 All clients of one daemon must agree on `browser`, `mode`, `debugPort` and `allowFocus` (and on a few more in each mode). The error names the differing fields. Align the settings, or run `chromium-devtools-mcp daemon stop` and start the clients again. After updating the package, stop a daemon of an older version in the same way, because it rejects settings that are new.
 
+An older daemon can also reject a new session setting as an unknown field. Stop that daemon and retry with the updated package. Stopping the shared daemon disconnects its clients.
+
 ## The managed browser does not start
 
 - The browser must be installed; `doctor` checks that and that the profile directory can be written.

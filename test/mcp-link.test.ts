@@ -238,7 +238,25 @@ describe("connecting to a running daemon", () => {
         });
         const { link: l } = link({ connect: async () => asIpc(ipc) });
 
-        await expect(l.request("x")).rejects.toMatchObject({ code: ErrorCode.badRequest });
+        await expect(l.request("x")).rejects.toMatchObject({ code: ErrorCode.badRequest, message: "no" });
+    });
+
+    it("explains how to recover when an older daemon rejects session settings", async () => {
+        const ipc = new FakeIpc((method) => {
+            if (method === "session.open") {
+                throw new RpcError(ErrorCode.badRequest, 'Invalid parameters for session.open: check unknown field "uploadDirs".');
+            }
+
+            return {};
+        });
+        const { link: l, starts } = link({ connect: async () => asIpc(ipc) });
+        const failure = await l.request("x").catch((error: unknown) => error);
+
+        expect(failure).toMatchObject({ code: ErrorCode.badRequest });
+        expect((failure as Error).message).toContain("daemon stop");
+        expect((failure as Error).message).toContain("older");
+        expect(ipc.closes).toBe(1);
+        expect(starts).toEqual([]);
     });
 
     it("forwards the request timeout to the daemon connection", async () => {
