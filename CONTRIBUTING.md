@@ -12,6 +12,8 @@ npm install
 
 `npm install` enables the repository git hooks. Do not bypass them.
 
+The root package temporarily overrides `minimatch` for ESLint and TypeScript ESLint to a patched major version. Remove these overrides when the upstream packages support a patched version, and check lint coverage after changing them. They apply to this repository's development tools.
+
 ## Scripts
 
 - `npm run lint`: eslint
