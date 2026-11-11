@@ -805,6 +805,32 @@ describe("cancelling a connection attempt", () => {
 });
 
 describe("close ordering", () => {
+    it("shares the close promise with a reentrant close handler", async () => {
+        let release: () => void = () => undefined;
+        const close = vi.fn(() => new Promise<void>((resolve) => (release = resolve)));
+        const client = await CdpClient.connect({
+            url            : "ws://unused",
+            createTransport: async () => ({
+                send     : () => undefined,
+                close,
+                onMessage: () => undefined,
+                onClose  : () => undefined,
+            }),
+        });
+        let reentrant: Promise<void> | undefined;
+
+        client.onClose(() => {
+            reentrant = client.close();
+        });
+        const closing = client.close();
+
+        await flushMicrotasks();
+        expect(reentrant).toBe(closing);
+        expect(close).toHaveBeenCalledTimes(1);
+        release();
+        await Promise.all([closing, reentrant]);
+    });
+
     it("waits for the transport to finish closing", async () => {
         let release: () => void = () => undefined;
         const client = await CdpClient.connect({

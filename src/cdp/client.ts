@@ -289,10 +289,10 @@ export class CdpClient {
     }
 
     close(): Promise<void> {
-        this.closePromise ??= (async () => {
+        if (!this.closePromise) {
+            this.closePromise = Promise.resolve().then(() => this.transport.close());
             this.shutdown(new CdpClosedError("the client was closed"));
-            await this.transport.close();
-        })();
+        }
 
         return this.closePromise;
     }
