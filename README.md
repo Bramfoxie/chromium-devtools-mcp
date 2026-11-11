@@ -97,6 +97,8 @@ Compared against Chrome DevTools MCP 1.12.0 (2026-10-22, [ChromeDevTools/chrome-
 
 ## Resources
 
+The `screenshot` tool can cover password inputs with `maskPasswords: true`. This is best effort; inspect the image before sharing it.
+
 The tabs of your session are also MCP resources, for clients that attach resources to a conversation: `browser://tab/<tab id>/text` (the visible text with the address and title), `browser://tab/<tab id>/screenshot` (a PNG of the visible area) and `browser://tab/<tab id>/console` (console messages and exceptions). The list follows the tabs the session owns. Text and console are marked as untrusted page content like tool results. Details: [docs/tools.md](docs/tools.md).
 
 ## Safety
