@@ -12,8 +12,15 @@ import { TraceLock } from "./trace-lock.js";
 import { ErrorCode } from "./protocol.js";
 import type { SessionSummary } from "./wire.js";
 import { closedError, translate } from "./rpc-errors.js";
+import { logDaemon } from "../util/log.js";
 
 const MAX_REMEMBERED_DESTROYED = 512;
+
+class InterruptedContextCleanupError extends Error {
+    constructor() {
+        super("Could not dispose an interrupted browser context.");
+    }
+}
 
 function deferred<T>(): {
     promise: Promise<T>;
@@ -128,7 +135,16 @@ export class SessionRegistry<K> implements Ownership {
 
         if (this.opening.get(key) !== ticket) {
             if (contextId !== undefined) {
-                await this.backend.disposeContext(contextId).catch(() => undefined);
+                try {
+                    await this.backend.disposeContext(contextId);
+                } catch {
+                    try {
+                        logDaemon("could not dispose an interrupted browser context");
+                    } catch {
+                    }
+
+                    throw new InterruptedContextCleanupError();
+                }
             }
 
             throw closedError();
@@ -207,13 +223,16 @@ export class SessionRegistry<K> implements Ownership {
         this.sessions.clear();
         this.sessionIds.clear();
         for (const session of sessions) void this.closeSession(session);
-        const [closed] = await Promise.all([
+        const [closed, opened] = await Promise.all([
             Promise.allSettled(this.closing),
             Promise.allSettled(this.openingTasks),
         ]);
         const failure = closed.find((result) => result.status === "rejected");
+        const cleanupFailure = opened.find((result) =>
+            result.status === "rejected" && result.reason instanceof InterruptedContextCleanupError);
 
         if (failure?.status === "rejected") throw failure.reason;
+        if (cleanupFailure?.status === "rejected") throw cleanupFailure.reason;
     }
 
     private closeSession(session: ClientSession): Promise<void> {

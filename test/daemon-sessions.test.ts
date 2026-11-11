@@ -477,6 +477,54 @@ describe("tab ownership", () => {
 });
 
 describe("closing a session", () => {
+    it("logs failed disposal after a connection closes without exposing details", async () => {
+        const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+        const { backend, registry, open } = setup();
+        let release: () => void = () => undefined;
+
+        backend.gates.createContext = new Promise<void>((resolve) => { release = resolve; });
+        vi.spyOn(backend, "disposeContext").mockRejectedValue(new Error("private detail"));
+        const opening = code(open("a", true));
+
+        await registry.close("a");
+        release();
+        await opening;
+        const logged = stderr.mock.calls.map((call) => String(call[0])).join("");
+
+        expect(logged).toContain("could not dispose an interrupted browser context");
+        expect(logged).not.toContain("private detail");
+    });
+
+    it("does not turn an interrupted context creation failure into a shutdown failure", async () => {
+        const { backend, registry, open } = setup();
+        let release: () => void = () => undefined;
+
+        backend.gates.createContext = new Promise<void>((resolve) => { release = resolve; });
+        backend.failures.createContext = [new Error("creation failed")];
+        const opening = code(open("a", true));
+        const stopping = registry.closeAll();
+
+        release();
+        await expect(stopping).resolves.toBeUndefined();
+        expect(await opening).toBe("other");
+    });
+
+    it("reports failed disposal of a context interrupted by shutdown", async () => {
+        const { backend, registry, open } = setup();
+        let release: () => void = () => undefined;
+
+        backend.gates.createContext = new Promise<void>((resolve) => { release = resolve; });
+        vi.spyOn(backend, "disposeContext").mockRejectedValue(new Error("private detail"));
+        const opening = code(open("a", true));
+        const stopping = registry.closeAll();
+        const outcome = stopping.then(() => undefined, (error: unknown) => error);
+
+        release();
+        expect(await outcome).toBeInstanceOf(Error);
+        expect((await outcome as Error).message).toContain("dispose");
+        await opening;
+    });
+
     it("shares a later cleanup failure with reentrant shutdown", async () => {
         const { registry, open } = setup();
         const first = await open("a");
