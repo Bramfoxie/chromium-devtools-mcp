@@ -269,6 +269,20 @@ describe("tab ownership", () => {
         expect(await isolated.listTabs("available")).toEqual([]);
     });
 
+    it("rejects a pending tab listing when the session closes", async () => {
+        const { backend, registry, open } = setup();
+        const session = await open("a");
+        let release: () => void = () => undefined;
+
+        backend.seedTab("https://user.example/");
+        backend.gates.listTargets = new Promise<void>((resolve) => (release = resolve));
+        const listing = session.listTabs("available");
+
+        await registry.close("a");
+        release();
+        expect(await code(listing)).toBe(ErrorCode.sessionClosed);
+    });
+
     it("claims a tab of the user and leaves it open when the session ends", async () => {
         const { backend, registry, open } = setup();
         const a = await open("a");

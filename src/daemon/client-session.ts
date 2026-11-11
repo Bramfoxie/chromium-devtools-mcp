@@ -391,6 +391,7 @@ export class ClientSession {
             throw translate(error);
         }
 
+        this.ensureOpen();
         const result: TabInfo[] = [];
 
         for (const target of targets) {
