@@ -669,6 +669,7 @@ export class ClientSession {
         if (this.isClosed) return;
 
         this.isClosed = true;
+        for (const tab of this.tabs.values()) this.clearSubscriptions(tab);
 
         for (const entry of this.uploads.values()) {
             entry.cancelled = true;
@@ -685,8 +686,6 @@ export class ClientSession {
         const claimed = new Set<string>();
 
         for (const [targetId, tab] of entries) {
-            for (const entry of tab.subscriptions.values()) entry.off();
-
             if (!tab.created && this.contextId === undefined) {
                 this.registry.releaseOwner(targetId, this);
                 claimed.add(targetId);
@@ -797,8 +796,15 @@ export class ClientSession {
 
         this.tabs.delete(targetId);
         this.registry.releaseOwner(targetId, this);
-        for (const entry of tab.subscriptions.values()) entry.off();
+        this.clearSubscriptions(tab);
         void tab.children?.then((children) => children.detachAll()).catch(() => undefined);
         void tab.attached?.then((session) => session.detach()).catch(() => undefined);
+    }
+
+    private clearSubscriptions(tab: OwnedTab): void {
+        const subscriptions = [...tab.subscriptions.values()];
+
+        tab.subscriptions.clear();
+        for (const entry of subscriptions) entry.off();
     }
 }

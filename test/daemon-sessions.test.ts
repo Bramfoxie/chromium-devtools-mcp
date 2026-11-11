@@ -1972,6 +1972,86 @@ describe("state shared with cross site frame sessions", () => {
         }
     });
 
+    it.each(["tab", "session"])("does not restore child listeners after %s closure", async (kind) => {
+        const { backend, open, emitted } = setup();
+        const session = await open("a");
+        const tab = await session.createTab("https://example.com/");
+        const original = backend.attachChildren.bind(backend);
+        let release: () => void = () => undefined;
+        let entered: () => void = () => undefined;
+        const gate = new Promise<void>((resolve) => { release = resolve; });
+        const started = new Promise<void>((resolve) => { entered = resolve; });
+
+        vi.spyOn(backend, "attachChildren").mockImplementation(async (attached, options) => {
+            const handle = await original(attached, options);
+
+            entered();
+            await gate;
+
+            return handle;
+        });
+        const subscribing = session.subscribe(tab, "Network.requestWillBeSent");
+        let closing: Promise<void> | undefined;
+
+        try {
+            await started;
+            closing = kind === "tab" ? session.closeTab(tab) : session.close();
+            if (kind === "tab") await closing;
+
+            const child = backend.childHandles[0]?.addChild("late", true, CROSS);
+
+            child?.emit("Network.requestWillBeSent", { requestId: "1" });
+            expect(child?.listenerCount("Network.requestWillBeSent")).toBe(0);
+            expect(emitted.a?.filter((item) => item.event === "cdp.event")).toEqual([]);
+        } finally {
+            release();
+            await Promise.allSettled([subscribing, closing]);
+            await session.close();
+        }
+    });
+
+    it.each(["tab", "session"])("does not restore existing child listeners after %s closure", async (kind) => {
+        const { backend, open, emitted } = setup();
+        const session = await open("a");
+        const tab = await session.createTab("https://example.com/");
+        const original = backend.attachChildren.bind(backend);
+        let release: () => void = () => undefined;
+        let entered: () => void = () => undefined;
+        const gate = new Promise<void>((resolve) => { release = resolve; });
+        const started = new Promise<void>((resolve) => { entered = resolve; });
+
+        vi.spyOn(backend, "attachChildren").mockImplementation(async (attached, options) => {
+            const handle = await original(attached, options);
+
+            backend.childHandles.at(-1)?.addChild("existing", true, CROSS);
+            entered();
+            await gate;
+
+            return handle;
+        });
+        const subscribing = session.subscribe(tab, "Network.requestWillBeSent");
+        let closing: Promise<void> | undefined;
+
+        try {
+            await started;
+            const child = backend.childHandles[0]?.childrenOf.get("existing");
+
+            expect(child?.listenerCount("Network.requestWillBeSent")).toBe(1);
+            closing = kind === "tab" ? session.closeTab(tab) : session.close();
+            if (kind === "tab") await closing;
+
+            release();
+            await Promise.all([subscribing, closing]);
+            child?.emit("Network.requestWillBeSent", { requestId: "1" });
+            expect(child?.listenerCount("Network.requestWillBeSent")).toBe(0);
+            expect(emitted.a?.filter((item) => item.event === "cdp.event")).toEqual([]);
+        } finally {
+            release();
+            await Promise.allSettled([subscribing, closing]);
+            await session.close();
+        }
+    });
+
     it("answers a paused request on the child session that raised it", async () => {
         const { a, tab, handle, backend } = await tabWithChild();
 

@@ -242,6 +242,7 @@ export class TabFrames {
         tab     : OwnedTab,
         child   : FrameChildSession,
     ): Promise<void> {
+        this.assertCurrent(targetId, tab);
         for (const subscription of tab.subscriptions.values()) subscription.mirror?.(child);
 
         await Promise.all(tab.sync.replay().map((command) =>
