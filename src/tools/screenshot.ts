@@ -15,7 +15,7 @@ import { holdRendering } from "./hold-rendering.js";
 import { frameChain, mapRect, measureChain, revealChain, settleRendering } from "./frame-geometry.js";
 import { type ImageSize, imageSize } from "./image-size.js";
 import { binaryResult, imageBlock } from "./result.js";
-import { passwordBoxes } from "./screenshot-mask.js";
+import { passwordBoxes, selectedBoxes } from "./screenshot-mask.js";
 import { maskImage, MaskImageUnavailableError, pixelBoxes } from "./screenshot-mask-image.js";
 import { resolveTab, tabSchema } from "./tab-target.js";
 
@@ -295,6 +295,7 @@ const screenshotSmall = z.strictObject({
     format         : z.enum(["png", "jpeg", "webp"]).describe("Image format."),
     clipped        : z.boolean().describe("Whether the shot is clipped to an element or a rectangle."),
     scaledDown     : z.boolean().describe("Whether the shot was scaled below full size."),
+    maskedElements : z.number().optional().describe("Number of selected elements masked in the image."),
     maskedPasswords: z.number().optional().describe("Number of password fields masked in the image."),
     maskIncomplete : z.boolean().optional().describe("Whether password masking may have missed content."),
     maskWarning    : z.string().optional().describe("Limitations of password masking."),
@@ -321,6 +322,7 @@ export const screenshot = defineTool({
         scale        : z.number().min(0.1).max(2).optional().describe("Scale factor. Defaults to 1."),
         maxBytes     : z.number().int().min(1024).max(SCREENSHOT_MAX_BYTES_LIMIT).optional().describe("Maximum image bytes. Defaults to 4 MiB."),
         maxDimension : z.number().int().min(64).max(16384).optional().describe("Clamp the longest side to this many pixels. Defaults to 4096."),
+        maskElements : z.array(elementTargetSchema).min(1).max(50).optional().describe("Elements to cover in the image; inspect the result before sharing."),
         maskPasswords: z.boolean().optional().describe("Cover password fields in the image. Dynamic page changes can still expose content."),
     }).superRefine((value, ctx) => {
         if (value.target !== undefined && value.clip !== undefined) {
@@ -368,9 +370,14 @@ export const screenshot = defineTool({
                 maxDimension,
             });
 
-            const maskBounds = args.maskPasswords === true
-                ? await passwordBoxes(context, targetId)
-                : undefined;
+            const readMasks = async () => ({
+                passwords: args.maskPasswords === true
+                    ? await passwordBoxes(context, targetId) : [],
+                elements: args.maskElements === undefined
+                    ? [] : await selectedBoxes(context, targetId, args.maskElements),
+            });
+            const maskBounds = args.maskPasswords === true || args.maskElements !== undefined
+                ? await readMasks() : undefined;
 
             const shot = await shoot(context, targetId, {
                 format,
@@ -384,9 +391,10 @@ export const screenshot = defineTool({
             let bytes: Buffer = Buffer.from(shot, "base64");
             const size = imageSize(format, bytes);
             let maskedPasswords: number | undefined;
+            let maskedElements: number | undefined;
 
             if (maskBounds !== undefined) {
-                const after = await passwordBoxes(context, targetId);
+                const after = await readMasks();
                 const newLayout = await layoutOf(context.access, targetId);
                 const capture = plan.clip ?? (args.fullPage === true && layout.content !== undefined
                     ? { x: 0, y: 0, ...layout.content }
@@ -395,14 +403,15 @@ export const screenshot = defineTool({
                 if (size === undefined || capture === undefined || layout.viewport === undefined ||
                     JSON.stringify(maskBounds) !== JSON.stringify(after) ||
                     JSON.stringify(layout) !== JSON.stringify(newLayout)) {
-                    throw new ToolError("Password masking could not cover the screenshot. Retry when the page is stable.");
+                    throw new ToolError("Screenshot masking could not cover the image. Retry when the page is stable.");
                 }
 
                 if (size.width * size.height > SCREENSHOT_MASK_MAX_PIXELS) {
                     throw new ToolError("The screenshot is too large to mask. Use a smaller clip or scale.");
                 }
 
-                const inPage = maskBounds.map((box) => ({
+                const allBoxes = [...maskBounds.passwords, ...maskBounds.elements];
+                const inPage = allBoxes.map((box) => ({
                     ...box,
                     x: box.x + (layout.viewport?.x ?? 0), y: box.y + (layout.viewport?.y ?? 0),
                 }));
@@ -420,7 +429,12 @@ export const screenshot = defineTool({
 
                 if (bytes.byteLength > maxBytes) throw oversizeError(maxBytes);
 
-                maskedPasswords = masks.length;
+                if (args.maskPasswords === true) maskedPasswords = pixelBoxes(
+                    inPage.slice(0, maskBounds.passwords.length), capture, size,
+                ).length;
+                if (args.maskElements !== undefined) maskedElements = pixelBoxes(
+                    inPage.slice(maskBounds.passwords.length), capture, size,
+                ).length;
             }
 
             const wholePage = args.fullPage === true
@@ -439,10 +453,11 @@ export const screenshot = defineTool({
                 format,
                 clipped   : plan.clipped,
                 scaledDown: plan.scaledDown,
-                ...(maskedPasswords === undefined ? {} : {
-                    maskedPasswords,
+                ...(maskedPasswords === undefined ? {} : { maskedPasswords }),
+                ...(maskedElements === undefined ? {} : { maskedElements }),
+                ...(maskBounds === undefined ? {} : {
                     maskIncomplete: true,
-                    maskWarning   : "Masking is best effort. Page changes during capture may expose password fields; inspect the image before sharing it.",
+                    maskWarning   : "Masking is best effort. Page changes during capture may expose content; inspect the image before sharing it.",
                 }),
                 data    : bytes.toString("base64"),
                 mimeType: MIME_OF[format],

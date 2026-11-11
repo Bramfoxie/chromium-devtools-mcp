@@ -44,6 +44,39 @@ beforeAll(async () => {
 afterAll(async () => { await env?.stop(); });
 
 describe.skipIf(!present)("password masking in a real browser", () => {
+    it("covers explicitly selected elements without changing the page", async () => {
+        env.fixture.pages.set("/selected-mask", html(`<style>body { margin: 0; background: white }
+            #private { position: absolute; left: 10px; top: 10px; width: 50px; height: 30px; background: red }</style>
+            <div id="private">Sensitive text</div>`));
+        const tab = await env.open("/selected-mask");
+        const result = await env.client.callTool({
+            name     : "screenshot", arguments: {
+                tab, format      : "png", clip        : { x: 0, y: 0, width: 100, height: 100 },
+                maskElements: [{ selector: "#private" }],
+            },
+        });
+        const image = (result.content as Array<{ type: string; data?: string }>)
+            .find((entry) => entry.type === "image");
+
+        expect(result.isError, JSON.stringify(result.content)).not.toBe(true);
+        expect(result.structuredContent).toMatchObject({ maskedElements: 1, maskIncomplete: true });
+        const { data, info } = await sharp(Buffer.from(image?.data ?? "", "base64"))
+            .removeAlpha().raw().toBuffer({ resolveWithObject: true });
+
+        expect(data[(20 * info.width + 20) * info.channels]).toBeLessThan(10);
+        expect(data[(80 * info.width + 80) * info.channels]).toBeGreaterThan(245);
+    });
+
+    it("does not return an image when a selected element is missing", async () => {
+        const tab = await env.open("/mask");
+        const result = await env.client.callTool({
+            name: "screenshot", arguments: { tab, maskElements: [{ selector: "#missing" }] },
+        });
+
+        expect(result.isError).toBe(true);
+        expect((result.content as Array<{ type: string }>).some((item) => item.type === "image")).toBe(false);
+    });
+
     it("covers fields in the main document, a closed shadow root and a cross site frame", async () => {
         const tab = await env.open("/mask");
 
@@ -116,7 +149,7 @@ describe.skipIf(!present)("password masking in a real browser", () => {
         });
 
         expect(result.isError).toBe(true);
-        expect(JSON.stringify(result.content)).toContain("Password masking could not cover");
+        expect(JSON.stringify(result.content)).toContain("Screenshot masking could not cover");
         expect((result.content as Array<{ type: string }>).some((entry) => entry.type === "image"))
             .toBe(false);
     });

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { DaemonAccess } from "../mcp/index.js";
 import type { ToolContext } from "./define-tool.js";
+import { elementAccess, withElement, type ElementTarget } from "./element-target.js";
 import { ToolError } from "./errors.js";
 import { frameChain, mapRect, measureChain } from "./frame-geometry.js";
 import { bindAccess } from "./frame-scope.js";
@@ -14,7 +15,7 @@ const boxSchema = z.object({
 });
 
 function maskError(): ToolError {
-    return new ToolError("Password masking could not cover the screenshot. Retry without masking only if the image can be shared safely.");
+    return new ToolError("Screenshot masking could not cover the image. Retry without masking only if the image can be shared safely.");
 }
 
 function bounds(quad: number[]): Rect {
@@ -102,4 +103,55 @@ export async function passwordBoxes(context: ToolContext, tab: string): Promise<
 
         throw maskError();
     }
+}
+
+export async function selectedBoxes(
+    context: ToolContext, tab: string, targets: readonly ElementTarget[],
+): Promise<Rect[]> {
+    const boxes: Rect[] = [];
+
+    for (const target of targets) {
+        const box = await withElement(context, tab, target, async (element) => {
+            const owner = elementAccess(context.access, element);
+            const parsed = boxSchema.safeParse(await owner.send({
+                targetId: tab, method: "DOM.getBoxModel", params: { objectId: element.objectId },
+            }));
+
+            if (!parsed.success) throw maskError();
+
+            const border = bounds(parsed.data.model.border);
+
+            if (border.width <= 0 || border.height <= 0) {
+                throw new ToolError("The selected element has no visible box to mask.");
+            }
+
+            const chain = element.isolated === true && element.frameId !== undefined
+                ? await frameChain(context.access, context.frames, tab, element.frameId)
+                : undefined;
+
+            if (chain !== undefined) {
+                if (chain.links.length === 0) throw maskError();
+
+                for (const link of chain.links) {
+                    const model = await modelOf(link.access, tab, link.backendNodeId);
+
+                    if (model.content === undefined || !axisAligned(model.content) ||
+                        !axisAligned(model.border)) throw maskError();
+                }
+            }
+
+            const mapped = chain === undefined
+                ? border : mapRect((await measureChain(chain, tab)).toTop, border);
+            const margin = 4 + 2 * (chain?.links.length ?? 0);
+
+            return {
+                x     : mapped.x - margin, y     : mapped.y - margin,
+                width : mapped.width + 2 * margin, height: mapped.height + 2 * margin,
+            };
+        });
+
+        boxes.push(box);
+    }
+
+    return boxes;
 }
