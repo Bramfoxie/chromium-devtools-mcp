@@ -1056,6 +1056,52 @@ describe("frame targets", () => {
         return (method) => (method === "Page.getFrameTree" ? TREE : { echoed: method });
     }
 
+    it("does not restore a detached child while another frame tree is pending", async () => {
+        const { backend, open } = setup();
+        const a = await open("a");
+        const tab = await a.createTab("https://a.example/");
+        let release: () => void = () => undefined;
+        let entered: () => void = () => undefined;
+        const gate = new Promise<void>((resolve) => { release = resolve; });
+        const started = new Promise<void>((resolve) => { entered = resolve; });
+
+        try {
+            await a.send({ targetId: tab, method: "Page.enable" });
+            const session = backend.sessions.get(tab);
+
+            if (session) session.reply = mainTree();
+
+            await a.listFrames(tab);
+            const handle = backend.childHandles[0];
+            const first = handle?.addChild("first", true, CROSS);
+            const second = handle?.addChild("second", true, CROSS);
+
+            if (first === undefined || second === undefined) throw new Error("Missing children.");
+
+            const reply = second.reply;
+
+            second.reply = (method, params) => {
+                if (method !== "Page.getFrameTree") return reply?.(method, params);
+
+                entered();
+
+                return gate.then(() => reply?.(method, params));
+            };
+
+            const listing = a.listFrames(tab);
+
+            await started;
+            handle?.removeChild("first");
+            release();
+            const frames = await listing;
+
+            expect(frames.some((frame) => frame.frameId === "first")).toBe(false);
+        } finally {
+            release();
+            await a.close();
+        }
+    });
+
     it("lists the same site frames of the main tree as shared", async () => {
         const { backend, open } = setup();
         const a = await open("a");

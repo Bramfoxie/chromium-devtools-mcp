@@ -182,8 +182,11 @@ export class TabFrames {
             child.send("Page.getFrameTree", undefined, CHILD_COMMAND_TIMEOUT_MS).catch(
                 () => undefined,
             )));
+        const live = new Set(children.children().map((child) => child.child.sessionId));
 
         for (const [index, child] of sessions.entries()) {
+            if (!live.has(child.child.sessionId)) continue;
+
             const tree = frameSummaries(trees[index], () => true);
             const root = tree[0];
 
