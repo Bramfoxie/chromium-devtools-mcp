@@ -146,6 +146,10 @@ export const emulateGeolocation = defineTool({
                         } catch {
                             logDaemon("could not restore a geolocation permission after a failed reset");
 
+                            if (undoFailed) {
+                                throw new ToolError("The geolocation reset failed. The previous permission could not be restored and the previous geolocation could not be restored. Check the tab and browser permissions, then retry.");
+                            }
+
                             throw new ToolError("The geolocation reset failed and the previous permission could not be restored. Check the browser permissions and retry.");
                         }
                     }

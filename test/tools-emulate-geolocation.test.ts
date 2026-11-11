@@ -187,7 +187,7 @@ describe("emulate_geolocation", () => {
         expect(runtime.emulation.snapshot("tab1").geolocation?.origin).toBe(SITE);
     });
 
-    it("reports when a failed reset cannot restore the previous permission", async () => {
+    it("reports both failures when a reset cannot restore permission and emulation", async () => {
         const { fake, runtime } = setup();
 
         await runTool(emulateGeolocation, { latitude: 1, longitude: 2 }, extra(), runtime);
@@ -205,6 +205,7 @@ describe("emulate_geolocation", () => {
 
         expect(result.isError).toBe(true);
         expect(text(result)).toContain("previous permission could not be restored");
+        expect(text(result)).toContain("previous geolocation could not be restored");
     });
 
     it("reports when a failed reset cannot restore the previous emulation", async () => {
