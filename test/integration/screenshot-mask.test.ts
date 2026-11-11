@@ -240,6 +240,78 @@ describe.skipIf(!present)("password masking in a real browser", () => {
         expect(data[(120 * info.width + 170) * info.channels]).toBeLessThan(10);
     });
 
+    it("covers overflow through nested same site frames", async () => {
+        env.fixture.pages.set("/nested-local-leaf", html(`<style>body { margin: 0 }
+            #private { position: absolute; left: 10px; top: 10px; width: 20px; height: 20px }
+            #secret { position: absolute; left: 50px; width: 20px; height: 20px; background: red }</style>
+            <div id="private"><span id="secret"></span></div>`));
+        env.fixture.pages.set("/nested-local-middle", html(`<style>body { margin: 0 }
+            iframe { position: absolute; left: 30px; top: 30px; width: 150px; height: 100px; border: 0 }</style>
+            <iframe src="/nested-local-leaf"></iframe>`));
+        env.fixture.pages.set("/nested-local-outer", html(`<style>body { margin: 0; background: white }
+            iframe { position: absolute; left: 100px; top: 100px; width: 220px; height: 180px; border: 0 }</style>
+            <iframe src="/nested-local-middle"></iframe>`));
+        const tab = await env.open("/nested-local-outer");
+        const snap = await env.ok("dom_snapshot", { tab });
+        const frame = (snap.frames as Array<{ frameId: string; url: string }>)
+            .find((item) => item.url.endsWith("/nested-local-leaf"));
+
+        expect(frame).toBeDefined();
+        const result = await env.client.callTool({
+            name     : "screenshot", arguments: {
+                tab, format      : "png", clip        : { x: 0, y: 0, width: 350, height: 300 },
+                maskElements: [{ selector: "#private", frame: frame?.frameId }],
+            },
+        });
+        const image = (result.content as Array<{ type: string; data?: string }>)
+            .find((entry) => entry.type === "image");
+
+        expect(result.isError, JSON.stringify(result.content)).not.toBe(true);
+        const { data, info } = await sharp(Buffer.from(image?.data ?? "", "base64"))
+            .removeAlpha().raw().toBuffer({ resolveWithObject: true });
+
+        expect(data[(150 * info.width + 200) * info.channels]).toBeLessThan(10);
+    });
+
+    it("covers overflow inside a scrolled same site frame", async () => {
+        env.fixture.pages.set("/scroll-local-inner", html(`<style>body { margin: 0; height: 2000px }
+            #private { position: absolute; left: 10px; top: 240px; width: 20px; height: 20px }
+            #secret { position: absolute; left: 50px; width: 20px; height: 20px; background: red }</style>
+            <div id="private"><span id="secret"></span></div><script>scrollTo(0, 200)</script>`));
+        env.fixture.pages.set("/scroll-local-outer", html(`<style>body { margin: 0; background: white }
+            iframe { position: absolute; left: 100px; top: 100px; width: 150px; height: 100px; border: 0 }</style>
+            <iframe src="/scroll-local-inner"></iframe>`));
+        const tab = await env.open("/scroll-local-outer");
+        const result = await env.client.callTool({
+            name     : "screenshot", arguments: {
+                tab, format      : "png", clip        : { x: 0, y: 0, width: 300, height: 250 },
+                maskElements: [{ selector: "#private", frame: "iframe" }],
+            },
+        });
+        const image = (result.content as Array<{ type: string; data?: string }>)
+            .find((entry) => entry.type === "image");
+
+        expect(result.isError, JSON.stringify(result.content)).not.toBe(true);
+        const { data, info } = await sharp(Buffer.from(image?.data ?? "", "base64"))
+            .removeAlpha().raw().toBuffer({ resolveWithObject: true });
+
+        expect(data[(150 * info.width + 170) * info.channels]).toBeLessThan(10);
+    });
+
+    it.each(["zoom", "rotated ancestor"])("refuses ambiguous %s frame geometry", async (kind) => {
+        env.fixture.pages.set("/ambiguous-inner", html('<div id="private" style="width:20px;height:20px">secret</div>'));
+        const style = kind === "zoom" ? "zoom:1.1" : "transform:rotate(10deg)";
+
+        env.fixture.pages.set("/ambiguous-outer", html(`<div style="${style}"><iframe src="/ambiguous-inner"></iframe></div>`));
+        const tab = await env.open("/ambiguous-outer");
+        const result = await env.client.callTool({
+            name: "screenshot", arguments: { tab, maskElements: [{ selector: "#private", frame: "iframe" }] },
+        });
+
+        expect(result.isError).toBe(true);
+        expect((result.content as Array<{ type: string }>).some((item) => item.type === "image")).toBe(false);
+    });
+
     it("refuses a scaled same site frame", async () => {
         env.fixture.pages.set("/scaled-inner", html('<div id="private" style="width:20px;height:20px">secret</div>'));
         env.fixture.pages.set("/scaled-outer", html('<iframe style="transform:scale(1.1)" src="/scaled-inner"></iframe>'));
