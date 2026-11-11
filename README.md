@@ -40,7 +40,7 @@ If something does not connect, run `npx chromium-devtools-mcp doctor` (add the s
 
 ## Compared with the official Chrome DevTools MCP
 
-✅ means the project has the capability, ❌ means it has none.
+The marks cover the listed capabilities, not every tool or parameter. A check means the capability is available, a cross means no dedicated tool is listed, and `?` means it has not been compared.
 
 | Capability                                                                 | chromium-devtools-mcp | Chrome DevTools MCP |
 | -------------------------------------------------------------------------- | :-------------------: | :-----------------: |
@@ -67,15 +67,23 @@ If something does not connect, run `npx chromium-devtools-mcp doctor` (add the s
 | Lighthouse audit                                                           |          ✅           |         ✅          |
 | Heap snapshots                                                             |          ✅           |         ✅          |
 | Screencast recording                                                       |          ✅           |         ✅          |
-| WebAuthn virtual authenticators                                            |          ✅           |         ✅          |
-| PWA inspection (manifest, installability, service workers)                 |          ✅           |         ✅          |
+| WebAuthn virtual authenticators                                            |        &#9989;        |      &#10060;       |
+| PWA inspection (manifest, installability, service workers)                 |        &#9989;        |      &#10060;       |
 | Geolocation emulation                                                      |          ✅           |         ✅          |
+| Password field masking in screenshots, best effort                         |        &#9989;        |      &#10060;       |
+| Permission overrides by origin                                             |        &#9989;        |      &#10060;       |
+| CPU throttling                                                             |        &#9989;        |       &#9989;       |
+| CDP metadata log without message contents                                  |        &#9989;        |          ?          |
+| Restrict uploads to configured directories                                 |        &#9989;        |          ?          |
+| WebMCP tool discovery and execution                                        |       &#10060;        |       &#9989;       |
+| Third party developer tool discovery and execution                         |       &#10060;        |       &#9989;       |
+| Heap snapshot analysis tools                                               |       &#10060;        |       &#9989;       |
 | PWA install and extension management                                       |          ❌           |         ✅          |
-| Browsers other than Chrome                                                 |          ❌           |         ❌          |
+| Other Chromium browser discovery, not tested with a live browser           |        &#9989;        |          ?          |
 
 Lighthouse audits and the video of a screencast use the `lighthouse` and `ffmpeg` programs when they are installed on your machine; `doctor` shows whether they are.
 
-Compared against Chrome DevTools MCP 1.12.0 (2026-10-22, [ChromeDevTools/chrome-devtools-mcp](https://github.com/ChromeDevTools/chrome-devtools-mcp)). A cross on its side means its tool reference lists no tool for that capability. Version 0.2.0 of this project supports Chrome only.
+Compared against Chrome DevTools MCP 1.12.0 (2026-10-22, [ChromeDevTools/chrome-devtools-mcp](https://github.com/ChromeDevTools/chrome-devtools-mcp)). Its cross marks refer to the published tool reference for that version. This project detects Chrome channels, Chromium and Edge; only stable Chrome has been tested with a live browser.
 
 ## Tools
 
@@ -127,6 +135,9 @@ Sources from lowest to highest priority: defaults, JSON file, `CHROMIUM_DEVTOOLS
 | `wsEndpoint`                  | `--ws-endpoint`            | unset, attach only      |
 | `allowFocus`                  | `--allow-focus`            | false                   |
 | `isolated`                    | `--isolated`               | false                   |
+| `tools`                       | `--tools`                  | all tools               |
+| `excludeTools`                | `--exclude-tools`          | none                    |
+| `auditLog`                    | `--audit-log`              | unset                   |
 | `cdpLog`                      | `--cdp-log`                | unset                   |
 | `safety.readOnly`             | `--read-only`              | false                   |
 | `safety.allowedDomains`       | `--allowed-domains`        | empty, no limit         |
@@ -139,7 +150,7 @@ Env names, file paths and rules: [docs/configuration.md](docs/configuration.md).
 
 ## Supported
 
-- Browser: Chrome.
+- Browsers: Chrome stable, Chrome Beta, Dev and Canary, Chromium and Edge. Only stable Chrome has been tested with a live browser; Canary is not available on Linux.
 - OS: macOS, Linux, Windows.
 - Node.js 24 or newer. Transport: stdio.
 
