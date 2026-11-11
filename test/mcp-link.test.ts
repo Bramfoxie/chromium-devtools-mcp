@@ -257,6 +257,8 @@ describe("connecting to a running daemon", () => {
         expect((failure as Error).message).toContain("older");
         expect((failure as Error).message).toContain("disconnects all clients");
         expect((failure as Error).message).toContain("closes tabs created by their sessions");
+        expect((failure as Error).message).toContain("pages in isolated contexts");
+        expect((failure as Error).message).toContain("managed browser it started");
         expect(ipc.closes).toBe(1);
         expect(starts).toEqual([]);
     });
