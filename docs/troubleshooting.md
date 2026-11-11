@@ -50,5 +50,6 @@ Cross-site frames run in their own process, and a tab in the background may not 
 
 ## Windows
 
+- If `npx` fails with a command not recognized error and its npm cache path contains `&`, use an npm cache directory with no `&` in its absolute path. In PowerShell, set `$env:npm_config_cache` to a writable directory owned by your user before starting `npx` or the client that launches it. npm creates command wrappers in its cache, and the Windows wrapper can misinterpret `&` in that path. For an already installed package, running its `dist/cli.js` with Node directly also avoids the wrapper.
 - Deleting `daemon.token` while a daemon runs makes the next client start a second daemon, because the pipe name derives from the token. Run `daemon stop` first.
 - A managed browser is a child of the daemon and closes when the daemon exits.
