@@ -48,7 +48,8 @@ The marks cover the listed capabilities, not every tool or parameter. A check me
 | Focus never stolen, tabs open in the background                            |          ✅           |         ❌          |
 | Trusted input events (CDP) and DOM-level click as separate tools           |          ✅           |         ❌          |
 | Shadow DOM and cross-site iframe piercing in every element tool            |          ✅           |         ❌          |
-| Network mocking and failing requests                                       |          ✅           |         ❌          |
+| Network mocking                                                            |        &#9989;        |       &#9989;       |
+| Fail matching network requests                                             |        &#9989;        |      &#10060;       |
 | Network records with redaction of secrets in URLs and headers              |          ✅           |         ❌          |
 | Storage read and write (local, session, cookies)                           |          ✅           |         ❌          |
 | PDF export                                                                 |          ✅           |         ❌          |
@@ -58,23 +59,24 @@ The marks cover the listed capabilities, not every tool or parameter. A check me
 | Locators by role, name or text, with auto-wait before input                |          ✅           |         ❌          |
 | HAR 1.2 export of network records                                          |          ✅           |         ❌          |
 | Audit log of every tool call with secrets redacted                         |          ✅           |         ❌          |
-| Choose the offered tools by name or group                                  |          ✅           |         ❌          |
+| Choose the offered tools by group                                          |        &#9989;        |       &#9989;       |
+| Choose the offered tools by name                                           |        &#9989;        |      &#10060;       |
 | Installer for several clients                                              |          ✅           |         ❌          |
 | Attach to your running browser                                             |          ✅           |         ✅          |
 | Managed persistent profile                                                 |          ✅           |         ✅          |
-| Isolated browser context per session                                       |          ✅           |         ✅          |
+| Isolated browser context per session                                       |        &#9989;        |      &#10060;       |
 | Performance traces and insights                                            |          ✅           |         ✅          |
 | Lighthouse audit                                                           |          ✅           |         ✅          |
 | Heap snapshots                                                             |          ✅           |         ✅          |
 | Screencast recording                                                       |          ✅           |         ✅          |
-| WebAuthn virtual authenticators                                            |        &#9989;        |      &#10060;       |
+| WebAuthn virtual authenticators                                            |        &#9989;        |       &#9989;       |
 | PWA inspection (manifest, installability, service workers)                 |        &#9989;        |      &#10060;       |
 | Geolocation emulation                                                      |          ✅           |         ✅          |
 | Password field masking in screenshots, best effort                         |        &#9989;        |      &#10060;       |
 | Permission overrides by origin                                             |        &#9989;        |      &#10060;       |
 | CPU throttling                                                             |        &#9989;        |       &#9989;       |
 | CDP metadata log without message contents                                  |        &#9989;        |          ?          |
-| Restrict uploads to configured directories                                 |        &#9989;        |          ?          |
+| Restrict uploads to configured directories                                 |        &#9989;        |       &#9989;       |
 | WebMCP tool discovery and execution                                        |       &#10060;        |       &#9989;       |
 | Third party developer tool discovery and execution                         |       &#10060;        |       &#9989;       |
 | Heap snapshot analysis tools                                               |       &#10060;        |       &#9989;       |
@@ -83,7 +85,7 @@ The marks cover the listed capabilities, not every tool or parameter. A check me
 
 Lighthouse audits and the video of a screencast use the `lighthouse` and `ffmpeg` programs when they are installed on your machine; `doctor` shows whether they are.
 
-Compared against Chrome DevTools MCP 1.12.0 (2026-10-22, [ChromeDevTools/chrome-devtools-mcp](https://github.com/ChromeDevTools/chrome-devtools-mcp)). Its cross marks refer to the published tool reference for that version. This project detects Chrome channels, Chromium and Edge; only stable Chrome has been tested with a live browser.
+Compared against Chrome DevTools MCP 1.13.0 (2026-11-11, [ChromeDevTools/chrome-devtools-mcp](https://github.com/ChromeDevTools/chrome-devtools-mcp)). Some of its tool categories, including network mocks and WebAuthn, require startup flags. Its cross marks refer to the published tool reference for that version. This project detects Chrome channels, Chromium and Edge; only stable Chrome has been tested with a live browser.
 
 ## Tools
 
