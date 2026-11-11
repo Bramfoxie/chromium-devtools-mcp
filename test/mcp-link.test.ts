@@ -255,6 +255,8 @@ describe("connecting to a running daemon", () => {
         expect(failure).toMatchObject({ code: ErrorCode.badRequest });
         expect((failure as Error).message).toContain("daemon stop");
         expect((failure as Error).message).toContain("older");
+        expect((failure as Error).message).toContain("disconnects all clients");
+        expect((failure as Error).message).toContain("closes tabs created by their sessions");
         expect(ipc.closes).toBe(1);
         expect(starts).toEqual([]);
     });

@@ -180,7 +180,8 @@ export class DaemonLink {
                     throw new RpcError(
                         error.code,
                         `${error.message} The daemon may be an older version. ` +
-                            "Run npx chromium-devtools-mcp daemon stop, then retry.",
+                            "Run npx chromium-devtools-mcp daemon stop, then retry. " +
+                            "Stopping it disconnects all clients and closes tabs created by their sessions.",
                     );
                 }
 
