@@ -1,4 +1,4 @@
-export const EXTRACT_KINDS = ["links", "headings", "meta", "forms"] as const;
+export const EXTRACT_KINDS = ["links", "headings", "meta", "forms", "tables"] as const;
 
 export type ExtractKind = (typeof EXTRACT_KINDS)[number];
 
@@ -84,6 +84,24 @@ const PAGE_FUNCTION = `(kinds, limit, textChars, fieldLimit) => {
         fields: controls.items,
       };
     });
+  }
+  if (kinds.includes("tables")) {
+    const tableRows = getter(HTMLTableElement.prototype, "rows");
+    const rowCells = getter(HTMLTableRowElement.prototype, "cells");
+    out.tables = take(all("table"), (table) => {
+      const rows = take(tableRows.call(table), (row) => {
+        const cells = take(rowCells.call(row), (cell) => {
+          const copy = Node.prototype.cloneNode.call(cell, true);
+          for (const node of Element.prototype.querySelectorAll.call(copy, "input,textarea,select,script,style,table")) {
+            node.remove();
+          }
+          const raw = String(copy.textContent || "").replace(/\\s+/g, " ").trim();
+          return { text: raw.slice(0, textChars), truncated: raw.length > textChars };
+        }, 20);
+        return { cells: cells.items, total: cells.total, truncated: cells.total > cells.items.length };
+      }, 20);
+      return { rows: rows.items, total: rows.total, truncated: rows.total > rows.items.length };
+    }, Math.min(limit, 10));
   }
   return out;
 }`;

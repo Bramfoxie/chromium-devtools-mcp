@@ -53,6 +53,15 @@ const pageSchema = z.object({
         longName: z.boolean().default(false),
         content : text(),
     })).optional(),
+    tables: group(z.object({
+        total    : z.number().int().nonnegative(),
+        truncated: z.boolean(),
+        rows     : z.array(z.object({
+            total    : z.number().int().nonnegative(),
+            truncated: z.boolean(),
+            cells    : z.array(z.object({ text: text(), truncated: z.boolean() })),
+        })),
+    })).optional(),
     forms: group(z.object({
         id        : text(),
         name      : text(),
@@ -87,12 +96,12 @@ const countedOutput = <T extends z.ZodType>(item: T) => z.strictObject({
 export const pageExtract = defineTool({
     name: "page_extract",
     description:
-        "Read the links, headings, meta tags and form structure of the top document of a tab as lists, without form values.",
+        "Read links, headings, meta tags, tables and form structure of the top document without form values.",
     access: "read",
     input : z.strictObject({
         tab  : tabSchema,
         kinds: z.array(z.enum(EXTRACT_KINDS)).min(1).max(EXTRACT_KINDS.length).optional()
-            .describe("What to read: links, headings, meta, forms. Defaults to all four."),
+            .describe("What to read: links, headings, meta, forms, tables. Defaults to all five."),
         limit: z.number().int().min(1).max(MAX_LIMIT).optional()
             .describe(`Most items per kind. Defaults to ${DEFAULT_LIMIT}, at most ${MAX_LIMIT}.`),
     }),
@@ -115,6 +124,15 @@ export const pageExtract = defineTool({
             name   : z.string().describe("The name, property or http-equiv of the tag."),
             content: z.string().describe("The content of the tag."),
         })).describe("Meta tags."),
+        tables: countedOutput(z.strictObject({
+            total    : z.number().describe("Number of rows in the table."),
+            truncated: z.boolean().describe("Whether rows were omitted."),
+            rows     : z.array(z.strictObject({
+                total    : z.number().describe("Number of cells in the row."),
+                truncated: z.boolean().describe("Whether cells were omitted."),
+                cells    : z.array(z.strictObject({ text: z.string(), truncated: z.boolean() })),
+            })),
+        })).describe("Tables with bounded rows and cells, without form control values."),
         forms: countedOutput(z.strictObject({
             id        : z.string().describe("The id of the form, empty when not set."),
             name      : z.string().describe("The name of the form, empty when not set."),
@@ -183,7 +201,8 @@ export const pageExtract = defineTool({
                     },
                 limit,
             ),
-            forms: counted(data.forms, limit),
+            forms : counted(data.forms, limit),
+            tables: counted(data.tables, Math.min(limit, 10)),
         };
     },
 });

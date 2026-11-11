@@ -49,6 +49,28 @@ afterAll(async () => {
 });
 
 describe.skipIf(!present)("page_extract in a real browser", () => {
+    it("extracts bounded table cells without form values", async () => {
+        env.fixture.pages.set("/table", html(`<table><tr><th>Heading</th><td>Cell <input value="INPUT-SECRET"><textarea>TEXTAREA-SECRET</textarea><select><option>SELECT-SECRET</option></select></td></tr>${"<tr><td>row</td></tr>".repeat(25)}</table>`));
+        const tab = await env.open("/table");
+        const page = await env.ok("page_extract", { tab, kinds: ["tables"] });
+        const tables = page.tables as {
+            total: number;
+            items: Array<{
+                total    : number;
+                truncated: boolean;
+                rows     : Array<{ cells: Array<{ text: string }> }>;
+            }>;
+        };
+
+        expect(tables.total).toBe(1);
+        expect(tables.items[0]?.total).toBe(26);
+        expect(tables.items[0]?.truncated).toBe(true);
+        expect(tables.items[0]?.rows[0]?.cells).toEqual([
+            { text: "Heading", truncated: false }, { text: "Cell", truncated: false },
+        ]);
+        expect(JSON.stringify(page)).not.toMatch(/INPUT-SECRET|TEXTAREA-SECRET|SELECT-SECRET/);
+    });
+
     it("lists links, headings, meta tags and form structure without values or secrets", async () => {
         const tab = await env.open("/extract");
         const page = await env.ok("page_extract", { tab });

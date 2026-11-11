@@ -20,6 +20,7 @@ Every tool with its behavior. Element targeting is in [frames-and-shadow-dom.md]
   Each listed form includes up to 50 controls independently of `limit`, and `fieldTotal` gives the total number of controls.
 
 - `page_history`: list navigation history around the current entry with `limit` (default 50, maximum 100), redacted addresses and a truncation flag. Entry indexes can change when the history changes; list the history again before choosing an entry.
+- `page_extract` with `kinds: ["tables"]` reads table cell text in the top document. It returns at most 10 tables, 20 rows per table and 20 cells per row, with counts and truncation flags; cell text is limited to 300 characters. Form controls, scripts, styles and nested tables are removed before reading cell text.
 - `page_navigate`: open a URL, go back or forward, reload, open a history entry, or stop loading. Use `action: "history"` with `historyIndex` from a recent `page_history` result. Navigation can wait for the page to load; stopping returns without waiting for a load event. Back and forward refuse a history entry that is not an http, https or about:blank page and apply the same best effort DNS checks as URL navigation. `ignoreCache` is available only for reload.
 
 ## Inspection and navigation
