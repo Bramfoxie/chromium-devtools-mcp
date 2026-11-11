@@ -28,12 +28,18 @@ if (args[0] === "pack") {
 }
 `);
         writeFileSync(path.join(bin, "npm.cmd"), '@echo off\r\n"%CDM_TEST_NODE%" "%CDM_TEST_NPM%" %*\r\n');
+        const env = { ...process.env };
+
+        for (const key of Object.keys(env)) {
+            if (key.toLowerCase() === "npm_execpath") delete env[key];
+        }
+
         const result = spawnSync(process.execPath, [script], {
             cwd     : process.cwd(),
             encoding: "utf8",
             timeout : 30_000,
             env     : {
-                ...process.env,
+                ...env,
                 PATH           : `${bin}${path.delimiter}${process.env.PATH ?? ""}`,
                 TEMP           : dir,
                 TMP            : dir,
