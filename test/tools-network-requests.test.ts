@@ -66,6 +66,46 @@ describe("networkFilterOf", () => {
 });
 
 describe("network_requests", () => {
+    it("reports available timing phases and omits unavailable offsets", async () => {
+        const { fake, runtime } = setup();
+
+        await runTool(newTab, {}, extra(), runtime);
+        fake.emit("cdp.event", requestEvent("tab1", "r1", "https://a.example/data"));
+        const event = responseEvent("tab1", "r1", 200);
+
+        Object.assign(event.params.response, { timing: {
+            dnsStart         : 0,
+            dnsEnd           : 2.2,
+            connectStart     : 2.2,
+            connectEnd       : 20,
+            sslStart         : 10,
+            sslEnd           : 19,
+            sendStart        : 20,
+            sendEnd          : 21,
+            receiveHeadersEnd: 31,
+        } });
+        fake.emit("cdp.event", event);
+        const result = await runTool(networkRequests, {}, extra(), runtime);
+
+        expect(result.structuredContent?.requests).toEqual(expect.arrayContaining([
+            expect.objectContaining({
+                timing: { dnsMs: 2.2, connectMs: 17.8, tlsMs: 9, sendMs: 1, waitMs: 10 },
+            }),
+        ]));
+        const invalid = responseEvent("tab1", "r2", 200);
+
+        Object.assign(invalid.params.response, {
+            timing: { dnsStart: -1, dnsEnd: -1, sendStart: 5, sendEnd: 2 },
+        });
+        fake.emit("cdp.event", invalid);
+        const partial = await runTool(networkRequests, {}, extra(), runtime);
+        const entries = partial.structuredContent?.requests as Array<{
+            requestId: string; timing?: unknown;
+        }>;
+
+        expect(entries.find((item) => item.requestId === "r2")?.timing).toBeUndefined();
+    });
+
     it("enables network capture lazily and reports redacted records", async () => {
         const { fake, runtime } = setup();
 
