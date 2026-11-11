@@ -1,4 +1,4 @@
-import { copyFile, mkdir, mkdtemp, rm } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -75,6 +75,9 @@ describe.skipIf(!chromeAvailable())("managed browser profile identity", () => {
         try {
             await mkdir(second);
             browser = await launchManaged({ browser: "chrome", headless: true, profileDir: first, debugPort: 0 });
+            const endpoint = new URL(browser.webSocketUrl);
+
+            await writeFile(path.join(first, "DevToolsActivePort"), `${endpoint.port}\n${endpoint.pathname}\n`);
             await copyFile(path.join(first, "DevToolsActivePort"), path.join(second, "DevToolsActivePort"));
             expect(await findManagedBrowser(second, { browser: "chrome", headless: true }, {
                 directory: path.join(root, "private"), platform: process.platform, uid: process.getuid?.(),
