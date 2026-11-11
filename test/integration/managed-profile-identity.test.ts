@@ -117,10 +117,21 @@ describe.skipIf(!chromeAvailable())("managed browser profile identity", () => {
             expect(targets.targetInfos.some((target) => target.targetId === created.targetId))
                 .toBe(true);
         } finally {
-            await other?.stop();
-            await client?.close();
-            await browser?.stop();
-            await rm(root, { recursive: true, force: true, maxRetries: 40, retryDelay: 250 });
+            try {
+                await other?.stop();
+            } finally {
+                try {
+                    await client?.close();
+                } finally {
+                    try {
+                        await browser?.stop();
+                    } finally {
+                        await rm(root, {
+                            recursive: true, force: true, maxRetries: 40, retryDelay: 250,
+                        });
+                    }
+                }
+            }
         }
     });
 
