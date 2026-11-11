@@ -5,6 +5,23 @@ import { chromeAvailable, eventually, html, startEnv, type Env } from "./browser
 const present = chromeAvailable();
 let env: Env;
 
+async function expectRedPixel(tab: string, x: number, y: number, width: number, height: number) {
+    const result = await env.client.callTool({
+        name: "screenshot", arguments: { tab, format: "png", clip: { x: 0, y: 0, width, height } },
+    });
+    const image = (result.content as Array<{ type: string; data?: string }>)
+        .find((entry) => entry.type === "image");
+
+    expect(result.isError, JSON.stringify(result.content)).not.toBe(true);
+    const { data, info } = await sharp(Buffer.from(image?.data ?? "", "base64"))
+        .removeAlpha().raw().toBuffer({ resolveWithObject: true });
+    const offset = (y * info.width + x) * info.channels;
+
+    expect(data[offset]).toBeGreaterThan(245);
+    expect(data[offset + 1]).toBeLessThan(10);
+    expect(data[offset + 2]).toBeLessThan(10);
+}
+
 beforeAll(async () => {
     if (!present) return;
 
@@ -257,6 +274,7 @@ describe.skipIf(!present)("password masking in a real browser", () => {
             .find((item) => item.url.endsWith("/nested-local-leaf"));
 
         expect(frame).toBeDefined();
+        await expectRedPixel(tab, 200, 150, 350, 300);
         const result = await env.client.callTool({
             name     : "screenshot", arguments: {
                 tab, format      : "png", clip        : { x: 0, y: 0, width: 350, height: 300 },
@@ -270,7 +288,9 @@ describe.skipIf(!present)("password masking in a real browser", () => {
         const { data, info } = await sharp(Buffer.from(image?.data ?? "", "base64"))
             .removeAlpha().raw().toBuffer({ resolveWithObject: true });
 
-        expect(data[(150 * info.width + 200) * info.channels]).toBeLessThan(10);
+        for (const [x, y] of [[192, 142], [200, 150], [208, 158]] as const) {
+            expect(data[(y * info.width + x) * info.channels]).toBeLessThan(10);
+        }
     });
 
     it("covers overflow inside a scrolled same site frame", async () => {
@@ -282,6 +302,8 @@ describe.skipIf(!present)("password masking in a real browser", () => {
             iframe { position: absolute; left: 100px; top: 100px; width: 150px; height: 100px; border: 0 }</style>
             <iframe src="/scroll-local-inner"></iframe>`));
         const tab = await env.open("/scroll-local-outer");
+
+        await expectRedPixel(tab, 170, 150, 300, 250);
         const result = await env.client.callTool({
             name     : "screenshot", arguments: {
                 tab, format      : "png", clip        : { x: 0, y: 0, width: 300, height: 250 },
@@ -295,7 +317,9 @@ describe.skipIf(!present)("password masking in a real browser", () => {
         const { data, info } = await sharp(Buffer.from(image?.data ?? "", "base64"))
             .removeAlpha().raw().toBuffer({ resolveWithObject: true });
 
-        expect(data[(150 * info.width + 170) * info.channels]).toBeLessThan(10);
+        for (const [x, y] of [[162, 142], [170, 150], [178, 158]] as const) {
+            expect(data[(y * info.width + x) * info.channels]).toBeLessThan(10);
+        }
     });
 
     it.each(["zoom", "rotated ancestor"])("refuses ambiguous %s frame geometry", async (kind) => {
