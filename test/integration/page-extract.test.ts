@@ -49,6 +49,20 @@ afterAll(async () => {
 });
 
 describe.skipIf(!present)("page_extract in a real browser", () => {
+    it("preserves adjacent text and reports a bounded node traversal", async () => {
+        env.fixture.pages.set("/table-nodes", html(`<table><tr><td><b>foo</b>bar</td>
+            <td>${"<i></i>".repeat(10005)}last</td></tr></table>`));
+        const tab = await env.open("/table-nodes");
+        const page = await env.ok("page_extract", { tab, kinds: ["tables"] });
+        const tables = page.tables as {
+            items: Array<{ rows: Array<{ cells: Array<{ text: string; truncated: boolean }> }> }>;
+        };
+        const cells = tables.items[0]?.rows[0]?.cells;
+
+        expect(cells?.[0]).toEqual({ text: "foobar", truncated: false });
+        expect(cells?.[1]?.truncated).toBe(true);
+    });
+
     it("does not construct custom elements when reading table cells", async () => {
         env.fixture.pages.set("/table-custom", html(`<table><tr><td><x-custom>Text</x-custom></td></tr></table>
             <script>window.constructed = 0; customElements.define('x-custom', class extends HTMLElement {

@@ -91,30 +91,35 @@ const PAGE_FUNCTION = `(kinds, limit, textChars, fieldLimit) => {
     out.tables = take(all("table"), (table) => {
       const rows = take(tableRows.call(table), (row) => {
         const cells = take(rowCells.call(row), (cell) => {
-          const walker = Document.prototype.createTreeWalker.call(document, cell, NodeFilter.SHOW_TEXT);
+          const limitReached = {};
+          let visited = 0;
+          const walker = Document.prototype.createTreeWalker.call(document, cell, NodeFilter.SHOW_ALL, {
+            acceptNode(node) {
+              if (++visited > 10000) throw limitReached;
+              if (node.nodeType === Node.ELEMENT_NODE &&
+                  ["INPUT", "TEXTAREA", "SELECT", "SCRIPT", "STYLE", "TABLE"].includes(tagOf.call(node))) {
+                return NodeFilter.FILTER_REJECT;
+              }
+              return NodeFilter.FILTER_ACCEPT;
+            },
+          });
           const chunks = [];
           let length = 0;
-          let visited = 0;
           let truncated = false;
-          while (walker.nextNode()) {
-            if (++visited > 10000) { truncated = true; break; }
-            const node = walker.currentNode;
-            let parent = node.parentElement;
-            let excluded = false;
-            while (parent && parent !== cell) {
-              if (["INPUT", "TEXTAREA", "SELECT", "SCRIPT", "STYLE", "TABLE"].includes(tagOf.call(parent))) {
-                excluded = true;
-                break;
-              }
-              parent = parent.parentElement;
+          try {
+            while (walker.nextNode()) {
+              const node = walker.currentNode;
+              if (node.nodeType !== Node.TEXT_NODE) continue;
+              const part = String(node.nodeValue || "");
+              chunks.push(part.slice(0, textChars + 1));
+              length += part.length;
+              if (length > textChars) { truncated = true; break; }
             }
-            if (excluded) continue;
-            const part = String(node.nodeValue || "");
-            chunks.push(part.slice(0, textChars + 1));
-            length += part.length;
-            if (length > textChars) { truncated = true; break; }
+          } catch (error) {
+            if (error !== limitReached) throw error;
+            truncated = true;
           }
-          const raw = chunks.join(" ").replace(/\\s+/g, " ").trim();
+          const raw = chunks.join("").replace(/\\s+/g, " ").trim();
           return { text: raw.slice(0, textChars), truncated: truncated || raw.length > textChars };
         }, 20);
         return { cells: cells.items, total: cells.total, truncated: cells.total > cells.items.length };
