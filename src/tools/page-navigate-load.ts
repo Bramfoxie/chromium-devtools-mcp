@@ -1,7 +1,7 @@
 import { type ToolContext } from "./define-tool.js";
 import { createDeadline, type Deadline, sendWithin } from "./deadline.js";
 import { ToolError } from "./errors.js";
-import { throwIfCancelled } from "./registry.js";
+import { CANCELLED_MESSAGE, throwIfCancelled } from "./registry.js";
 import { WaitUntil, NavigationWaitState, navigationWaitStart, navigationWaitReduce, toWaitEvent } from "./page-navigate-wait.js";
 import { navigateSchema, MAIN_FRAME_EVENTS, mainFrameId, currentPage, historyEntryId } from "./page-navigate-state.js";
 
@@ -59,6 +59,23 @@ export async function loadInTab(
     }
 }
 
+async function historyWithin(
+    context: ToolContext, deadline: Deadline, targetId: string, index: "back" | "forward" | number,
+): Promise<number> {
+    throwIfCancelled(deadline.signal);
+    let onAbort: () => void = () => undefined;
+    const aborted = new Promise<never>((_resolve, reject) => {
+        onAbort = () => reject(new ToolError(CANCELLED_MESSAGE));
+        deadline.signal.addEventListener("abort", onAbort, { once: true });
+    });
+
+    try {
+        return await Promise.race([historyEntryId(context, targetId, index), aborted]);
+    } finally {
+        deadline.signal.removeEventListener("abort", onAbort);
+    }
+}
+
 export async function navigate(
     context     : ToolContext,
     deadline    : Deadline,
@@ -78,8 +95,8 @@ export async function navigate(
                 throw new ToolError("The history action needs a historyIndex.");
             }
 
-            const entryId = await historyEntryId(
-                context, targetId, action === "history" ? historyIndex ?? -1 : action,
+            const entryId = await historyWithin(
+                context, deadline, targetId, action === "history" ? historyIndex ?? -1 : action,
             );
 
             throwIfCancelled(deadline.signal);
