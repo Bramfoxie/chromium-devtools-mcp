@@ -49,6 +49,20 @@ afterAll(async () => {
 });
 
 describe.skipIf(!present)("page_extract in a real browser", () => {
+    it("does not construct custom elements when reading table cells", async () => {
+        env.fixture.pages.set("/table-custom", html(`<table><tr><td><x-custom>Text</x-custom></td></tr></table>
+            <script>window.constructed = 0; customElements.define('x-custom', class extends HTMLElement {
+              constructor() { super(); window.constructed += 1; }
+            });</script>`));
+        const tab = await env.open("/table-custom");
+        const before = await env.ok("js_evaluate", { tab, expression: "window.constructed" });
+
+        await env.ok("page_extract", { tab, kinds: ["tables"] });
+        const after = await env.ok("js_evaluate", { tab, expression: "window.constructed" });
+
+        expect(after.value).toBe(before.value);
+    });
+
     it("extracts bounded table cells without form values", async () => {
         env.fixture.pages.set("/table", html(`<table><tr><th>Heading</th><td>Cell <input value="INPUT-SECRET"><textarea>TEXTAREA-SECRET</textarea><select><option>SELECT-SECRET</option></select></td></tr>${"<tr><td>row</td></tr>".repeat(25)}</table>`));
         const tab = await env.open("/table");

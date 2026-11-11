@@ -91,12 +91,31 @@ const PAGE_FUNCTION = `(kinds, limit, textChars, fieldLimit) => {
     out.tables = take(all("table"), (table) => {
       const rows = take(tableRows.call(table), (row) => {
         const cells = take(rowCells.call(row), (cell) => {
-          const copy = Node.prototype.cloneNode.call(cell, true);
-          for (const node of Element.prototype.querySelectorAll.call(copy, "input,textarea,select,script,style,table")) {
-            node.remove();
+          const walker = Document.prototype.createTreeWalker.call(document, cell, NodeFilter.SHOW_TEXT);
+          const chunks = [];
+          let length = 0;
+          let visited = 0;
+          let truncated = false;
+          while (walker.nextNode()) {
+            if (++visited > 10000) { truncated = true; break; }
+            const node = walker.currentNode;
+            let parent = node.parentElement;
+            let excluded = false;
+            while (parent && parent !== cell) {
+              if (["INPUT", "TEXTAREA", "SELECT", "SCRIPT", "STYLE", "TABLE"].includes(tagOf.call(parent))) {
+                excluded = true;
+                break;
+              }
+              parent = parent.parentElement;
+            }
+            if (excluded) continue;
+            const part = String(node.nodeValue || "");
+            chunks.push(part.slice(0, textChars + 1));
+            length += part.length;
+            if (length > textChars) { truncated = true; break; }
           }
-          const raw = String(copy.textContent || "").replace(/\\s+/g, " ").trim();
-          return { text: raw.slice(0, textChars), truncated: raw.length > textChars };
+          const raw = chunks.join(" ").replace(/\\s+/g, " ").trim();
+          return { text: raw.slice(0, textChars), truncated: truncated || raw.length > textChars };
         }, 20);
         return { cells: cells.items, total: cells.total, truncated: cells.total > cells.items.length };
       }, 20);
