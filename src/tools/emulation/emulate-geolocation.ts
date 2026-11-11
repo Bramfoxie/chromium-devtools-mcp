@@ -3,6 +3,7 @@ import { defineTool, type ToolContext } from "../define-tool.js";
 import { ensureNoDialog } from "../dialogs.js";
 import { ToolError } from "../errors.js";
 import { webOrigin } from "../../safety/index.js";
+import { logDaemon } from "../../util/log.js";
 import { throwIfCancelled } from "../registry.js";
 import { resolveTab, tabSchema } from "../tab-target.js";
 import { buildGeolocationCommands, buildGeolocationResetCommands } from "./commands.js";
@@ -121,6 +122,8 @@ export const emulateGeolocation = defineTool({
                     });
                 }
 
+                let undoFailed = false;
+
                 try {
                     await runSteps(context.access, context.signal, targetId, [
                         {
@@ -129,17 +132,26 @@ export const emulateGeolocation = defineTool({
                             ...(previous === undefined
                                 ? {}
                                 : { undo: buildGeolocationCommands(previous) }),
+                            undoFailed: () => { undoFailed = true; },
                         },
                     ]);
                 } catch (error) {
+                    if (undoFailed) logDaemon("could not restore geolocation after a failed reset");
+
                     if (release) {
                         try {
                             await context.access.setPermission({
                                 name: "geolocation", setting: "granted", origin: previous.origin,
                             });
                         } catch {
+                            logDaemon("could not restore a geolocation permission after a failed reset");
+
                             throw new ToolError("The geolocation reset failed and the previous permission could not be restored. Check the browser permissions and retry.");
                         }
+                    }
+
+                    if (undoFailed) {
+                        throw new ToolError("The geolocation reset failed and the previous geolocation could not be restored. Check the tab and retry.");
                     }
 
                     throw error;
