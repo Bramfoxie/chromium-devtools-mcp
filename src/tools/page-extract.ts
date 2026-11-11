@@ -9,6 +9,7 @@ import {
     extractExpression,
     type ExtractKind,
 } from "./page-extract-script.js";
+import { mainFrameId } from "./page-navigate-state.js";
 import { resolveTab, tabSchema } from "./tab-target.js";
 
 const EXTRACT_TIMEOUT_MS = 8000;
@@ -155,10 +156,27 @@ export const pageExtract = defineTool({
 
         await ensureNoDialog(context.dialogs, targetId);
 
+        const frameId = await mainFrameId(context, targetId);
+
+        if (frameId === undefined) throw new ToolError("The main frame is unavailable. Try the call again.");
+
+        const rawWorld = await context.access.send({
+            targetId,
+            method   : "Page.createIsolatedWorld",
+            params   : { frameId, worldName: "chromium-devtools-mcp-extract" },
+            timeoutMs: EXTRACT_TIMEOUT_MS,
+        });
+        const world = z.object({ executionContextId: z.number() }).safeParse(rawWorld);
+
+        if (!world.success) throw new ToolError("The page could not be read safely. Try the call again.");
+
         const raw = await context.access.send({
             targetId,
-            method   : "Runtime.evaluate",
-            params   : { expression: extractExpression(kinds, limit), returnByValue: true },
+            method: "Runtime.evaluate",
+            params: {
+                expression   : extractExpression(kinds, limit), returnByValue: true,
+                contextId    : world.data.executionContextId,
+            },
             timeoutMs: EXTRACT_TIMEOUT_MS,
         });
         const evaluated = evaluatedSchema.safeParse(raw);

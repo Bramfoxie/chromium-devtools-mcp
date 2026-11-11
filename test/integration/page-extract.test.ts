@@ -63,6 +63,22 @@ describe.skipIf(!present)("page_extract in a real browser", () => {
         expect(cells?.[1]?.truncated).toBe(true);
     });
 
+    it("does not invoke page overrides while reading table cells", async () => {
+        env.fixture.pages.set("/table-overrides", html(`<table><tr><td>Text</td></tr></table><script>
+            window.sideEffects = 0;
+            const original = Document.prototype.createTreeWalker;
+            Document.prototype.createTreeWalker = function(...args) {
+              window.sideEffects++; return original.apply(this, args);
+            };
+        </script>`));
+        const tab = await env.open("/table-overrides");
+
+        await env.ok("page_extract", { tab, kinds: ["tables"] });
+        const result = await env.ok("js_evaluate", { tab, expression: "window.sideEffects" });
+
+        expect(result.value).toBe(0);
+    });
+
     it("does not construct custom elements when reading table cells", async () => {
         env.fixture.pages.set("/table-custom", html(`<table><tr><td><x-custom>Text</x-custom></td></tr></table>
             <script>window.constructed = 0; customElements.define('x-custom', class extends HTMLElement {

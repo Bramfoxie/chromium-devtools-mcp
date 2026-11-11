@@ -12,6 +12,14 @@ const extra = () => ({ signal: new AbortController().signal }) as Extra;
 
 function setup(evaluate: unknown) {
     const fake = new FakeAccess({ evaluate: evaluate as never });
+
+    fake.respond = (_tab, method) => {
+        if (method === "Page.getFrameTree") return { frameTree: { frame: { id: "main" } } };
+        if (method === "Page.createIsolatedWorld") return { executionContextId: 1 };
+
+        return evaluate;
+    };
+
     const runtime = new ToolRuntime({ access: fake.asAccess(), config: managedConfig });
 
     return { fake, runtime };
