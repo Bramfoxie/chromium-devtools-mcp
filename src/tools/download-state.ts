@@ -162,11 +162,11 @@ export class DownloadState {
 
         if (found === undefined) return undefined;
 
+        found.delivered = true;
+
         if (found.state === "completed" && found.path === undefined) {
             await this.locate(state, found);
         }
-
-        found.delivered = true;
 
         return publicItem(found);
     }

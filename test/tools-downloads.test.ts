@@ -272,6 +272,31 @@ describe("DownloadState file lookup", () => {
 });
 
 describe("DownloadState concurrency", () => {
+    it("hands a completed download to only one concurrent waiter", async () => {
+        const fake = new FakeAccess();
+        let release: () => void = () => undefined;
+        const gate = new Promise<void>((resolve) => (release = resolve));
+        const value = new DownloadState(fake.asAccess(), {
+            list: async () => {
+                await gate;
+
+                return ["a.txt"];
+            },
+            size: async () => 1,
+        }, async () => undefined);
+
+        value.attach();
+        value.allow("tab1", "/d");
+        begin(fake, "a", "a.txt");
+        progress(fake, "a", "completed", 1, 1);
+        const first = value.next("tab1", 0, async () => undefined);
+        const second = value.next("tab1", 0, async () => undefined);
+
+        release();
+        expect((await first)?.id).toBe("a");
+        expect(await second).toBeUndefined();
+    });
+
     it("gives two downloads that finish together two different files", async () => {
         const fake = new FakeAccess();
         const value = new DownloadState(fake.asAccess(), {
