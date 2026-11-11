@@ -5,10 +5,46 @@ import { describe, expect, it } from "vitest";
 import { NO_SAFETY } from "../src/daemon/cdp-safety.js";
 import { SessionRegistry } from "../src/daemon/sessions.js";
 import { FakeBackend } from "./helpers/fake-backend.js";
+import { CdpProtocolError, CdpTimeoutError } from "../src/cdp/index.js";
 
 const ticket = "a".repeat(32);
 
 describe("upload preparation", () => {
+    it("removes the copy when the browser rejects the attachment", async () => {
+        const root = await mkdtemp(path.join(os.tmpdir(), "cdm-upload-session-"));
+        const allowed = path.join(root, "allowed");
+        const file = path.join(allowed, "sample.txt");
+        const backend = new FakeBackend();
+
+        try {
+            await mkdir(allowed);
+            await writeFile(file, "original");
+            const registry = new SessionRegistry<string>(backend, {
+                allowFocus: false, downloadsRoot: path.join(root, "artifacts"),
+            });
+            const session = await registry.open("a", () => undefined, {
+                isolated: false, clientName: "a", safety: { ...NO_SAFETY, uploadDirs: [allowed] },
+            });
+            const tab = await session.createTab("https://example.com/");
+
+            await session.send({ targetId: tab, method: "Runtime.evaluate", params: { expression: "1" } });
+            const browser = backend.sessions.get(tab);
+
+            if (browser === undefined) throw new Error("No browser session.");
+
+            browser.failure = new CdpProtocolError("DOM.setFileInputFiles", -32000, "Invalid node");
+            const copies = await session.prepareUploads({ ticket, files: [file] });
+
+            await expect(session.send({
+                targetId: tab, method: "DOM.setFileInputFiles", params: { nodeId: 1, files: [copies[0]?.path] },
+            })).rejects.toThrow();
+            await expect(stat(copies[0]?.path ?? "")).rejects.toThrow();
+            await session.close();
+        } finally {
+            await rm(root, { recursive: true, force: true });
+        }
+    });
+
     it("enforces read only mode and confirmation before copying", async () => {
         const backend = new FakeBackend();
         const registry = new SessionRegistry<string>(backend, { allowFocus: false, downloadsRoot: "/unused" });
@@ -52,9 +88,47 @@ describe("upload preparation", () => {
             await session.send({
                 targetId: tab, method: "DOM.setFileInputFiles", params: { nodeId: 1, files: [copy?.path] },
             });
+            await expect(session.send({
+                targetId: tab, method: "DOM.setFileInputFiles", params: { nodeId: 1, files: [copy?.path] },
+            })).rejects.toThrow("Prepare file attachments");
             await session.cancelUploads(ticket);
             await session.close();
             expect(await readFile(copy?.path ?? "", "utf8")).toBe("original");
+        } finally {
+            await rm(root, { recursive: true, force: true });
+        }
+    });
+
+    it("retains the copy if the attachment times out", async () => {
+        const root = await mkdtemp(path.join(os.tmpdir(), "cdm-upload-session-"));
+        const allowed = path.join(root, "allowed");
+        const file = path.join(allowed, "sample.txt");
+        const backend = new FakeBackend();
+
+        try {
+            await mkdir(allowed);
+            await writeFile(file, "original");
+            const registry = new SessionRegistry<string>(backend, {
+                allowFocus: false, downloadsRoot: path.join(root, "artifacts"),
+            });
+            const session = await registry.open("a", () => undefined, {
+                isolated: false, clientName: "a", safety: { ...NO_SAFETY, uploadDirs: [allowed] },
+            });
+            const tab = await session.createTab("https://example.com/");
+
+            await session.send({ targetId: tab, method: "Runtime.evaluate", params: { expression: "1" } });
+            const browser = backend.sessions.get(tab);
+
+            if (browser === undefined) throw new Error("No browser session.");
+
+            browser.failure = new CdpTimeoutError("DOM.setFileInputFiles", 100);
+            const copies = await session.prepareUploads({ ticket, files: [file] });
+
+            await expect(session.send({
+                targetId: tab, method: "DOM.setFileInputFiles", params: { nodeId: 1, files: [copies[0]?.path] },
+            })).rejects.toThrow();
+            await session.close();
+            expect(await readFile(copies[0]?.path ?? "", "utf8")).toBe("original");
         } finally {
             await rm(root, { recursive: true, force: true });
         }

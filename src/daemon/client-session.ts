@@ -25,6 +25,7 @@ import { checkUploadPaths, type UploadPathResolver } from "./upload-safety.js";
 import { prepareUploadCopies, type UploadCopies } from "./upload-copies.js";
 import { pinUploadRoots, type UploadRoot } from "./upload-roots.js";
 import { UploadSourceUnavailableError } from "./upload-source.js";
+import { CdpProtocolError } from "../cdp/index.js";
 
 const DETACH_GRACE_MS = 2000;
 
@@ -332,12 +333,13 @@ export class ClientSession {
         }
     }
 
-    private usePreparedUploads(files: unknown, consume = false): void {
-        if (this.safety.uploadDirs.length === 0) return;
-        if (Array.isArray(files) && files.length === 0) return;
+    private usePreparedUploads(files: unknown, consume = false): PreparedUpload | undefined {
+        if (this.safety.uploadDirs.length === 0) return undefined;
+        if (Array.isArray(files) && files.length === 0) return undefined;
 
         const entry = [...this.uploads.values()].find((candidate) =>
-            !candidate.cancelled && candidate.copies !== undefined && Array.isArray(files) &&
+            !candidate.cancelled && !candidate.consumed && candidate.copies !== undefined &&
+            Array.isArray(files) &&
             candidate.copies.files.length === files.length &&
             candidate.copies.files.every((file, index) => file.path === files[index]));
 
@@ -346,6 +348,8 @@ export class ClientSession {
         }
 
         if (consume) entry.consumed = true;
+
+        return entry;
     }
 
     async closeTab(targetId: string): Promise<void> {
@@ -441,6 +445,7 @@ export class ClientSession {
         await this.enforceSafety(targetId, tab, method, checked, frameId, confirmed);
 
         this.enterTrace(method, targetId);
+        let upload: PreparedUpload | undefined;
 
         try {
             const session = await this.frames.sessionFor(targetId, tab, frameId);
@@ -452,7 +457,7 @@ export class ClientSession {
                 : undefined;
 
             this.assertCurrent(targetId, tab);
-            if (method === "DOM.setFileInputFiles") this.usePreparedUploads(checked?.files, true);
+            if (method === "DOM.setFileInputFiles") upload = this.usePreparedUploads(checked?.files, true);
 
             const result = routed === undefined
                 ? await session.send(method, checked, timeoutMs)
@@ -467,6 +472,16 @@ export class ClientSession {
             return result;
         } catch (error) {
             if (method === "Tracing.start") this.traceLock.release(this);
+
+            if (error instanceof CdpProtocolError && upload !== undefined) {
+                const ticket = [...this.uploads.entries()]
+                    .find(([, entry]) => entry === upload)?.[0];
+
+                if (ticket !== undefined) {
+                    upload.consumed = false;
+                    await this.cancelUploads(ticket).catch(() => undefined);
+                }
+            }
 
             throw translate(error);
         }
