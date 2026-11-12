@@ -274,6 +274,20 @@ describe("page_navigate", () => {
         expect(fake.sent.some((call) => call.method === "Page.navigate")).toBe(false);
     });
 
+    it("rejects a URL for a non-URL action before sending a command", async () => {
+        const { fake, runtime } = setup();
+
+        await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+        const result = await runTool(pageNavigate, {
+            action: "stop", url: "https://example.org/",
+        }, extra(), runtime);
+
+        expect(result.isError).toBe(true);
+        expect(JSON.stringify(result)).toContain("url is only available for the url action");
+        expect(fake.sent.some((call) => call.method === "Page.stopLoading")).toBe(false);
+    });
+
     it("navigates to a url and waits for the load event of the new loader", async () => {
         const fake = new FakeAccess();
         const { clock } = trackingSleep();

@@ -22,7 +22,7 @@ export const pageNavigate = defineTool({
     input : z.strictObject({
         tab         : tabSchema,
         action      : z.enum(["url", "back", "forward", "reload", "stop", "history"]).optional().describe("What to do. Defaults to url."),
-        url         : z.string().min(1).max(2048).optional().describe("URL to open, http, https or about:blank. Required for the url action."),
+        url         : z.string().min(1).max(2048).optional().describe("URL to open, http, https or about:blank. Required for and only valid with the url action."),
         waitUntil   : waitUntilSchema.optional().describe("Wait for the load event, DOMContentLoaded, or return at once. Defaults to load."),
         timeoutMs   : z.number().int().min(1).max(NAVIGATE_MAX_TIMEOUT_MS).optional().describe(`How long to wait for the page. Defaults to ${NAVIGATE_DEFAULT_TIMEOUT_MS} ms.`),
         historyIndex: z.number().int().min(0).optional().describe("Entry index from page_history. Only for the history action."),
@@ -48,6 +48,10 @@ export const pageNavigate = defineTool({
         const targetId = resolveTab(args, context);
 
         const action = args.action ?? "url";
+
+        if (args.url !== undefined && action !== "url") {
+            throw new ToolError("url is only available for the url action.");
+        }
 
         if (action === "history" && args.historyIndex === undefined) {
             throw new ToolError("The history action needs a historyIndex from page_history.");
