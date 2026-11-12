@@ -46,7 +46,11 @@ export function toolAnnotations(tool: AnyTool): {
 }
 
 function raceWithSignal<T>(work: Promise<T>, signal: AbortSignal, message: string): Promise<T> {
-    if (signal.aborted) return Promise.reject(new ToolError(message));
+    if (signal.aborted) {
+        void work.then(undefined, () => {});
+
+        return Promise.reject(new ToolError(message));
+    }
 
     return new Promise<T>((resolve, reject) => {
         const onAbort = () => reject(new ToolError(message));
