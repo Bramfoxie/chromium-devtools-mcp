@@ -324,6 +324,35 @@ describe("storage_write", () => {
         expect(textOf(result)).toContain("after 1 of 3 were applied");
     });
 
+    it("directs callers to storage after a cancelled write", async () => {
+        const { fake, runtime } = setup();
+        const controller = new AbortController();
+
+        fake.respond = (tab, method) => {
+            if (method === "Runtime.evaluate") return { result: { value: "https://a.example/p" } };
+
+            if (method === "Network.setCookie") {
+                controller.abort();
+
+                return { success: true };
+            }
+
+            return {};
+        };
+
+        const result = await runTool(
+            storageWrite,
+            { kind: "cookies", action: "set", cookies: [{ name: "a", value: "secret" }] },
+            { signal: controller.signal } as Extra,
+            runtime,
+        );
+
+        expect(result.isError).toBe(true);
+        expect(textOf(result)).toContain("storage_read");
+        expect(textOf(result)).toContain("may already have been applied");
+        expect(textOf(result)).not.toContain("secret");
+    });
+
     it.each(["set", "remove"] as const)("reports partial cookie %s failures without browser details", async (action) => {
         const { fake, runtime } = setup();
         let calls = 0;

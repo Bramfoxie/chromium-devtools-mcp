@@ -77,19 +77,20 @@ export interface ToolDefinition<
     TInputSchema extends z.ZodType = z.ZodType,
     TOutputSchema extends z.ZodType = z.ZodType,
 > {
-    name         : string;
-    description  : string;
-    closedWorld? : boolean;
-    untrusted?   : boolean;
-    access       : ToolAccess;
-    dangerous?   : boolean | ((args: z.output<TInputSchema>) => boolean);
-    summarize?   : (args: z.output<TInputSchema>) => string;
-    tabUrlExempt?: boolean | ((args: z.output<TInputSchema>) => boolean);
-    input        : TInputSchema;
-    output       : TOutputSchema;
-    announced?   : z.ZodType;
-    target?      : (args: z.output<TInputSchema>) => SafetyTarget | undefined;
-    present?     : (output: z.output<TOutputSchema>) => CallToolResult;
+    name             : string;
+    description      : string;
+    closedWorld?     : boolean;
+    untrusted?       : boolean;
+    access           : ToolAccess;
+    dangerous?       : boolean | ((args: z.output<TInputSchema>) => boolean);
+    summarize?       : (args: z.output<TInputSchema>) => string;
+    tabUrlExempt?    : boolean | ((args: z.output<TInputSchema>) => boolean);
+    cancelledMessage?: string;
+    input            : TInputSchema;
+    output           : TOutputSchema;
+    announced?       : z.ZodType;
+    target?          : (args: z.output<TInputSchema>) => SafetyTarget | undefined;
+    present?         : (output: z.output<TOutputSchema>) => CallToolResult;
     handler    : (
         args   : z.output<TInputSchema>,
         context: ToolContext,

@@ -141,6 +141,8 @@ export const storageWrite = defineTool({
         "Write local storage, session storage or cookies of the page origin. Values are never echoed back.",
     access   : "mutate",
     dangerous: true,
+    cancelledMessage:
+        "The request was cancelled while the tool was running, so its change may already have been applied. Check the storage with storage_read before calling the tool again.",
     summarize: (args) => `It will ${args.action} ${args.kind} of the page origin.`,
     input    : z.strictObject({
         tab    : tabSchema,
