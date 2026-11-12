@@ -130,6 +130,8 @@ describe("parseListeningUrl", () => {
         "ws://127.0.0.1:9222/devtools/page/id",
         "ws://user:secret@127.0.0.1:9222/devtools/browser/id",
         "ws://127.0.0.1:9222/devtools/browser/id?token=secret",
+        "ws://127.0.0.1:9222/devtools/browser/id?",
+        "ws://127.0.0.1:9222/devtools/browser/id#",
         "ws://127.0.0.1:9222/devtools/browser/",
         "ws://127.0.0.1:0/devtools/browser/id",
     ])("rejects an unsafe listening URL %s", (url) => {

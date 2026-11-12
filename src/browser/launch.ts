@@ -57,7 +57,8 @@ export function parseListeningUrl(
     for (const match of output.matchAll(LISTENING_PATTERN)) {
         const webSocketUrl = match[1];
 
-        if (webSocketUrl === undefined || !isValidWsEndpoint(webSocketUrl)) continue;
+        if (webSocketUrl === undefined || webSocketUrl.includes("?") ||
+            webSocketUrl.includes("#") || !isValidWsEndpoint(webSocketUrl)) continue;
 
         const port = Number(new URL(webSocketUrl).port || 80);
 
