@@ -18,7 +18,6 @@ const UID_PATTERN = /^(\d+)_(\d+)$/;
 
 interface TabElements {
     generation: number;
-    counter   : number;
     uids      : Map<string, ElementNode>;
     byNode    : Map<string, string>;
 }
@@ -33,6 +32,7 @@ export class ElementRegistry {
     private readonly tabs = new Map<string, TabElements>();
     private generationFloor = 0;
     private highestGeneration = 0;
+    private nextUid = 0;
 
     generation(tab: string): number {
         return this.state(tab).generation;
@@ -43,7 +43,6 @@ export class ElementRegistry {
 
         state.generation += 1;
         this.highestGeneration = Math.max(this.highestGeneration, state.generation);
-        state.counter = 0;
         state.uids.clear();
         state.byNode.clear();
 
@@ -68,8 +67,8 @@ export class ElementRegistry {
                 state.uids.delete(oldest.value);
             }
 
-            state.counter += 1;
-            const uid = `${state.generation}_${state.counter}`;
+            this.nextUid += 1;
+            const uid = `${state.generation}_${this.nextUid}`;
 
             state.uids.set(uid, { ...node });
             state.byNode.set(key, uid);
@@ -138,7 +137,6 @@ export class ElementRegistry {
         if (!state) {
             state = {
                 generation: this.generationFloor,
-                counter   : 0,
                 uids      : new Map(),
                 byNode    : new Map(),
             };

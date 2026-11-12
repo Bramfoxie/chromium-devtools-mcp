@@ -57,6 +57,16 @@ describe("elementTargetSchema", () => {
 });
 
 describe("ElementRegistry", () => {
+    it("does not resolve an ID from a different tab", () => {
+        const elements = new ElementRegistry();
+        const [first] = elements.assign("tab1", [{ backendNodeId: 1 }]);
+        const [second] = elements.assign("tab2", [{ backendNodeId: 2 }]);
+
+        expect(first).not.toBe(second);
+        expect(elements.lookup("tab2", first ?? "")).toBeUndefined();
+        expect(elements.lookup("tab1", second ?? "")).toBeUndefined();
+    });
+
     it.each(["forget", "reset"])("does not reuse an old UID after %s", (action) => {
         const elements = new ElementRegistry();
 
@@ -106,10 +116,10 @@ describe("ElementRegistry", () => {
         elements.nextGeneration("tab1");
         elements.assign("tab1", [{ backendNodeId: 1 }]);
         elements.nextGeneration("tab1");
-        elements.assign("tab1", [{ backendNodeId: 2 }]);
+        const [fresh] = elements.assign("tab1", [{ backendNodeId: 2 }]);
 
         expect(elements.lookup("tab1", "1_1")).toBeUndefined();
-        expect(elements.lookup("tab1", "2_1")).toEqual({ backendNodeId: 2 });
+        expect(elements.lookup("tab1", fresh ?? "")).toEqual({ backendNodeId: 2 });
     });
 
     it("reports unknown tabs, unknown uids and malformed uids as stale", () => {
