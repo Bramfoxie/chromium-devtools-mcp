@@ -465,6 +465,29 @@ describe("storage_write", () => {
         expect(reads).toBe(2);
     });
 
+    it.each(["set", "remove"] as const)("reports completed cookie %s requests when the final count fails", async (action) => {
+        const { fake, runtime } = setup();
+
+        fake.respond = (tab, method) => {
+            if (method === "Runtime.evaluate") return { result: { value: "https://a.example/p" } };
+            if (method === "Network.getCookies") throw new Error("private browser details");
+            if (method === "Network.setCookie") return { success: true };
+
+            return {};
+        };
+
+        const args = action === "set"
+            ? { kind: "cookies", action, cookies: [{ name: "a", value: "secret" }] }
+            : { kind: "cookies", action, remove: [{ name: "a" }] };
+        const result = await runTool(storageWrite, args, extra(), runtime);
+
+        expect(result.isError).toBe(true);
+        expect(textOf(result)).toContain("1 of 1");
+        expect(textOf(result)).toContain("Read the storage");
+        expect(textOf(result)).not.toContain("private browser details");
+        expect(textOf(result)).not.toContain("secret");
+    });
+
     it("reports completed cookie deletions when the final count fails", async () => {
         const { fake, runtime } = setup();
         let reads = 0;

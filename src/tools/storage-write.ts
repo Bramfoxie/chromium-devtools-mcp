@@ -122,6 +122,19 @@ async function cookieCount(access: DaemonAccess, targetId: string): Promise<numb
     return parsed.data.cookies.length;
 }
 
+async function cookieCountAfterWrite(
+    access  : DaemonAccess,
+    targetId: string,
+    applied : number,
+    total   : number,
+): Promise<number> {
+    return cookieCount(access, targetId).catch(() => {
+        throw new ToolError(
+            `${applied} of ${total} cookie requests completed, but the browser could not report the remaining cookies. Read the storage to see its current state.`,
+        );
+    });
+}
+
 export const storageWrite = defineTool({
     name: "storage_write",
     description:
@@ -402,7 +415,7 @@ async function writeCookies(
             applied += 1;
         }
 
-        const remaining = await cookieCount(access, targetId);
+        const remaining = await cookieCountAfterWrite(access, targetId, applied, cookies.length);
 
         return {
             tab    : targetId,
@@ -443,7 +456,7 @@ async function writeCookies(
             applied += 1;
         }
 
-        const remaining = await cookieCount(access, targetId);
+        const remaining = await cookieCountAfterWrite(access, targetId, applied, cookies.length);
 
         return {
             tab    : targetId,
@@ -493,11 +506,7 @@ async function writeCookies(
         applied += 1;
     }
 
-    const remaining = await cookieCount(access, targetId).catch(() => {
-        throw new ToolError(
-            `${applied} of ${scoped.length} cookie deletion requests completed, but the browser could not report the remaining cookies. Read the storage to see its current state.`,
-        );
-    });
+    const remaining = await cookieCountAfterWrite(access, targetId, applied, scoped.length);
 
     return {
         tab    : targetId,
