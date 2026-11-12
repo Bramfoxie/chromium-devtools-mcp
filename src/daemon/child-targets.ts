@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { CdpClient, CdpSession } from "../cdp/index.js";
-import { CdpClosedError, CdpProtocolError, CdpSessionDetachedError } from "../cdp/index.js";
+import { CdpClosedError, CdpProtocolError, CdpSessionDetachedError, CdpTimeoutError } from "../cdp/index.js";
 import {
     MAX_CHILD_ATTACH_DEPTH,
     MAX_CHILD_SESSIONS_PER_TAB,
@@ -283,9 +283,17 @@ export class ChildTargets implements ChildSessionHandle {
             }
         } finally {
             if (waiting) {
-                await this.deps
-                    .send(adopted, "Runtime.runIfWaitingForDebugger", {}, CHILD_AUTO_ATTACH_TIMEOUT_MS)
-                    .catch((error: unknown) => this.deps.log(`could not resume an iframe: ${describeError(error)}`));
+                try {
+                    await this.deps.send(adopted, "Runtime.runIfWaitingForDebugger", {}, CHILD_AUTO_ATTACH_TIMEOUT_MS);
+                } catch (error) {
+                    if (error instanceof CdpTimeoutError && !this.closed &&
+                        this.known.get(known.child.sessionId) === known) {
+                        await this.deps.send(adopted, "Runtime.runIfWaitingForDebugger", {}, CHILD_AUTO_ATTACH_TIMEOUT_MS)
+                            .catch((retryError: unknown) => this.deps.log(`could not resume an iframe: ${describeError(retryError)}`));
+                    } else {
+                        this.deps.log(`could not resume an iframe: ${describeError(error)}`);
+                    }
+                }
             }
         }
     }
