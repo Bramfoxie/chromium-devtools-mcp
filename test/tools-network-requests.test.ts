@@ -1,6 +1,6 @@
 import type { RequestHandlerExtra } from "@modelcontextprotocol/sdk/shared/protocol.js";
 import type { ServerNotification, ServerRequest } from "@modelcontextprotocol/sdk/types.js";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { networkFilterOf, networkHar, networkRequests, newTab, runTool, ToolRuntime } from "../src/tools/index.js";
 import { FakeAccess } from "./helpers/fake-access.js";
 import { managedConfig } from "./helpers/daemon-env.js";
@@ -135,6 +135,38 @@ describe("network_har", () => {
         ]);
     });
 
+    it("keeps newer requests when overlapping HAR saves finish out of order", async () => {
+        const resumes: Array<() => void> = [];
+        const artifacts = {
+            write: () => new Promise<{ path: string; bytes: number }>((resolve) => {
+                resumes.push(() => resolve({ path: "/tmp/network.har", bytes: 1 }));
+            }),
+            directory: () => Promise.reject(new Error("not used")),
+        };
+        const { fake, runtime } = setup(undefined, artifacts);
+
+        await runTool(newTab, {}, extra(), runtime);
+        await runTool(networkRequests, {}, extra(), runtime);
+        fake.emit("cdp.event", requestEvent("tab1", "r1", "https://a.example/first"));
+        const first = runTool(networkHar, { clear: true }, extra(), runtime);
+
+        await vi.waitFor(() => expect(resumes).toHaveLength(1));
+        fake.emit("cdp.event", requestEvent("tab1", "r2", "https://a.example/second"));
+        const second = runTool(networkHar, { clear: true }, extra(), runtime);
+
+        await vi.waitFor(() => expect(resumes).toHaveLength(2));
+        fake.emit("cdp.event", requestEvent("tab1", "r3", "https://a.example/third"));
+        resumes[1]?.();
+        await second;
+        resumes[0]?.();
+        await first;
+        const result = await runTool(networkRequests, {}, extra(), runtime);
+
+        expect(result.structuredContent?.requests).toEqual([
+            expect.objectContaining({ requestId: "r3" }),
+        ]);
+    });
+
     it.each(["clear", "reset"] as const)("preserves a newer capture after %s during a save", async (action) => {
         let resume: (() => void) | undefined;
         let markStarted: (() => void) | undefined;
@@ -172,6 +204,43 @@ describe("network_har", () => {
 
         expect(result.structuredContent?.requests).toEqual([
             expect.objectContaining({ requestId: "r2" }),
+        ]);
+    });
+
+    it("reports evictions that happen while saving a HAR", async () => {
+        let resume: (() => void) | undefined;
+        let markStarted: (() => void) | undefined;
+        const pending = new Promise<void>((resolve) => { resume = resolve; });
+        const started = new Promise<void>((resolve) => { markStarted = resolve; });
+        const artifacts = {
+            write: async () => {
+                markStarted?.();
+                await pending;
+
+                return { path: "/tmp/network.har", bytes: 1 };
+            },
+            directory: () => Promise.reject(new Error("not used")),
+        };
+        const { fake, runtime } = setup(undefined, artifacts);
+
+        await runTool(newTab, {}, extra(), runtime);
+        await runTool(networkRequests, {}, extra(), runtime);
+
+        for (let index = 0; index < 2000; index += 1) {
+            fake.emit("cdp.event", requestEvent("tab1", `r${index}`, "https://a.example/data"));
+        }
+
+        const saving = runTool(networkHar, { clear: true }, extra(), runtime);
+
+        await started;
+        fake.emit("cdp.event", requestEvent("tab1", "latest", "https://a.example/latest"));
+        resume?.();
+        await saving;
+        const result = await runTool(networkRequests, {}, extra(), runtime);
+
+        expect(result.structuredContent?.droppedCount).toBe(1);
+        expect(result.structuredContent?.requests).toEqual([
+            expect.objectContaining({ requestId: "latest" }),
         ]);
     });
 
