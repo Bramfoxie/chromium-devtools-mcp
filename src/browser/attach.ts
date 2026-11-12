@@ -94,6 +94,8 @@ async function endpointInDir(
     try {
         content = await deps.readFile(file);
     } catch (error) {
+        if (signal?.aborted) return undefined;
+
         const denied = isAccessDenied(error) ? file : undefined;
 
         onProblem?.(`Cannot read ${file}: ${messageOf(error)}`, denied);
@@ -101,7 +103,7 @@ async function endpointInDir(
         return undefined;
     }
 
-    if (content === undefined) return undefined;
+    if (signal?.aborted || content === undefined) return undefined;
 
     const parsed = parseActivePortFile(content);
 
@@ -111,7 +113,11 @@ async function endpointInDir(
         return undefined;
     }
 
-    if (await deps.isPortOpen(parsed.port, signal).catch(() => false)) {
+    const open = await deps.isPortOpen(parsed.port, signal).catch(() => false);
+
+    if (signal?.aborted) return undefined;
+
+    if (open) {
         return { ...parsed, source: "port-file" };
     }
 
@@ -137,6 +143,7 @@ export async function resolveAttachEndpoint(
 ): Promise<AttachEndpoint | undefined> {
     const fromFile = await portFileEndpoint(deps, config.browser, signal, onProblem);
 
+    if (signal?.aborted) return undefined;
     if (fromFile) return fromFile;
 
     let version: unknown;
@@ -218,6 +225,26 @@ export function accessDeniedInstructions(
     ].join("\n");
 }
 
+async function discoveryOrAbort(
+    discovery: Promise<AttachEndpoint | undefined>,
+    signal?  : AbortSignal,
+): Promise<AttachEndpoint | undefined> {
+    if (signal === undefined) return discovery;
+
+    let onAbort: () => void = () => undefined;
+    const aborted = new Promise<undefined>((resolve) => {
+        onAbort = () => resolve(undefined);
+        signal.addEventListener("abort", onAbort, { once: true });
+        if (signal.aborted) onAbort();
+    });
+
+    try {
+        return await Promise.race([discovery, aborted]);
+    } finally {
+        signal.removeEventListener("abort", onAbort);
+    }
+}
+
 export async function attachBrowser(
     config   : AttachConfig,
     overrides: Partial<AttachDeps> = {},
@@ -228,6 +255,8 @@ export async function attachBrowser(
     const reported = new Set<string>();
     let deniedFile: string | undefined;
     const onProblem: ProblemReporter = (message, denied) => {
+        if (signal?.aborted) return;
+
         deniedFile = denied;
 
         if (reported.has(message)) return;
@@ -239,7 +268,9 @@ export async function attachBrowser(
     while (!signal?.aborted) {
         deniedFile = undefined;
 
-        const endpoint = await resolveAttachEndpoint(config, deps, signal, onProblem);
+        const endpoint = await discoveryOrAbort(
+            resolveAttachEndpoint(config, deps, signal, onProblem), signal,
+        );
 
         if (signal?.aborted) break;
 

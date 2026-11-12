@@ -422,6 +422,101 @@ describe("attachBrowser", () => {
         );
     });
 
+    it("cancels promptly while the port file read is pending", async () => {
+        const controller = new AbortController();
+        let release: (content: string) => void = () => undefined;
+        const readFile = () => new Promise<string>((resolve) => (release = resolve));
+        const isPortOpen = vi.fn(async () => true);
+        const fetchVersion = vi.fn(async () => undefined);
+        const { value } = deps({}, { readFile, isPortOpen, fetchVersion });
+        const attempt = attachBrowser(config, value, controller.signal).catch(
+            (error: unknown) => error,
+        );
+
+        controller.abort();
+        const outcome = await Promise.race([
+            attempt,
+            new Promise<"still waiting">((resolve) => setTimeout(() => resolve("still waiting"), 300)),
+        ]);
+
+        release(fileContent);
+        await attempt;
+        await new Promise((resolve) => setImmediate(resolve));
+        expect(outcome).toBeInstanceOf(AttachError);
+        expect(isPortOpen).not.toHaveBeenCalled();
+        expect(fetchVersion).not.toHaveBeenCalled();
+    });
+
+    it("does not report a late port file error after cancellation", async () => {
+        const controller = new AbortController();
+        let reject: (error: Error) => void = () => undefined;
+        const readFile = () => new Promise<string>((_resolve, fail) => (reject = fail));
+        const fetchVersion = vi.fn(async () => undefined);
+        const { value, logs } = deps({}, { readFile, fetchVersion });
+        const attempt = attachBrowser(config, value, controller.signal).catch(
+            (error: unknown) => error,
+        );
+
+        controller.abort();
+        const outcome = await Promise.race([
+            attempt,
+            new Promise<"still waiting">((resolve) => setTimeout(() => resolve("still waiting"), 300)),
+        ]);
+
+        reject(new Error("late read error"));
+        await attempt;
+        await new Promise((resolve) => setImmediate(resolve));
+        expect(outcome).toBeInstanceOf(AttachError);
+        expect(fetchVersion).not.toHaveBeenCalled();
+        expect(logs).toEqual([]);
+    });
+
+    it.each(["port", "version"] as const)("cancels while the %s probe is pending", async (phase) => {
+        const controller = new AbortController();
+        let release: () => void = () => undefined;
+        let started: () => void = () => undefined;
+        const gate = new Promise<void>((resolve) => (release = resolve));
+        const entered = new Promise<void>((resolve) => (started = resolve));
+        const isPortOpen = vi.fn(async () => {
+            if (phase === "port") {
+                started();
+                await gate;
+            }
+
+            return false;
+        });
+        const fetchVersion = vi.fn(async () => {
+            if (phase === "version") {
+                started();
+                await gate;
+            }
+
+            return version;
+        });
+        const { value, logs } = deps(
+            phase === "port" ? { files: { [portFile]: fileContent } } : {},
+            { isPortOpen, fetchVersion },
+        );
+        const attempt = attachBrowser(config, value, controller.signal).catch(
+            (error: unknown) => error,
+        );
+
+        await entered;
+        controller.abort();
+        const outcome = await Promise.race([
+            attempt,
+            new Promise<"still waiting">((resolve) => setTimeout(() => resolve("still waiting"), 300)),
+        ]);
+
+        release();
+        await attempt;
+        await new Promise((resolve) => setImmediate(resolve));
+        expect(outcome).toBeInstanceOf(AttachError);
+        if (phase === "port") expect(fetchVersion).not.toHaveBeenCalled();
+
+        expect(logs).toEqual([]);
+    });
+
     it("passes the abort signal to the probes and the sleep", async () => {
         const controller = new AbortController();
         const seen = {
