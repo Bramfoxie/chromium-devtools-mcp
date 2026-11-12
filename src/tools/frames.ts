@@ -94,10 +94,15 @@ export class FrameState {
         const state = this.state(tab);
 
         if (!state.ensured) {
+            let initial: DaemonFrame[] | undefined;
+
             try {
-                this.replace(tab, await this.access.listFrames(tab));
+                initial = await this.access.listFrames(tab);
             } catch {
             }
+
+            this.assertCurrent(tab, state);
+            if (initial !== undefined) this.replace(tab, initial);
 
             state.ensured = true;
         }
@@ -106,6 +111,7 @@ export class FrameState {
             if (state.subscribed.has(event)) continue;
 
             await this.access.subscribe(tab, event);
+            this.assertCurrent(tab, state);
             state.subscribed.add(event);
         }
     }
@@ -127,8 +133,10 @@ export class FrameState {
     }
 
     async refresh(tab: string): Promise<FrameInfo[]> {
+        const state = this.state(tab);
         const frames = await this.access.listFrames(tab);
 
+        this.assertCurrent(tab, state);
         this.replace(tab, frames);
 
         return this.framesOf(tab);
@@ -227,6 +235,12 @@ export class FrameState {
         }
 
         return state;
+    }
+
+    private assertCurrent(tab: string, state: TabFrames): void {
+        if (this.tabs.get(tab) !== state) {
+            throw new ToolError("The tab closed or the session reset while loading frames.");
+        }
     }
 
     private replace(tab: string, frames: DaemonFrame[]): void {

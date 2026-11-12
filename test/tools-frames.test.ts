@@ -32,6 +32,74 @@ function emit(
 }
 
 describe("FrameState", () => {
+    it.each(["forget", "reset"])("rejects a late refresh after %s", async (action) => {
+        const { fake, frames } = setup();
+
+        await frames.ensure("tab1");
+        const list = fake.listFrames.bind(fake);
+        let release: () => void = () => undefined;
+        const gate = new Promise<void>((resolve) => (release = resolve));
+
+        fake.listFrames = async (tab) => {
+            const result = await list(tab);
+
+            await gate;
+
+            return result;
+        };
+
+        const pending = frames.refresh("tab1");
+
+        if (action === "forget") frames.forget("tab1");
+        else frames.reset();
+
+        release();
+        await expect(pending).rejects.toThrow("The tab closed or the session reset while loading frames.");
+        expect(frames.framesOf("tab1")).toEqual([]);
+    });
+
+    it.each(["forget", "reset"])("rejects a late frame subscription after %s", async (action) => {
+        const { fake, frames } = setup();
+        let release: () => void = () => undefined;
+        const gate = new Promise<void>((resolve) => (release = resolve));
+
+        fake.subscribe = async () => gate;
+        const pending = frames.ensure("tab1");
+
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        if (action === "forget") frames.forget("tab1");
+        else frames.reset();
+
+        release();
+        await expect(pending).rejects.toThrow("The tab closed or the session reset while loading frames.");
+        expect(frames.framesOf("tab1")).toEqual([]);
+    });
+
+    it.each(["forget", "reset"])("rejects a late frame tree after %s", async (action) => {
+        const { fake, frames } = setup();
+        const list = fake.listFrames.bind(fake);
+        let release: () => void = () => undefined;
+        const gate = new Promise<void>((resolve) => (release = resolve));
+
+        fake.listFrames = async (tab) => {
+            const result = await list(tab);
+
+            await gate;
+
+            return result;
+        };
+
+        const pending = frames.ensure("tab1");
+
+        if (action === "forget") frames.forget("tab1");
+        else frames.reset();
+
+        release();
+        await expect(pending).rejects.toThrow("The tab closed or the session reset while loading frames.");
+        expect(frames.framesOf("tab1")).toEqual([]);
+        expect(fake.subscribed).toEqual([]);
+    });
+
     it("loads the frame tree and subscribes to frame events once", async () => {
         const { fake, frames } = setup();
 
