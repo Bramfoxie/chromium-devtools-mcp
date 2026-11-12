@@ -107,9 +107,14 @@ export class CaptureManager {
 
         if (capture.consoleEnabled) return;
 
-        for (const event of CONSOLE_EVENTS) await this.access.subscribe(tab, event);
+        const subscribed: string[] = [];
 
         try {
+            for (const event of CONSOLE_EVENTS) {
+                await this.access.subscribe(tab, event);
+                subscribed.push(event);
+            }
+
             await this.access.send({
                 targetId: tab,
                 method  : "Runtime.enable",
@@ -121,7 +126,7 @@ export class CaptureManager {
                 params  : {},
             });
         } catch (error) {
-            for (const event of CONSOLE_EVENTS) {
+            for (const event of subscribed) {
                 await this.access.unsubscribe(tab, event).catch(() => undefined);
             }
 
@@ -136,16 +141,21 @@ export class CaptureManager {
 
         if (capture.networkEnabled) return;
 
-        for (const event of NETWORK_EVENTS) await this.access.subscribe(tab, event);
+        const subscribed: string[] = [];
 
         try {
+            for (const event of NETWORK_EVENTS) {
+                await this.access.subscribe(tab, event);
+                subscribed.push(event);
+            }
+
             await this.access.send({
                 targetId: tab,
                 method  : "Network.enable",
                 params  : {},
             });
         } catch (error) {
-            for (const event of NETWORK_EVENTS) {
+            for (const event of subscribed) {
                 await this.access.unsubscribe(tab, event).catch(() => undefined);
             }
 
