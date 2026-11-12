@@ -94,16 +94,19 @@ export class DownloadState {
     }
 
     async subscribe(tab: string): Promise<void> {
+        const state = this.state(tab);
         const done = this.subscribed.get(tab) ?? new Set<string>();
+
+        this.subscribed.set(tab, done);
 
         for (const event of EVENTS) {
             if (done.has(event)) continue;
 
             await this.access.subscribe(tab, event);
+            if (this.tabs.get(tab) !== state) return;
+
             done.add(event);
         }
-
-        this.subscribed.set(tab, done);
     }
 
     allow(tab: string, directory: string): void {

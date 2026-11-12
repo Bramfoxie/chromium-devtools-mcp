@@ -415,6 +415,33 @@ describe("DownloadState file lookup", () => {
 });
 
 describe("DownloadState concurrency", () => {
+    it("does not retain stale subscriptions after a reset", async () => {
+        const fake = new FakeAccess();
+        const events: string[] = [];
+        let release: () => void = () => undefined;
+        let first = true;
+        const gate = new Promise<void>((resolve) => (release = resolve));
+
+        fake.subscribe = async (_tab, event) => {
+            events.push(event);
+
+            if (first) {
+                first = false;
+                await gate;
+            }
+        };
+
+        const value = new DownloadState(fake.asAccess());
+        const pending = value.subscribe("tab1");
+
+        value.reset();
+        release();
+        await pending;
+        events.length = 0;
+        await value.subscribe("tab1");
+        expect(events).toEqual(["Page.downloadWillBegin", "Page.downloadProgress"]);
+    });
+
     it("finds a queued download in the directory where it began", async () => {
         const fake = new FakeAccess();
         let release: () => void = () => undefined;
