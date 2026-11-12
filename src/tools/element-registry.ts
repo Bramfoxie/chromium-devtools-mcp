@@ -31,6 +31,8 @@ function nodeKeyOf(node: ElementNode | undefined): string {
 
 export class ElementRegistry {
     private readonly tabs = new Map<string, TabElements>();
+    private generationFloor = 0;
+    private highestGeneration = 0;
 
     generation(tab: string): number {
         return this.state(tab).generation;
@@ -40,6 +42,7 @@ export class ElementRegistry {
         const state = this.state(tab);
 
         state.generation += 1;
+        this.highestGeneration = Math.max(this.highestGeneration, state.generation);
         state.counter = 0;
         state.uids.clear();
         state.byNode.clear();
@@ -115,18 +118,30 @@ export class ElementRegistry {
     }
 
     forget(tab: string): void {
-        this.tabs.delete(tab);
+        if (this.tabs.delete(tab)) this.advanceFloor();
     }
 
     reset(): void {
+        if (this.tabs.size > 0) this.advanceFloor();
+
         this.tabs.clear();
+    }
+
+    private advanceFloor(): void {
+        this.generationFloor = this.highestGeneration + 1;
+        this.highestGeneration = this.generationFloor;
     }
 
     private state(tab: string): TabElements {
         let state = this.tabs.get(tab);
 
         if (!state) {
-            state = { generation: 0, counter: 0, uids: new Map(), byNode: new Map() };
+            state = {
+                generation: this.generationFloor,
+                counter   : 0,
+                uids      : new Map(),
+                byNode    : new Map(),
+            };
             this.tabs.set(tab, state);
         }
 
