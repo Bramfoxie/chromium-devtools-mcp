@@ -101,6 +101,14 @@ export class FrameState {
     async ensure(tab: string): Promise<void> {
         const state = this.state(tab);
 
+        for (const event of FRAME_EVENTS) {
+            if (state.subscribed.has(event)) continue;
+
+            await this.access.subscribe(tab, event);
+            this.assertCurrent(tab, state);
+            state.subscribed.add(event);
+        }
+
         if (!state.ensured) {
             try {
                 await this.discover(tab, state);
@@ -111,14 +119,6 @@ export class FrameState {
 
             this.assertCurrent(tab, state);
             state.ensured = true;
-        }
-
-        for (const event of FRAME_EVENTS) {
-            if (state.subscribed.has(event)) continue;
-
-            await this.access.subscribe(tab, event);
-            this.assertCurrent(tab, state);
-            state.subscribed.add(event);
         }
     }
 

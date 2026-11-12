@@ -32,6 +32,30 @@ function emit(
 }
 
 describe("FrameState", () => {
+    it("observes frame navigation during the initial tree read", async () => {
+        const { fake, frames } = setup();
+        const list = fake.listFrames.bind(fake);
+        let first = true;
+
+        fake.listFrames = async (tab) => {
+            const result = await list(tab);
+
+            if (first) {
+                first = false;
+                fake.frames[0] = { frameId: "main", url: "https://new.example/", name: "", isolated: false };
+
+                if (fake.subscribed.some((item) => item.event === "Page.frameNavigated")) {
+                    emit(fake, "Page.frameNavigated", { frame: { id: "main", url: "https://new.example/" } });
+                }
+            }
+
+            return result;
+        };
+
+        await frames.ensure("tab1");
+        expect(frames.frameOf("tab1", "main")?.url).toBe("https://new.example/");
+    });
+
     it("stops retrying when frame events keep changing the tree", async () => {
         const { fake, frames } = setup();
         const list = fake.listFrames.bind(fake);
@@ -182,11 +206,14 @@ describe("FrameState", () => {
         const { fake, frames } = setup();
         const list = fake.listFrames.bind(fake);
         let release: () => void = () => undefined;
+        let signalStarted: () => void = () => undefined;
         const gate = new Promise<void>((resolve) => (release = resolve));
+        const started = new Promise<void>((resolve) => (signalStarted = resolve));
 
         fake.listFrames = async (tab) => {
             const result = await list(tab);
 
+            signalStarted();
             await gate;
 
             return result;
@@ -194,13 +221,14 @@ describe("FrameState", () => {
 
         const pending = frames.ensure("tab1");
 
+        await started;
         if (action === "forget") frames.forget("tab1");
         else frames.reset();
 
         release();
         await expect(pending).rejects.toThrow("The tab closed or the session reset while loading frames.");
         expect(frames.framesOf("tab1")).toEqual([]);
-        expect(fake.subscribed).toEqual([]);
+        expect(fake.subscribed).toHaveLength(FRAME_EVENTS.length);
     });
 
     it("loads the frame tree and subscribes to frame events once", async () => {
