@@ -32,6 +32,55 @@ function emit(
 }
 
 describe("FrameState", () => {
+    it("stops retrying when frame events keep changing the tree", async () => {
+        const { fake, frames } = setup();
+        const list = fake.listFrames.bind(fake);
+        let calls = 0;
+
+        fake.listFrames = async (tab) => {
+            calls += 1;
+            const result = await list(tab);
+
+            emit(fake, "Page.frameNavigated", { frame: { id: "main", url: "https://new.example/" } });
+
+            return result;
+        };
+
+        await expect(frames.ensure("tab1")).rejects.toThrow("The frame tree kept changing");
+        expect(calls).toBe(3);
+        expect(frames.ensured("tab1")).toBe(false);
+    });
+
+    it("keeps the complete initial tree when a frame attaches during discovery", async () => {
+        const { fake, frames } = setup();
+        const list = fake.listFrames.bind(fake);
+        let release: () => void = () => undefined;
+        let first = true;
+        const gate = new Promise<void>((resolve) => (release = resolve));
+
+        fake.listFrames = async (tab) => {
+            const result = await list(tab);
+
+            if (first) {
+                first = false;
+                await gate;
+            }
+
+            return result;
+        };
+
+        const pending = frames.ensure("tab1");
+
+        await Promise.resolve();
+        fake.frames.push({ frameId: "late", parentFrameId: "main", url: "", name: "", isolated: false });
+        emit(fake, "Page.frameAttached", { frameId: "late", frame: { id: "late", parentId: "main" } });
+        release();
+        await pending;
+        expect(frames.framesOf("tab1").map((item) => item.frameId).sort()).toEqual([
+            "cross", "late", "main",
+        ]);
+    });
+
     it("does not overwrite a frame navigation event with an older tree", async () => {
         const { fake, frames } = setup();
 
@@ -51,6 +100,7 @@ describe("FrameState", () => {
         const pending = frames.refresh("tab1");
 
         await Promise.resolve();
+        fake.frames[0] = { frameId: "main", url: "https://new.example/", name: "", isolated: false };
         emit(fake, "Page.frameNavigated", { frame: { id: "main", url: "https://new.example/" } });
         release();
         await pending;
