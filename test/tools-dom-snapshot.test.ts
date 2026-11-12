@@ -121,8 +121,10 @@ describe("dom_snapshot", () => {
         const matched = [...data.snapshot.matchAll(/\[(\d+_\d+)\]/g)];
 
         expect(matched).toHaveLength(2);
-        expect(data.snapshot).toContain('heading level 1 "Example Domain"');
-        expect(data.snapshot).toContain('link "More information..." href="https://www.iana.org/domains/example"');
+        expect(data.snapshot).toBe([
+            `[${matched[0]?.[1]}] heading level 1 "Example Domain"`,
+            `  [${matched[1]?.[1]}] link "More information..." href="https://www.iana.org/domains/example"`,
+        ].join("\n"));
         expect(fake.sent.map((call) => call.method)).toEqual([
             "Accessibility.getFullAXTree",
             "DOM.getDocument",
