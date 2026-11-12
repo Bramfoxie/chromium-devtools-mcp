@@ -66,6 +66,27 @@ const progress = (
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe("downloads allow and deny", () => {
+    it("stops an enable operation when the tab state is forgotten during preparation", async () => {
+        const { fake, runtime } = setup();
+        const create = runtime.artifacts.directory.bind(runtime.artifacts);
+        let release: () => void = () => undefined;
+        const gate = new Promise<void>((resolve) => (release = resolve));
+
+        runtime.artifacts.directory = async (kind) => {
+            await gate;
+
+            return create(kind);
+        };
+
+        const pending = runTool(downloads, { action: "allow" }, extra(), runtime);
+
+        await tick();
+        runtime.downloadState.forget("tab1");
+        release();
+        expect((await pending).isError).toBe(true);
+        expect(fake.sent.some((item) => item.method === "Page.setDownloadBehavior")).toBe(false);
+    });
+
     it("allows another setting change when directory creation fails", async () => {
         const { runtime } = setup();
         const create = runtime.artifacts.directory.bind(runtime.artifacts);

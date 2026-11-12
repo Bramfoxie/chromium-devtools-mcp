@@ -110,21 +110,25 @@ export class DownloadState {
         this.state(tab).directory = directory;
     }
 
-    beginChange(tab: string): (() => void) | undefined {
+    beginChange(tab: string): {
+        current   : () => boolean;
+        transition: () => void;
+        end       : () => void;
+    } | undefined {
         const state = this.state(tab);
 
         if (state.changing) return undefined;
 
         state.changing = true;
 
-        return () => {
-            delete state.changing;
-            delete state.transition;
+        return {
+            current   : () => this.tabs.get(tab) === state,
+            transition: () => { state.transition = true; },
+            end       : () => {
+                delete state.changing;
+                delete state.transition;
+            },
         };
-    }
-
-    beginTransition(tab: string): void {
-        this.state(tab).transition = true;
     }
 
     deny(tab: string): void {
