@@ -135,6 +135,46 @@ describe("network_har", () => {
         ]);
     });
 
+    it.each(["clear", "reset"] as const)("preserves a newer capture after %s during a save", async (action) => {
+        let resume: (() => void) | undefined;
+        let markStarted: (() => void) | undefined;
+        const pending = new Promise<void>((resolve) => { resume = resolve; });
+        const started = new Promise<void>((resolve) => { markStarted = resolve; });
+        const artifacts = {
+            write: async () => {
+                markStarted?.();
+                await pending;
+
+                return { path: "/tmp/network.har", bytes: 1 };
+            },
+            directory: () => Promise.reject(new Error("not used")),
+        };
+        const { fake, runtime } = setup(undefined, artifacts);
+
+        await runTool(newTab, {}, extra(), runtime);
+        await runTool(networkRequests, {}, extra(), runtime);
+        fake.emit("cdp.event", requestEvent("tab1", "r1", "https://a.example/first"));
+        const saving = runTool(networkHar, { clear: true }, extra(), runtime);
+
+        await started;
+
+        if (action === "clear") {
+            await runTool(networkRequests, { clear: true }, extra(), runtime);
+        } else {
+            runtime.capture.reset();
+            await runTool(networkRequests, {}, extra(), runtime);
+        }
+
+        fake.emit("cdp.event", requestEvent("tab1", "r2", "https://a.example/second"));
+        resume?.();
+        await saving;
+        const result = await runTool(networkRequests, {}, extra(), runtime);
+
+        expect(result.structuredContent?.requests).toEqual([
+            expect.objectContaining({ requestId: "r2" }),
+        ]);
+    });
+
     it("retains the dropped count when saving a HAR fails", async () => {
         const { fake, runtime } = setup();
 
