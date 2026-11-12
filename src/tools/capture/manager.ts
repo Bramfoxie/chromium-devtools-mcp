@@ -1,6 +1,7 @@
 import { parseEnvelope } from "../cdp-envelope.js";
 import type { DaemonAccess } from "../../mcp/index.js";
 import type { ToolClock } from "../define-tool.js";
+import { ToolError } from "../errors.js";
 import {
     type ConsoleEntry,
     type ConsoleLevel,
@@ -112,6 +113,7 @@ export class CaptureManager {
         try {
             for (const event of CONSOLE_EVENTS) {
                 await this.access.subscribe(tab, event);
+                this.assertCurrent(tab, capture);
                 subscribed.push(event);
             }
 
@@ -120,13 +122,17 @@ export class CaptureManager {
                 method  : "Runtime.enable",
                 params  : {},
             });
+            this.assertCurrent(tab, capture);
             await this.access.send({
                 targetId: tab,
                 method  : "Log.enable",
                 params  : {},
             });
+            this.assertCurrent(tab, capture);
         } catch (error) {
             for (const event of subscribed) {
+                if (this.tabs.get(tab) !== capture) break;
+
                 await this.access.unsubscribe(tab, event).catch(() => undefined);
             }
 
@@ -146,6 +152,7 @@ export class CaptureManager {
         try {
             for (const event of NETWORK_EVENTS) {
                 await this.access.subscribe(tab, event);
+                this.assertCurrent(tab, capture);
                 subscribed.push(event);
             }
 
@@ -154,8 +161,11 @@ export class CaptureManager {
                 method  : "Network.enable",
                 params  : {},
             });
+            this.assertCurrent(tab, capture);
         } catch (error) {
             for (const event of subscribed) {
+                if (this.tabs.get(tab) !== capture) break;
+
                 await this.access.unsubscribe(tab, event).catch(() => undefined);
             }
 
@@ -342,6 +352,12 @@ export class CaptureManager {
 
     reset(): void {
         this.tabs.clear();
+    }
+
+    private assertCurrent(tab: string, capture: TabCapture): void {
+        if (this.tabs.get(tab) !== capture) {
+            throw new ToolError("The tab closed or the session reset while starting capture.");
+        }
     }
 
     private capture(tab: string): TabCapture {
