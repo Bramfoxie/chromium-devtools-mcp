@@ -60,6 +60,11 @@ export const downloads = defineTool({
                 params: {},
             });
             const previous = state.directoryOf(targetId);
+            const endChange = state.beginChange(targetId);
+
+            if (endChange === undefined) {
+                throw new ToolError("A download setting change is already in progress for this tab.");
+            }
 
             state.allow(targetId, directory.path);
 
@@ -76,18 +81,30 @@ export const downloads = defineTool({
                 }
 
                 throw error;
+            } finally {
+                endChange();
             }
 
             return { tab: targetId, enabled: true, directory: directory.path };
         }
 
         if (args.action === "deny") {
-            await context.access.send({
-                targetId,
-                method: "Page.setDownloadBehavior",
-                params: { behavior: "deny" },
-            });
-            state.deny(targetId);
+            const endChange = state.beginChange(targetId);
+
+            if (endChange === undefined) {
+                throw new ToolError("A download setting change is already in progress for this tab.");
+            }
+
+            try {
+                await context.access.send({
+                    targetId,
+                    method: "Page.setDownloadBehavior",
+                    params: { behavior: "deny" },
+                });
+                state.deny(targetId);
+            } finally {
+                endChange();
+            }
 
             return { tab: targetId, enabled: false };
         }

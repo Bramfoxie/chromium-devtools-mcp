@@ -26,6 +26,7 @@ interface TabDownloads {
     directory?: string;
     entries   : Map<string, Entry>;
     waiters   : Set<() => void>;
+    changing? : boolean;
 }
 
 export interface DownloadFiles {
@@ -106,6 +107,16 @@ export class DownloadState {
 
     allow(tab: string, directory: string): void {
         this.state(tab).directory = directory;
+    }
+
+    beginChange(tab: string): (() => void) | undefined {
+        const state = this.state(tab);
+
+        if (state.changing) return undefined;
+
+        state.changing = true;
+
+        return () => { delete state.changing; };
     }
 
     deny(tab: string): void {
@@ -211,7 +222,9 @@ export class DownloadState {
                 state        : "inProgress",
                 receivedBytes: 0,
                 delivered    : false,
-                ...(state.directory === undefined ? {} : { directory: state.directory }),
+                ...(state.directory === undefined || state.changing
+                    ? {}
+                    : { directory: state.directory }),
             });
 
             return;

@@ -66,6 +66,54 @@ const progress = (
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe("downloads allow and deny", () => {
+    it("refuses overlapping download setting changes", async () => {
+        const { fake, runtime } = setup();
+        let release: () => void = () => undefined;
+        const gate = new Promise<void>((resolve) => (release = resolve));
+
+        fake.respond = (_target, method) => method === "Page.setDownloadBehavior" ? gate : {};
+        const first = runTool(downloads, { action: "allow" }, extra(), runtime);
+
+        await tick();
+        const second = await runTool(downloads, { action: "deny" }, extra(), runtime);
+
+        release();
+        expect(second.isError).toBe(true);
+        expect((await first).isError).not.toBe(true);
+        expect(fake.sent.filter((item) => item.method === "Page.setDownloadBehavior")).toHaveLength(1);
+    });
+
+    it("does not guess the file directory for a download during a change", async () => {
+        const { fake, runtime } = setup();
+        const directories: string[] = [];
+        const state = new DownloadState(fake.asAccess(), {
+            list: async (directory) => {
+                directories.push(directory);
+
+                return ["a.txt"];
+            },
+            size: async () => 1,
+        }, async () => undefined);
+
+        Object.assign(runtime, { downloadState: state });
+        state.attach();
+        state.allow("tab1", "/old");
+
+        fake.respond = (_target, method) => {
+            if (method === "Page.setDownloadBehavior") {
+                begin(fake, "during", "a.txt");
+                progress(fake, "during", "completed", 1, 1);
+            }
+
+            return {};
+        };
+
+        await runTool(downloads, { action: "allow" }, extra(), runtime);
+        await tick();
+        expect(directories).toEqual([]);
+        expect(state.list("tab1")[0]?.path).toBeUndefined();
+    });
+
     it.each([undefined, "/old"])("restores the directory after allow fails from %s", async (old) => {
         const { fake, runtime } = setup();
 
