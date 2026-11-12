@@ -12,7 +12,7 @@ import {
     resolveAttachEndpoint,
     setupInstructions,
 } from "../src/browser/index.js";
-import { deniedPortFile, fetchVersion, probePort } from "../src/browser/attach.js";
+import { deniedPortFile, explicitEndpoint, fetchVersion, probePort } from "../src/browser/attach.js";
 import { readIfExists } from "../src/util/read-if-exists.js";
 import { abortableSleep } from "../src/util/sleep.js";
 
@@ -28,6 +28,16 @@ const config = { browser: "chrome" as const, debugPort: 9222 };
 const portFile = "/Users/u/Library/Application Support/Google/Chrome/DevToolsActivePort";
 const fileContent = "9333\n/devtools/browser/from-file\n";
 const version = { webSocketDebuggerUrl: "ws://127.0.0.1:9222/devtools/browser/from-http" };
+
+describe("explicitEndpoint", () => {
+    it("retains the default WebSocket port when it is explicitly supplied", () => {
+        expect(explicitEndpoint("ws://127.0.0.1:80/devtools/browser/id")).toEqual({
+            port        : 80,
+            webSocketUrl: "ws://127.0.0.1:80/devtools/browser/id",
+            source      : "ws-endpoint",
+        });
+    });
+});
 
 interface World {
     files?    : Record<string, string>;

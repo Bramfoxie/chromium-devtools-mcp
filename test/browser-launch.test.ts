@@ -113,6 +113,11 @@ describe("parseListeningUrl", () => {
         });
     });
 
+    it("accepts an explicitly supplied default WebSocket port", () => {
+        expect(parseListeningUrl("DevTools listening on ws://127.0.0.1:80/devtools/browser/id\n"))
+            .toEqual({ port: 80, webSocketUrl: "ws://127.0.0.1:80/devtools/browser/id" });
+    });
+
     it.each(["", "DevTools listening on", "DevTools listening on ws://host/path", "unrelated"])(
         "returns undefined for %j",
         (output) => {
@@ -438,6 +443,14 @@ describe("launchManaged", () => {
         child.write("DevTools listening on ws://127.0.0.1:0/devtools/browser/id\n");
         child.write("DevTools listening on ws://127.0.0.1:9333/devtools/browser/id\n");
         await expect(pending).resolves.toMatchObject({ port: 9333 });
+    });
+
+    it("accepts the explicit default WebSocket port when configured", async () => {
+        const { deps, child } = harness();
+        const pending = launchManaged({ ...config, debugPort: 80 }, deps);
+
+        child.write("DevTools listening on ws://127.0.0.1:80/devtools/browser/id\n");
+        await expect(pending).resolves.toMatchObject({ port: 80 });
     });
 
     it("does not resolve from a partial line without a line break", async () => {

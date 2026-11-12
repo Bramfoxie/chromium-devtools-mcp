@@ -186,7 +186,7 @@ export function findAttachEndpoint(
 }
 
 export function explicitEndpoint(webSocketUrl: string): AttachEndpoint {
-    return { port: Number(new URL(webSocketUrl).port), webSocketUrl, source: "ws-endpoint" };
+    return { port: Number(new URL(webSocketUrl).port || 80), webSocketUrl, source: "ws-endpoint" };
 }
 
 export function endpointUnreachableMessage(): string {
