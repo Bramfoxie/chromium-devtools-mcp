@@ -406,7 +406,7 @@ describe("storage_write", () => {
             if (method === "Network.getCookies") {
                 calls += 1;
 
-                return calls <= 2
+                return calls <= 1
                     ? {
                         cookies: [
                             { name: "a", domain: "a.example", path: "/" },
@@ -438,6 +438,31 @@ describe("storage_write", () => {
 
         expect(cleared.structuredContent).toMatchObject({ changed: 2, remaining: 0 });
         expect(fake.sent.filter((call) => call.method === "Network.deleteCookies")).toHaveLength(2);
+    });
+
+    it("counts cookies from the same snapshot used for clearing", async () => {
+        const { fake, runtime } = setup();
+        let reads = 0;
+
+        fake.respond = (tab, method) => {
+            if (method === "Runtime.evaluate") return { result: { value: "https://a.example/p" } };
+
+            if (method === "Network.getCookies") {
+                reads += 1;
+
+                return reads === 1
+                    ? { cookies: [{ name: "a", domain: "a.example", path: "/" }] }
+                    : { cookies: [] };
+            }
+
+            return {};
+        };
+
+        const result = await runTool(storageWrite, { kind: "cookies", action: "clear", confirm: true }, extra(), runtime);
+
+        expect(result.structuredContent).toMatchObject({ changed: 1, remaining: 0 });
+        expect(fake.sent.filter((call) => call.method === "Network.deleteCookies")).toHaveLength(1);
+        expect(reads).toBe(2);
     });
 
     it("reports completed deletes when clearing cookies fails", async () => {

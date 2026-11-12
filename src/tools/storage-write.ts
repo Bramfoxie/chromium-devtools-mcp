@@ -458,7 +458,6 @@ async function writeCookies(
         };
     }
 
-    const before = await cookieCount(access, targetId);
     const parsed = z.object({
         cookies: z.array(z.object({
             name  : z.string(),
@@ -472,6 +471,7 @@ async function writeCookies(
 
     if (!parsed.success) throw unexpected("Network.getCookies");
 
+    const before = parsed.data.cookies.length;
     const scoped = parsed.data.cookies.filter((cookie) => cookieDomainAllowed(cookie.domain, host));
 
     let applied = 0;
