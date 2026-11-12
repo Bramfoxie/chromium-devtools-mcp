@@ -78,6 +78,16 @@ export class RingBuffer<T> {
         return found;
     }
 
+    removeThrough(lastId: number): void {
+        for (const [id, entry] of this.entries) {
+            if (id > lastId) break;
+
+            this.entries.delete(id);
+            this.used = Math.max(0, this.used - entry.size);
+            this.onEvict?.(id, entry.value);
+        }
+    }
+
     clear(): void {
         this.entries.clear();
         this.used = 0;

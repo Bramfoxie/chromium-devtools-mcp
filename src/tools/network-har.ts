@@ -43,16 +43,21 @@ export const networkHar = defineTool({
 
         await context.capture.ensureNetwork(targetId);
 
+        const clearAfterSave = args.clear === true
+            ? context.capture.networkClearAfterSave(targetId)
+            : undefined;
         const read = context.capture.readNetwork(targetId, {
             filter,
             afterId: undefined,
             limit  : Number.MAX_SAFE_INTEGER,
-            clear  : args.clear ?? false,
+            clear  : false,
         });
         const all = read.records.map(({ record }) => record);
         const kept = all.length > HAR_MAX_ENTRIES ? all.slice(all.length - HAR_MAX_ENTRIES) : all;
         const har = buildHar(kept, { name: "chromium-devtools-mcp", version: ownVersion() });
         const file = await context.artifacts.write("network", "har", JSON.stringify(har));
+
+        clearAfterSave?.();
 
         return {
             tab         : targetId,

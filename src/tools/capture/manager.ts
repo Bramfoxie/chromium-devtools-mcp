@@ -302,6 +302,17 @@ export class CaptureManager {
         return { records, nextAfterId, droppedCount, totalBuffered };
     }
 
+    networkClearAfterSave(tab: string): () => void {
+        const capture = this.capture(tab);
+        const lastId = capture.network.lastId;
+
+        return () => {
+            if (this.tabs.get(tab) !== capture) return;
+
+            capture.network.removeThrough(lastId);
+        };
+    }
+
     idleNetworkMs(tab: string, since?: number): number {
         const capture = this.tabs.get(tab);
 

@@ -1,7 +1,7 @@
 import type { RequestHandlerExtra } from "@modelcontextprotocol/sdk/shared/protocol.js";
 import type { ServerNotification, ServerRequest } from "@modelcontextprotocol/sdk/types.js";
 import { describe, expect, it } from "vitest";
-import { networkFilterOf, networkRequests, newTab, runTool, ToolRuntime } from "../src/tools/index.js";
+import { networkFilterOf, networkHar, networkRequests, newTab, runTool, ToolRuntime } from "../src/tools/index.js";
 import { FakeAccess } from "./helpers/fake-access.js";
 import { managedConfig } from "./helpers/daemon-env.js";
 
@@ -9,9 +9,13 @@ type Extra = RequestHandlerExtra<ServerRequest, ServerNotification>;
 
 const extra = () => ({ signal: new AbortController().signal }) as Extra;
 
-function setup(access?: FakeAccess) {
+function setup(access?: FakeAccess, artifacts?: ConstructorParameters<typeof ToolRuntime>[0]["artifacts"]) {
     const fake = access ?? new FakeAccess();
-    const runtime = new ToolRuntime({ access: fake.asAccess(), config: managedConfig });
+    const runtime = new ToolRuntime({
+        access: fake.asAccess(),
+        config: managedConfig,
+        ...(artifacts === undefined ? {} : { artifacts }),
+    });
 
     runtime.capture.attach();
 
@@ -62,6 +66,56 @@ describe("networkFilterOf", () => {
         expect(() => networkFilterOf({ urlRegex: "(oops" })).toThrow(
             "The pattern is not a valid regular expression.",
         );
+    });
+});
+
+describe("network_har", () => {
+    it("keeps requests received while the HAR file is being saved", async () => {
+        let resume: (() => void) | undefined;
+        const pending = new Promise<void>((resolve) => { resume = resolve; });
+        let markStarted: (() => void) | undefined;
+        const started = new Promise<void>((resolve) => { markStarted = resolve; });
+        const artifacts = {
+            write: async () => {
+                markStarted?.();
+                await pending;
+
+                return { path: "/tmp/network.har", bytes: 1 };
+            },
+            directory: () => Promise.reject(new Error("not used")),
+        };
+        const { fake, runtime } = setup(undefined, artifacts);
+
+        await runTool(newTab, {}, extra(), runtime);
+        await runTool(networkRequests, {}, extra(), runtime);
+        fake.emit("cdp.event", requestEvent("tab1", "r1", "https://a.example/first"));
+        const saving = runTool(networkHar, { clear: true }, extra(), runtime);
+
+        await started;
+        fake.emit("cdp.event", requestEvent("tab1", "r2", "https://a.example/second"));
+        resume?.();
+        const saved = await saving;
+        const result = await runTool(networkRequests, {}, extra(), runtime);
+
+        expect(saved.isError).not.toBe(true);
+        expect(result.structuredContent?.requests).toEqual([
+            expect.objectContaining({ requestId: "r2" }),
+        ]);
+    });
+
+    it("retains the network buffer when saving a HAR fails", async () => {
+        const { fake, runtime } = setup();
+
+        await runTool(newTab, {}, extra(), runtime);
+        await runTool(networkRequests, {}, extra(), runtime);
+        fake.emit("cdp.event", requestEvent("tab1", "r1", "https://a.example/data"));
+        const saved = await runTool(networkHar, { clear: true }, extra(), runtime);
+        const result = await runTool(networkRequests, {}, extra(), runtime);
+
+        expect(saved.isError).toBe(true);
+        expect(result.structuredContent?.requests).toEqual(expect.arrayContaining([
+            expect.objectContaining({ requestId: "r1" }),
+        ]));
     });
 });
 
