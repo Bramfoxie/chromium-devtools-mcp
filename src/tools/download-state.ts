@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { DaemonAccess } from "../mcp/index.js";
 import { redactUrl } from "./capture/redact.js";
 import { parseEnvelope } from "./cdp-envelope.js";
+import { ToolError } from "./errors.js";
 
 export type DownloadStatus = "inProgress" | "completed" | "canceled";
 
@@ -174,7 +175,7 @@ export class DownloadState {
                 for (const wake of [...state.waiters]) wake();
             });
 
-            while (found === undefined && !expired) {
+            while (found === undefined && !expired && this.tabs.get(tab) === state) {
                 await new Promise<void>((resolve) => {
                     const wake = (): void => {
                         state.waiters.delete(wake);
@@ -187,6 +188,10 @@ export class DownloadState {
             }
         }
 
+        if (this.tabs.get(tab) !== state) {
+            throw new ToolError("The tab closed or the session reset while waiting for a download.");
+        }
+
         if (found === undefined) return undefined;
 
         found.delivered = true;
@@ -195,17 +200,27 @@ export class DownloadState {
             await this.queueLocate(state, found);
         }
 
+        if (this.tabs.get(tab) !== state) {
+            throw new ToolError("The tab closed or the session reset while waiting for a download.");
+        }
+
         return publicItem(found);
     }
 
     forget(tab: string): void {
+        const state = this.tabs.get(tab);
+
         this.tabs.delete(tab);
         this.subscribed.delete(tab);
+        if (state !== undefined) for (const wake of [...state.waiters]) wake();
     }
 
     reset(): void {
+        const states = [...this.tabs.values()];
+
         this.tabs.clear();
         this.subscribed.clear();
+        for (const state of states) for (const wake of [...state.waiters]) wake();
     }
 
     private state(tab: string): TabDownloads {
