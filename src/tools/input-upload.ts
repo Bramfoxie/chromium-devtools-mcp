@@ -20,7 +20,7 @@ const UPLOAD_MAX_FILES = 20;
 export const UPLOAD_MAX_BYTES = 100 * 1024 * 1024;
 
 const UPLOAD_COUNT_EXPRESSION = `function (element) {
-  if (!(element instanceof HTMLInputElement) || element.type !== "file") return { files: -1 };
+  if (!(element instanceof HTMLInputElement) || element.type !== "file" || !element.isConnected) return { files: -1 };
   return { files: element.files === null ? 0 : element.files.length };
 }`;
 
@@ -37,11 +37,40 @@ interface ValidatedUpload {
     size: number;
 }
 
+async function realDirectories(
+    environment: UploadEnvironment,
+    dirs       : readonly string[],
+): Promise<string[]> {
+    const { fs, path } = environment;
+
+    return Promise.all(dirs.map(async (dir) => {
+        const resolved = path.resolve(dir);
+
+        try {
+            return await fs.realpath(resolved);
+        } catch {
+            return resolved;
+        }
+    }));
+}
+
+function isInside(environment: UploadEnvironment, dir: string, file: string): boolean {
+    const { path } = environment;
+    const relative = path.relative(dir, file);
+
+    return relative !== "" && relative !== ".." && !relative.startsWith(`..${path.sep}`)
+        && !path.isAbsolute(relative);
+}
+
 export async function validateUploadFiles(
     environment: UploadEnvironment,
     files      : string[],
+    uploadDirs : readonly string[] = [],
 ): Promise<ValidatedUpload[]> {
     const { fs, path } = environment;
+    const allowedDirs = uploadDirs.length === 0
+        ? []
+        : await realDirectories(environment, uploadDirs);
     const validated: ValidatedUpload[] = [];
     const seen = new Set<string>();
 
@@ -91,8 +120,16 @@ export async function validateUploadFiles(
             );
         }
 
+        const inside = allowedDirs.some((dir) => isInside(environment, dir, real));
+
+        if (allowedDirs.length > 0 && !inside) {
+            throw new ToolError(
+                `The file ${JSON.stringify(file)} is outside safety.uploadDirs. Move it into one of the allowed directories, or ask the owner to add its directory to safety.uploadDirs.`,
+            );
+        }
+
         seen.add(real);
-        validated.push({ path: real, name: path.basename(resolved), size: info.size });
+        validated.push({ path: real, name: path.basename(real), size: info.size });
     }
 
     return validated;
@@ -138,13 +175,14 @@ export const inputUpload = defineTool({
         files : z.array(z.string().min(1).max(4096)).min(1).max(UPLOAD_MAX_FILES).describe("Absolute local paths to attach, at most 20. Each must be a readable file under 100 MiB."),
     }),
     output: z.strictObject({
-        ok    : z.boolean().describe("Whether the files were attached."),
-        target: targetSummarySchema.describe("The file input."),
-        effect: z.string().describe("Short summary of what happened."),
-        files : z.array(z.strictObject({
+        ok             : z.boolean().describe("Whether the browser accepted the file selection command."),
+        inputFilesMatch: z.boolean().describe("Whether the file input still contains the requested number of files."),
+        target         : targetSummarySchema.describe("The file input."),
+        effect         : z.string().describe("Short summary of what happened."),
+        files          : z.array(z.strictObject({
             name: z.string().describe("File name without directories."),
             size: z.number().describe("File size in bytes."),
-        })).describe("Attached files, names and sizes only, never contents."),
+        })).describe("Requested files, names and sizes only, never contents."),
         urlAfter: z.string().optional().describe("URL after the upload, present only when the page navigated."),
     }),
     handler: async (args, context) => {
@@ -154,7 +192,11 @@ export const inputUpload = defineTool({
 
         await ensureNoDialog(context.dialogs, targetId);
 
-        const validated = await validateUploadFiles(context.upload, args.files);
+        const validated = await validateUploadFiles(
+            context.upload,
+            args.files,
+            context.config.safety.uploadDirs,
+        );
 
         await context.focus.ensure(context.access, targetId);
 
@@ -177,39 +219,75 @@ export const inputUpload = defineTool({
                 );
             }
 
-            throwIfCancelled(context.signal);
+            let prepared: Awaited<ReturnType<DaemonAccess["prepareUploads"]>> | undefined;
+            let dispatched = false;
+            let cancelOnAbort: (() => void) | undefined;
 
-            const acted = await navigationOf(context.access, targetId, async () => {
-                await owner.send({
-                    targetId,
-                    method: "DOM.setFileInputFiles",
-                    params: {
-                        backendNodeId: element.backendNodeId,
-                        files        : validated.map((file) => file.path),
-                    },
+            try {
+                throwIfCancelled(context.signal);
+
+                if (context.config.safety.uploadDirs.length > 0) {
+                    prepared = await context.access.prepareUploads({
+                        files: validated.map((file) => file.path), signal: context.signal,
+                    });
+
+                    if (prepared.files.length !== validated.length) {
+                        throw new ToolError("The daemon returned an unexpected upload preparation result. Retry the upload.");
+                    }
+
+                    const ticket = prepared.ticket;
+
+                    cancelOnAbort = () => {
+                        void context.access.cancelUploads(ticket).catch(() => undefined);
+                    };
+
+                    context.signal.addEventListener("abort", cancelOnAbort, { once: true });
+                    if (context.signal.aborted) cancelOnAbort();
+                }
+
+                throwIfCancelled(context.signal);
+                const acted = await navigationOf(context.access, targetId, async () => {
+                    throwIfCancelled(context.signal);
+                    dispatched = true;
+                    await owner.send({
+                        targetId,
+                        method: "DOM.setFileInputFiles",
+                        params: {
+                            backendNodeId: element.backendNodeId,
+                            files        : prepared?.files.map((file) => file.path) ??
+                                validated.map((file) => file.path),
+                        },
+                        signal: context.signal,
+                    });
                 });
-            });
-            const changed = changedUrl(acted.urlBefore, acted.urlAfter);
-            const navigatedAway = changed.urlAfter !== undefined;
-            const count = navigatedAway
-                ? validated.length
-                : await attachedCount(owner, targetId, element);
+                const changed = changedUrl(acted.urlBefore, acted.urlAfter);
+                const navigatedAway = changed.urlAfter !== undefined;
+                const count = navigatedAway
+                    ? undefined
+                    : await attachedCount(owner, targetId, element).catch(() => undefined);
+                const verified = count === validated.length;
 
-            if (count !== validated.length) {
-                throw new ToolError(
-                    `The page accepted ${count} of ${validated.length} files. The input may limit the file count or types.`,
-                );
+                return {
+                    ok             : true,
+                    inputFilesMatch: verified,
+                    target         : summarizeTarget(args.target.uid, checked.state),
+                    effect         : verified
+                        ? `${validated.length} file(s) are selected in the input.`
+                        : "The browser accepted the file selection, but the files could not be verified in the input. Check the page to verify the attachment before retrying.",
+                    files: validated.map((file, index) => ({
+                        name: file.name, size: prepared?.files[index]?.size ?? file.size,
+                    })),
+                    ...changedUrl(acted.urlBefore, acted.urlAfter),
+                };
+            } finally {
+                if (cancelOnAbort !== undefined) {
+                    context.signal.removeEventListener("abort", cancelOnAbort);
+                }
+
+                if (prepared !== undefined && !dispatched) {
+                    await context.access.cancelUploads(prepared.ticket).catch(() => undefined);
+                }
             }
-
-            return {
-                ok    : true,
-                target: summarizeTarget(args.target.uid, checked.state),
-                effect: validated.length === 1
-                    ? `The file ${JSON.stringify(validated[0]?.name ?? "")} was attached.`
-                    : `${validated.length} files were attached.`,
-                files: validated.map((file) => ({ name: file.name, size: file.size })),
-                ...changedUrl(acted.urlBefore, acted.urlAfter),
-            };
         });
     },
 });

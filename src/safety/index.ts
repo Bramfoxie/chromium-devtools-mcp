@@ -9,12 +9,13 @@ export {
 
 export { originOfUrl, webOrigin } from "./origin.js";
 
-export { isPrivateHost } from "./private-network.js";
+export { addressesArePrivate, isPrivateHost } from "./private-network.js";
 
 export {
     describeBlock,
     domainBlock,
     hostBlock,
+    hostToResolve,
     isPolicyActive,
     navigationBlock,
     type Block,

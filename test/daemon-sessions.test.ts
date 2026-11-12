@@ -477,6 +477,232 @@ describe("tab ownership", () => {
 });
 
 describe("closing a session", () => {
+    it("logs failed disposal after a connection closes without exposing details", async () => {
+        const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+        const { backend, registry, open } = setup();
+        let release: () => void = () => undefined;
+
+        backend.gates.createContext = new Promise<void>((resolve) => { release = resolve; });
+        vi.spyOn(backend, "disposeContext").mockRejectedValue(new Error("private detail"));
+        const opening = code(open("a", true));
+
+        await registry.close("a");
+        release();
+        await opening;
+        const logged = stderr.mock.calls.map((call) => String(call[0])).join("");
+
+        expect(logged).toContain("could not dispose an interrupted browser context");
+        expect(logged).not.toContain("private detail");
+    });
+
+    it("does not turn an interrupted context creation failure into a shutdown failure", async () => {
+        const { backend, registry, open } = setup();
+        let release: () => void = () => undefined;
+
+        backend.gates.createContext = new Promise<void>((resolve) => { release = resolve; });
+        backend.failures.createContext = [new Error("creation failed")];
+        const opening = code(open("a", true));
+        const stopping = registry.closeAll();
+
+        release();
+        await expect(stopping).resolves.toBeUndefined();
+        expect(await opening).toBe("other");
+    });
+
+    it("reports failed disposal of a context interrupted by shutdown", async () => {
+        const { backend, registry, open } = setup();
+        let release: () => void = () => undefined;
+
+        backend.gates.createContext = new Promise<void>((resolve) => { release = resolve; });
+        vi.spyOn(backend, "disposeContext").mockRejectedValue(new Error("private detail"));
+        const opening = code(open("a", true));
+        const stopping = registry.closeAll();
+        const outcome = stopping.then(() => undefined, (error: unknown) => error);
+
+        release();
+        expect(await outcome).toBeInstanceOf(Error);
+        expect((await outcome as Error).message).toContain("dispose");
+        await opening;
+    });
+
+    it("shares a later cleanup failure with reentrant shutdown", async () => {
+        const { registry, open } = setup();
+        const first = await open("a");
+        const second = await open("b");
+        const failure = new Error("cleanup failed");
+        const close = first.close.bind(first);
+        let reentrant: Promise<void> | undefined;
+
+        vi.spyOn(first, "close").mockImplementation(() => {
+            reentrant = registry.closeAll();
+
+            return close();
+        });
+        vi.spyOn(second, "close").mockRejectedValue(failure);
+        const stopping = registry.closeAll();
+
+        expect(reentrant).toBe(stopping);
+        await expect(stopping).rejects.toBe(failure);
+        await expect(reentrant).rejects.toBe(failure);
+    });
+
+    it("waits for every session during reentrant shutdown", async () => {
+        const { backend, registry, open } = setup();
+        const first = await open("a");
+        const second = await open("b");
+
+        await second.createTab("about:blank");
+        let release: () => void = () => undefined;
+
+        backend.gates.closeTarget = new Promise<void>((resolve) => { release = resolve; });
+        let reentrant: Promise<void> | undefined;
+        let stopped = false;
+        const close = first.close.bind(first);
+
+        vi.spyOn(first, "close").mockImplementation(() => {
+            reentrant = registry.closeAll().then(() => { stopped = true; });
+
+            return close();
+        });
+        const stopping = registry.closeAll();
+
+        try {
+            await new Promise<void>((resolve) => setImmediate(resolve));
+            expect(stopped).toBe(false);
+        } finally {
+            release();
+            await Promise.all([stopping, reentrant]);
+        }
+    });
+
+    it("waits for an opening session during reentrant shutdown", async () => {
+        const { backend, registry, open } = setup();
+        let release: () => void = () => undefined;
+        let stopping: Promise<void> | undefined;
+        let stopped = false;
+        const gate = new Promise<void>((resolve) => { release = resolve; });
+        const createContext = backend.createContext.bind(backend);
+
+        vi.spyOn(backend, "createContext").mockImplementation(async () => {
+            stopping = registry.closeAll().then(() => { stopped = true; });
+            await gate;
+
+            return createContext();
+        });
+        const opening = code(open("a", true));
+
+        try {
+            await new Promise<void>((resolve) => setImmediate(resolve));
+            expect(stopped).toBe(false);
+        } finally {
+            release();
+            await Promise.all([opening, stopping]);
+        }
+
+        expect(await opening).toBe(ErrorCode.sessionClosed);
+        expect(backend.contexts.size).toBe(0);
+    });
+
+    it("waits for session cleanup during reentrant shutdown", async () => {
+        const { registry, open } = setup();
+        const session = await open("a");
+        let release: () => void = () => undefined;
+        let stopping: Promise<void> | undefined;
+        let stopped = false;
+        const gate = new Promise<void>((resolve) => { release = resolve; });
+        const close = session.close.bind(session);
+
+        vi.spyOn(session, "close").mockImplementation(() => {
+            stopping = registry.closeAll().then(() => { stopped = true; });
+
+            return gate.then(() => close());
+        });
+        const closing = registry.close("a");
+
+        try {
+            await new Promise<void>((resolve) => setImmediate(resolve));
+            expect(stopped).toBe(false);
+        } finally {
+            release();
+            await Promise.all([closing, stopping]);
+        }
+    });
+
+    it("waits for other sessions when a session cleanup fails", async () => {
+        const { backend, registry, open } = setup();
+        const first = await open("a");
+        const second = await open("b");
+
+        await second.createTab("about:blank");
+        vi.spyOn(first, "close").mockRejectedValue(new Error("cleanup failed"));
+        let release: () => void = () => undefined;
+
+        backend.gates.closeTarget = new Promise<void>((resolve) => (release = resolve));
+        let settled = false;
+        const stopping = registry.closeAll().then(
+            () => { settled = true;
+
+                return undefined; },
+            (error: unknown) => { settled = true;
+
+                return error; },
+        );
+
+        try {
+            await new Promise<void>((resolve) => setImmediate(resolve));
+            expect(settled).toBe(false);
+        } finally {
+            release();
+        }
+
+        expect(await stopping).toEqual(new Error("cleanup failed"));
+    });
+
+    it("waits for an opening isolated session to dispose its context on shutdown", async () => {
+        const { backend, registry, open } = setup();
+        let release: () => void = () => undefined;
+
+        backend.gates.createContext = new Promise<void>((resolve) => (release = resolve));
+        const opening = code(open("a", true));
+        let stopped = false;
+        const stopping = registry.closeAll().then(() => { stopped = true; });
+
+        try {
+            await new Promise<void>((resolve) => setImmediate(resolve));
+            expect(stopped).toBe(false);
+        } finally {
+            release();
+            await stopping;
+        }
+
+        expect(await opening).toBe(ErrorCode.sessionClosed);
+        expect(backend.contexts.size).toBe(0);
+    });
+
+    it("waits for a session already closing when shutting down", async () => {
+        const { backend, registry, open } = setup();
+        const session = await open("a");
+
+        await session.createTab("about:blank");
+        let release: () => void = () => undefined;
+
+        backend.gates.closeTarget = new Promise<void>((resolve) => (release = resolve));
+        const closing = registry.close("a");
+        let stopped = false;
+        const stopping = registry.closeAll().then(() => { stopped = true; });
+        let stoppedAgain = false;
+        const stoppingAgain = registry.closeAll().then(() => { stoppedAgain = true; });
+
+        try {
+            await new Promise<void>((resolve) => setImmediate(resolve));
+            expect(stopped).toBe(false);
+            expect(stoppedAgain).toBe(false);
+        } finally {
+            release();
+            await Promise.all([closing, stopping, stoppingAgain]);
+        }
+    });
+
     it("closes the tabs it created in the shared context, detaches and frees ownership", async () => {
         const { backend, registry, open } = setup();
         const a = await open("a");
@@ -858,6 +1084,83 @@ describe("subscriptions", () => {
         );
     });
 
+    it("does not restore a subscription cancelled while the tab attaches", async () => {
+        const { backend, emitted, open } = setup();
+        const session = await open("a");
+        const tab = await session.createTab("about:blank");
+        let release: () => void = () => undefined;
+
+        backend.gates.attach = new Promise<void>((resolve) => { release = resolve; });
+        const subscribing = session.subscribe(tab, "Page.loadEventFired");
+
+        session.unsubscribe(tab, "Page.loadEventFired");
+        release();
+        await subscribing;
+        backend.sessions.get(tab)?.emit("Page.loadEventFired", {});
+        expect(backend.sessions.get(tab)?.listenerCount("Page.loadEventFired")).toBe(0);
+        expect(emitted.a).toEqual([]);
+    });
+
+    it("keeps one of two pending subscriptions after one unsubscribe", async () => {
+        const { backend, open } = setup();
+        const session = await open("a");
+        const tab = await session.createTab("about:blank");
+        let release: () => void = () => undefined;
+
+        backend.gates.attach = new Promise<void>((resolve) => { release = resolve; });
+        const first = session.subscribe(tab, "Page.loadEventFired");
+        const second = session.subscribe(tab, "Page.loadEventFired");
+        let secondDone = false;
+
+        void second.then(() => { secondDone = true; });
+        session.unsubscribe(tab, "Page.loadEventFired");
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        expect(secondDone).toBe(false);
+        release();
+        await Promise.all([first, second]);
+        expect(backend.sessions.get(tab)?.listenerCount("Page.loadEventFired")).toBe(1);
+        session.unsubscribe(tab, "Page.loadEventFired");
+        expect(backend.sessions.get(tab)?.listenerCount("Page.loadEventFired")).toBe(0);
+    });
+
+    it("does not cancel a new subscription after cancelling a pending one", async () => {
+        const { backend, open } = setup();
+        const session = await open("a");
+        const tab = await session.createTab("about:blank");
+        let release: () => void = () => undefined;
+
+        backend.gates.attach = new Promise<void>((resolve) => { release = resolve; });
+        const first = session.subscribe(tab, "Page.loadEventFired");
+
+        session.unsubscribe(tab, "Page.loadEventFired");
+        const second = session.subscribe(tab, "Page.loadEventFired");
+
+        release();
+        await Promise.all([first, second]);
+        expect(backend.sessions.get(tab)?.listenerCount("Page.loadEventFired")).toBe(1);
+        session.unsubscribe(tab, "Page.loadEventFired");
+        expect(backend.sessions.get(tab)?.listenerCount("Page.loadEventFired")).toBe(0);
+    });
+
+    it("rejects all pending subscribers after an attach failure and allows retry", async () => {
+        const { backend, open } = setup();
+        const session = await open("a");
+        const tab = await session.createTab("about:blank");
+        let release: () => void = () => undefined;
+
+        backend.gates.attach = new Promise<void>((resolve) => { release = resolve; });
+        backend.failures.attach = [new Error("attach failed")];
+        const first = session.subscribe(tab, "Page.loadEventFired");
+        const second = session.subscribe(tab, "Page.loadEventFired");
+        const outcomes = Promise.allSettled([first, second]);
+
+        release();
+        expect((await outcomes).map((result) => result.status)).toEqual(["rejected", "rejected"]);
+        await session.subscribe(tab, "Page.loadEventFired");
+        expect(backend.sessions.get(tab)?.listenerCount("Page.loadEventFired")).toBe(1);
+        session.unsubscribe(tab, "Page.loadEventFired");
+    });
+
     it("does not subscribe twice and stops after unsubscribe", async () => {
         const { backend, emitted, open } = setup();
         const a = await open("a");
@@ -1055,6 +1358,52 @@ describe("frame targets", () => {
     function mainTree(): (method: string) => unknown {
         return (method) => (method === "Page.getFrameTree" ? TREE : { echoed: method });
     }
+
+    it("does not restore a detached child while another frame tree is pending", async () => {
+        const { backend, open } = setup();
+        const a = await open("a");
+        const tab = await a.createTab("https://a.example/");
+        let release: () => void = () => undefined;
+        let entered: () => void = () => undefined;
+        const gate = new Promise<void>((resolve) => { release = resolve; });
+        const started = new Promise<void>((resolve) => { entered = resolve; });
+
+        try {
+            await a.send({ targetId: tab, method: "Page.enable" });
+            const session = backend.sessions.get(tab);
+
+            if (session) session.reply = mainTree();
+
+            await a.listFrames(tab);
+            const handle = backend.childHandles[0];
+            const first = handle?.addChild("first", true, CROSS);
+            const second = handle?.addChild("second", true, CROSS);
+
+            if (first === undefined || second === undefined) throw new Error("Missing children.");
+
+            const reply = second.reply;
+
+            second.reply = (method, params) => {
+                if (method !== "Page.getFrameTree") return reply?.(method, params);
+
+                entered();
+
+                return gate.then(() => reply?.(method, params));
+            };
+
+            const listing = a.listFrames(tab);
+
+            await started;
+            handle?.removeChild("first");
+            release();
+            const frames = await listing;
+
+            expect(frames.some((frame) => frame.frameId === "first")).toBe(false);
+        } finally {
+            release();
+            await a.close();
+        }
+    });
 
     it("lists the same site frames of the main tree as shared", async () => {
         const { backend, open } = setup();
@@ -1442,6 +1791,31 @@ describe("state shared with cross site frame sessions", () => {
     const sentMethods = (session: { sent: Array<{ method: string }> } | undefined): string[] =>
         session?.sent.map((call) => call.method) ?? [];
 
+    it("initializes a child that attaches during a failed tab close", async () => {
+        const { a, backend, emitted, tab, handle } = await tabWithChild();
+        let release: () => void = () => undefined;
+
+        await a.subscribe(tab, "Network.requestWillBeSent");
+        await a.send({ targetId: tab, method: "Network.enable", params: {} });
+        backend.gates.closeTarget = new Promise<void>((resolve) => { release = resolve; });
+        backend.failures.closeTarget = [new Error("close failed")];
+        const closing = code(a.closeTab(tab));
+        const child = handle?.addChild("during-close", true, CROSS);
+
+        try {
+            await handle?.settled();
+            release();
+            expect(await closing).toBe("other");
+            child?.emit("Network.requestWillBeSent", { requestId: "1" });
+            expect(sentMethods(child)).toContain("Network.enable");
+            expect(emitted.a?.filter((item) => item.event === "cdp.event")).toHaveLength(1);
+        } finally {
+            release();
+            await closing;
+            await a.close();
+        }
+    });
+
     it("applies capture and emulation commands to children that attach later", async () => {
         const { a, tab, handle } = await tabWithChild();
 
@@ -1469,6 +1843,31 @@ describe("state shared with cross site frame sessions", () => {
 
         expect(child?.sent).toContainEqual(
             expect.objectContaining({ method: "Emulation.setGeolocationOverride", params: position }),
+        );
+    });
+
+    it("applies CPU throttling to existing and new child sessions", async () => {
+        const { a, tab, handle } = await tabWithChild();
+        const child = handle?.addChild("cross", true, CROSS);
+
+        await handle?.settled();
+        await a.send({ targetId: tab, method: "Emulation.setCPUThrottlingRate", params: { rate: 6 } });
+        const late = handle?.addChild("late", true, CROSS);
+
+        await handle?.settled();
+
+        for (const frame of [child, late]) {
+            expect(frame?.sent).toContainEqual(
+                expect.objectContaining({ method: "Emulation.setCPUThrottlingRate", params: { rate: 6 } }),
+            );
+        }
+
+        await a.send({ targetId: tab, method: "Emulation.setCPUThrottlingRate", params: { rate: 1 } });
+        const afterReset = handle?.addChild("after-reset", true, CROSS);
+
+        await handle?.settled();
+        expect(afterReset?.sent).toContainEqual(
+            expect.objectContaining({ method: "Emulation.setCPUThrottlingRate", params: { rate: 1 } }),
         );
     });
 
@@ -1558,6 +1957,124 @@ describe("state shared with cross site frame sessions", () => {
 
         expect(emitted.a).toHaveLength(1);
         expect(child?.listenerCount("Network.requestWillBeSent")).toBe(0);
+    });
+
+    it("does not restore child listeners after unsubscribe during attachment", async () => {
+        const { backend, open, emitted } = setup();
+        const a = await open("a");
+        const tab = await a.createTab("https://example.com/");
+        const original = backend.attachChildren.bind(backend);
+        let release: () => void = () => undefined;
+        let entered: () => void = () => undefined;
+        const gate = new Promise<void>((resolve) => { release = resolve; });
+        const started = new Promise<void>((resolve) => { entered = resolve; });
+
+        vi.spyOn(backend, "attachChildren").mockImplementation(async (session, options) => {
+            const handle = await original(session, options);
+
+            backend.childHandles.at(-1)?.addChild("cross", true, CROSS);
+            entered();
+            await gate;
+
+            return handle;
+        });
+
+        try {
+            const subscribing = a.subscribe(tab, "Network.requestWillBeSent");
+
+            await started;
+            a.unsubscribe(tab, "Network.requestWillBeSent");
+            release();
+            await subscribing;
+            const child = backend.childHandles[0]?.childrenOf.get("cross");
+
+            child?.emit("Network.requestWillBeSent", { requestId: "1" });
+            expect(child?.listenerCount("Network.requestWillBeSent")).toBe(0);
+            expect(emitted.a).toHaveLength(0);
+        } finally {
+            release();
+            await a.close();
+        }
+    });
+
+    it.each(["tab", "session"])("does not restore child listeners after %s closure", async (kind) => {
+        const { backend, open, emitted } = setup();
+        const session = await open("a");
+        const tab = await session.createTab("https://example.com/");
+        const original = backend.attachChildren.bind(backend);
+        let release: () => void = () => undefined;
+        let entered: () => void = () => undefined;
+        const gate = new Promise<void>((resolve) => { release = resolve; });
+        const started = new Promise<void>((resolve) => { entered = resolve; });
+
+        vi.spyOn(backend, "attachChildren").mockImplementation(async (attached, options) => {
+            const handle = await original(attached, options);
+
+            entered();
+            await gate;
+
+            return handle;
+        });
+        const subscribing = session.subscribe(tab, "Network.requestWillBeSent");
+        let closing: Promise<void> | undefined;
+
+        try {
+            await started;
+            closing = kind === "tab" ? session.closeTab(tab) : session.close();
+            if (kind === "tab") await closing;
+
+            const child = backend.childHandles[0]?.addChild("late", true, CROSS);
+
+            child?.emit("Network.requestWillBeSent", { requestId: "1" });
+            expect(child?.listenerCount("Network.requestWillBeSent")).toBe(0);
+            expect(emitted.a?.filter((item) => item.event === "cdp.event")).toEqual([]);
+        } finally {
+            release();
+            await Promise.allSettled([subscribing, closing]);
+            await session.close();
+        }
+    });
+
+    it.each(["tab", "session"])("does not restore existing child listeners after %s closure", async (kind) => {
+        const { backend, open, emitted } = setup();
+        const session = await open("a");
+        const tab = await session.createTab("https://example.com/");
+        const original = backend.attachChildren.bind(backend);
+        let release: () => void = () => undefined;
+        let entered: () => void = () => undefined;
+        const gate = new Promise<void>((resolve) => { release = resolve; });
+        const started = new Promise<void>((resolve) => { entered = resolve; });
+
+        vi.spyOn(backend, "attachChildren").mockImplementation(async (attached, options) => {
+            const handle = await original(attached, options);
+
+            backend.childHandles.at(-1)?.addChild("existing", true, CROSS);
+            entered();
+            await gate;
+
+            return handle;
+        });
+        const subscribing = session.subscribe(tab, "Network.requestWillBeSent");
+        let closing: Promise<void> | undefined;
+
+        try {
+            await started;
+            const child = backend.childHandles[0]?.childrenOf.get("existing");
+
+            expect(child?.listenerCount("Network.requestWillBeSent")).toBe(1);
+            closing = kind === "tab" ? session.closeTab(tab) : session.close();
+            if (kind === "tab") await closing;
+
+            release();
+            await Promise.all([subscribing, closing]);
+            child?.emit("Network.requestWillBeSent", { requestId: "1" });
+            expect(child?.listenerCount("Network.requestWillBeSent")).toBe(0);
+            expect(emitted.a?.filter((item) => item.event === "cdp.event")).toEqual([]);
+        } finally {
+            release();
+            await Promise.allSettled([subscribing, closing]);
+            await session.close();
+        }
     });
 
     it("answers a paused request on the child session that raised it", async () => {
@@ -1678,6 +2195,22 @@ describe("trace lock", () => {
 
         if (session) session.failure = undefined;
 
+        await expect(start(b, tabB)).resolves.toBeDefined();
+    });
+
+    it("keeps the lock when ending a trace fails so its owner can retry", async () => {
+        const { a, b, backend, tabA, tabB } = await twoSessions();
+
+        await start(a, tabA);
+        const session = backend.sessions.get(tabA);
+
+        if (session) session.failure = new Error("stop failed");
+
+        await expect(end(a, tabA)).rejects.toThrow();
+        if (session) session.failure = undefined;
+
+        expect(await code(start(b, tabB))).toBe(ErrorCode.busy);
+        await expect(end(a, tabA)).resolves.toBeDefined();
         await expect(start(b, tabB)).resolves.toBeDefined();
     });
 

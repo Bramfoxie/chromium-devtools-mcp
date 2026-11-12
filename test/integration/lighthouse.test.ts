@@ -27,6 +27,7 @@ beforeAll(async () => {
         readOnly            : false,
         allowedDomains      : ["127.0.0.1"],
         deniedDomains       : [], allowPrivateNetworks: true, confirmDangerous    : false,
+        uploadDirs          : [],
     });
 
     for (const target of [env, bare, guarded]) {

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { flushMicrotasks } from "./helpers/fake-clock.js";
 import { main } from "../src/cli-main.js";
-import { type Config, ConfigError, loadConfig } from "../src/config/index.js";
+import { browsers, type Config, ConfigError, loadConfig } from "../src/config/index.js";
 import { AlreadyRunningError, type RunningDaemon } from "../src/daemon/index.js";
 import { type DaemonOutcome } from "../src/daemon/runner.js";
 
@@ -66,6 +66,28 @@ describe("usage", () => {
         expect(await run([flag])).toBe(0);
         expect(output.join("")).toContain("Usage:");
         expect(served).toEqual([]);
+    });
+
+    it("names every supported browser in the usage", async () => {
+        const { output, run } = harness();
+
+        await run(["--help"]);
+
+        expect(output.join("")).toContain(`--browser ${browsers.join("|")},`);
+    });
+
+    it("includes the upload directory restriction in the usage", async () => {
+        const { output, run } = harness();
+
+        await run(["--help"]);
+        expect(output.join("")).toContain("--upload-dirs");
+    });
+
+    it("includes the installer scope in the usage", async () => {
+        const { output, run } = harness();
+
+        await run(["--help"]);
+        expect(output.join("")).toContain("--scope user|project");
     });
 
     it("honors help in any position and mentions it in the usage", async () => {

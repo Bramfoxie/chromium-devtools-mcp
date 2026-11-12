@@ -6,6 +6,7 @@ import {
     CdpTimeoutError,
 } from "./errors.js";
 import { CdpSession } from "./session.js";
+import type { TrafficObserver } from "./traffic-log.js";
 import { type Transport, type TransportFactory, wsTransportFactory } from "./transport.js";
 import { isRecord } from "../util/is-record.js";
 import { messageOf } from "../util/message-of.js";
@@ -19,6 +20,7 @@ export interface ConnectOptions {
     createTransport? : TransportFactory;
     signal?          : AbortSignal;
     requestTimeoutMs?: number;
+    traffic?         : TrafficObserver;
 }
 
 export interface SendOptions {
@@ -79,6 +81,7 @@ export class CdpClient {
     private constructor(
         private readonly transport       : Transport,
         private readonly requestTimeoutMs: number,
+        private readonly traffic         : TrafficObserver | undefined,
     ) {
         transport.onMessage((data) => this.handleMessage(data));
         transport.onClose((reason) => this.shutdown(new CdpClosedError(reason)));
@@ -91,7 +94,7 @@ export class CdpClient {
         const createTransport = options.createTransport ?? wsTransportFactory;
         const transport = await createTransport(options.url, options.signal);
 
-        return new CdpClient(transport, requestTimeoutMs);
+        return new CdpClient(transport, requestTimeoutMs, options.traffic);
     }
 
     get closed(): boolean {
@@ -134,6 +137,10 @@ export class CdpClient {
 
             try {
                 this.transport.send(payload);
+
+                if (this.traffic !== undefined) {
+                    this.observe({ direction: "sent", method, id, bytes: Buffer.byteLength(payload) });
+                }
             } catch (error) {
                 clearTimeout(timer);
                 this.pending.delete(id);
@@ -151,14 +158,20 @@ export class CdpClient {
             this.listeners.set(key, handlers);
         }
 
-        handlers.add(handler);
+        const listener: EventHandler = (params, id) => handler(params, id);
+
+        handlers.add(listener);
+        let active = true;
 
         return () => {
+            if (!active) return;
+
+            active = false;
             const current = this.listeners.get(key);
 
-            if (!current) return;
+            if (!current || current !== handlers) return;
 
-            current.delete(handler);
+            current.delete(listener);
             if (current.size === 0) this.listeners.delete(key);
         };
     }
@@ -220,9 +233,11 @@ export class CdpClient {
             };
         }
 
-        this.closeHandlers.add(handler);
+        const listener = () => handler();
 
-        return () => void this.closeHandlers.delete(handler);
+        this.closeHandlers.add(listener);
+
+        return () => void this.closeHandlers.delete(listener);
     }
 
     async attach(targetId: string): Promise<CdpSession> {
@@ -247,8 +262,11 @@ export class CdpClient {
     dropSession(sessionId: string): void {
         const prefix = `${sessionId}|`;
 
-        for (const key of this.listeners.keys()) {
-            if (key.startsWith(prefix)) this.listeners.delete(key);
+        for (const [key, handlers] of this.listeners) {
+            if (!key.startsWith(prefix)) continue;
+
+            handlers.clear();
+            this.listeners.delete(key);
         }
 
         const gone = (name: string) =>
@@ -271,10 +289,10 @@ export class CdpClient {
     }
 
     close(): Promise<void> {
-        this.closePromise ??= (async () => {
+        if (!this.closePromise) {
+            this.closePromise = Promise.resolve().then(() => this.transport.close());
             this.shutdown(new CdpClosedError("the client was closed"));
-            await this.transport.close();
-        })();
+        }
 
         return this.closePromise;
     }
@@ -300,7 +318,11 @@ export class CdpClient {
         this.pending.clear();
         for (const waiter of [...this.closeWaiters]) waiter.fail(error);
         this.closeWaiters.clear();
-        for (const handler of [...this.closeHandlers]) this.runCloseHandler(handler);
+
+        for (const handler of [...this.closeHandlers]) {
+            if (this.closeHandlers.has(handler)) this.runCloseHandler(handler);
+        }
+
         this.closeHandlers.clear();
         this.listeners.clear();
     }
@@ -325,13 +347,34 @@ export class CdpClient {
         }
 
         if (typeof message.id === "number") {
+            if (this.traffic !== undefined) {
+                this.observe({
+                    direction: "received",
+                    id       : message.id,
+                    method   : this.pending.get(message.id)?.method,
+                    bytes    : Buffer.byteLength(raw),
+                });
+            }
+
             this.handleResponse(message.id, message);
         } else if (typeof message.method === "string") {
+            if (this.traffic !== undefined) {
+                this.observe({ direction: "received", method: message.method, bytes: Buffer.byteLength(raw) });
+            }
+
             const sessionId = typeof message.sessionId === "string" ? message.sessionId : undefined;
 
             this.dispatchEvent(message.method, message.params, sessionId);
         } else {
             logError("ignored a CDP message without an id and without a method");
+        }
+    }
+
+    private observe(entry: Parameters<TrafficObserver>[0]): void {
+        try {
+            this.traffic?.(entry);
+        } catch {
+            logError("could not record CDP traffic metadata");
         }
     }
 

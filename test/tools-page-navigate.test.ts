@@ -836,7 +836,12 @@ describe("page_navigate and private networks", () => {
 
     function runtimeFor(fake: FakeAccess, config = closed) {
         const { clock } = trackingSleep();
-        const runtime = new ToolRuntime({ access: fake.asAccess(), config, clock });
+        const runtime = new ToolRuntime({
+            access     : fake.asAccess(),
+            config,
+            clock,
+            resolveHost: async () => ["93.184.216.34"],
+        });
 
         return runtime;
     }

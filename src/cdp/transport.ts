@@ -1,6 +1,5 @@
 import WebSocket from "ws";
 import { CdpClosedError } from "./errors.js";
-import { messageOf } from "../util/message-of.js";
 
 const MAX_PAYLOAD_BYTES = 256 * 1024 * 1024;
 const CLOSE_GRACE_MS = 1000;
@@ -84,7 +83,7 @@ function connectSocket(
         const fail = (detail: string) =>
             reject(
                 new CdpClosedError(
-                    `cannot connect to ${url} (${detail}). ` +
+                    `cannot connect to the browser (${detail}). ` +
             "Check that the browser is running with remote debugging enabled",
                 ),
             );
@@ -97,8 +96,8 @@ function connectSocket(
                 followRedirects  : false,
                 handshakeTimeout : handshakeTimeoutMs,
             });
-        } catch (error) {
-            fail(messageOf(error));
+        } catch {
+            fail("invalid WebSocket address");
 
             return;
         }
@@ -113,10 +112,10 @@ function connectSocket(
             fail("the connection attempt was cancelled");
             socket.terminate();
         };
-        const onError = (error: Error) => {
+        const onError = () => {
             clearTimeout(budget);
             signal?.removeEventListener("abort", onAbort);
-            fail(error.message);
+            fail("the WebSocket handshake failed");
             socket.terminate();
         };
 

@@ -92,7 +92,7 @@ export class CdpBackend implements BrowserBackend {
     async setPermission(grant: PermissionGrant): Promise<void> {
         await this.client.send("Browser.setPermission", {
             permission: { name: grant.name },
-            setting   : "granted",
+            setting   : grant.setting ?? "granted",
             origin    : grant.origin,
             ...(grant.contextId === undefined ? {} : { browserContextId: grant.contextId }),
         });

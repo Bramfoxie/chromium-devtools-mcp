@@ -175,6 +175,17 @@ export class DaemonLink {
 
                 return;
             } catch (error) {
+                if (error instanceof RpcError && error.code === ErrorCode.badRequest &&
+                    error.message.startsWith("Invalid parameters for session.open: check unknown field")) {
+                    throw new RpcError(
+                        error.code,
+                        `${error.message} The daemon may be an older version. ` +
+                            "Run npx chromium-devtools-mcp daemon stop, then retry. " +
+                            "Stopping it disconnects all clients and closes tabs created by their sessions " +
+                            "and all pages in isolated contexts. It also stops a managed browser it started.",
+                    );
+                }
+
                 const notReady =
                     error instanceof RpcError && error.code === ErrorCode.browserNotReady;
 

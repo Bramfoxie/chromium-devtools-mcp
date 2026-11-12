@@ -19,7 +19,9 @@ import { nodeUploadEnvironment, type UploadEnvironment } from "./upload-environm
 import { FocusEmulation } from "./focus-emulation.js";
 import { FrameState } from "./frames.js";
 import { InterceptionManager } from "./mock/interception.js";
+import { type HostResolver, systemResolver } from "../safety/host-resolver.js";
 import { sleep } from "../util/sleep.js";
+import { logDaemon } from "../util/log.js";
 
 export type { ToolClock, ToolContext };
 
@@ -56,23 +58,24 @@ export class SessionTabs {
 }
 
 interface ToolRuntimeOptions {
-    access     : DaemonAccess;
-    config     : Config;
-    clock?     : ToolClock;
-    tabs?      : SessionTabs;
-    elements?  : ElementRegistry;
-    frames?    : FrameState;
-    focus?     : FocusEmulation;
-    capture?   : CaptureManager;
-    dialogs?   : DialogState;
-    mock?      : InterceptionManager;
-    emulation? : EmulationState;
-    upload?    : UploadEnvironment;
-    artifacts? : ArtifactStore;
-    video?     : VideoTools;
-    lighthouse?: LighthouseTools;
-    confirm?   : Confirmer;
-    audit?     : AuditLog;
+    access      : DaemonAccess;
+    config      : Config;
+    clock?      : ToolClock;
+    tabs?       : SessionTabs;
+    elements?   : ElementRegistry;
+    frames?     : FrameState;
+    focus?      : FocusEmulation;
+    capture?    : CaptureManager;
+    dialogs?    : DialogState;
+    mock?       : InterceptionManager;
+    emulation?  : EmulationState;
+    upload?     : UploadEnvironment;
+    artifacts?  : ArtifactStore;
+    video?      : VideoTools;
+    lighthouse? : LighthouseTools;
+    confirm?    : Confirmer;
+    audit?      : AuditLog;
+    resolveHost?: HostResolver;
 }
 
 export class ToolRuntime {
@@ -97,9 +100,11 @@ export class ToolRuntime {
     readonly artifacts    : ArtifactStore;
     readonly confirm      : Confirmer | undefined;
     readonly audit        : AuditLog | undefined;
+    readonly resolveHost  : HostResolver;
 
     constructor(options: ToolRuntimeOptions) {
         this.access = options.access;
+        this.resolveHost = options.resolveHost ?? systemResolver();
         this.config = options.config;
         this.clock = options.clock ?? {
             now: () => Date.now(),
@@ -165,19 +170,26 @@ export class ToolRuntime {
         const mock = this.mock.forget(targetId);
         const trace = this.trace.forget(targetId);
         const screencast = this.screencast.forget(targetId);
+        const settled = Promise.allSettled([mock, trace, screencast]);
 
         this.webauthn.forget(targetId);
         this.downloadState.forget(targetId);
-        const origin = this.emulation.snapshot(targetId).geolocation?.origin;
+        this.emulation.forgetOtherEmulation(targetId);
+        await this.emulation.withGeolocation(async () => {
+            const origin = this.emulation.snapshot(targetId).geolocation?.origin;
 
-        this.emulation.forget(targetId);
-        await Promise.allSettled([mock, trace, screencast]);
+            this.emulation.forget(targetId);
 
-        if (origin !== undefined && !this.emulation.geolocationOrigins().has(origin)) {
-            await this.access
-                .setPermission({ name: "geolocation", setting: "reset", origin })
-                .catch(() => undefined);
-        }
+            if (origin !== undefined && !this.emulation.geolocationOrigins().has(origin)) {
+                try {
+                    await this.access.setPermission({ name: "geolocation", setting: "reset", origin });
+                } catch {
+                    this.emulation.rememberGeolocationCleanup(origin);
+                    logDaemon("could not release a geolocation permission; cleanup will be retried");
+                }
+            }
+        });
+        await settled;
     }
 
     async resetAll(): Promise<void> {
@@ -195,6 +207,7 @@ export class ToolRuntime {
         this.downloadState.reset();
 
         this.emulation.reset();
+        await this.emulation.withGeolocation(async () => { this.emulation.resetGeolocations(); });
         await mock;
         await trace;
         await screencast;
@@ -222,6 +235,7 @@ export class ToolRuntime {
             downloadState: this.downloadState,
             artifacts    : this.artifacts,
             config       : this.config,
+            resolveHost  : this.resolveHost,
             clock        : this.clock,
             signal,
             forgetTab    : (targetId) => this.forgetTab(targetId),

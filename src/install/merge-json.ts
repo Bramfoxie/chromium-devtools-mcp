@@ -12,6 +12,7 @@ export function mergeJson(
     text : string | undefined,
     entry: ServerEntry | undefined,
     extra: Json = {},
+    key  : string = "mcpServers",
 ): MergeResult {
     const blank = text === undefined || text.trim() === "";
     let root: unknown = {};
@@ -26,10 +27,10 @@ export function mergeJson(
 
     if (!isRecord(root)) return { status: "invalid", reason: "the top level is not a JSON object" };
 
-    const servers = root.mcpServers;
+    const servers = root[key];
 
     if (servers !== undefined && !isRecord(servers)) {
-        return { status: "invalid", reason: "mcpServers is not a JSON object" };
+        return { status: "invalid", reason: `${key} is not a JSON object` };
     }
 
     const current = servers?.[SERVER_NAME];
@@ -44,7 +45,7 @@ export function mergeJson(
         return {
             status: "changed",
             action: "removed",
-            text  : serialize({ ...root, mcpServers: rest }, detectEol(text ?? "")),
+            text  : serialize({ ...root, [key]: rest }, detectEol(text ?? "")),
         };
     }
 
@@ -57,6 +58,6 @@ export function mergeJson(
     return {
         status: "changed",
         action: current === undefined ? "added" : "updated",
-        text  : serialize({ ...root, mcpServers: { ...servers, [SERVER_NAME]: next } }, detectEol(text ?? "")),
+        text  : serialize({ ...root, [key]: { ...servers, [SERVER_NAME]: next } }, detectEol(text ?? "")),
     };
 }

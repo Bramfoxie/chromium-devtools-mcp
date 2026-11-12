@@ -15,6 +15,8 @@ import { holdRendering } from "./hold-rendering.js";
 import { frameChain, mapRect, measureChain, revealChain, settleRendering } from "./frame-geometry.js";
 import { type ImageSize, imageSize } from "./image-size.js";
 import { binaryResult, imageBlock } from "./result.js";
+import { passwordBoxes } from "./screenshot-mask.js";
+import { maskImage, MaskImageUnavailableError, pixelBoxes } from "./screenshot-mask-image.js";
 import { resolveTab, tabSchema } from "./tab-target.js";
 
 const SCREENSHOT_DEFAULT_QUALITY = 80;
@@ -28,6 +30,8 @@ const SCREENSHOT_DEFAULT_MAX_BYTES = 4 * 1024 * 1024;
 const SCREENSHOT_MAX_BYTES_LIMIT = 16 * 1024 * 1024;
 
 const SCREENSHOT_DEFAULT_MAX_DIMENSION = 4096;
+
+const SCREENSHOT_MASK_MAX_PIXELS = 32_000_000;
 
 type ScreenshotFormat = "png" | "jpeg" | "webp";
 
@@ -284,13 +288,16 @@ function oversizeError(maxBytes: number): ToolError {
 }
 
 const screenshotSmall = z.strictObject({
-    width     : z.number().describe("Image width in pixels."),
-    height    : z.number().describe("Image height in pixels."),
-    pixelRatio: z.number().optional().describe("Pixels of the image per CSS pixel of the page. A pixel of a viewport shot is (x, y) divided by this in the CSS pixels that input_click takes. Absent when the size of the page is unknown."),
-    bytes     : z.number().describe("Image size in bytes."),
-    format    : z.enum(["png", "jpeg", "webp"]).describe("Image format."),
-    clipped   : z.boolean().describe("Whether the shot is clipped to an element or a rectangle."),
-    scaledDown: z.boolean().describe("Whether the shot was scaled below full size."),
+    width          : z.number().describe("Image width in pixels."),
+    height         : z.number().describe("Image height in pixels."),
+    pixelRatio     : z.number().optional().describe("Pixels of the image per CSS pixel of the page. A pixel of a viewport shot is (x, y) divided by this in the CSS pixels that input_click takes. Absent when the size of the page is unknown."),
+    bytes          : z.number().describe("Image size in bytes."),
+    format         : z.enum(["png", "jpeg", "webp"]).describe("Image format."),
+    clipped        : z.boolean().describe("Whether the shot is clipped to an element or a rectangle."),
+    scaledDown     : z.boolean().describe("Whether the shot was scaled below full size."),
+    maskedPasswords: z.number().optional().describe("Number of password fields masked in the image."),
+    maskIncomplete : z.boolean().optional().describe("Whether password masking may have missed content."),
+    maskWarning    : z.string().optional().describe("Limitations of password masking."),
 });
 
 const screenshotOutput = screenshotSmall.extend({
@@ -305,15 +312,16 @@ export const screenshot = defineTool({
     access: (args: unknown) =>
         (args as { target?: unknown } | null)?.target === undefined ? "read" : "mutate",
     input: z.strictObject({
-        tab         : tabSchema,
-        format      : z.enum(["png", "jpeg", "webp"]).optional().describe("Image format. Defaults to jpeg."),
-        quality     : z.number().int().min(1).max(100).optional().describe("Quality for jpeg and webp. Defaults to 80."),
-        fullPage    : z.boolean().optional().describe("Capture beyond the viewport. Defaults to false."),
-        target      : elementTargetSchema.optional().describe("Clip to this element after scrolling it into view."),
-        clip        : clipSchema.optional().describe("Clip to this CSS rectangle in page coordinates measured from the document origin. Rejected together with target."),
-        scale       : z.number().min(0.1).max(2).optional().describe("Scale factor. Defaults to 1."),
-        maxBytes    : z.number().int().min(1024).max(SCREENSHOT_MAX_BYTES_LIMIT).optional().describe("Maximum image bytes. Defaults to 4 MiB."),
-        maxDimension: z.number().int().min(64).max(16384).optional().describe("Clamp the longest side to this many pixels. Defaults to 4096."),
+        tab          : tabSchema,
+        format       : z.enum(["png", "jpeg", "webp"]).optional().describe("Image format. Defaults to jpeg."),
+        quality      : z.number().int().min(1).max(100).optional().describe("Quality for jpeg and webp. Defaults to 80."),
+        fullPage     : z.boolean().optional().describe("Capture beyond the viewport. Defaults to false."),
+        target       : elementTargetSchema.optional().describe("Clip to this element after scrolling it into view."),
+        clip         : clipSchema.optional().describe("Clip to this CSS rectangle in page coordinates measured from the document origin. Rejected together with target."),
+        scale        : z.number().min(0.1).max(2).optional().describe("Scale factor. Defaults to 1."),
+        maxBytes     : z.number().int().min(1024).max(SCREENSHOT_MAX_BYTES_LIMIT).optional().describe("Maximum image bytes. Defaults to 4 MiB."),
+        maxDimension : z.number().int().min(64).max(16384).optional().describe("Clamp the longest side to this many pixels. Defaults to 4096."),
+        maskPasswords: z.boolean().optional().describe("Cover password fields in the image. Dynamic page changes can still expose content."),
     }).superRefine((value, ctx) => {
         if (value.target !== undefined && value.clip !== undefined) {
             ctx.addIssue({ code: "custom", message: "Pass target or clip, not both." });
@@ -360,6 +368,10 @@ export const screenshot = defineTool({
                 maxDimension,
             });
 
+            const maskBounds = args.maskPasswords === true
+                ? await passwordBoxes(context, targetId)
+                : undefined;
+
             const shot = await shoot(context, targetId, {
                 format,
                 quality,
@@ -369,8 +381,47 @@ export const screenshot = defineTool({
                 maxBytes,
                 explicitPng          : args.format === "png",
             });
-            const bytes = Buffer.from(shot, "base64");
+            let bytes: Buffer = Buffer.from(shot, "base64");
             const size = imageSize(format, bytes);
+            let maskedPasswords: number | undefined;
+
+            if (maskBounds !== undefined) {
+                const after = await passwordBoxes(context, targetId);
+                const newLayout = await layoutOf(context.access, targetId);
+                const capture = plan.clip ?? (args.fullPage === true && layout.content !== undefined
+                    ? { x: 0, y: 0, ...layout.content }
+                    : layout.viewport);
+
+                if (size === undefined || capture === undefined || layout.viewport === undefined ||
+                    JSON.stringify(maskBounds) !== JSON.stringify(after) ||
+                    JSON.stringify(layout) !== JSON.stringify(newLayout)) {
+                    throw new ToolError("Password masking could not cover the screenshot. Retry when the page is stable.");
+                }
+
+                if (size.width * size.height > SCREENSHOT_MASK_MAX_PIXELS) {
+                    throw new ToolError("The screenshot is too large to mask. Use a smaller clip or scale.");
+                }
+
+                const inPage = maskBounds.map((box) => ({
+                    ...box,
+                    x: box.x + (layout.viewport?.x ?? 0), y: box.y + (layout.viewport?.y ?? 0),
+                }));
+                const masks = pixelBoxes(inPage, capture, size);
+
+                try {
+                    bytes = await maskImage(bytes, masks, format, quality);
+                } catch (error) {
+                    if (error instanceof MaskImageUnavailableError) {
+                        throw new ToolError("Password masking needs the image library for this platform. Reinstall with optional dependencies enabled.");
+                    }
+
+                    throw new ToolError("The screenshot could not be masked. Retry with a smaller image or another format.");
+                }
+
+                if (bytes.byteLength > maxBytes) throw oversizeError(maxBytes);
+
+                maskedPasswords = masks.length;
+            }
 
             const wholePage = args.fullPage === true
                 ? layout.content?.width
@@ -388,8 +439,13 @@ export const screenshot = defineTool({
                 format,
                 clipped   : plan.clipped,
                 scaledDown: plan.scaledDown,
-                data      : shot,
-                mimeType  : MIME_OF[format],
+                ...(maskedPasswords === undefined ? {} : {
+                    maskedPasswords,
+                    maskIncomplete: true,
+                    maskWarning   : "Masking is best effort. Page changes during capture may expose password fields; inspect the image before sharing it.",
+                }),
+                data    : bytes.toString("base64"),
+                mimeType: MIME_OF[format],
             };
         });
     },

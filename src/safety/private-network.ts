@@ -1,6 +1,15 @@
 const IPV4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
 
-const LOCAL_SUFFIXES = [".localhost", ".local", ".internal", ".lan", ".home.arpa"];
+const LOCAL_SUFFIXES = [
+    ".localhost",
+    ".local",
+    ".localdomain",
+    ".internal",
+    ".lan",
+    ".home.arpa",
+];
+
+const LOOPBACK_NAMES = new Set(["localhost", "ip6-localhost", "ip6-loopback"]);
 
 function ipv4Octets(host: string): number[] | undefined {
     const match = IPV4.exec(host);
@@ -93,7 +102,9 @@ export function isPrivateHost(hostname: string): boolean {
 
     if (host === "") return false;
 
-    if (host === "localhost" || LOCAL_SUFFIXES.some((suffix) => host.endsWith(suffix))) return true;
+    if (LOOPBACK_NAMES.has(host)) return true;
+
+    if (LOCAL_SUFFIXES.some((suffix) => host.endsWith(suffix))) return true;
 
     if (host.startsWith("[") && host.endsWith("]")) {
         const groups = parseIpv6(host.slice(1, -1));
@@ -104,4 +115,21 @@ export function isPrivateHost(hostname: string): boolean {
     const octets = ipv4Octets(host);
 
     return octets !== undefined && isPrivateIpv4(octets);
+}
+
+function isProxyPlaceholder(address: string): boolean {
+    const octets = ipv4Octets(address);
+
+    return octets !== undefined && octets[0] === 198 && (octets[1] === 18 || octets[1] === 19);
+}
+
+// Proxy and VPN tools answer public names with 198.18.0.0/15, so that range is not counted here.
+export function addressesArePrivate(addresses: readonly string[]): boolean {
+    return addresses.filter((address) => !isProxyPlaceholder(address)).some((address) => {
+        const bare = address.split("%")[0] ?? "";
+
+        if (bare.includes(":")) return isPrivateHost(`[${bare}]`);
+
+        return ipv4Octets(bare) === undefined || isPrivateHost(bare);
+    });
 }

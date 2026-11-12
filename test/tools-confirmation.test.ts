@@ -23,7 +23,7 @@ const extra = () => ({ signal: new AbortController().signal }) as Extra;
 
 const confirming: Config = {
     ...managedConfig,
-    safety: { ...managedConfig.safety, confirmDangerous: true },
+    safety: { ...managedConfig.safety, confirmDangerous: true, uploadDirs: [] },
 };
 
 function tool(name: string) {

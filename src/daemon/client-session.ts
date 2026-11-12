@@ -2,6 +2,8 @@ import { ChildSync, isMirroredEvent, isReplicated } from "./child-sync.js";
 import type { FrameSummary } from "./frames.js";
 import type { BrowserBackend, TargetInfo } from "./browser-backend.js";
 import { webOrigin } from "../safety/index.js";
+import { systemResolver, type HostResolver } from "../safety/host-resolver.js";
+import { resolutionProblem } from "../safety/resolution-check.js";
 import { RpcError } from "./errors.js";
 import { describeError, logDaemon } from "../util/log.js";
 import {
@@ -19,13 +21,20 @@ import type { TabInfo } from "./wire.js";
 import { type PermissionLedger, type PermissionName } from "./permissions.js";
 import type { TraceLock } from "./trace-lock.js";
 import { type OwnedTab, type Subscription, TabFrames } from "./tab-frames.js";
+import { checkUploadPaths, type UploadPathResolver } from "./upload-safety.js";
+import { prepareUploadCopies, type UploadCopies } from "./upload-copies.js";
+import { pinUploadRoots, type UploadRoot } from "./upload-roots.js";
+import { UploadSourceUnavailableError } from "./upload-source.js";
+import { CdpProtocolError } from "../cdp/index.js";
 
 const DETACH_GRACE_MS = 2000;
 
 export interface SessionOptions {
-    allowFocus    : boolean;
-    downloadsRoot?: string;
-    platform?     : NodeJS.Platform;
+    allowFocus        : boolean;
+    downloadsRoot?    : string;
+    platform?         : NodeJS.Platform;
+    resolveHost?      : HostResolver;
+    resolveUploadPath?: UploadPathResolver;
 }
 
 export type TabScope = "owned" | "available";
@@ -49,6 +58,12 @@ export interface ClientSessionInit {
     safety?    : SessionSafety;
     permissions: PermissionLedger;
     traceLock  : TraceLock;
+}
+
+interface PreparedUpload {
+    cancelled: boolean;
+    consumed : boolean;
+    copies?  : UploadCopies;
 }
 
 export type Emit = (event: string, params?: unknown) => void;
@@ -100,7 +115,9 @@ export class ClientSession {
     readonly clientName         : string;
     private readonly safety     : SessionSafety;
     private readonly permissions: PermissionLedger;
+    private readonly directPermissions = {};
     private readonly traceLock  : TraceLock;
+    private readonly uploads = new Map<string, PreparedUpload>();
 
     constructor(init: ClientSessionInit) {
         this.backend = init.backend;
@@ -112,8 +129,12 @@ export class ClientSession {
         this.safety = init.safety ?? NO_SAFETY;
         this.permissions = init.permissions;
         this.traceLock = init.traceLock;
-        this.frames = new TabFrames(this.backend, this.emit, (targetId, tab) =>
-            this.assertCurrent(targetId, tab));
+        this.frames = new TabFrames(
+            this.backend,
+            this.emit,
+            (targetId, tab) => this.assertCurrent(targetId, tab),
+            (targetId, tab) => this.assertRetained(targetId, tab),
+        );
     }
 
     get isolated(): boolean {
@@ -192,23 +213,147 @@ export class ClientSession {
     }
 
     async setPermission(request: {
-        name   : PermissionName;
-        setting: "granted" | "reset";
-        origin : string;
+        name      : PermissionName;
+        setting   : "granted" | "denied" | "reset";
+        origin    : string;
+        owner?    : "geolocation" | "permissions";
+        confirmed?: boolean;
     }): Promise<void> {
         this.ensureOpen();
+
+        if (request.owner !== "permissions" && (request.name !== "geolocation" || request.setting === "denied")) {
+            throw new RpcError(ErrorCode.badRequest, "Use the permissions owner for this permission change.");
+        }
+
         const origin = permissionOrigin(request.origin);
 
         checkPermissionOrigin(origin, this.safety);
 
-        const grant = { name: request.name, origin, contextId: this.contextId };
+        const problem = request.setting === "reset" ? undefined : await resolutionProblem(
+            origin, this.safety, this.options.resolveHost ?? systemResolver(),
+        );
+
+        this.ensureOpen();
+
+        if (problem !== undefined) {
+            throw new RpcError(ErrorCode.forbiddenMethod, `permission.set would act for ${origin}, ${problem.reason}. ${problem.hint}`);
+        }
+
+        if ((request.owner === "permissions" || request.setting !== "reset") &&
+            this.safety.confirmDangerous && request.confirmed !== true) {
+            throw new RpcError(ErrorCode.forbiddenMethod, "Changing a permission needs the user's confirmation. Use a tool that asks for it.");
+        }
+
+        const grant = { name: request.name, origin, contextId: this.contextId,
+            ...(request.owner === "permissions" && request.setting !== "reset" ? { setting: request.setting } : {}) };
+        const holder = request.owner === "permissions" ? this.directPermissions : this;
 
         try {
-            if (request.setting === "granted") await this.permissions.grant(this, grant);
-            else await this.permissions.release(this, grant);
+            if (request.setting === "reset") await this.permissions.release(holder, grant);
+            else await this.permissions.grant(holder, grant);
         } catch (error) {
             throw translate(error);
         }
+    }
+
+    async prepareUploads(request: {
+        ticket: string; files: string[]; confirmed?: boolean | undefined;
+    }): Promise<Array<{ path: string; size: number }>> {
+        this.ensureOpen();
+
+        if (this.safety.readOnly) {
+            throw new RpcError(ErrorCode.forbiddenMethod, "File attachment is refused because safety.readOnly is on.");
+        }
+
+        if (this.safety.confirmDangerous && request.confirmed !== true) {
+            throw new RpcError(ErrorCode.forbiddenMethod, "File attachment needs the user's confirmation.");
+        }
+
+        if (this.safety.uploadDirs.length === 0 || this.options.downloadsRoot === undefined) {
+            throw new RpcError(ErrorCode.forbiddenMethod, "Upload preparation needs safety.uploadDirs and a private artifact directory.");
+        }
+
+        if (this.uploads.has(request.ticket)) throw new RpcError(ErrorCode.badRequest, "This upload ticket is already in use.");
+
+        const entry: PreparedUpload = { cancelled: false, consumed: false };
+
+        this.uploads.set(request.ticket, entry);
+        let pinned: UploadRoot[] = [];
+
+        try {
+            pinned = await pinUploadRoots(
+                this.safety.uploadDirs, this.options.platform ?? process.platform,
+            );
+            const roots = await checkUploadPaths(
+                request.files, this.safety.uploadDirs,
+                this.options.platform ?? process.platform, this.options.resolveUploadPath,
+            );
+            const copies = await prepareUploadCopies(
+                request.files, roots, this.options.downloadsRoot,
+                this.options.platform ?? process.platform, () => entry.cancelled || this.isClosed,
+                undefined, pinned,
+            );
+
+            if (entry.cancelled || this.isClosed) {
+                await copies.discard();
+
+                throw new Error("Upload preparation cancelled.");
+            }
+
+            entry.copies = copies;
+
+            return copies.files;
+        } catch (error) {
+            this.uploads.delete(request.ticket);
+            if (error instanceof RpcError) throw error;
+
+            if (error instanceof UploadSourceUnavailableError) {
+                throw new RpcError(ErrorCode.forbiddenMethod, "Restricted file attachment needs native upload support. Reinstall with optional dependencies enabled.");
+            }
+
+            throw new RpcError(ErrorCode.forbiddenMethod, "File attachment could not be safely prepared against safety.uploadDirs. Check the files and allowed directories, then retry.");
+        } finally {
+            await Promise.allSettled(pinned.map(async (root) => root.close()));
+        }
+    }
+
+    async cancelUploads(ticket: string): Promise<void> {
+        const entry = this.uploads.get(ticket);
+
+        if (entry === undefined || entry.consumed) return;
+
+        entry.cancelled = true;
+
+        if (entry.copies !== undefined) {
+            this.uploads.delete(ticket);
+
+            try {
+                await entry.copies.discard();
+            } catch {
+                logDaemon("could not remove unused upload copies");
+
+                throw new RpcError(ErrorCode.internal, "Could not remove unused upload copies. Check the artifact directory.");
+            }
+        }
+    }
+
+    private usePreparedUploads(files: unknown, consume = false): PreparedUpload | undefined {
+        if (this.safety.uploadDirs.length === 0) return undefined;
+        if (Array.isArray(files) && files.length === 0) return undefined;
+
+        const entry = [...this.uploads.values()].find((candidate) =>
+            !candidate.cancelled && !candidate.consumed && candidate.copies !== undefined &&
+            Array.isArray(files) &&
+            candidate.copies.files.length === files.length &&
+            candidate.copies.files.every((file, index) => file.path === files[index]));
+
+        if (entry === undefined) {
+            throw new RpcError(ErrorCode.forbiddenMethod, "Prepare file attachments against safety.uploadDirs before sending them to the browser.");
+        }
+
+        if (consume) entry.consumed = true;
+
+        return entry;
     }
 
     async closeTab(targetId: string): Promise<void> {
@@ -304,6 +449,7 @@ export class ClientSession {
         await this.enforceSafety(targetId, tab, method, checked, frameId, confirmed);
 
         this.enterTrace(method, targetId);
+        let upload: PreparedUpload | undefined;
 
         try {
             const session = await this.frames.sessionFor(targetId, tab, frameId);
@@ -314,21 +460,34 @@ export class ClientSession {
                 ? await this.frames.routedChild(tab, method, checked)
                 : undefined;
 
-            if (routed !== undefined) return await routed.send(method, checked, timeoutMs);
+            this.assertCurrent(targetId, tab);
+            if (method === "DOM.setFileInputFiles") upload = this.usePreparedUploads(checked?.files, true);
 
-            const result = await session.send(method, checked, timeoutMs);
+            const result = routed === undefined
+                ? await session.send(method, checked, timeoutMs)
+                : await routed.send(method, checked, timeoutMs);
 
-            if (frameId === undefined && isReplicated(method)) {
+            if (routed === undefined && frameId === undefined && isReplicated(method)) {
                 await this.frames.replicate(targetId, tab, method, checked);
             }
+
+            if (method === "Tracing.end") this.traceLock.release(this, targetId);
 
             return result;
         } catch (error) {
             if (method === "Tracing.start") this.traceLock.release(this);
 
+            if (error instanceof CdpProtocolError && upload !== undefined) {
+                const ticket = [...this.uploads.entries()]
+                    .find(([, entry]) => entry === upload)?.[0];
+
+                if (ticket !== undefined) {
+                    upload.consumed = false;
+                    await this.cancelUploads(ticket).catch(() => undefined);
+                }
+            }
+
             throw translate(error);
-        } finally {
-            if (method === "Tracing.end") this.traceLock.release(this, targetId);
         }
     }
 
@@ -376,6 +535,10 @@ export class ClientSession {
             tabUrl,
             frameUrl: frameId === undefined ? undefined : tab.frames.get(frameId)?.summary.url,
         });
+
+        if (method === "DOM.setFileInputFiles") {
+            this.usePreparedUploads(params?.files);
+        }
     }
 
     async subscribe(targetId: string, event: string, frameId?: string): Promise<void> {
@@ -389,20 +552,47 @@ export class ClientSession {
         if (known !== undefined) {
             known.count += 1;
 
-            return;
+            return known.ready;
         }
 
+        let resolve: () => void = () => undefined;
+        let reject: (error: unknown) => void = () => undefined;
+        const ready = new Promise<void>((done, fail) => { resolve = done; reject = fail; });
+        let stop: () => void = () => undefined;
+        const mirrors = new Map<string, () => void>();
+        const subscription: Subscription = {
+            count: 1,
+            ready,
+            off  : () => {
+                stop();
+                for (const off of mirrors.values()) off();
+                mirrors.clear();
+            },
+            mirrors,
+        };
+
+        tab.subscriptions.set(key, subscription);
+        void this.installSubscription(
+            targetId, tab, event, frameId, key, subscription, (off) => { stop = off; },
+        ).then(resolve, reject);
+
+        return ready;
+    }
+
+    private async installSubscription(
+        targetId    : string,
+        tab         : OwnedTab,
+        event       : string,
+        frameId     : string | undefined,
+        key         : string,
+        subscription: Subscription,
+        setStop     : (off: () => void) => void,
+    ): Promise<void> {
         try {
             const session = await this.frames.sessionFor(targetId, tab, frameId);
 
             this.assertCurrent(targetId, tab);
-            const current = tab.subscriptions.get(key);
-
-            if (current !== undefined) {
-                current.count += 1;
-
-                return;
-            }
+            if (tab.subscriptions.get(key) !== subscription) return;
 
             const stop = session.on(event, (params) =>
                 this.emit("cdp.event", {
@@ -411,30 +601,33 @@ export class ClientSession {
                     params,
                     ...(frameId === undefined ? {} : { frameId }),
                 }));
-            const mirrors = new Map<string, () => void>();
-            const subscription: Subscription = {
-                count: 1,
-                off  : () => {
-                    stop();
-                    for (const off of mirrors.values()) off();
-                    mirrors.clear();
-                },
-                mirrors,
-            };
+
+            setStop(stop);
+
+            if (tab.subscriptions.get(key) !== subscription) {
+                stop();
+
+                return;
+            }
 
             if (frameId === undefined && isMirroredEvent(event)) {
                 subscription.mirror = (child) =>
                     this.frames.mirror(targetId, tab, subscription, event, child);
             }
 
-            tab.subscriptions.set(key, subscription);
-
             if (subscription.mirror !== undefined) {
                 const children = await this.frames.childrenOf(targetId, tab).catch(() => undefined);
+
+                if (tab.subscriptions.get(key) !== subscription) return;
 
                 for (const child of children?.children() ?? []) subscription.mirror(child);
             }
         } catch (error) {
+            if (tab.subscriptions.get(key) === subscription) {
+                tab.subscriptions.delete(key);
+                subscription.off();
+            }
+
             throw translate(error);
         }
     }
@@ -480,6 +673,16 @@ export class ClientSession {
         if (this.isClosed) return;
 
         this.isClosed = true;
+        for (const tab of this.tabs.values()) this.clearSubscriptions(tab);
+
+        for (const entry of this.uploads.values()) {
+            entry.cancelled = true;
+            const cleanup = entry.consumed ? entry.copies?.release() : entry.copies?.discard();
+
+            await cleanup?.catch(() => logDaemon("could not clean upload copies"));
+        }
+
+        this.uploads.clear();
         const entries = [...this.tabs.entries()];
 
         this.tabs.clear();
@@ -487,8 +690,6 @@ export class ClientSession {
         const claimed = new Set<string>();
 
         for (const [targetId, tab] of entries) {
-            for (const entry of tab.subscriptions.values()) entry.off();
-
             if (!tab.created && this.contextId === undefined) {
                 this.registry.releaseOwner(targetId, this);
                 claimed.add(targetId);
@@ -505,11 +706,16 @@ export class ClientSession {
             }),
         );
 
+        let disposedContextId: string | undefined;
+
         try {
-            await Promise.all([this.dispose(entries), within(detaches, DETACH_GRACE_MS)]);
+            [disposedContextId] = await Promise.all([
+                this.dispose(entries), within(detaches, DETACH_GRACE_MS),
+            ]);
         } finally {
             this.traceLock.release(this);
-            await this.permissions.releaseAll(this, this.contextId);
+            await this.permissions.releaseAll(this, disposedContextId);
+            await this.permissions.releaseAll(this.directPermissions, disposedContextId);
 
             for (const [targetId] of entries) {
                 if (!claimed.has(targetId)) this.registry.releaseOwner(targetId, this);
@@ -517,15 +723,15 @@ export class ClientSession {
         }
     }
 
-    private async dispose(entries: Array<[string, OwnedTab]>): Promise<void> {
+    private async dispose(entries: Array<[string, OwnedTab]>): Promise<string | undefined> {
         if (this.contextId !== undefined) {
             const contextId = this.contextId;
 
-            await this.attempt("dispose the browser context", () =>
+            const disposed = await this.attempt("dispose the browser context", () =>
                 this.backend.disposeContext(contextId),
             );
 
-            return;
+            return disposed ? contextId : undefined;
         }
 
         await Promise.all(
@@ -533,17 +739,23 @@ export class ClientSession {
                 .filter(([, tab]) => tab.created)
                 .map(([targetId]) => this.attempt("close a tab", () => this.backend.closeTarget(targetId))),
         );
+
+        return undefined;
     }
 
     private isAvailable(target: TargetInfo): boolean {
         return target.contextId === this.contextId && !this.registry.ownerOf(target.targetId);
     }
 
-    private async attempt(what: string, action: () => Promise<void>): Promise<void> {
+    private async attempt(what: string, action: () => Promise<void>): Promise<boolean> {
         try {
             await action();
+
+            return true;
         } catch (error) {
             logDaemon(`could not ${what}: ${describeError(error)}`);
+
+            return false;
         }
     }
 
@@ -564,8 +776,13 @@ export class ClientSession {
     }
 
     private assertCurrent(targetId: string, tab: OwnedTab): void {
+        this.assertRetained(targetId, tab);
+        if (tab.closing) throw tabGone();
+    }
+
+    private assertRetained(targetId: string, tab: OwnedTab): void {
         this.ensureOpen();
-        if (this.tabs.get(targetId) !== tab || tab.closing) throw tabGone();
+        if (this.tabs.get(targetId) !== tab) throw tabGone();
     }
 
     private owned(targetId: string): OwnedTab {
@@ -588,8 +805,15 @@ export class ClientSession {
 
         this.tabs.delete(targetId);
         this.registry.releaseOwner(targetId, this);
-        for (const entry of tab.subscriptions.values()) entry.off();
+        this.clearSubscriptions(tab);
         void tab.children?.then((children) => children.detachAll()).catch(() => undefined);
         void tab.attached?.then((session) => session.detach()).catch(() => undefined);
+    }
+
+    private clearSubscriptions(tab: OwnedTab): void {
+        const subscriptions = [...tab.subscriptions.values()];
+
+        tab.subscriptions.clear();
+        for (const entry of subscriptions) entry.off();
     }
 }

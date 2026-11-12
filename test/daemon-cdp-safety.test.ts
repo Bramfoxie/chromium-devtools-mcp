@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ErrorCode, RpcError } from "../src/daemon/index.js";
 import { SessionRegistry } from "../src/daemon/sessions.js";
 import { checkGuardedCall, NO_SAFETY, type SessionSafety } from "../src/daemon/cdp-safety.js";
+import { checkUploadPaths } from "../src/daemon/upload-safety.js";
 import { FakeBackend } from "./helpers/fake-backend.js";
 
 const safe = (patch: Partial<SessionSafety>): SessionSafety => ({ ...NO_SAFETY, ...patch });
@@ -25,7 +26,7 @@ describe("guarded CDP methods", () => {
         "Network.deleteCookies",
         "DOM.setFileInputFiles",
     ])("guards %s", (method) => {
-        const safety = safe({ confirmDangerous: true });
+        const safety = safe({ confirmDangerous: true, uploadDirs: [] });
 
         expect(refusal(() =>
             checkGuardedCall({ method, params: {}, safety, confirmed: false }),
@@ -50,7 +51,7 @@ describe("guarded CDP methods", () => {
     });
 
     it("needs confirmation for every guarded method when confirmDangerous is on", () => {
-        const safety = safe({ confirmDangerous: true });
+        const safety = safe({ confirmDangerous: true, uploadDirs: [] });
         const call = (method: string, confirmed: boolean) => () =>
             checkGuardedCall({ method, params: {}, safety, confirmed });
 
@@ -103,9 +104,12 @@ describe("guarded CDP methods", () => {
 });
 
 describe("session safety in the daemon", () => {
-    async function open(safety: SessionSafety) {
+    async function open(safety: SessionSafety, options: {
+        platform?         : NodeJS.Platform;
+        resolveUploadPath?: (path: string) => Promise<string>;
+    } = {}) {
         const backend = new FakeBackend();
-        const registry = new SessionRegistry<string>(backend, { allowFocus: false });
+        const registry = new SessionRegistry<string>(backend, { allowFocus: false, ...options });
         const session = await registry.open("a", () => undefined, {
             isolated  : false,
             clientName: "a",
@@ -120,6 +124,61 @@ describe("session safety in the daemon", () => {
 
         return error instanceof RpcError ? error : undefined;
     }
+
+    it("refuses a direct file attachment outside the upload directories", async () => {
+        const { session, backend } = await open(safe({ uploadDirs: ["/allowed"] }), {
+            platform: "linux", resolveUploadPath: async (path) => path,
+        });
+        const tab = await session.createTab("https://example.com/");
+        const result = await failure(session.send({
+            targetId: tab, method: "DOM.setFileInputFiles", params: { files: ["/outside/secret"], nodeId: 1 },
+        }));
+
+        expect(result?.code).toBe(ErrorCode.forbiddenMethod);
+        expect(backend.log.some((entry) => entry.includes("DOM.setFileInputFiles"))).toBe(false);
+    });
+
+    it("checks real paths and permits files inside the upload directories", async () => {
+        const resolve = async (path: string) => path === "/allowed/link" ? "/outside/secret" : path;
+
+        await expect(checkUploadPaths(["/allowed/link"], ["/allowed"], "linux", resolve)).rejects.toThrow();
+        await expect(checkUploadPaths(["/allowed-other/file"], ["/allowed"], "linux", resolve)).rejects.toThrow();
+        await expect(checkUploadPaths(["/allowed/file"], ["/allowed"], "linux", resolve)).resolves.toEqual(["/allowed"]);
+    });
+
+    it("checks Windows paths without depending on the host platform", async () => {
+        const resolve = async (path: string) => path;
+
+        await expect(checkUploadPaths(["c:\\allowed\\file.txt"], ["C:\\Allowed"], "win32", resolve))
+            .resolves.toEqual(["C:\\Allowed"]);
+        await expect(checkUploadPaths(["C:\\Outside\\file.txt"], ["C:\\Allowed"], "win32", resolve))
+            .rejects.toThrow();
+    });
+
+    it("uses a valid upload directory even when another cannot be resolved", async () => {
+        const resolve = async (path: string) => {
+            if (path === "/missing") throw new Error("missing");
+
+            return path;
+        };
+
+        await expect(checkUploadPaths(["/allowed/file"], ["/missing", "/allowed"], "linux", resolve))
+            .resolves.toEqual(["/allowed"]);
+    });
+
+    it("refuses malformed or unresolvable paths when upload directories are set", async () => {
+        const { session } = await open(safe({ uploadDirs: ["/allowed"] }), {
+            platform: "linux", resolveUploadPath: async () => { throw new Error("unavailable"); },
+        });
+        const tab = await session.createTab("https://example.com/");
+        const attach = (files: unknown) => session.send({
+            targetId: tab, method: "DOM.setFileInputFiles", params: { files, nodeId: 1 },
+        });
+
+        expect((await failure(attach([12])))?.code).toBe(ErrorCode.forbiddenMethod);
+        expect((await failure(attach(["/allowed/file"])))?.code).toBe(ErrorCode.forbiddenMethod);
+        await expect(attach([])).resolves.toMatchObject({ echoed: "DOM.setFileInputFiles" });
+    });
 
     it("refuses tab creation in read-only mode and outside the allowlist", async () => {
         const readOnly = await open(safe({ readOnly: true }));
@@ -217,7 +276,7 @@ describe("session safety in the daemon", () => {
     });
 
     it("enforces the cookie and file policy with the real tab URL", async () => {
-        const { session, backend } = await open(safe({ allowedDomains: ["example.com"], deniedDomains: [], allowPrivateNetworks: true, confirmDangerous: true }));
+        const { session, backend } = await open(safe({ allowedDomains: ["example.com"], deniedDomains: [], allowPrivateNetworks: true, confirmDangerous: true, uploadDirs: [] }));
         const tab = await session.createTab("https://example.com/");
 
         const unconfirmed = await failure(session.send({ targetId: tab, method: "Network.setCookie", params: { name: "a", value: "b", url: "https://example.com/" } }));

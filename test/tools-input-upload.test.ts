@@ -59,6 +59,7 @@ interface UploadWorld {
     files?           : number;
     hidden?          : boolean;
     navigateOnAttach?: boolean;
+    failCount?       : boolean;
 }
 
 function uploadFake(world: UploadWorld = {}): FakeAccess {
@@ -104,6 +105,7 @@ function uploadFake(world: UploadWorld = {}): FakeAccess {
 
                 if (declaration.includes("element.files")) {
                     if (navigated) throw new Error("Cannot find context with specified id");
+                    if (world.failCount) throw new Error("element detached");
 
                     return { result: { type: "object", value: { files: world.files ?? 2 } } };
                 }
@@ -190,7 +192,7 @@ describe("validateUploadFiles", () => {
         ));
 
         await expect(validateUploadFiles(linked, ["/tmp/link.txt"])).resolves.toEqual([
-            { path: "/data/real.txt", name: "link.txt", size: 3 },
+            { path: "/data/real.txt", name: "real.txt", size: 3 },
         ]);
     });
 
@@ -233,6 +235,94 @@ describe("validateUploadFiles", () => {
 });
 
 describe("input_upload", () => {
+    it("does not attach a prepared file after cancellation", async () => {
+        const fake = uploadFake({ files: 1 });
+        const access = fake.asAccess();
+        const controller = new AbortController();
+        let cleaned: () => void = () => undefined;
+        const cleanup = new Promise<void>((resolve) => { cleaned = resolve; });
+
+        access.prepareUploads = async () => {
+            controller.abort();
+
+            return { ticket: "a".repeat(32), files: [{ path: "/private/copy", size: 5 }] };
+        };
+
+        access.cancelUploads = async () => { cleaned(); };
+
+        const config = { ...managedConfig, safety: { ...managedConfig.safety, uploadDirs: ["/tmp"] } };
+        const upload = {
+            fs: memoryFs({ "/tmp/file.txt": { file: true, size: 5, readable: true } }), path: posix,
+        };
+        const runtime = new ToolRuntime({
+            access, config, upload, elements: new ElementRegistry(),
+        });
+
+        runtime.tabs.refresh(
+            [{ targetId: "tab1", url: "https://page.example/", title: "t", owned: true, created: true }],
+            "tab1",
+        );
+        runtime.elements.nextGeneration("tab1");
+        runtime.elements.assign("tab1", [{ backendNodeId: 101 }]);
+        await runTool(inputUpload, { target: { uid: "1_1" }, files: ["/tmp/file.txt"] },
+            { signal: controller.signal } as Extra, runtime);
+        await cleanup;
+        expect(fake.sent.some((call) => call.method === "DOM.setFileInputFiles")).toBe(false);
+    });
+
+    it("cancels prepared files while the attachment request is in flight", async () => {
+        const fake = uploadFake({ files: 1 });
+        const access = fake.asAccess();
+        const controller = new AbortController();
+        let started: () => void = () => undefined;
+        let cleaned: () => void = () => undefined;
+        let finish: () => void = () => undefined;
+        const entered = new Promise<void>((resolve) => { started = resolve; });
+        const cleanup = new Promise<void>((resolve) => { cleaned = resolve; });
+        const gate = new Promise<void>((resolve) => { finish = resolve; });
+        const respond = fake.respond;
+
+        fake.respond = (tab, method, params) => {
+            if (method === "DOM.setFileInputFiles") {
+                started();
+
+                return gate;
+            }
+
+            return respond?.(tab, method, params);
+        };
+
+        access.prepareUploads = async () => ({
+            ticket: "a".repeat(32), files: [{ path: "/private/copy", size: 5 }],
+        });
+
+        access.cancelUploads = async () => { cleaned(); };
+
+        const config = { ...managedConfig, safety: { ...managedConfig.safety, uploadDirs: ["/tmp"] } };
+        const upload = {
+            fs: memoryFs({ "/tmp/file.txt": { file: true, size: 5, readable: true } }), path: posix,
+        };
+        const runtime = new ToolRuntime({
+            access, config, upload, elements: new ElementRegistry(),
+        });
+
+        runtime.tabs.refresh(
+            [{ targetId: "tab1", url: "https://page.example/", title: "t", owned: true, created: true }],
+            "tab1",
+        );
+        runtime.elements.nextGeneration("tab1");
+        runtime.elements.assign("tab1", [{ backendNodeId: 101 }]);
+        const call = runTool(inputUpload, { target: { uid: "1_1" }, files: ["/tmp/file.txt"] },
+            { signal: controller.signal } as Extra, runtime);
+
+        await entered;
+        controller.abort();
+        await call;
+        await cleanup;
+        finish();
+        expect(fake.sent.some((entry) => entry.method === "DOM.setFileInputFiles")).toBe(true);
+    });
+
     it("is a dangerous mutate tool", () => {
         const dangerous = allTools
             .filter((tool) => tool.dangerous === true)
@@ -385,8 +475,8 @@ describe("input_upload", () => {
         }
     });
 
-    it("reports when the page accepted fewer files", async () => {
-        const { runtime } = runtimeWith(uploadFake({ files: 1 }));
+    it.each([{ files: 1 }, { failCount: true }])("reports an unverified selection for %j", async (world) => {
+        const { runtime } = runtimeWith(uploadFake(world));
         const real = await import("node:os");
         const path = await import("node:path");
         const fs = await import("node:fs/promises");
@@ -405,8 +495,9 @@ describe("input_upload", () => {
                 runtime,
             );
 
-            expect(result.isError).toBe(true);
-            expect(contentOf(result)).toContain("accepted 1 of 2 files");
+            expect(result.isError).not.toBe(true);
+            expect(result.structuredContent).toMatchObject({ ok: true, inputFilesMatch: false });
+            expect(contentOf(result)).toContain("verify the attachment");
         } finally {
             await fs.rm(dir, { recursive: true, force: true });
         }
@@ -518,5 +609,58 @@ describe("input_upload in frames", () => {
         } finally {
             await fs.rm(dir, { recursive: true, force: true });
         }
+    });
+});
+
+describe("validateUploadFiles with upload directories", () => {
+    const files = {
+        "/srv/up/a.txt"    : { file: true, size: 1, readable: true },
+        "/srv/up/sub/b.txt": { file: true, size: 2, readable: true },
+        "/srv/other/c.txt" : { file: true, size: 3, readable: true },
+        "/srv/up/link.txt" : { file: true, size: 4, readable: true },
+        "/srv/upload/d.txt": { file: true, size: 5, readable: true },
+        "/home/u/.ssh/key" : { file: true, size: 6, readable: true },
+    };
+    const env = (links: Record<string, string> = {}): UploadEnvironment => ({
+        fs  : memoryFs(files, links),
+        path: posix,
+    });
+
+    it("accepts files inside a listed directory, also nested ones", async () => {
+        await expect(
+            validateUploadFiles(env(), ["/srv/up/a.txt", "/srv/up/sub/b.txt"], ["/srv/up"]),
+        ).resolves.toHaveLength(2);
+    });
+
+    it("refuses a file outside every listed directory and names the option", async () => {
+        await expect(validateUploadFiles(env(), ["/srv/other/c.txt"], ["/srv/up"])).rejects.toThrow(
+            "safety.uploadDirs",
+        );
+        await expect(validateUploadFiles(env(), ["/srv/upload/d.txt"], ["/srv/up"])).rejects.toThrow(
+            "safety.uploadDirs",
+        );
+    });
+
+    it("judges a symbolic link by the file it points to", async () => {
+        await expect(
+            validateUploadFiles(env({ "/srv/up/link.txt": "/home/u/.ssh/key" }), ["/srv/up/link.txt"], ["/srv/up"]),
+        ).rejects.toThrow("safety.uploadDirs");
+    });
+
+    it("judges a listed directory that is a link by where it points", async () => {
+        await expect(
+            validateUploadFiles(env({ "/srv/up": "/srv/other" }), ["/srv/other/c.txt"], ["/srv/up"]),
+        ).resolves.toHaveLength(1);
+    });
+
+    it("applies no limit without directories and matches Windows paths without regard to case", async () => {
+        await expect(validateUploadFiles(env(), ["/home/u/.ssh/key"], [])).resolves.toHaveLength(1);
+
+        const windows: UploadEnvironment = {
+            fs  : memoryFs({ "C:\\Up\\a.txt": { file: true, size: 1, readable: true } }),
+            path: win32,
+        };
+
+        await expect(validateUploadFiles(windows, ["C:\\Up\\a.txt"], ["c:\\up"])).resolves.toHaveLength(1);
     });
 });

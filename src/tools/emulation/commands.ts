@@ -37,6 +37,20 @@ export interface GeolocationState {
     origin   : string;
 }
 
+export interface CpuState {
+    slowdown: number;
+}
+
+export const CPU_SLOWDOWN_MAX = 20;
+
+export function buildCpuCommands(state: CpuState): CdpCommand[] {
+    return [{ method: "Emulation.setCPUThrottlingRate", params: { rate: state.slowdown } }];
+}
+
+export function buildCpuResetCommands(): CdpCommand[] {
+    return buildCpuCommands({ slowdown: 1 });
+}
+
 export function buildGeolocationCommands(state: GeolocationState): CdpCommand[] {
     return [{
         method: "Emulation.setGeolocationOverride",

@@ -196,6 +196,23 @@ describe("perf_trace_start", () => {
 });
 
 describe("perf_trace_stop", () => {
+    it("allows retrying when the browser rejects the stop request", async () => {
+        const { fake, runtime } = setup();
+        const respond = fake.respond;
+
+        await runTool(perfTraceStart, {}, extra(), runtime);
+
+        fake.respond = (tab, method, params) => {
+            if (method === "Tracing.end") throw new Error("stop failed");
+
+            return respond?.(tab, method, params);
+        };
+
+        expect((await runTool(perfTraceStop, {}, extra(), runtime)).isError).toBe(true);
+        fake.respond = respond;
+        expect((await runTool(perfTraceStop, {}, extra(), runtime)).isError).not.toBe(true);
+    });
+
     it("ends the trace, filters it to the tab, saves it and reports the summary", async () => {
         const { fake, runtime, written } = setup();
 

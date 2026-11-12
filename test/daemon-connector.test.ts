@@ -19,6 +19,7 @@ const config: Config = {
         deniedDomains       : [],
         allowPrivateNetworks: true,
         confirmDangerous    : false,
+        uploadDirs          : [],
     },
 };
 
@@ -73,10 +74,12 @@ function setup(overrides: Partial<ConnectorDeps> = {}, agent: string | null = HE
 
             return launched;
         }),
-        attach     : vi.fn(async () => running),
-        findRunning: vi.fn(async () => undefined),
-        sleep      : async () => undefined,
-        connect    : async (url) => {
+        attach        : vi.fn(async () => running),
+        findRunning   : vi.fn(async () => undefined),
+        remember      : vi.fn(async () => undefined),
+        prepareProfile: vi.fn(async () => ({ path: "/data/profile", device: "1", inode: "1" })),
+        sleep         : async () => undefined,
+        connect       : async (url) => {
             const client = new FakeClient(url, agent);
 
             clients.push(client);
@@ -98,11 +101,33 @@ afterEach(() => {
 });
 
 describe("managed mode", () => {
+    it("does not reuse a browser when its profile binding changes during connection", async () => {
+        const findRunning = vi.fn().mockResolvedValueOnce(running).mockResolvedValue(undefined);
+        const { connector, clients, deps } = setup({ findRunning });
+        const handle = await connector(config, hooks, signal);
+
+        expect(clients[0]?.closed).toBe(true);
+        expect(clients[0]?.sent).toEqual(["Browser.getVersion"]);
+        expect(deps.launch).toHaveBeenCalled();
+        await handle.stop();
+    });
+
+    it("starts without a reusable binding when the profile identity is unavailable", async () => {
+        const { connector, deps } = setup({ prepareProfile: async () => { throw new Error("unavailable"); } });
+        const handle = await connector(config, { ...hooks, managedBinding: {
+            directory: "/private", platform: "linux", uid: 1,
+        } }, signal);
+
+        expect(deps.launch).toHaveBeenCalled();
+        expect(deps.remember).not.toHaveBeenCalled();
+        await handle.stop();
+    });
+
     it("launches a browser when none runs on the profile", async () => {
         const { deps, clients, order, connector } = setup();
         const handle = await connector(config, hooks, signal);
 
-        expect(deps.findRunning).toHaveBeenCalledWith("/data/profile", 9222);
+        expect(deps.findRunning).toHaveBeenCalledWith("/data/profile", config, undefined);
         expect(clients.map((client) => client.url)).toEqual([
             "ws://127.0.0.1:9222/devtools/browser/new",
         ]);
@@ -342,6 +367,7 @@ describe("attach mode with an explicit endpoint", () => {
 
         expect(attempts).toBe(3);
         expect(hooks.onWaiting).toHaveBeenCalledTimes(1);
-        expect(hooks.onWaiting).toHaveBeenCalledWith(endpointUnreachableMessage(endpoint));
+        expect(hooks.onWaiting).toHaveBeenCalledWith(endpointUnreachableMessage());
+        expect(hooks.onWaiting.mock.calls[0]?.[0]).not.toContain("given");
     });
 });

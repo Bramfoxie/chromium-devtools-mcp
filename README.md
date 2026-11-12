@@ -4,7 +4,7 @@
 [![npm](https://img.shields.io/npm/v/chromium-devtools-mcp)](https://www.npmjs.com/package/chromium-devtools-mcp)
 [![license](https://img.shields.io/npm/l/chromium-devtools-mcp)](LICENSE)
 
-An MCP server that lets AI agents drive Chrome through the DevTools Protocol, either your running browser or a managed profile, without stealing focus.
+An MCP server that lets AI agents drive Chrome and other Chromium browsers through the DevTools Protocol, either your running browser or a managed profile, without stealing focus.
 
 ## Why
 
@@ -21,7 +21,7 @@ An MCP server that lets AI agents drive Chrome through the DevTools Protocol, ei
 npx chromium-devtools-mcp install --client claude-code
 ```
 
-`--client` takes `claude-code`, `cursor`, `codex`, `cherry-studio` or `all`. Restart the client afterwards. Any other client that accepts a JSON `mcpServers` entry can use:
+`--client` takes `claude-code`, `cursor`, `codex`, `cherry-studio`, `claude-desktop`, `windsurf`, `gemini-cli`, `vscode`, `vscode-insiders` or `all`. Restart the client afterwards. Any other client that accepts a JSON `mcpServers` entry can use:
 
 ```json
 {
@@ -34,13 +34,13 @@ npx chromium-devtools-mcp install --client claude-code
 First run:
 
 - attach (default): the server connects to your running Chrome. If Chrome does not allow it yet, the server prints how to enable remote debugging at `chrome://inspect/#remote-debugging` and keeps waiting. It never falls back to another profile.
-- managed: pass `--mode managed`. The server launches Chrome with its own persistent profile, headed or with `--headless`.
+- managed: pass `--mode managed`. The server launches Chrome with its own persistent profile, headed or with `--headless`. Reusing an existing managed browser requires a private profile identity record; see [configuration.md](docs/configuration.md).
 
 If something does not connect, run `npx chromium-devtools-mcp doctor` (add the same flags as in your client entry). It checks the setup and prints how to fix what it finds. On macOS, when Chrome has remote debugging on but the client app that starts the server (Cherry Studio, Orca and similar) may not read Chrome's `DevToolsActivePort` file, the server and `doctor` say so and do not report that debugging is off; the fix is Full Disk Access for that app in System Settings, or starting `npx chromium-devtools-mcp daemon` once in a terminal that has access. `chromium-devtools-mcp config` (with the same flags) prints the effective configuration and which source set each value, and validates the config file. `daemon status`, `daemon stop` and `daemon logs` show and control the background daemon, see [docs/daemon.md](docs/daemon.md).
 
 ## Compared with the official Chrome DevTools MCP
 
-✅ means the project has the capability, ❌ means it has none.
+The marks cover the listed capabilities, not every tool or parameter. A check means the capability is available, a cross means no dedicated tool is listed, and `?` means it has not been compared.
 
 | Capability                                                                 | chromium-devtools-mcp | Chrome DevTools MCP |
 | -------------------------------------------------------------------------- | :-------------------: | :-----------------: |
@@ -48,7 +48,8 @@ If something does not connect, run `npx chromium-devtools-mcp doctor` (add the s
 | Focus never stolen, tabs open in the background                            |          ✅           |         ❌          |
 | Trusted input events (CDP) and DOM-level click as separate tools           |          ✅           |         ❌          |
 | Shadow DOM and cross-site iframe piercing in every element tool            |          ✅           |         ❌          |
-| Network mocking and failing requests                                       |          ✅           |         ❌          |
+| Network mocking                                                            |        &#9989;        |       &#9989;       |
+| Fail matching network requests                                             |        &#9989;        |      &#10060;       |
 | Network records with redaction of secrets in URLs and headers              |          ✅           |         ❌          |
 | Storage read and write (local, session, cookies)                           |          ✅           |         ❌          |
 | PDF export                                                                 |          ✅           |         ❌          |
@@ -58,44 +59,55 @@ If something does not connect, run `npx chromium-devtools-mcp doctor` (add the s
 | Locators by role, name or text, with auto-wait before input                |          ✅           |         ❌          |
 | HAR 1.2 export of network records                                          |          ✅           |         ❌          |
 | Audit log of every tool call with secrets redacted                         |          ✅           |         ❌          |
-| Choose the offered tools by name or group                                  |          ✅           |         ❌          |
+| Choose the offered tools by group                                          |        &#9989;        |       &#9989;       |
+| Choose the offered tools by name                                           |        &#9989;        |      &#10060;       |
 | Installer for several clients                                              |          ✅           |         ❌          |
 | Attach to your running browser                                             |          ✅           |         ✅          |
 | Managed persistent profile                                                 |          ✅           |         ✅          |
-| Isolated browser context per session                                       |          ✅           |         ✅          |
+| Isolated browser context per session                                       |        &#9989;        |      &#10060;       |
 | Performance traces and insights                                            |          ✅           |         ✅          |
 | Lighthouse audit                                                           |          ✅           |         ✅          |
 | Heap snapshots                                                             |          ✅           |         ✅          |
 | Screencast recording                                                       |          ✅           |         ✅          |
-| WebAuthn virtual authenticators                                            |          ✅           |         ✅          |
-| PWA inspection (manifest, installability, service workers)                 |          ✅           |         ✅          |
+| WebAuthn virtual authenticators                                            |        &#9989;        |       &#9989;       |
+| PWA inspection (manifest, installability, service workers)                 |        &#9989;        |      &#10060;       |
 | Geolocation emulation                                                      |          ✅           |         ✅          |
+| Password field masking in screenshots, best effort                         |        &#9989;        |      &#10060;       |
+| Permission overrides by origin                                             |        &#9989;        |      &#10060;       |
+| CPU throttling                                                             |        &#9989;        |       &#9989;       |
+| CDP metadata log without message contents                                  |        &#9989;        |          ?          |
+| Restrict uploads to configured directories                                 |        &#9989;        |       &#9989;       |
+| WebMCP tool discovery and execution                                        |       &#10060;        |       &#9989;       |
+| Third party developer tool discovery and execution                         |       &#10060;        |       &#9989;       |
+| Heap snapshot analysis tools                                               |       &#10060;        |       &#9989;       |
 | PWA install and extension management                                       |          ❌           |         ✅          |
-| Browsers other than Chrome                                                 |          ❌           |         ❌          |
+| Other Chromium browser discovery, not tested with a live browser           |        &#9989;        |          ?          |
 
 Lighthouse audits and the video of a screencast use the `lighthouse` and `ffmpeg` programs when they are installed on your machine; `doctor` shows whether they are.
 
-Compared against Chrome DevTools MCP 1.12.0 (2026-10-22, [ChromeDevTools/chrome-devtools-mcp](https://github.com/ChromeDevTools/chrome-devtools-mcp)). A cross on its side means its tool reference lists no tool for that capability. Version 0.2.0 of this project supports Chrome only.
+Compared against Chrome DevTools MCP 1.13.0 (2026-11-11, [ChromeDevTools/chrome-devtools-mcp](https://github.com/ChromeDevTools/chrome-devtools-mcp)). Some of its tool categories, including network mocks and WebAuthn, require startup flags. Its cross marks refer to the published tool reference for that version. This project detects Chrome channels, Chromium and Edge; only stable Chrome has been tested with a live browser.
 
 ## Tools
 
-56 tools. Details and parameters are in [docs/tools.md](docs/tools.md).
+62 tools. Details and parameters are in [docs/tools.md](docs/tools.md).
 
-| Category    | Tools                                                                                                                                               |
-| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Tabs        | `list_tabs`, `popup_list`, `window_list`, `list_sessions`, `select_tab`, `new_tab`, `close_tab`, `bring_to_front`                                   |
-| Pages       | `page_info`, `page_navigate`, `page_wait`, `page_dialogs`, `page_metrics`, `page_pdf`                                                               |
-| Inspection  | `dom_query`, `dom_snapshot`, `a11y_snapshot`, `dom_selector`, `dom_edit`, `css_inspect`, `event_listeners`, `css_edit`, `js_evaluate`, `screenshot` |
-| Input       | `click`, `input_click`, `input_hover`, `input_drag`, `input_type`, `input_key`, `input_scroll`, `input_select`, `input_upload`, `fill_form`         |
-| Performance | `perf_trace_start`, `perf_trace_stop`, `heap_snapshot`, `screencast_start`, `screencast_stop`, `lighthouse_audit`                                   |
-| Observation | `console_logs`, `network_requests`, `network_har`, `network_response_body`                                                                          |
-| Network     | `network_mock`                                                                                                                                      |
-| Storage     | `storage_read`, `storage_write`, `downloads`                                                                                                        |
-| Web auth    | `webauthn`                                                                                                                                          |
-| Web apps    | `pwa_info`                                                                                                                                          |
-| Emulation   | `list_devices`, `emulate_device`, `emulate_media`, `emulate_network`, `emulate_locale`, `emulate_geolocation`                                       |
+| Category    | Tools                                                                                                                                                               |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Tabs        | `list_tabs`, `popup_list`, `window_list`, `list_sessions`, `select_tab`, `new_tab`, `tab_duplicate`, `close_tab`, `bring_to_front`                                  |
+| Pages       | `page_info`, `browser_info`, `page_extract`, `page_navigate`, `page_wait`, `page_dialogs`, `page_metrics`, `page_pdf`                                               |
+| Inspection  | `dom_query`, `dom_snapshot`, `a11y_snapshot`, `dom_selector`, `find_in_page`, `dom_edit`, `css_inspect`, `event_listeners`, `css_edit`, `js_evaluate`, `screenshot` |
+| Input       | `click`, `input_click`, `input_hover`, `input_drag`, `input_type`, `input_key`, `input_scroll`, `input_select`, `input_upload`, `fill_form`                         |
+| Performance | `perf_trace_start`, `perf_trace_stop`, `heap_snapshot`, `screencast_start`, `screencast_stop`, `lighthouse_audit`                                                   |
+| Observation | `console_logs`, `network_requests`, `network_har`, `network_response_body`                                                                                          |
+| Network     | `network_mock`                                                                                                                                                      |
+| Storage     | `storage_read`, `storage_write`, `downloads`                                                                                                                        |
+| Web auth    | `webauthn`                                                                                                                                                          |
+| Web apps    | `pwa_info`                                                                                                                                                          |
+| Emulation   | `list_devices`, `emulate_device`, `emulate_media`, `emulate_network`, `emulate_cpu`, `emulate_locale`, `emulate_geolocation`, `permissions`                         |
 
 ## Resources
+
+The `screenshot` tool can cover password inputs with `maskPasswords: true`. This is best effort; inspect the image before sharing it.
 
 The tabs of your session are also MCP resources, for clients that attach resources to a conversation: `browser://tab/<tab id>/text` (the visible text with the address and title), `browser://tab/<tab id>/screenshot` (a PNG of the visible area) and `browser://tab/<tab id>/console` (console messages and exceptions). The list follows the tabs the session owns. Text and console are marked as untrusted page content like tool results. Details: [docs/tools.md](docs/tools.md).
 
@@ -106,6 +118,7 @@ The tabs of your session are also MCP resources, for clients that attach resourc
 - `safety.deniedDomains` blocks hosts for mutating tools and navigation, and wins over the allow list.
 - `safety.allowPrivateNetworks` is off by default: `new_tab` and `page_navigate` refuse local and private network addresses (`localhost`, `192.168.x.x`, `169.254.169.254` and similar), also after a redirect. A host named in `safety.allowedDomains` is still opened.
 - Tool results that can carry page content start with an `untrusted` notice that tells the model to treat the values as data, not as instructions. Page text stays inside quoted JSON strings, so it cannot close the notice.
+- `safety.uploadDirs` limits `input_upload` to files inside the listed directories and uses private copies to prevent path replacement during attachment. Copies remain available for later page reads; see [safety.md](docs/safety.md).
 - `safety.confirmDangerous` asks the user through MCP elicitation before scripts, storage writes, cookie reads, file uploads, location emulation, heap snapshots that are saved and DOM edits that replace HTML or remove an element.
 
 The daemon enforces these per session. Limits and exact rules: [docs/safety.md](docs/safety.md).
@@ -124,17 +137,22 @@ Sources from lowest to highest priority: defaults, JSON file, `CHROMIUM_DEVTOOLS
 | `wsEndpoint`                  | `--ws-endpoint`            | unset, attach only      |
 | `allowFocus`                  | `--allow-focus`            | false                   |
 | `isolated`                    | `--isolated`               | false                   |
+| `tools`                       | `--tools`                  | all tools               |
+| `excludeTools`                | `--exclude-tools`          | none                    |
+| `auditLog`                    | `--audit-log`              | unset                   |
+| `cdpLog`                      | `--cdp-log`                | unset                   |
 | `safety.readOnly`             | `--read-only`              | false                   |
 | `safety.allowedDomains`       | `--allowed-domains`        | empty, no limit         |
 | `safety.deniedDomains`        | `--denied-domains`         | empty                   |
 | `safety.allowPrivateNetworks` | `--allow-private-networks` | false                   |
 | `safety.confirmDangerous`     | `--confirm-dangerous`      | false                   |
+| `safety.uploadDirs`           | `--upload-dirs`            | empty, no limit         |
 
 Env names, file paths and rules: [docs/configuration.md](docs/configuration.md).
 
 ## Supported
 
-- Browser: Chrome.
+- Browsers: Chrome stable, Chrome Beta, Dev and Canary, Chromium and Edge. Only stable Chrome has been tested with a live browser; Canary is not available on Linux.
 - OS: macOS, Linux, Windows.
 - Node.js 24 or newer. Transport: stdio.
 
@@ -147,6 +165,7 @@ Env names, file paths and rules: [docs/configuration.md](docs/configuration.md).
 - [Output limits](docs/output-limits.md)
 - [Daemon and sessions](docs/daemon.md)
 - [Installer](docs/install.md)
+- [Troubleshooting](docs/troubleshooting.md)
 - [Contributing](CONTRIBUTING.md), [security policy](SECURITY.md) and [code of conduct](CODE_OF_CONDUCT.md)
 
 Wheel scrolling can experimentally observe a trusted event in the document under the point; an unconfirmed observation does not mean the event was not delivered. See [tool details](docs/tools.md).

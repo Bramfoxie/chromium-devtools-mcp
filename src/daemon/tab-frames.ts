@@ -22,6 +22,7 @@ export interface FrameEntry {
 
 export interface Subscription {
     count  : number;
+    ready  : Promise<void>;
     off    : () => void;
     mirror?: (child: FrameChildSession) => void;
     mirrors: Map<string, () => void>;
@@ -43,9 +44,10 @@ function unknownFrame(): RpcError {
 
 export class TabFrames {
     constructor(
-        private readonly backend      : BrowserBackend,
-        private readonly emit         : Emit,
-        private readonly assertCurrent: (targetId: string, tab: OwnedTab) => void,
+        private readonly backend       : BrowserBackend,
+        private readonly emit          : Emit,
+        private readonly assertCurrent : (targetId: string, tab: OwnedTab) => void,
+        private readonly assertRetained: (targetId: string, tab: OwnedTab) => void,
     ) {}
 
     async list(targetId: string, tab: OwnedTab): Promise<FrameSummary[]> {
@@ -182,8 +184,11 @@ export class TabFrames {
             child.send("Page.getFrameTree", undefined, CHILD_COMMAND_TIMEOUT_MS).catch(
                 () => undefined,
             )));
+        const live = new Set(children.children().map((child) => child.child.sessionId));
 
         for (const [index, child] of sessions.entries()) {
+            if (!live.has(child.child.sessionId)) continue;
+
             const tree = frameSummaries(trees[index], () => true);
             const root = tree[0];
 
@@ -238,6 +243,7 @@ export class TabFrames {
         tab     : OwnedTab,
         child   : FrameChildSession,
     ): Promise<void> {
+        this.assertRetained(targetId, tab);
         for (const subscription of tab.subscriptions.values()) subscription.mirror?.(child);
 
         await Promise.all(tab.sync.replay().map((command) =>

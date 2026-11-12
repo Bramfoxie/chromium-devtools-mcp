@@ -62,7 +62,12 @@ describe.skipIf(!present)("perf_trace in a real browser", () => {
 
         expect(started).toMatchObject({ tab: mine, recording: true, reloaded: true });
         await env.ok("page_navigate", { tab: other, action: "reload" });
-        await new Promise((resolve) => setTimeout(resolve, 1200));
+        await env.ok("page_wait", {
+            tab       : mine,
+            expression: "document.body.firstElementChild?.textContent === 'shift'",
+            timeoutMs : 20000,
+        });
+        await new Promise((resolve) => setTimeout(resolve, 500));
 
         const stopped = (await env.ok("perf_trace_stop", { tab: mine })) as unknown as Stopped;
         const text = await readFile(stopped.file.path, "utf8");

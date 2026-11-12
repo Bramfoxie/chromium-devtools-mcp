@@ -3,10 +3,11 @@ import { throwIfCancelled } from "../registry.js";
 import type { CdpCommand } from "./commands.js";
 
 interface EmulationStep {
-    commands : CdpCommand[];
-    record   : () => void;
-    undo?    : CdpCommand[];
-    unrecord?: () => void;
+    commands   : CdpCommand[];
+    record     : () => void;
+    undo?      : CdpCommand[];
+    unrecord?  : () => void;
+    undoFailed?: () => void;
 }
 
 async function sendBestEffort(
@@ -53,7 +54,7 @@ export async function runSteps(
             }
         } catch (error) {
             if (attempted && step.undo !== undefined) {
-                await sendBestEffort(access, targetId, step.undo);
+                if (!await sendBestEffort(access, targetId, step.undo)) step.undoFailed?.();
             }
 
             for (const finished of done.reverse()) {

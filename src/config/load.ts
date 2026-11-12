@@ -78,9 +78,11 @@ function envLayer(env: NodeJS.ProcessEnv): Layer {
     const port = get("DEBUG_PORT");
     const domains = get("ALLOWED_DOMAINS");
     const denied = get("DENIED_DOMAINS");
+    const uploads = get("UPLOAD_DIRS");
     const tools = get("TOOLS");
     const excluded = get("EXCLUDE_TOOLS");
     const auditLog = get("AUDIT_LOG");
+    const cdpLog = get("CDP_LOG");
 
     return compact({
         browser     : get("BROWSER"),
@@ -94,12 +96,14 @@ function envLayer(env: NodeJS.ProcessEnv): Layer {
         tools       : tools === undefined ? undefined : toList(tools),
         excludeTools: excluded === undefined ? undefined : toList(excluded),
         auditLog    : auditLog,
+        cdpLog,
         safety      : {
             readOnly            : bool("READ_ONLY"),
             allowedDomains      : domains === undefined ? undefined : toList(domains),
             deniedDomains       : denied === undefined ? undefined : toList(denied),
             allowPrivateNetworks: bool("ALLOW_PRIVATE_NETWORKS"),
             confirmDangerous    : bool("CONFIRM_DANGEROUS"),
+            uploadDirs          : uploads === undefined ? undefined : toList(uploads),
         },
     });
 }
@@ -127,7 +131,9 @@ function parseFlags(argv: string[]) {
                 tools                   : { type: "string" },
                 "exclude-tools"         : { type: "string" },
                 "audit-log"             : { type: "string" },
+                "cdp-log"               : { type: "string" },
                 "confirm-dangerous"     : { type: "boolean" },
+                "upload-dirs"           : { type: "string" },
             },
         });
     } catch (error) {
@@ -142,9 +148,11 @@ function argvLayer(argv: string[]): Layer {
     const port = values["debug-port"];
     const domains = values["allowed-domains"];
     const denied = values["denied-domains"];
+    const uploads = values["upload-dirs"];
     const tools = values.tools;
     const excluded = values["exclude-tools"];
     const auditLog = values["audit-log"];
+    const cdpLog = values["cdp-log"];
 
     return compact({
         browser     : values.browser,
@@ -158,12 +166,14 @@ function argvLayer(argv: string[]): Layer {
         tools       : typeof tools === "string" ? toList(tools) : tools,
         excludeTools: typeof excluded === "string" ? toList(excluded) : excluded,
         auditLog    : auditLog,
+        cdpLog,
         safety      : {
             readOnly            : values["read-only"],
             allowedDomains      : typeof domains === "string" ? toList(domains) : domains,
             deniedDomains       : typeof denied === "string" ? toList(denied) : denied,
             allowPrivateNetworks: values["allow-private-networks"],
             confirmDangerous    : values["confirm-dangerous"],
+            uploadDirs          : typeof uploads === "string" ? toList(uploads) : uploads,
         },
     });
 }
@@ -230,6 +240,7 @@ function resolveLayers(options: LoadOptions): Resolved {
             deniedDomains       : [],
             allowPrivateNetworks: false,
             confirmDangerous    : false,
+            uploadDirs          : [],
         },
     };
 
@@ -271,6 +282,13 @@ function validate(resolved: Resolved): Config {
             );
         }
 
+        if (
+            result.data.cdpLog !== undefined
+            && !pathFor(resolved.platform).isAbsolute(result.data.cdpLog)
+        ) {
+            throw new ConfigError("invalid configuration: cdpLog: must be an absolute path");
+        }
+
         return result.data;
     }
 
@@ -304,6 +322,7 @@ const FIELDS = [
     "tools",
     "excludeTools",
     "auditLog",
+    "cdpLog",
 ] as const;
 
 const SAFETY_FIELDS = [
@@ -312,6 +331,7 @@ const SAFETY_FIELDS = [
     "deniedDomains",
     "allowPrivateNetworks",
     "confirmDangerous",
+    "uploadDirs",
 ] as const;
 
 // The effective configuration with the layer that set each value; the last layer that sets it wins.

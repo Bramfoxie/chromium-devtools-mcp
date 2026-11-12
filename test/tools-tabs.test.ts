@@ -12,6 +12,7 @@ import {
     popupList,
     runTool,
     selectTab,
+    tabDuplicate,
     ToolRuntime,
     windowList,
 } from "../src/tools/index.js";
@@ -32,6 +33,70 @@ function setup(config: Config = managedConfig, access?: FakeAccess) {
 function textOf(result: Awaited<ReturnType<typeof runTool>>): string {
     return JSON.stringify(result.content);
 }
+
+describe("tab_duplicate", () => {
+    it("opens a background copy without changing the selected tab", async () => {
+        const { fake, runtime } = setup();
+
+        await runTool(newTab, {}, extra(), runtime);
+        const result = await runTool(tabDuplicate, {}, extra(), runtime);
+
+        expect(result.isError).not.toBe(true);
+        expect(fake.created).toEqual(["tab1", "tab2"]);
+        expect(runtime.tabs.selected()).toBe("tab1");
+    });
+
+    it("refuses read only mode without creating a tab", async () => {
+        const config = { ...managedConfig, safety: { ...managedConfig.safety, readOnly: true } };
+        const { fake, runtime } = setup(config);
+        const result = await runTool(tabDuplicate, { tab: "tab1" }, extra(), runtime);
+
+        expect(result.isError).toBe(true);
+        expect(fake.created).toEqual([]);
+    });
+
+    it("refuses an address that resolves to a private network", async () => {
+        const fake = new FakeAccess();
+        const runtime = new ToolRuntime({
+            access: fake.asAccess(),
+            config: {
+                ...managedConfig,
+                safety: { ...managedConfig.safety, allowPrivateNetworks: false },
+            },
+            resolveHost: async () => ["127.0.0.1"],
+        });
+
+        await runTool(newTab, {}, extra(), runtime);
+        const source = fake.tabs[0];
+
+        if (source === undefined) throw new Error("expected a tab");
+
+        source.url = "https://public.example/";
+        const result = await runTool(tabDuplicate, {}, extra(), runtime);
+
+        expect(result.isError).toBe(true);
+        expect(fake.created).toEqual(["tab1"]);
+    });
+
+    it("does not duplicate a tab outside the domain allowlist", async () => {
+        const config = {
+            ...managedConfig,
+            safety: { ...managedConfig.safety, allowedDomains: ["allowed.example"] },
+        };
+        const { fake, runtime } = setup(config);
+
+        await runTool(newTab, {}, extra(), runtime);
+        const source = fake.tabs[0];
+
+        if (source === undefined) throw new Error("expected a tab");
+
+        source.url = "https://blocked.example/";
+        const result = await runTool(tabDuplicate, {}, extra(), runtime);
+
+        expect(result.isError).toBe(true);
+        expect(fake.created).toEqual(["tab1"]);
+    });
+});
 
 describe("window_list", () => {
     it("does not return window data after cancellation during the last lookup", async () => {

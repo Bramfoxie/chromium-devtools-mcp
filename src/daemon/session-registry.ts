@@ -12,8 +12,48 @@ import { TraceLock } from "./trace-lock.js";
 import { ErrorCode } from "./protocol.js";
 import type { SessionSummary } from "./wire.js";
 import { closedError, translate } from "./rpc-errors.js";
+import { logDaemon } from "../util/log.js";
 
 const MAX_REMEMBERED_DESTROYED = 512;
+
+class InterruptedContextCleanupError extends Error {
+    constructor() {
+        super("Could not dispose an interrupted browser context.");
+    }
+}
+
+function deferred<T>(): {
+    promise: Promise<T>;
+    fulfill: (value: T | PromiseLike<T>) => void;
+    fail   : (error: unknown) => void;
+} {
+    let fulfill: (value: T | PromiseLike<T>) => void = () => undefined;
+    let fail: (error: unknown) => void = () => undefined;
+    const promise = new Promise<T>((resolve, reject) => {
+        fulfill = resolve;
+        fail = reject;
+    });
+
+    return { promise, fulfill, fail };
+}
+
+function trackOperation<T>(pending: Set<Promise<T>>, run: () => Promise<T>): Promise<T> {
+    const { promise: tracked, fulfill, fail } = deferred<T>();
+
+    pending.add(tracked);
+    void tracked.then(
+        () => pending.delete(tracked),
+        () => pending.delete(tracked),
+    );
+
+    try {
+        void run().then(fulfill, fail);
+    } catch (error) {
+        fail(error);
+    }
+
+    return tracked;
+}
 
 export interface SessionOpenOptions {
     isolated  : boolean;
@@ -25,11 +65,14 @@ export class SessionRegistry<K> implements Ownership {
     private readonly sessions = new Map<K, ClientSession>();
     private readonly owners = new Map<string, ClientSession>();
     private readonly opening = new Map<K, symbol>();
+    private readonly openingTasks = new Set<Promise<ClientSession>>();
     private readonly sessionIds = new Map<ClientSession, string>();
+    private readonly closing = new Set<Promise<void>>();
     private nextSessionId = 1;
     private readonly destroyed = new Set<string>();
     private readonly stopListening: () => void;
     private shuttingDown = false;
+    private shutdownPromise       : Promise<void> | undefined;
     private readonly permissions  : PermissionLedger;
     private readonly traceLock = new TraceLock();
 
@@ -64,7 +107,13 @@ export class SessionRegistry<K> implements Ownership {
         return this.destroyed.has(targetId);
     }
 
-    async open(key: K, emit: Emit, options: SessionOpenOptions): Promise<ClientSession> {
+    open(key: K, emit: Emit, options: SessionOpenOptions): Promise<ClientSession> {
+        return trackOperation(this.openingTasks, () => this.openSession(key, emit, options));
+    }
+
+    private async openSession(
+        key: K, emit: Emit, options: SessionOpenOptions,
+    ): Promise<ClientSession> {
         if (this.shuttingDown) throw closedError();
 
         if (this.sessions.has(key) || this.opening.has(key)) {
@@ -86,7 +135,16 @@ export class SessionRegistry<K> implements Ownership {
 
         if (this.opening.get(key) !== ticket) {
             if (contextId !== undefined) {
-                await this.backend.disposeContext(contextId).catch(() => undefined);
+                try {
+                    await this.backend.disposeContext(contextId);
+                } catch {
+                    try {
+                        logDaemon("could not dispose an interrupted browser context");
+                    } catch {
+                    }
+
+                    throw new InterruptedContextCleanupError();
+                }
             }
 
             throw closedError();
@@ -142,10 +200,21 @@ export class SessionRegistry<K> implements Ownership {
 
         this.sessions.delete(key);
         this.sessionIds.delete(session);
-        await session.close();
+        await this.closeSession(session);
     }
 
-    async closeAll(): Promise<void> {
+    closeAll(): Promise<void> {
+        if (this.shutdownPromise) return this.shutdownPromise;
+
+        const { promise, fulfill, fail } = deferred<void>();
+
+        this.shutdownPromise = promise;
+        void this.shutdownAll().then(fulfill, fail);
+
+        return promise;
+    }
+
+    private async shutdownAll(): Promise<void> {
         this.shuttingDown = true;
         this.stopListening();
         this.opening.clear();
@@ -153,7 +222,21 @@ export class SessionRegistry<K> implements Ownership {
 
         this.sessions.clear();
         this.sessionIds.clear();
-        await Promise.all(sessions.map((session) => session.close()));
+        for (const session of sessions) void this.closeSession(session);
+        const [closed, opened] = await Promise.all([
+            Promise.allSettled(this.closing),
+            Promise.allSettled(this.openingTasks),
+        ]);
+        const failure = closed.find((result) => result.status === "rejected");
+        const cleanupFailure = opened.find((result) =>
+            result.status === "rejected" && result.reason instanceof InterruptedContextCleanupError);
+
+        if (failure?.status === "rejected") throw failure.reason;
+        if (cleanupFailure?.status === "rejected") throw cleanupFailure.reason;
+    }
+
+    private closeSession(session: ClientSession): Promise<void> {
+        return trackOperation(this.closing, () => session.close());
     }
 
     private remember(targetId: string): void {

@@ -35,6 +35,7 @@ type Case = [tool: string, args: Record<string, unknown>];
 
 const MUTATING: Case[] = [
     ["new_tab", {}],
+    ["tab_duplicate", {}],
     ["select_tab", { tab: "tab1" }],
     ["close_tab", { tab: "tab1" }],
     ["bring_to_front", { tab: "tab1" }],
@@ -51,6 +52,7 @@ const MUTATING: Case[] = [
     ["emulate_network", { preset: "slow-3g" }],
     ["emulate_locale", { locale: "de-DE" }],
     ["emulate_geolocation", { latitude: 52.5, longitude: 13.4 }],
+    ["permissions", { name: "camera", setting: "granted", origin: "https://example.com" }],
     ["click", { target: { selector: "body" } }],
     ["input_click", { target: { selector: "body" } }],
     ["input_hover", { target: { selector: "body" } }],
@@ -66,8 +68,10 @@ const MUTATING: Case[] = [
     ["perf_trace_start", { reload: true }],
     ["lighthouse_audit", { url: "https://example.com/" }],
     ["webauthn", { action: "add_authenticator" }],
+    ["emulate_cpu", { slowdown: 4 }],
     ["downloads", { action: "allow" }],
     ["downloads", { action: "deny" }],
+    ["find_in_page", { text: "x", scroll: true }],
 ];
 
 const READING: Case[] = [
@@ -76,10 +80,13 @@ const READING: Case[] = [
     ["window_list", {}],
     ["list_sessions", {}],
     ["page_info", {}],
+    ["page_extract", {}],
+    ["browser_info", {}],
     ["dom_query", { selector: "body" }],
     ["dom_snapshot", { uid: "1_1" }],
     ["a11y_snapshot", {}],
     ["dom_selector", { target: { selector: "body" } }],
+    ["find_in_page", { text: "x" }],
     ["css_inspect", { uid: "1_1" }],
     ["event_listeners", { target: { uid: "1_1" } }],
     ["console_logs", {}],

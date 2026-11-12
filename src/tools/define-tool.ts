@@ -17,6 +17,7 @@ import type { VideoTools } from "./perf/video.js";
 import type { FocusEmulation } from "./focus-emulation.js";
 import type { FrameState } from "./frames.js";
 import type { UploadEnvironment } from "./upload-environment.js";
+import type { HostResolver } from "../safety/host-resolver.js";
 import type { SafetyAccess, SafetyDecision, SafetyTarget } from "./safety.js";
 
 type ToolAccess = SafetyAccess | ((args: unknown) => SafetyAccess);
@@ -66,6 +67,7 @@ export interface ToolContext {
     downloadState: DownloadState;
     artifacts    : ArtifactStore;
     config       : Config;
+    resolveHost  : HostResolver;
     clock        : ToolClock;
     signal       : AbortSignal;
     forgetTab(targetId: string): Promise<void>;

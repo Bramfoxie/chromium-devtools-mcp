@@ -1,4 +1,5 @@
 import type {
+    CpuState,
     DeviceMetrics,
     GeolocationState,
     LocaleSelection,
@@ -29,6 +30,7 @@ export interface TabEmulation {
     network    : NetworkEmulation | undefined;
     locale     : LocaleEmulation | undefined;
     geolocation: GeolocationState | undefined;
+    cpu        : CpuState | undefined;
 }
 
 function emptyTab(): TabEmulation {
@@ -38,11 +40,40 @@ function emptyTab(): TabEmulation {
         network    : undefined,
         locale     : undefined,
         geolocation: undefined,
+        cpu        : undefined,
     };
 }
 
 export class EmulationState {
     private readonly tabs = new Map<string, TabEmulation>();
+    private geolocationTail: Promise<void> = Promise.resolve();
+    private readonly pendingGeolocationCleanup = new Set<string>();
+
+    rememberGeolocationCleanup(origin: string): void {
+        this.pendingGeolocationCleanup.add(origin);
+    }
+
+    async retryGeolocationCleanup(release: (origin: string) => Promise<void>): Promise<void> {
+        for (const origin of this.pendingGeolocationCleanup) {
+            if (!this.geolocationOrigins().has(origin)) await release(origin);
+
+            this.pendingGeolocationCleanup.delete(origin);
+        }
+    }
+
+    async withGeolocation<T>(run: () => Promise<T>): Promise<T> {
+        const previous = this.geolocationTail;
+        let release: () => void = () => undefined;
+
+        this.geolocationTail = new Promise<void>((resolve) => { release = resolve; });
+        await previous;
+
+        try {
+            return await run();
+        } finally {
+            release();
+        }
+    }
 
     snapshot(tab: string): TabEmulation {
         const state = this.tabs.get(tab) ?? emptyTab();
@@ -55,6 +86,7 @@ export class EmulationState {
                 : { ...state.network, blockUrls: [...state.network.blockUrls] },
             locale     : state.locale === undefined ? undefined : { ...state.locale },
             geolocation: state.geolocation === undefined ? undefined : { ...state.geolocation },
+            cpu        : state.cpu === undefined ? undefined : { ...state.cpu },
         };
     }
 
@@ -98,6 +130,18 @@ export class EmulationState {
         return this.update(tab, { geolocation: undefined });
     }
 
+    resetGeolocations(): void {
+        for (const tab of this.tabs.keys()) this.resetGeolocation(tab);
+    }
+
+    applyCpu(tab: string, cpu: CpuState): TabEmulation {
+        return this.update(tab, { cpu: { ...cpu } });
+    }
+
+    resetCpu(tab: string): TabEmulation {
+        return this.update(tab, { cpu: undefined });
+    }
+
     geolocationOrigins(except?: string): Set<string> {
         const origins = new Set<string>();
 
@@ -114,6 +158,13 @@ export class EmulationState {
         this.tabs.delete(tab);
     }
 
+    forgetOtherEmulation(tab: string): void {
+        const geolocation = this.tabs.get(tab)?.geolocation;
+
+        this.tabs.delete(tab);
+        if (geolocation !== undefined) this.applyGeolocation(tab, geolocation);
+    }
+
     reset(): void {
         this.tabs.clear();
     }
@@ -125,7 +176,7 @@ export class EmulationState {
         if (
             next.device === undefined && next.media === undefined &&
             next.network === undefined && next.locale === undefined &&
-            next.geolocation === undefined
+            next.geolocation === undefined && next.cpu === undefined
         ) {
             this.tabs.delete(tab);
         } else {

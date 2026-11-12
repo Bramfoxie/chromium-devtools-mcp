@@ -8,6 +8,8 @@ import { loadInTab, type TabLoad } from "./page-navigate-load.js";
 import { NAVIGATE_DEFAULT_TIMEOUT_MS, NAVIGATE_MAX_TIMEOUT_MS } from "./page-navigate.js";
 import { truncateText } from "./result.js";
 import { resolveTab } from "./tab-target.js";
+import { checkSafety } from "./safety.js";
+import { resolutionProblem } from "../safety/resolution-check.js";
 
 const TAB_URL_MAX_CHARS = 2000;
 const TAB_TITLE_MAX_CHARS = 500;
@@ -96,6 +98,39 @@ export const newTab = defineTool({
                 ? {}
                 : { navigationError: load.navigationError }),
         };
+    },
+});
+
+export const tabDuplicate = defineTool({
+    name       : "tab_duplicate",
+    description: "Open the current address of an owned tab in a new background tab without copying its history or page state.",
+    access     : "mutate",
+    input      : z.strictObject({
+        tab      : tabId.optional().describe("Source tab id. Defaults to the selected tab."),
+        select   : z.boolean().optional().describe("Select the new tab. Defaults to false."),
+        timeoutMs: z.number().int().min(1).max(NAVIGATE_MAX_TIMEOUT_MS).optional().describe("Maximum load wait in milliseconds."),
+    }),
+    output : newTab.output,
+    handler: async (args, context) => {
+        const targetId = resolveTab(args, context);
+        const tab = (await context.access.listTabs("owned")).find((item) => item.targetId === targetId);
+
+        if (tab === undefined) throw new ToolError("No such tab belongs to this session. Call list_tabs and try again.");
+
+        const url = normalizeUrl(tab.url);
+        const decision = checkSafety({ tool: "tab_duplicate", access: "mutate", config: context.config, target: { url } });
+
+        if (!decision.allowed) throw new ToolError(`${decision.reason} ${decision.hint}`);
+
+        const problem = await resolutionProblem(url, context.config.safety, context.resolveHost);
+
+        if (problem !== undefined) throw new ToolError(`${problem.reason} ${problem.hint}`);
+
+        context.signal.throwIfAborted();
+
+        return newTab.handler(
+            { url, select: args.select ?? false, timeoutMs: args.timeoutMs }, context,
+        );
     },
 });
 

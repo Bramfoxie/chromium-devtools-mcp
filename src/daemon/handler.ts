@@ -107,6 +107,18 @@ export function createRequestHandler(context: HandlerContext): RequestHandler {
         }
 
         switch (method) {
+            case "upload.prepare": {
+                const request = parseParams(method, params);
+
+                return { files: await session.prepareUploads(request) };
+            }
+
+            case "upload.cancel": {
+                await session.cancelUploads(parseParams(method, params).ticket);
+
+                return {};
+            }
+
             case "permission.set": {
                 await session.setPermission(parseParams(method, params));
 

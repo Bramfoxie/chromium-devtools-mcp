@@ -10,7 +10,7 @@ export interface NavigationPolicy extends DomainPolicy {
     allowPrivateNetworks: boolean;
 }
 
-export type Block = "outside-allowed" | "denied" | "private";
+export type Block = "outside-allowed" | "denied" | "private" | "resolved-private";
 
 const WEB_PROTOCOLS = new Set(["http:", "https:"]);
 
@@ -81,6 +81,24 @@ export function navigationBlock(url: string, policy: NavigationPolicy): Block | 
     return named ? undefined : "private";
 }
 
+// The host to look up when a public name has to be checked for a private address.
+export function hostToResolve(url: string, policy: NavigationPolicy): string | undefined {
+    if (policy.allowPrivateNetworks) return undefined;
+
+    const parsed = webUrl(url);
+
+    if (parsed === undefined) return undefined;
+
+    const host = parsed.hostname.toLowerCase().replace(/\.$/, "");
+
+    if (host === "" || host.startsWith("[") || /^\d+\.\d+\.\d+\.\d+$/.test(host)) return undefined;
+
+    const named = policy.allowedDomains.length > 0
+        && isHostAllowed(parsed.hostname, policy.allowedDomains, portOf(parsed));
+
+    return named ? undefined : host;
+}
+
 const REASONS: Record<Block, { reason: string; hint: string }> = {
     "outside-allowed": {
         reason: "which is outside safety.allowedDomains",
@@ -89,6 +107,10 @@ const REASONS: Record<Block, { reason: string; hint: string }> = {
     denied: {
         reason: "which is blocked by safety.deniedDomains",
         hint  : "Use another site, or ask the owner to remove it from safety.deniedDomains.",
+    },
+    "resolved-private": {
+        reason: "which resolves to a local or private network address that safety blocks by default",
+        hint  : "Ask the owner to set safety.allowPrivateNetworks to true, or to list the host in safety.allowedDomains.",
     },
     private: {
         reason: "which is a local or private network address that safety blocks by default",

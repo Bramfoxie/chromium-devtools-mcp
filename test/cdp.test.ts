@@ -262,6 +262,15 @@ describe("requests", () => {
 });
 
 describe("connect", () => {
+    it("does not expose the endpoint path when a connection fails", async () => {
+        const { server, url } = await startServer(echo);
+
+        server.close();
+        const failure = await CdpClient.connect({ url: `${url}/devtools/browser/private-id` }).catch((error: unknown) => error);
+
+        expect((failure as Error).message).not.toContain("private-id");
+    });
+
     it("rejects with CdpClosedError when the endpoint is unreachable", async () => {
         const { server, url } = await startServer(echo);
 
@@ -307,6 +316,72 @@ describe("connect", () => {
 });
 
 describe("events", () => {
+    it("stops delivering the current event when its session is dropped", async () => {
+        const { client } = await connect((rpc, socket) => {
+            emit(socket, "Page.loadEventFired", {}, "session1");
+            reply(socket, rpc.id, null);
+        });
+        const later = vi.fn();
+
+        client.on("Page.loadEventFired", () => client.dropSession("session1"), "session1");
+        client.on("Page.loadEventFired", later, "session1");
+        await client.send("Go");
+        expect(later).not.toHaveBeenCalled();
+    });
+
+    it("keeps duplicate registrations independent across unsubscribe and re-registration", async () => {
+        const { client } = await connect((rpc, socket) => {
+            emit(socket, "Page.loadEventFired", {});
+            reply(socket, rpc.id, null);
+        });
+        const handler = vi.fn();
+        const other = vi.fn();
+        const first = client.on("Page.loadEventFired", handler);
+        const second = client.on("Page.loadEventFired", handler);
+
+        client.on("Page.loadEventFired", other);
+        await client.send("Go");
+        expect(handler).toHaveBeenCalledTimes(2);
+        handler.mockClear();
+        other.mockClear();
+        first();
+        client.on("Page.loadEventFired", handler);
+        second();
+        await client.send("Go");
+        expect(handler).toHaveBeenCalledTimes(1);
+        expect(other).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not let a repeated unsubscribe remove a newer subscription", async () => {
+        const { client } = await connect((rpc, socket) => {
+            emit(socket, "Page.loadEventFired", {});
+            reply(socket, rpc.id, null);
+        });
+        const handler = vi.fn();
+        const off = client.on("Page.loadEventFired", handler);
+
+        off();
+        client.on("Page.loadEventFired", handler);
+        off();
+        await client.send("Go");
+        expect(handler).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not let an old unsubscribe remove a subscription after session cleanup", async () => {
+        const { client } = await connect((rpc, socket) => {
+            emit(socket, "Page.loadEventFired", {}, "session1");
+            reply(socket, rpc.id, null);
+        });
+        const handler = vi.fn();
+        const off = client.on("Page.loadEventFired", handler, "session1");
+
+        client.dropSession("session1");
+        client.on("Page.loadEventFired", handler, "session1");
+        off();
+        await client.send("Go");
+        expect(handler).toHaveBeenCalledTimes(1);
+    });
+
     it("delivers events to subscribers and stops after unsubscribe", async () => {
         const { client } = await connect((rpc, socket) => {
             emit(socket, "Page.loadEventFired", { n: 1 });
@@ -730,6 +805,32 @@ describe("cancelling a connection attempt", () => {
 });
 
 describe("close ordering", () => {
+    it("shares the close promise with a reentrant close handler", async () => {
+        let release: () => void = () => undefined;
+        const close = vi.fn(() => new Promise<void>((resolve) => (release = resolve)));
+        const client = await CdpClient.connect({
+            url            : "ws://unused",
+            createTransport: async () => ({
+                send     : () => undefined,
+                close,
+                onMessage: () => undefined,
+                onClose  : () => undefined,
+            }),
+        });
+        let reentrant: Promise<void> | undefined;
+
+        client.onClose(() => {
+            reentrant = client.close();
+        });
+        const closing = client.close();
+
+        await flushMicrotasks();
+        expect(reentrant).toBe(closing);
+        expect(close).toHaveBeenCalledTimes(1);
+        release();
+        await Promise.all([closing, reentrant]);
+    });
+
     it("waits for the transport to finish closing", async () => {
         let release: () => void = () => undefined;
         const client = await CdpClient.connect({
@@ -784,6 +885,28 @@ describe("close ordering", () => {
 });
 
 describe("onClose", () => {
+    it("keeps repeated registrations independent", async () => {
+        const { client } = await connect(echo);
+        const handler = vi.fn();
+        const off = client.onClose(handler);
+
+        client.onClose(handler);
+        off();
+        await client.close();
+        expect(handler).toHaveBeenCalledTimes(1);
+    });
+
+    it("honors unsubscribe during close notification", async () => {
+        const { client } = await connect(echo);
+        const handler = vi.fn();
+        let off: () => void = () => undefined;
+
+        client.onClose(() => off());
+        off = client.onClose(handler);
+        await client.close();
+        expect(handler).not.toHaveBeenCalled();
+    });
+
     it("notifies once when the server drops the connection", async () => {
         const { client } = await connect((_rpc, socket) => socket.terminate());
         const handler = vi.fn();

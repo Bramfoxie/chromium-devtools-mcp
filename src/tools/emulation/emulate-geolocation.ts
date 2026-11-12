@@ -3,6 +3,7 @@ import { defineTool, type ToolContext } from "../define-tool.js";
 import { ensureNoDialog } from "../dialogs.js";
 import { ToolError } from "../errors.js";
 import { webOrigin } from "../../safety/index.js";
+import { logDaemon } from "../../util/log.js";
 import { throwIfCancelled } from "../registry.js";
 import { resolveTab, tabSchema } from "../tab-target.js";
 import { buildGeolocationCommands, buildGeolocationResetCommands } from "./commands.js";
@@ -92,91 +93,157 @@ export const emulateGeolocation = defineTool({
             throw new ToolError("Provide latitude and longitude, or reset: true. Nothing was changed.");
         }
 
-        throwIfCancelled(context.signal);
-        await ensureNoDialog(context.dialogs, targetId);
+        return context.emulation.withGeolocation(async () => {
+            throwIfCancelled(context.signal);
 
-        const previous = context.emulation.snapshot(targetId).geolocation;
-
-        if (reset) {
-            await runSteps(context.access, context.signal, targetId, [
-                {
-                    commands: buildGeolocationResetCommands(),
-                    record  : () => context.emulation.resetGeolocation(targetId),
-                },
-            ]);
-
-            if (
-                previous !== undefined &&
-                !context.emulation.geolocationOrigins().has(previous.origin)
-            ) {
-                await context.access.setPermission({
-                    name   : "geolocation",
-                    setting: "reset",
-                    origin : previous.origin,
+            try {
+                await context.emulation.retryGeolocationCleanup(async (origin) => {
+                    await context.access.setPermission({ name: "geolocation", setting: "reset", origin });
                 });
+            } catch {
+                throw new ToolError("A previous geolocation permission could not be released. Retry or end the session, then check the browser permissions.");
             }
+
+            throwIfCancelled(context.signal);
+            await ensureNoDialog(context.dialogs, targetId);
+            throwIfCancelled(context.signal);
+
+            const previous = context.emulation.snapshot(targetId).geolocation;
+
+            if (reset) {
+                const release = previous !== undefined &&
+                    !context.emulation.geolocationOrigins(targetId).has(previous.origin);
+
+                if (release) {
+                    await context.access.setPermission({
+                        name   : "geolocation",
+                        setting: "reset",
+                        origin : previous.origin,
+                    });
+                }
+
+                let undoFailed = false;
+
+                try {
+                    await runSteps(context.access, context.signal, targetId, [
+                        {
+                            commands: buildGeolocationResetCommands(),
+                            record  : () => context.emulation.resetGeolocation(targetId),
+                            ...(previous === undefined
+                                ? {}
+                                : { undo: buildGeolocationCommands(previous) }),
+                            undoFailed: () => { undoFailed = true; },
+                        },
+                    ]);
+                } catch (error) {
+                    if (undoFailed) logDaemon("could not restore geolocation after a failed reset");
+
+                    if (release) {
+                        try {
+                            await context.access.setPermission({
+                                name: "geolocation", setting: "granted", origin: previous.origin,
+                            });
+                        } catch {
+                            logDaemon("could not restore a geolocation permission after a failed reset");
+
+                            if (undoFailed) {
+                                throw new ToolError("The geolocation reset failed. The previous permission could not be restored and the previous geolocation could not be restored. Check the tab and browser permissions, then retry.");
+                            }
+
+                            throw new ToolError("The geolocation reset failed and the previous permission could not be restored. Check the browser permissions and retry.");
+                        }
+                    }
+
+                    if (undoFailed) {
+                        throw new ToolError("The geolocation reset failed and the previous geolocation could not be restored. Check the tab and retry.");
+                    }
+
+                    throw error;
+                }
+
+                return {
+                    tab      : targetId,
+                    emulation: summarizeEmulation(context.emulation.snapshot(targetId)),
+                };
+            }
+
+            await context.focus.ensure(context.access, targetId);
+
+            const origin = args.origin === undefined
+                ? await tabOrigin(context, targetId)
+                : explicitOrigin(args.origin);
+            const next = {
+                latitude : args.latitude ?? 0,
+                longitude: args.longitude ?? 0,
+                accuracy : args.accuracy ?? ACCURACY_DEFAULT_METERS,
+                origin,
+            };
+
+            const releasePrevious = previous !== undefined && previous.origin !== origin &&
+                !context.emulation.geolocationOrigins(targetId).has(previous.origin);
+
+            throwIfCancelled(context.signal);
+
+            if (releasePrevious) {
+                await context.access.setPermission({ name: "geolocation", setting: "reset", origin: previous.origin });
+            }
+
+            let granted = false;
+
+            try {
+                throwIfCancelled(context.signal);
+                await context.access.setPermission({ name: "geolocation", setting: "granted", origin });
+                granted = true;
+                await runSteps(context.access, context.signal, targetId, [
+                    {
+                        commands: buildGeolocationCommands(next),
+                        record  : () => context.emulation.applyGeolocation(targetId, next),
+                        undo    : previous === undefined
+                            ? buildGeolocationResetCommands()
+                            : buildGeolocationCommands(previous),
+                        unrecord: () => {
+                            if (previous === undefined) {
+                                context.emulation.resetGeolocation(targetId);
+                            } else context.emulation.applyGeolocation(targetId, previous);
+                        },
+                    },
+                ]);
+            } catch (error) {
+                const stillUsed = context.emulation.geolocationOrigins().has(origin);
+                let cleanupFailed = false;
+
+                if (granted && !stillUsed && previous?.origin !== origin) {
+                    try {
+                        await context.access.setPermission({ name: "geolocation", setting: "reset", origin });
+                    } catch {
+                        cleanupFailed = true;
+                    }
+                }
+
+                if (releasePrevious) {
+                    try {
+                        await context.access.setPermission({ name: "geolocation", setting: "granted", origin: previous.origin });
+                    } catch {
+                        cleanupFailed = true;
+                    }
+                }
+
+                if (cleanupFailed) {
+                    throw new ToolError("The geolocation change failed and permission cleanup was incomplete. End this session to release its permissions, then check the browser settings.");
+                }
+
+                throw error;
+            }
+
+            const reported = await readGeolocation(
+                context.access, targetId, origin, context.signal,
+            );
 
             return {
                 tab      : targetId,
                 emulation: summarizeEmulation(context.emulation.snapshot(targetId)),
+                ...(reported === undefined ? {} : { reported }),
             };
-        }
-
-        await context.focus.ensure(context.access, targetId);
-
-        const origin = args.origin === undefined
-            ? await tabOrigin(context, targetId)
-            : explicitOrigin(args.origin);
-        const next = {
-            latitude : args.latitude ?? 0,
-            longitude: args.longitude ?? 0,
-            accuracy : args.accuracy ?? ACCURACY_DEFAULT_METERS,
-            origin,
-        };
-
-        await context.access.setPermission({ name: "geolocation", setting: "granted", origin });
-
-        try {
-            await runSteps(context.access, context.signal, targetId, [
-                {
-                    commands: buildGeolocationCommands(next),
-                    record  : () => context.emulation.applyGeolocation(targetId, next),
-                    undo    : previous === undefined
-                        ? buildGeolocationResetCommands()
-                        : buildGeolocationCommands(previous),
-                    unrecord: () => {
-                        if (previous === undefined) context.emulation.resetGeolocation(targetId);
-                        else context.emulation.applyGeolocation(targetId, previous);
-                    },
-                },
-            ]);
-        } catch (error) {
-            const stillUsed = context.emulation.geolocationOrigins().has(origin);
-
-            if (!stillUsed && previous?.origin !== origin) {
-                await context.access
-                    .setPermission({ name: "geolocation", setting: "reset", origin })
-                    .catch(() => undefined);
-            }
-
-            throw error;
-        }
-
-        if (
-            previous !== undefined && previous.origin !== origin &&
-            !context.emulation.geolocationOrigins().has(previous.origin)
-        ) {
-            await context.access
-                .setPermission({ name: "geolocation", setting: "reset", origin: previous.origin })
-                .catch(() => undefined);
-        }
-
-        const reported = await readGeolocation(context.access, targetId, origin, context.signal);
-
-        return {
-            tab      : targetId,
-            emulation: summarizeEmulation(context.emulation.snapshot(targetId)),
-            ...(reported === undefined ? {} : { reported }),
-        };
+        });
     },
 });

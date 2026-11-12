@@ -2,13 +2,14 @@ import { ConfigError } from "../config/index.js";
 import type { AnyTool } from "./define-tool.js";
 
 export const TOOL_GROUPS: Readonly<Record<string, readonly string[]>> = {
-    tabs      : ["window_list", "popup_list", "list_tabs", "list_sessions", "select_tab", "new_tab", "close_tab", "bring_to_front"],
-    pages     : ["page_info", "page_navigate", "page_wait", "page_dialogs", "page_metrics", "page_pdf"],
+    tabs      : ["window_list", "popup_list", "list_tabs", "list_sessions", "select_tab", "new_tab", "tab_duplicate", "close_tab", "bring_to_front"],
+    pages     : ["page_info", "browser_info", "page_extract", "page_navigate", "page_wait", "page_dialogs", "page_metrics", "page_pdf"],
     inspection: [
         "dom_query",
         "dom_snapshot",
         "a11y_snapshot",
         "dom_selector",
+        "find_in_page",
         "dom_edit",
         "css_inspect",
         "event_listeners",
@@ -46,8 +47,10 @@ export const TOOL_GROUPS: Readonly<Record<string, readonly string[]>> = {
         "emulate_device",
         "emulate_media",
         "emulate_network",
+        "emulate_cpu",
         "emulate_locale",
         "emulate_geolocation",
+        "permissions",
     ],
     slim: [
         "list_tabs",

@@ -31,6 +31,12 @@ export function findBrowserExecutable(
 
     if (found) return found;
 
+    if (candidates.length === 0) {
+        throw new BrowserNotFoundError(
+            `There is no ${browser} build for ${context.platform}. Choose another browser setting.`,
+        );
+    }
+
     throw new BrowserNotFoundError(
         `Could not find ${browser} on ${context.platform}. Install it or check these locations: ${candidates.join(", ")}.`,
     );

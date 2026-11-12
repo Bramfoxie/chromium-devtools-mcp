@@ -156,7 +156,7 @@ function checkNode(deps: DoctorDeps): DoctorCheck {
 }
 
 function checkConfig(config: Config): DoctorCheck {
-    const target = config.wsEndpoint === undefined ? "" : `, endpoint ${config.wsEndpoint}`;
+    const target = config.wsEndpoint === undefined ? "" : `, endpoint on port ${new URL(config.wsEndpoint).port}`;
 
     return {
         level : "ok",

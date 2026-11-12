@@ -145,6 +145,51 @@ describe("screenshot", () => {
         return fake;
     }
 
+    it("does not return an image if password fields move during capture", async () => {
+        const fake = new FakeAccess({
+            frames: [{ frameId: "root", url: "https://example.com", name: "", isolated: false }],
+        });
+        let captured = false;
+
+        fake.respond = (_target, method) => {
+            if (method === "Page.getLayoutMetrics") {
+                return { layoutViewport: { clientWidth: 100, clientHeight: 100 } };
+            }
+
+            if (method === "DOMSnapshot.captureSnapshot") {
+                return {
+                    strings  : ["INPUT", "type", "password"], documents: [{
+                        nodes : { nodeName: [0], backendNodeId: [1], attributes: [[1, 2]] },
+                        layout: { nodeIndex: [0] },
+                    }],
+                };
+            }
+
+            if (method === "DOM.getBoxModel") {
+                const x = captured ? 20 : 10;
+
+                return { model: { border: [x, 10, x + 10, 10, x + 10, 20, x, 20] } };
+            }
+
+            if (method === "Page.captureScreenshot") {
+                captured = true;
+
+                return { data: PNG_2X3.toString("base64") };
+            }
+
+            return {};
+        };
+
+        const { runtime } = setup(fake);
+
+        await runTool(newTab, {}, extra(), runtime);
+        const result = await runTool(screenshot, { maskPasswords: true, format: "png" }, extra(), runtime);
+
+        expect(result.isError).toBe(true);
+        expect(JSON.stringify(result.content)).toContain("page is stable");
+        expect(JSON.stringify(result.content)).not.toContain(PNG_2X3.toString("base64"));
+    });
+
     it("keeps the tab rendering while it captures and releases it afterwards", async () => {
         const { fake, runtime } = setup(shotFake(JPEG_5X7.toString("base64")));
 

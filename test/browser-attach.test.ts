@@ -10,7 +10,6 @@ import {
     browserUserDataDir,
     parseActivePortFile,
     resolveAttachEndpoint,
-    runningInProfile,
     setupInstructions,
 } from "../src/browser/index.js";
 import { deniedPortFile, fetchVersion, probePort } from "../src/browser/attach.js";
@@ -41,7 +40,6 @@ function deps(world: World = {}, overrides: Partial<AttachDeps> = {}) {
     const value: AttachDeps = {
         context       : mac,
         readFile      : async (file) => world.files?.[file],
-        hasFile       : async () => false,
         isPortOpen    : async (port) => world.openPorts?.includes(port) ?? false,
         fetchVersion  : async (port) => world.versions?.[port],
         sleep         : async () => undefined,
@@ -84,84 +82,6 @@ describe("browserUserDataDir", () => {
         expect(browserUserDataDir("chrome", { ...windows, env: {} })).toBe(
             "C:\\Users\\u\\AppData\\Local\\Google\\Chrome\\User Data",
         );
-    });
-});
-
-describe("runningInProfile", () => {
-    it("returns the endpoint of a browser that runs on the directory", async () => {
-        const files: Record<string, string> = { "C:\\p\\DevToolsActivePort": fileContent };
-        const io = {
-            context   : windows,
-            readFile  : async (file: string) => files[file],
-            hasFile   : async () => false,
-            isPortOpen: async (port: number) => port === 9333,
-        };
-
-        expect(await runningInProfile("C:\\p", 9333, io)).toEqual({
-            port        : 9333,
-            webSocketUrl: "ws://127.0.0.1:9333/devtools/browser/from-file",
-            source      : "port-file",
-        });
-        expect(await runningInProfile("C:\\p", 9333, { ...io, isPortOpen: async () => false })).toBe(
-            undefined,
-        );
-        expect(await runningInProfile("C:\\other", 9333, io)).toBeUndefined();
-    });
-
-    it.each([
-        { name: "macOS", context: mac, dir: "/p", lock: "/p/SingletonSocket", other: "/p/lockfile" },
-        { name: "Linux", context: linux, dir: "/p", lock: "/p/SingletonSocket", other: "/p/lockfile" },
-        {
-            name   : "Windows",
-            context: windows,
-            dir    : "C:\\p",
-            lock   : "C:\\p\\lockfile",
-            other  : "C:\\p\\SingletonSocket",
-        },
-    ])("finds the browser through the debug port when $name holds the profile lock", async (c) => {
-        const io = {
-            context     : c.context,
-            readFile    : async () => undefined,
-            hasFile     : async (file: string) => file === c.lock,
-            fetchVersion: async () => version,
-        };
-
-        expect(await runningInProfile(c.dir, 9222, io)).toEqual({
-            port        : 9222,
-            webSocketUrl: "ws://127.0.0.1:9222/devtools/browser/from-http",
-            source      : "debug-port",
-        });
-        expect(await runningInProfile(c.dir, 0, io)).toBeUndefined();
-        expect(
-            await runningInProfile(c.dir, 9222, {
-                ...io,
-                hasFile: async (file) => file === c.other,
-            }),
-        ).toBeUndefined();
-    });
-
-    it("finds nothing when the profile is unlocked and the port file is gone", async () => {
-        const io = {
-            context     : windows,
-            readFile    : async () => undefined,
-            hasFile     : async () => false,
-            fetchVersion: async () => version,
-        };
-
-        expect(await runningInProfile("C:\\p", 9222, io)).toBeUndefined();
-    });
-
-    it("returns undefined when the version response is not a browser socket", async () => {
-        const io = {
-            context     : windows,
-            readFile    : async () => undefined,
-            hasFile     : async () => true,
-            fetchVersion: async () => ({
-                webSocketDebuggerUrl: "ws://127.0.0.1:9222/devtools/page/1",
-            }),
-        };
-
-        expect(await runningInProfile("C:\\p", 9222, io)).toBeUndefined();
     });
 });
 

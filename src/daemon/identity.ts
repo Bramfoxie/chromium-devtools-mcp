@@ -9,6 +9,7 @@ export const identitySchema = z.strictObject({
     allowFocus: z.boolean(),
     headless  : z.boolean().optional(),
     profileDir: z.string().optional(),
+    cdpLog    : z.string().optional(),
 });
 
 export type DaemonIdentity = z.infer<typeof identitySchema>;
@@ -21,6 +22,7 @@ const FIELDS = [
     "allowFocus",
     "headless",
     "profileDir",
+    "cdpLog",
 ] as const;
 
 export type IdentityField = (typeof FIELDS)[number];
@@ -29,7 +31,7 @@ export type IdentityField = (typeof FIELDS)[number];
 export function daemonIdentity(
     config: Pick<
         Config,
-        "browser" | "mode" | "debugPort" | "wsEndpoint" | "allowFocus" | "headless" | "profileDir"
+        "browser" | "mode" | "debugPort" | "wsEndpoint" | "allowFocus" | "headless" | "profileDir" | "cdpLog"
     >,
 ): DaemonIdentity {
     const shared = {
@@ -37,6 +39,7 @@ export function daemonIdentity(
         mode      : config.mode,
         debugPort : config.debugPort,
         allowFocus: config.allowFocus,
+        ...(config.cdpLog === undefined ? {} : { cdpLog: config.cdpLog }),
     };
 
     if (config.mode === "managed") {
@@ -54,7 +57,11 @@ export function describeIdentity(
     identity: DaemonIdentity,
     fields  : readonly IdentityField[] = FIELDS,
 ): string {
-    return fields.map((field) => `${field} ${String(identity[field] ?? "unset")}`).join(", ");
+    return fields.map((field) => {
+        const value = identity[field];
+
+        return `${field} ${field === "wsEndpoint" && value !== undefined ? "(set)" : String(value ?? "unset")}`;
+    }).join(", ");
 }
 
 export function describeSettings(identity: DaemonIdentity): string {

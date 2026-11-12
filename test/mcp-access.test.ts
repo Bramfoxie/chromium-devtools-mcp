@@ -1,8 +1,59 @@
 import { describe, expect, it, vi } from "vitest";
 import { DaemonAccess, SessionResetError } from "../src/mcp/index.js";
 import { FakeLink } from "./helpers/fake-link.js";
+import { confirmedAccess } from "../src/tools/confirmation.js";
+import { ErrorCode, RpcError } from "../src/daemon/index.js";
 
 describe("DaemonAccess requests", () => {
+    it("cancels upload preparation when the caller aborts", async () => {
+        const controller = new AbortController();
+        let started: () => void = () => undefined;
+        let finish: () => void = () => undefined;
+        const entered = new Promise<void>((resolve) => { started = resolve; });
+        const gate = new Promise<void>((resolve) => { finish = resolve; });
+        const link = new FakeLink(async (method) => {
+            if (method === "upload.prepare") {
+                started();
+                await gate;
+
+                return { files: [{ path: "/private/copy", size: 4 }] };
+            }
+
+            return {};
+        });
+        const access = new DaemonAccess({ link: link.asLink() });
+        const preparing = access.prepareUploads({ files: ["/allowed/file"], signal: controller.signal });
+
+        await entered;
+        controller.abort();
+        await Promise.resolve();
+        expect(link.clients[0]?.calls.map((call) => call.method)).toContain("upload.cancel");
+        finish();
+        await preparing;
+    });
+
+    it("passes confirmation to upload preparation", async () => {
+        const link = new FakeLink((method) => method === "upload.prepare"
+            ? { files: [{ path: "/private/copy", size: 4 }] } : {});
+        const access = confirmedAccess(new DaemonAccess({ link: link.asLink() }));
+
+        await access.prepareUploads({ files: ["/allowed/file"] });
+        expect(link.clients[0]?.calls[0]?.params).toMatchObject({
+            files: ["/allowed/file"], confirmed: true,
+        });
+    });
+
+    it("explains how to replace an older daemon without upload preparation", async () => {
+        const link = new FakeLink((method) => {
+            if (method === "upload.prepare") throw new RpcError(ErrorCode.unknownMethod, "Unknown method.");
+
+            return {};
+        });
+        const access = new DaemonAccess({ link: link.asLink() });
+
+        await expect(access.prepareUploads({ files: ["/allowed/file"] })).rejects.toThrow("daemon stop");
+    });
+
     it("sends typed requests and validates the results at the boundary", async () => {
         const link = new FakeLink((method) => {
             if (method === "tab.list") {

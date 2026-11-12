@@ -42,6 +42,8 @@ function minimalArgs(name: string): Record<string, unknown> {
             return { expression: "true" };
         case "dom_query":
             return { selector: "body" };
+        case "find_in_page":
+            return { text: "x" };
         case "dom_snapshot":
         case "css_inspect":
             return { uid: "1_1" };
@@ -68,10 +70,14 @@ function minimalArgs(name: string): Record<string, unknown> {
             return { reducedMotion: "reduce" };
         case "emulate_network":
             return { preset: "slow-3g" };
+        case "emulate_cpu":
+            return { slowdown: 4 };
         case "emulate_locale":
             return { locale: "de-DE" };
         case "emulate_geolocation":
             return { latitude: 52.5, longitude: 13.4 };
+        case "permissions":
+            return { name: "camera", setting: "granted", origin: "https://example.com" };
         case "click":
         case "input_click":
         case "input_hover":
@@ -117,7 +123,7 @@ describe("tool declarations", () => {
         expect(text).toContain(`${allTools.length} tools. Details and parameters`);
     });
 
-    it("declares fifty six tools with unique names, descriptions and access", () => {
+    it("declares sixty two tools with unique names, descriptions and access", () => {
         expect(allTools.map((tool) => tool.name)).toEqual([
             "list_tabs",
             "popup_list",
@@ -125,15 +131,19 @@ describe("tool declarations", () => {
             "list_sessions",
             "select_tab",
             "new_tab",
+            "tab_duplicate",
             "close_tab",
             "bring_to_front",
             "page_info",
+            "browser_info",
+            "page_extract",
             "page_navigate",
             "js_evaluate",
             "dom_query",
             "dom_snapshot",
             "a11y_snapshot",
             "dom_selector",
+            "find_in_page",
             "dom_edit",
             "css_inspect",
             "event_listeners",
@@ -163,8 +173,10 @@ describe("tool declarations", () => {
             "emulate_device",
             "emulate_media",
             "emulate_network",
+            "emulate_cpu",
             "emulate_locale",
             "emulate_geolocation",
+            "permissions",
             "click",
             "input_click",
             "input_hover",
@@ -195,6 +207,7 @@ describe("tool declarations", () => {
             "close_tab",
             "css_edit",
             "dom_edit",
+            "emulate_cpu",
             "emulate_device",
             "emulate_geolocation",
             "emulate_locale",
@@ -213,8 +226,10 @@ describe("tool declarations", () => {
             "lighthouse_audit",
             "new_tab",
             "page_navigate",
+            "permissions",
             "select_tab",
             "storage_write",
+            "tab_duplicate",
         ]);
     });
 
@@ -228,6 +243,7 @@ describe("tool declarations", () => {
             "heap_snapshot",
             "input_upload",
             "js_evaluate",
+            "permissions",
             "storage_write",
         ]);
     });
@@ -380,7 +396,9 @@ describe("tool declarations", () => {
 describe("open world annotation", () => {
     const CLOSED = [
         "bring_to_front",
+        "browser_info",
         "close_tab",
+        "emulate_cpu",
         "emulate_device",
         "emulate_geolocation",
         "emulate_locale",
@@ -692,7 +710,7 @@ describe("runTool", () => {
 });
 
 describe("tools/list", () => {
-    it("lists exactly the fifty six tools with their schemas", async () => {
+    it("lists exactly the sixty two tools with their schemas", async () => {
         const server = createMcpServer("1.0.0");
 
         registerTools({ server, tools: allTools, runtime: runtime() });
@@ -709,15 +727,19 @@ describe("tools/list", () => {
             "list_sessions",
             "select_tab",
             "new_tab",
+            "tab_duplicate",
             "close_tab",
             "bring_to_front",
             "page_info",
+            "browser_info",
+            "page_extract",
             "page_navigate",
             "js_evaluate",
             "dom_query",
             "dom_snapshot",
             "a11y_snapshot",
             "dom_selector",
+            "find_in_page",
             "dom_edit",
             "css_inspect",
             "event_listeners",
@@ -747,8 +769,10 @@ describe("tools/list", () => {
             "emulate_device",
             "emulate_media",
             "emulate_network",
+            "emulate_cpu",
             "emulate_locale",
             "emulate_geolocation",
+            "permissions",
             "click",
             "input_click",
             "input_hover",

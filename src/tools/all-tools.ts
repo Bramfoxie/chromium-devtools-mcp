@@ -9,8 +9,10 @@ import { domQuery } from "./dom-query.js";
 import { a11ySnapshot } from "./a11y-snapshot.js";
 import { domSelector } from "./dom-selector.js";
 import { domSnapshot } from "./dom-snapshot.js";
+import { emulateCpu } from "./emulation/emulate-cpu.js";
 import { emulateDevice } from "./emulation/emulate-device.js";
 import { emulateGeolocation } from "./emulation/emulate-geolocation.js";
+import { permissions } from "./permissions.js";
 import { emulateLocale } from "./emulation/emulate-locale.js";
 import { emulateMedia } from "./emulation/emulate-media.js";
 import { emulateNetwork } from "./emulation/emulate-network.js";
@@ -22,6 +24,7 @@ import { inputSelect } from "./input-select.js";
 import { inputKey, inputType } from "./input-text.js";
 import { inputUpload } from "./input-upload.js";
 import { fillForm } from "./fill-form.js";
+import { findInPage } from "./find-in-page.js";
 import { jsEvaluate } from "./js-evaluate.js";
 import { networkMock } from "./network-mock.js";
 import { downloads } from "./downloads.js";
@@ -40,10 +43,12 @@ import { pwaInfo } from "./pwa-info.js";
 import { webauthn } from "./webauthn.js";
 import { pageWait } from "./page-wait.js";
 import { screenshot } from "./screenshot.js";
+import { pageExtract } from "./page-extract.js";
+import { browserInfo } from "./browser-info.js";
 import { pageInfo } from "./page-info.js";
 import { pageMetrics } from "./page-metrics.js";
 import { pageNavigate } from "./page-navigate.js";
-import { closeTab, listSessions, listTabs, newTab, popupList, selectTab, windowList } from "./tabs.js";
+import { closeTab, listSessions, listTabs, newTab, popupList, selectTab, tabDuplicate, windowList } from "./tabs.js";
 
 export const allTools: AnyTool[] = [
     listTabs,
@@ -52,15 +57,19 @@ export const allTools: AnyTool[] = [
     listSessions,
     selectTab,
     newTab,
+    tabDuplicate,
     closeTab,
     bringToFront,
     pageInfo,
+    browserInfo,
+    pageExtract,
     pageNavigate,
     jsEvaluate,
     domQuery,
     domSnapshot,
     a11ySnapshot,
     domSelector,
+    findInPage,
     domEdit,
     cssInspect,
     eventListeners,
@@ -90,8 +99,10 @@ export const allTools: AnyTool[] = [
     emulateDevice,
     emulateMedia,
     emulateNetwork,
+    emulateCpu,
     emulateLocale,
     emulateGeolocation,
+    permissions,
     click,
     inputClick,
     inputHover,

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { randomBytes } from "node:crypto";
 import {
     createdSchema,
     frameListSchema,
@@ -7,6 +8,8 @@ import {
     type FrameSummary,
     type SessionSummary,
     type TabInfo,
+    ErrorCode,
+    RpcError,
 } from "../daemon/index.js";
 import { describeError, logDaemon, quoted } from "../util/log.js";
 import type { DaemonLink } from "./daemon-link.js";
@@ -163,10 +166,52 @@ export class DaemonAccess {
         );
     }
 
+    async prepareUploads(request: {
+        files: string[]; signal?: AbortSignal; confirmed?: boolean;
+    }): Promise<{ ticket: string; files: Array<{ path: string; size: number }> }> {
+        const ticket = randomBytes(16).toString("hex");
+        const cancel = () => { void this.cancelUploads(ticket).catch(() => undefined); };
+
+        request.signal?.addEventListener("abort", cancel, { once: true });
+
+        try {
+            const result = await this.request("upload.prepare", {
+                ticket, files: request.files,
+                ...(request.confirmed === true ? { confirmed: true } : {}),
+            }, {
+                timeoutMs: 300_000,
+                ...(request.signal === undefined ? {} : { signal: request.signal }),
+            });
+            const parsed = parse("upload.prepare", z.strictObject({
+                files: z.array(z.strictObject({
+                    path: z.string(), size: z.number().nonnegative(),
+                })),
+            }), result);
+
+            return { ticket, files: parsed.files };
+        } catch (error) {
+            cancel();
+
+            if (error instanceof RpcError && error.code === ErrorCode.unknownMethod) {
+                throw new RpcError(ErrorCode.unknownMethod, "The running daemon does not support secure upload preparation. Stop it with daemon stop and retry.");
+            }
+
+            throw error;
+        } finally {
+            request.signal?.removeEventListener("abort", cancel);
+        }
+    }
+
+    async cancelUploads(ticket: string): Promise<void> {
+        await this.request("upload.cancel", { ticket });
+    }
+
     async setPermission(request: {
-        name   : "geolocation";
-        setting: "granted" | "reset";
-        origin : string;
+        name      : "geolocation" | "notifications" | "camera" | "microphone" | "clipboard-read" | "clipboard-write";
+        setting   : "granted" | "denied" | "reset";
+        origin    : string;
+        owner?    : "geolocation" | "permissions";
+        confirmed?: boolean;
     }): Promise<void> {
         await this.request("permission.set", request);
     }

@@ -12,9 +12,11 @@ afterEach(() => {
 const SITE = "https://a.example";
 const OTHER = "https://b.example";
 
-function setup() {
+function setup(resolveHost: (host: string) => Promise<string[]> = async () => []) {
     const backend = new FakeBackend();
-    const registry = new SessionRegistry<string>(backend, { allowFocus: false });
+    const registry = new SessionRegistry<string>(backend, {
+        allowFocus: false, resolveHost,
+    });
     const open = (
         key    : string,
         options: { isolated?: boolean; safety?: Parameters<typeof registry.open>[2]["safety"] } = {},
@@ -109,7 +111,7 @@ describe("PermissionLedger", () => {
         expect(backend.log.some((line) => line.startsWith("resetPermissions"))).toBe(false);
     });
 
-    it("keeps going and logs when the browser refuses a reset", async () => {
+    it("reports a failed reset and allows the holder to retry", async () => {
         vi.spyOn(process.stderr, "write").mockImplementation(() => true);
         const backend = new FakeBackend();
         const ledger = new PermissionLedger(backend);
@@ -122,11 +124,160 @@ describe("PermissionLedger", () => {
             throw new Error("browser went away");
         };
 
-        await expect(ledger.release(holder, entry)).resolves.toBeUndefined();
+        await expect(ledger.release(holder, entry)).rejects.toThrow("browser went away");
+        expect(backend.permissions.size).toBe(1);
+
+        backend.resetPermissions = async () => { backend.permissions.clear(); };
+
+        await ledger.release(holder, entry);
+        expect(backend.permissions.size).toBe(0);
+    });
+
+    it("continues session cleanup when the browser refuses a reset", async () => {
+        const writes = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+        const backend = new FakeBackend();
+        const ledger = new PermissionLedger(backend);
+        const holder = {};
+
+        await ledger.grant(holder, { name: "geolocation", origin: SITE, contextId: undefined });
+
+        backend.resetPermissions = async () => { throw new Error("browser went away"); };
+
+        await expect(ledger.releaseAll(holder)).resolves.toBeUndefined();
+        expect(writes).toHaveBeenCalled();
+    });
+
+    it("retries failed session cleanup before accepting another override", async () => {
+        vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+        const backend = new FakeBackend();
+        const ledger = new PermissionLedger(backend);
+        const first = {};
+        const second = {};
+        const old = { name: "camera", setting: "denied", origin: SITE, contextId: undefined } as const;
+        const next = { name: "microphone", setting: "granted", origin: OTHER, contextId: undefined } as const;
+
+        await ledger.grant(first, old);
+        const reset = backend.resetPermissions.bind(backend);
+
+        backend.resetPermissions = async () => { throw new Error("reset failed"); };
+
+        await ledger.releaseAll(first);
+        backend.resetPermissions = reset;
+        await ledger.grant(second, next);
+        expect([...backend.permissions.values()]).toEqual([next]);
+    });
+
+    it("refuses new overrides while earlier cleanup still fails", async () => {
+        vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+        const backend = new FakeBackend();
+        const ledger = new PermissionLedger(backend);
+        const first = {};
+        const old = { name: "camera", setting: "denied", origin: SITE, contextId: undefined } as const;
+        const next = { name: "microphone", setting: "granted", origin: OTHER, contextId: undefined } as const;
+
+        await ledger.grant(first, old);
+
+        backend.resetPermissions = async () => { throw new Error("reset failed"); };
+
+        await ledger.releaseAll(first);
+        await expect(ledger.grant({}, next)).rejects.toThrow("cleanup is incomplete");
+        expect([...backend.permissions.values()]).toEqual([old]);
+    });
+
+    it("restores tracked overrides when reapplying one fails during a reset", async () => {
+        const backend = new FakeBackend();
+        const ledger = new PermissionLedger(backend);
+        const first = {};
+        const second = {};
+        const denied = { name: "camera", setting: "denied", origin: SITE, contextId: undefined } as const;
+        const other = { name: "microphone", setting: "granted", origin: OTHER, contextId: undefined } as const;
+
+        await ledger.grant(first, denied);
+        await ledger.grant(second, other);
+        const set = backend.setPermission.bind(backend);
+        let fail = true;
+
+        backend.setPermission = async (grant) => {
+            if (grant.name === "microphone" && fail) {
+                fail = false;
+
+                throw new Error("reapply failed");
+            }
+
+            await set(grant);
+        };
+
+        await expect(ledger.release(first, denied)).rejects.toThrow("reapply failed");
+        expect([...backend.permissions.values()]).toEqual(expect.arrayContaining([denied, other]));
+        await ledger.release(first, denied);
+        expect([...backend.permissions.values()]).toEqual([other]);
+    });
+
+    it("reports incomplete restoration and still attempts every tracked override", async () => {
+        const backend = new FakeBackend();
+        const ledger = new PermissionLedger(backend);
+        const first = {};
+        const second = {};
+        const denied = { name: "camera", setting: "denied", origin: SITE, contextId: undefined } as const;
+        const other = { name: "microphone", setting: "granted", origin: OTHER, contextId: undefined } as const;
+
+        await ledger.grant(first, denied);
+        await ledger.grant(second, other);
+        const set = backend.setPermission.bind(backend);
+
+        backend.setPermission = async (grant) => {
+            if (grant.name === "microphone") throw new Error("reapply failed");
+
+            await set(grant);
+        };
+
+        await expect(ledger.release(first, denied)).rejects.toThrow("could not be restored");
+        expect([...backend.permissions.values()]).toContainEqual(denied);
     });
 });
 
 describe("permission.set on a session", () => {
+    it("keeps a geolocation grant when a separate permission override is reset", async () => {
+        const { backend, open } = setup();
+        const session = await open("a");
+
+        await session.setPermission({ ...grant, origin: SITE });
+        await session.setPermission({ ...grant, origin: SITE, owner: "permissions" });
+        await session.setPermission({ ...reset, origin: SITE, owner: "permissions" });
+        expect(backend.permissions.size).toBe(1);
+    });
+
+    it("refuses conflicting overrides held by different sessions", async () => {
+        const { backend, open } = setup();
+        const first = await open("a");
+        const second = await open("b");
+
+        await first.setPermission({ name: "camera", setting: "granted", origin: SITE, owner: "permissions" });
+        expect(await code(second.setPermission({ name: "camera", setting: "denied", origin: SITE, owner: "permissions" }))).toBe(ErrorCode.busy);
+        expect([...backend.permissions.values()][0]).toMatchObject({ name: "camera", setting: "granted" });
+    });
+
+    it("requires confirmation for a permission override when configured", async () => {
+        const { backend, open } = setup();
+        const session = await open("a", {
+            safety: {
+                readOnly            : false,
+                allowedDomains      : [],
+                deniedDomains       : [],
+                allowPrivateNetworks: true,
+                confirmDangerous    : true,
+                uploadDirs          : [],
+            },
+        });
+
+        expect(await code(session.setPermission({ name: "camera", setting: "granted", origin: SITE, owner: "permissions" }))).toBe(ErrorCode.forbiddenMethod);
+        expect(backend.permissions.size).toBe(0);
+        await session.setPermission({ name: "camera", setting: "granted", origin: SITE, owner: "permissions", confirmed: true });
+        expect(backend.permissions.size).toBe(1);
+        expect(await code(session.setPermission({ name: "camera", setting: "reset", origin: SITE, owner: "permissions" }))).toBe(ErrorCode.forbiddenMethod);
+        await session.setPermission({ name: "camera", setting: "reset", origin: SITE, owner: "permissions", confirmed: true });
+        expect(backend.permissions.size).toBe(0);
+    });
     it("grants geolocation for an origin and resets it", async () => {
         const { backend, open } = setup();
         const session = await open("a");
@@ -171,6 +322,7 @@ describe("permission.set on a session", () => {
                 deniedDomains       : [],
                 allowPrivateNetworks: true,
                 confirmDangerous    : false,
+                uploadDirs          : [],
             },
         });
 
@@ -183,7 +335,7 @@ describe("permission.set on a session", () => {
     it("is refused for an origin outside allowedDomains", async () => {
         const { backend, open } = setup();
         const session = await open("a", {
-            safety: { readOnly: false, allowedDomains: ["a.example"], deniedDomains: [], allowPrivateNetworks: true, confirmDangerous: false },
+            safety: { readOnly: false, allowedDomains: ["a.example"], deniedDomains: [], allowPrivateNetworks: true, confirmDangerous: false, uploadDirs: [] },
         });
 
         expect(await code(session.setPermission({ ...grant, origin: OTHER }))).toBe(
@@ -191,6 +343,75 @@ describe("permission.set on a session", () => {
         );
         await session.setPermission({ ...grant, origin: SITE });
         expect(backend.permissions.size).toBe(1);
+    });
+
+    it("refuses a private origin when private networks are disabled", async () => {
+        const { backend, open } = setup();
+        const session = await open("a", {
+            safety: {
+                readOnly            : false, allowedDomains      : [], deniedDomains       : [],
+                allowPrivateNetworks: false, confirmDangerous    : false, uploadDirs          : [],
+            },
+        });
+
+        const result = await code(session.setPermission({
+            name: "camera", setting: "granted", origin: "http://127.0.0.1", owner: "permissions",
+        }));
+
+        expect(result).toBe(ErrorCode.forbiddenMethod);
+        expect(backend.permissions.size).toBe(0);
+    });
+
+    it("refuses an origin whose name resolves to a private address", async () => {
+        const { backend, open } = setup(async () => ["192.168.1.20"]);
+        const session = await open("a", {
+            safety: {
+                readOnly            : false, allowedDomains      : [], deniedDomains       : [],
+                allowPrivateNetworks: false, confirmDangerous    : false, uploadDirs          : [],
+            },
+        });
+
+        const result = await code(session.setPermission({
+            name: "camera", setting: "granted", origin: SITE, owner: "permissions",
+        }));
+
+        expect(result).toBe(ErrorCode.forbiddenMethod);
+        expect(backend.permissions.size).toBe(0);
+    });
+
+    it("allows an origin whose name resolves to a public address", async () => {
+        const resolve = vi.fn(async () => ["8.8.8.8"]);
+        const { backend, open } = setup(resolve);
+        const session = await open("a", {
+            safety: {
+                readOnly            : false, allowedDomains      : [], deniedDomains       : [],
+                allowPrivateNetworks: false, confirmDangerous    : false, uploadDirs          : [],
+            },
+        });
+
+        await session.setPermission({
+            name: "camera", setting: "granted", origin: SITE, owner: "permissions",
+        });
+
+        expect(resolve).toHaveBeenCalledWith("a.example");
+        expect(backend.permissions.size).toBe(1);
+    });
+
+    it("releases an override when its origin later resolves to a private address", async () => {
+        let addresses = ["8.8.8.8"];
+        const { backend, open } = setup(async () => addresses);
+        const session = await open("a", {
+            safety: {
+                readOnly            : false, allowedDomains      : [], deniedDomains       : [],
+                allowPrivateNetworks: false, confirmDangerous    : false, uploadDirs          : [],
+            },
+        });
+
+        await session.setPermission({ name: "camera", setting: "granted", origin: SITE, owner: "permissions" });
+        addresses = ["192.168.1.20"];
+        await session.setPermission({ name: "camera", setting: "reset", origin: SITE, owner: "permissions" });
+
+        expect(backend.permissions.size).toBe(0);
     });
 
     it("lets go of its grants when the session closes and leaves other sessions alone", async () => {
@@ -207,6 +428,18 @@ describe("permission.set on a session", () => {
 
         await registry.close("b");
         expect(backend.permissions.size).toBe(0);
+    });
+
+    it("clears isolated permissions when context disposal fails", async () => {
+        const { backend, open } = setup();
+        const session = await open("a", { isolated: true });
+
+        await session.setPermission({ ...grant, origin: SITE });
+        vi.spyOn(backend, "disposeContext").mockRejectedValue(new Error("dispose failed"));
+        await session.close();
+
+        expect(backend.permissions.size).toBe(0);
+        expect(backend.log).toContain("resetPermissions ctx1");
     });
 
     it("does not reset the browser when an isolated session closes", async () => {

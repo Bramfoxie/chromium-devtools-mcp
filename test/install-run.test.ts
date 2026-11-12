@@ -8,18 +8,31 @@ function setup(files: Record<string, string> = {}, platform: NodeJS.Platform = "
     const writes: string[] = [];
     const out: string[] = [];
     const err: string[] = [];
+    const locks = new Set<string>();
     const fs: InstallFs = {
         read     : (file) => store.get(file),
         writeFile: (file, text) => {
             writes.push(file);
             store.set(file, text);
         },
-        copy: (from, to) => void store.set(to, store.get(from) ?? ""),
+        copy: (from, to) => {
+            if (store.has(to)) throw Object.assign(new Error("exists"), { code: "EEXIST" });
+
+            store.set(to, store.get(from) ?? "");
+        },
+        lock: (file) => {
+            if (locks.has(file)) throw new Error("another installer is running");
+
+            locks.add(file);
+
+            return () => void locks.delete(file);
+        },
     };
     const home = platform === "win32" ? "C:\\Users\\u" : "/home/u";
     const deps: InstallDeps = {
         fs,
         home,
+        cwd: platform === "win32" ? "C:\\work\\app" : "/work/app",
         platform,
         env,
         now: () => new Date("2026-01-02T03:04:05.678Z"),
@@ -27,7 +40,7 @@ function setup(files: Record<string, string> = {}, platform: NodeJS.Platform = "
         err: (text) => void err.push(text),
     };
 
-    return { store, writes, out, err, run: (argv: string[]) => runInstall(argv, deps) };
+    return { store, writes, out, err, fs, deps, run: (argv: string[]) => runInstall(argv, deps) };
 }
 
 describe("parseInstallArgs", () => {
@@ -36,6 +49,8 @@ describe("parseInstallArgs", () => {
             clients    : ["cursor"],
             dryRun     : true,
             remove     : false,
+            list       : false,
+            scope      : "user",
             serverFlags: ["--read-only"],
         });
     });
@@ -51,7 +66,7 @@ describe("parseInstallArgs", () => {
     });
 
     it("lists the supported clients for an unknown or missing one", () => {
-        expect(() => parseInstallArgs(["--client", "vim"])).toThrow(/Supported clients: claude-code, cursor, codex, cherry-studio, all/);
+        expect(() => parseInstallArgs(["--client", "vim"])).toThrow(/Supported clients: claude-code, cursor, codex, cherry-studio, claude-desktop, windsurf, gemini-cli, vscode, vscode-insiders, all/);
         expect(() => parseInstallArgs([])).toThrow(/--client is required/);
         expect(() => parseInstallArgs(["--client"])).toThrow(/needs a value/);
     });
@@ -62,6 +77,66 @@ describe("parseInstallArgs", () => {
 });
 
 describe("runInstall", () => {
+    it("refuses a concurrent installer before it can overwrite the other change", () => {
+        const file = "/home/u/.cursor/mcp.json";
+        const t = setup({ [file]: '{"mcpServers":{}}' });
+        const write = t.fs.writeFile;
+        let nestedResult: number | undefined;
+        let nested = false;
+
+        t.fs.writeFile = (path, text) => {
+            if (!nested) {
+                nested = true;
+                nestedResult = t.run(["--client", "cursor", "--headless"]);
+            }
+
+            write(path, text);
+        };
+
+        expect(t.run(["--client", "cursor", "--read-only"])).toBe(0);
+        expect(nestedResult).toBe(1);
+        expect(t.store.get(file)).toContain("--read-only");
+        expect(t.err.join("")).toContain("another installer");
+    });
+
+    it("re-reads a configuration changed before the lock was acquired", () => {
+        const file = "/home/u/.cursor/mcp.json";
+        const t = setup({ [file]: '{"mcpServers":{}}' });
+        const lock = t.fs.lock;
+
+        t.fs.lock = (name) => {
+            t.store.set(file, '{"mcpServers":{},"other":true}');
+
+            return lock(name);
+        };
+
+        expect(t.run(["--client", "cursor"])).toBe(0);
+        expect(JSON.parse(t.store.get(file) ?? "").other).toBe(true);
+        expect(t.store.get(`${file}.bak-20260102T030405Z`)).toBe('{"mcpServers":{},"other":true}');
+    });
+
+    it("reports that the configuration may have changed if releasing the lock fails", () => {
+        const file = "/home/u/.cursor/mcp.json";
+        const t = setup({ [file]: '{"mcpServers":{}}' });
+
+        t.fs.lock = () => () => { throw new Error("cannot release"); };
+
+        expect(t.run(["--client", "cursor"])).toBe(1);
+        expect(t.store.get(file)).toContain("chromium-devtools");
+        expect(t.err.join("")).toContain("may have changed");
+    });
+
+    it("requires a lock even when an existing entry is up to date", () => {
+        const t = setup();
+
+        expect(t.run(["--client", "cursor"])).toBe(0);
+
+        t.fs.lock = () => { throw new Error("EACCES"); };
+
+        expect(t.run(["--client", "cursor"])).toBe(1);
+        expect(t.err.join("")).toContain("EACCES");
+    });
+
     it("writes the Cursor file, creating it", () => {
         const t = setup();
 
@@ -113,6 +188,36 @@ describe("runInstall", () => {
 
         expect(t.store.get(`${file}.bak-20260102T030405Z`)).toBe('{"mcpServers":{}}');
         expect(t.out.join("")).toContain("backup:");
+    });
+
+    it("keeps each backup when changes happen in the same second", () => {
+        const file = "/home/u/.cursor/mcp.json";
+        const original = '{"mcpServers":{}}';
+        const t = setup({ [file]: original });
+
+        expect(t.run(["--client", "cursor"])).toBe(0);
+        const firstChange = t.store.get(file);
+
+        expect(t.run(["--client", "cursor", "--headless"])).toBe(0);
+        expect(t.store.get(`${file}.bak-20260102T030405Z`)).toBe(original);
+        expect(t.store.get(`${file}.bak-20260102T030405Z-1`)).toBe(firstChange);
+    });
+
+    it("leaves the configuration unchanged when every backup name is occupied", () => {
+        const file = "/home/u/.cursor/mcp.json";
+        const original = '{"mcpServers":{}}';
+        const files: Record<string, string> = { [file]: original };
+
+        for (let i = 0; i < 1000; i += 1) {
+            files[`${file}.bak-20260102T030405Z${i === 0 ? "" : `-${i}`}`] = "keep";
+        }
+
+        const t = setup(files);
+
+        expect(t.run(["--client", "cursor"])).toBe(1);
+        expect(t.store.get(file)).toBe(original);
+        expect(t.writes).toEqual([]);
+        expect(t.err.join("")).toContain("unique backup name");
     });
 
     it("does not back up when it creates the file", () => {
@@ -180,8 +285,8 @@ describe("runInstall", () => {
     it("reports a read error without throwing", () => {
         const t = setup();
         const deps: InstallDeps = {
-            fs      : { read: () => { throw new Error("EACCES"); }, writeFile: () => undefined, copy: () => undefined },
-            home    : "/h", platform: "linux", env     : {}, now     : () => new Date(0),
+            fs      : { read: () => { throw new Error("EACCES"); }, writeFile: () => undefined, copy: () => undefined, lock: () => () => undefined },
+            home    : "/h", cwd     : "/w", platform: "linux", env     : {}, now     : () => new Date(0),
             out     : () => undefined, err     : (text) => void t.err.push(text),
         };
 
@@ -224,5 +329,209 @@ describe("runInstall", () => {
         expect(t.err.join("")).toContain("Usage:");
         expect(t.run(["--client", "cursor", "--bogus"])).toBe(2);
         expect(t.run(["--client", "nope"])).toBe(2);
+    });
+});
+
+describe("clients configured by name", () => {
+    function written(
+        files   : Record<string, string>,
+        platform: NodeJS.Platform,
+        client  : string,
+        env = {},
+    ) {
+        const { store, run, err } = setup(files, platform, env);
+
+        expect(run(["--client", client])).toBe(0);
+        expect(err).toEqual([]);
+
+        return store;
+    }
+
+    const entry = { command: "npx", args: ["-y", "chromium-devtools-mcp"] };
+
+    it.each([
+        ["claude-desktop", "darwin", "/home/u/Library/Application Support/Claude/claude_desktop_config.json", {}],
+        ["claude-desktop", "linux", "/home/u/.config/Claude/claude_desktop_config.json", {}],
+        ["claude-desktop", "linux", "/x/Claude/claude_desktop_config.json", { XDG_CONFIG_HOME: "/x" }],
+        ["windsurf", "linux", "/home/u/.codeium/windsurf/mcp_config.json", {}],
+        ["gemini-cli", "linux", "/home/u/.gemini/settings.json", {}],
+    ])("writes %s on %s to %s", (client, platform, file, env) => {
+        const store = written({}, platform as NodeJS.Platform, client, env);
+
+        expect(JSON.parse(store.get(file) ?? "{}")).toEqual({ mcpServers: { "chromium-devtools": entry } });
+    });
+
+    it("writes Claude Desktop on Windows under APPDATA with the cmd form", () => {
+        const file = "C:\\Users\\u\\AppData\\Roaming\\Claude\\claude_desktop_config.json";
+        const store = written({}, "win32", "claude-desktop");
+
+        expect(JSON.parse(store.get(file) ?? "{}")).toEqual({
+            mcpServers: {
+                "chromium-devtools": { command: "cmd", args: ["/c", "npx", "-y", "chromium-devtools-mcp"] },
+            },
+        });
+    });
+
+    it.each([
+        ["vscode", "darwin", "/home/u/Library/Application Support/Code/User/mcp.json"],
+        ["vscode", "linux", "/home/u/.config/Code/User/mcp.json"],
+        ["vscode-insiders", "linux", "/home/u/.config/Code - Insiders/User/mcp.json"],
+    ])("writes %s on %s under the servers key with a stdio type", (client, platform, file) => {
+        const store = written({}, platform as NodeJS.Platform, client);
+
+        expect(JSON.parse(store.get(file) ?? "{}")).toEqual({
+            servers: { "chromium-devtools": { type: "stdio", ...entry } },
+        });
+    });
+
+    it("keeps the other settings of a Gemini CLI file and the other VS Code servers", () => {
+        const gemini = "/home/u/.gemini/settings.json";
+        const code = "/home/u/.config/Code/User/mcp.json";
+        const { store, run } = setup(
+            {
+                [gemini]: '{"theme":"dark","mcpServers":{"other":{"command":"x"}}}',
+                [code]  : '{"servers":{"other":{"command":"y"}},"inputs":[]}',
+            },
+            "linux",
+        );
+
+        expect(run(["--client", "gemini-cli", "--client", "vscode"])).toBe(0);
+        expect(JSON.parse(store.get(gemini) ?? "{}")).toMatchObject({
+            theme     : "dark",
+            mcpServers: { other: { command: "x" } },
+        });
+        expect(JSON.parse(store.get(code) ?? "{}")).toMatchObject({
+            inputs : [],
+            servers: { other: { command: "y" }, "chromium-devtools": { type: "stdio" } },
+        });
+    });
+
+    it("removes the entry again from the servers key", () => {
+        const code = "/home/u/.config/Code/User/mcp.json";
+        const { store, run } = setup({}, "linux");
+
+        run(["--client", "vscode"]);
+        expect(run(["--client", "vscode", "--remove"])).toBe(0);
+        expect(JSON.parse(store.get(code) ?? "{}")).toEqual({ servers: {} });
+    });
+
+    it("leaves them out of all", () => {
+        expect(parseInstallArgs(["--client", "all"]).clients).toEqual([
+            "claude-code",
+            "cursor",
+            "codex",
+            "cherry-studio",
+        ]);
+    });
+});
+
+describe("install --list", () => {
+    it("reports the state of the entry for every client without writing anything", () => {
+        const cursor = "/home/u/.cursor/mcp.json";
+        const gemini = "/home/u/.gemini/settings.json";
+        const windsurf = "/home/u/.codeium/windsurf/mcp_config.json";
+        const { out, err, writes, run } = setup(
+            {
+                [cursor]: JSON.stringify({
+                    mcpServers: { "chromium-devtools": { command: "npx", args: ["-y", "chromium-devtools-mcp"] } },
+                }),
+                [gemini]: JSON.stringify({
+                    mcpServers: { "chromium-devtools": { command: "npx", args: ["-y", "chromium-devtools-mcp", "--headless"] } },
+                }),
+                [windsurf]: "{ broken",
+            },
+            "linux",
+        );
+
+        expect(run(["--list"])).toBe(1);
+
+        const text = out.join("");
+
+        expect(writes).toEqual([]);
+        expect(text).toContain(`cursor: installed, up to date (${cursor})`);
+        expect(text).toContain(`gemini-cli: installed, differs from the current entry (${gemini})`);
+        expect(text).toContain("claude-code: not installed (no file at /home/u/.claude.json)");
+        expect(text).toContain("codex: not installed (no file at /home/u/.codex/config.toml)");
+        expect(text).toContain("cherry-studio: no config file, add it in the app");
+        expect(err.join("")).toContain(`windsurf: cannot read ${windsurf}`);
+    });
+
+    it("says not installed when the file exists without the entry and exits 0 when all is readable", () => {
+        const cursor = "/home/u/.cursor/mcp.json";
+        const { out, run } = setup({ [cursor]: '{"mcpServers":{"other":{"command":"x"}}}' }, "linux");
+
+        expect(run(["--list"])).toBe(0);
+        expect(out.join("")).toContain(`cursor: not installed (${cursor})`);
+    });
+
+    it("takes no client, flags or other options", () => {
+        const { err, run } = setup({}, "linux");
+
+        expect(run(["--list", "--client", "cursor"])).toBe(2);
+        expect(run(["--list", "--remove"])).toBe(2);
+        expect(run(["--list", "--headless"])).toBe(2);
+        expect(err.join("")).toContain("--list");
+    });
+});
+
+describe("--scope project", () => {
+    function withCwd(files: Record<string, string> = {}, platform: NodeJS.Platform = "linux") {
+        const harness = setup(files, platform);
+
+        return harness;
+    }
+
+    const entry = { command: "npx", args: ["-y", "chromium-devtools-mcp"] };
+
+    it("parses the scope and refuses an unknown one or a client without a project file", () => {
+        expect(parseInstallArgs(["--client", "cursor", "--scope", "project"]).scope).toBe("project");
+        expect(parseInstallArgs(["--client", "cursor"]).scope).toBe("user");
+        expect(() => parseInstallArgs(["--client", "cursor", "--scope", "team"])).toThrow(/--scope/);
+        expect(() => parseInstallArgs(["--client", "cursor", "--scope"])).toThrow(/--scope/);
+    });
+
+    it.each([
+        ["claude-code", "/work/app/.mcp.json", { mcpServers: { "chromium-devtools": { type: "stdio", ...entry } } }],
+        ["cursor", "/work/app/.cursor/mcp.json", { mcpServers: { "chromium-devtools": entry } }],
+        ["vscode", "/work/app/.vscode/mcp.json", { servers: { "chromium-devtools": { type: "stdio", ...entry } } }],
+    ])("writes %s into the project directory", (client, file, expected) => {
+        const { store, run, err } = withCwd();
+
+        expect(run(["--client", client, "--scope", "project"])).toBe(0);
+        expect(err).toEqual([]);
+        expect(JSON.parse(store.get(file) ?? "{}")).toEqual(expected);
+        expect([...store.keys()].every((key) => key.startsWith("/work/app/"))).toBe(true);
+    });
+
+    it("keeps other servers of the project file and removes only its own entry", () => {
+        const file = "/work/app/.mcp.json";
+        const { store, run } = withCwd({
+            [file]: JSON.stringify({ mcpServers: { other: { command: "x" } } }),
+        });
+
+        run(["--client", "claude-code", "--scope", "project"]);
+        expect(JSON.parse(store.get(file) ?? "{}").mcpServers).toMatchObject({
+            other              : { command: "x" },
+            "chromium-devtools": { type: "stdio" },
+        });
+
+        run(["--client", "claude-code", "--scope", "project", "--remove"]);
+        expect(JSON.parse(store.get(file) ?? "{}")).toEqual({ mcpServers: { other: { command: "x" } } });
+    });
+
+    it("says that a client has no project file and fails, without touching anything", () => {
+        const { store, run, err } = withCwd();
+
+        expect(run(["--client", "codex", "--scope", "project"])).toBe(1);
+        expect(err.join("")).toContain("codex: has no project scope");
+        expect(store.size).toBe(0);
+    });
+
+    it("does not let all create files for clients without a project file", () => {
+        const { store, run, err } = withCwd();
+
+        expect(run(["--client", "all", "--scope", "project"])).toBe(1);
+        expect([...store.keys()].sort()).toEqual(["/work/app/.cursor/mcp.json", "/work/app/.mcp.json"]);
+        expect(err.join("")).toContain("codex: has no project scope");
     });
 });

@@ -29,6 +29,7 @@ const config: Config = {
         deniedDomains       : [],
         allowPrivateNetworks: true,
         confirmDangerous    : false,
+        uploadDirs          : [],
     },
 };
 

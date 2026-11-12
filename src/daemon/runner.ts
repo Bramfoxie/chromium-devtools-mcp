@@ -3,11 +3,11 @@ import {
     attachBrowser,
     endpointUnreachableMessage,
     explicitEndpoint,
-    runningInProfile,
 } from "../browser/attach.js";
 import { BrowserLaunchError, launchManaged } from "../browser/launch.js";
 import { CdpClient, createWsTransportFactory } from "../cdp/index.js";
-import type { Config } from "../config/index.js";
+import { trafficFile, type TrafficObserver } from "../cdp/traffic-log.js";
+import { pathFor, type Config } from "../config/index.js";
 import { CdpBackend } from "./cdp-backend.js";
 import { Daemon } from "./daemon.js";
 import { AlreadyRunningError } from "./errors.js";
@@ -17,6 +17,7 @@ import { acquireInstance } from "./lock.js";
 import { describeError, logDaemon } from "../util/log.js";
 import { realInstanceIO } from "./socket-io.js";
 import { ensureToken, readToken } from "./token.js";
+import { findManagedBrowser, prepareManagedProfile, rememberManagedBrowser, type ManagedBindingOptions, type ProfileIdentity } from "./managed-binding.js";
 import { abortableSleep } from "../util/sleep.js";
 
 const DEFAULT_IDLE_TIMEOUT_MS = 30_000;
@@ -57,6 +58,7 @@ export interface BrowserHandle {
 
 export interface ConnectHooks {
     onWaiting(message: string): void;
+    managedBinding?: ManagedBindingOptions;
 }
 
 export type BrowserConnector = (
@@ -79,10 +81,19 @@ export function approvalMessage(): string {
 }
 
 export interface ConnectorDeps {
-    launch      : typeof launchManaged;
-    attach      : typeof attachBrowser;
-    findRunning : (profileDir: string, debugPort: number) => Promise<AttachEndpoint | undefined>;
-    connect     : (url: string, handshakeMs?: number, signal?: AbortSignal) => Promise<CdpClient>;
+    launch     : typeof launchManaged;
+    attach     : typeof attachBrowser;
+    findRunning: (
+        profileDir: string, config: Config, options: ManagedBindingOptions | undefined,
+    ) => Promise<AttachEndpoint | undefined>;
+    remember: (
+        profileDir: string, endpoint: string, config: Config,
+        options: ManagedBindingOptions, identity: ProfileIdentity,
+    ) => Promise<void>;
+    prepareProfile: typeof prepareManagedProfile;
+    connect: (
+        url: string, handshakeMs?: number, signal?: AbortSignal, traffic?: TrafficObserver,
+    ) => Promise<CdpClient>;
     sleep       : (ms: number, signal?: AbortSignal) => Promise<void>;
     handshakeMs?: number;
     retryMs?    : number;
@@ -93,11 +104,16 @@ const HEADLESS_AGENT = /HeadlessChrome/;
 const defaultConnectorDeps: ConnectorDeps = {
     launch     : launchManaged,
     attach     : attachBrowser,
-    findRunning: (profileDir, debugPort) => runningInProfile(profileDir, debugPort),
-    connect    : (url, handshakeMs, signal) =>
+    findRunning: (profileDir, config, options) => options === undefined
+        ? Promise.resolve(undefined) : findManagedBrowser(profileDir, config, options),
+    remember: (profileDir, endpoint, config, options, identity) =>
+        rememberManagedBrowser(profileDir, endpoint, config, options, identity),
+    prepareProfile: prepareManagedProfile,
+    connect       : (url, handshakeMs, signal, traffic) =>
         CdpClient.connect({
             url,
             signal,
+            traffic,
             ...(handshakeMs === undefined
                 ? {}
                 : { createTransport: createWsTransportFactory(handshakeMs) }),
@@ -129,18 +145,20 @@ async function closeLeftoverPages(client: CdpClient): Promise<void> {
 
 // Reuses a browser left on the managed profile; never closes it.
 async function adoptManaged(
-    config: Config,
-    deps  : ConnectorDeps,
-    signal: AbortSignal,
+    config : Config,
+    deps   : ConnectorDeps,
+    signal : AbortSignal,
+    traffic: TrafficObserver | undefined,
+    binding: ManagedBindingOptions | undefined,
 ): Promise<BrowserHandle | undefined> {
     const running = await deps
-        .findRunning(config.profileDir, config.debugPort)
+        .findRunning(config.profileDir, config, binding)
         .catch(() => undefined);
 
     if (!running) return undefined;
 
     const client = await deps
-        .connect(running.webSocketUrl, undefined, signal)
+        .connect(running.webSocketUrl, undefined, signal, traffic)
         .catch(() => undefined);
 
     if (!client) return undefined;
@@ -148,6 +166,15 @@ async function adoptManaged(
     const headless = await isHeadless(client);
 
     if (headless === config.headless) {
+        const verified = await deps.findRunning(config.profileDir, config, binding)
+            .catch(() => undefined);
+
+        if (verified?.webSocketUrl !== running.webSocketUrl) {
+            await client.close();
+
+            return undefined;
+        }
+
         logDaemon(`Reusing the managed browser that already runs on port ${running.port}.`);
         if (config.headless) await closeLeftoverPages(client);
 
@@ -165,19 +192,35 @@ async function adoptManaged(
 }
 
 async function connectManaged(
-    config: Config,
-    deps  : ConnectorDeps,
-    signal: AbortSignal,
+    config : Config,
+    deps   : ConnectorDeps,
+    signal : AbortSignal,
+    traffic: TrafficObserver | undefined,
+    binding: ManagedBindingOptions | undefined,
 ): Promise<BrowserHandle> {
-    const adopted = await adoptManaged(config, deps, signal);
+    const adopted = await adoptManaged(config, deps, signal, traffic, binding);
 
     if (adopted) return adopted;
 
     logDaemon(`Starting a managed browser on ${config.profileDir}.`);
+    const identity = binding === undefined ? undefined : await deps
+        .prepareProfile(config.profileDir)
+        .catch(() => {
+            logDaemon("could not identify the managed profile; a later daemon may need the browser to be closed");
+
+            return undefined;
+        });
     const launched = await deps.launch(config, {}, signal);
 
     try {
-        const client = await deps.connect(launched.webSocketUrl, undefined, signal);
+        const client = await deps.connect(launched.webSocketUrl, undefined, signal, traffic);
+
+        if (binding !== undefined && identity !== undefined) {
+            await deps.remember(config.profileDir, launched.webSocketUrl, config, binding, identity)
+                .catch(() => logDaemon(
+                    "could not save the managed browser identity; a later daemon may need the browser to be closed",
+                ));
+        }
 
         return {
             client,
@@ -205,7 +248,9 @@ export function createConnector(overrides: Partial<ConnectorDeps> = {}): Browser
     const deps: ConnectorDeps = { ...defaultConnectorDeps, ...overrides };
 
     return async (config, hooks, signal) => {
-        if (config.mode === "managed") return connectManaged(config, deps, signal);
+        const traffic = config.cdpLog === undefined ? undefined : trafficFile(config.cdpLog);
+
+        if (config.mode === "managed") return connectManaged(config, deps, signal, traffic, hooks.managedBinding);
 
         let reportedUnreachable = false;
 
@@ -220,7 +265,7 @@ export function createConnector(overrides: Partial<ConnectorDeps> = {}): Browser
 
             try {
                 const budget = deps.handshakeMs ?? APPROVAL_HANDSHAKE_MS;
-                const client = await deps.connect(endpoint.webSocketUrl, budget, signal);
+                const client = await deps.connect(endpoint.webSocketUrl, budget, signal, traffic);
 
                 logDaemon(`Connected to Chrome on port ${endpoint.port}.`);
 
@@ -230,7 +275,7 @@ export function createConnector(overrides: Partial<ConnectorDeps> = {}): Browser
 
                 if (endpoint.source === "ws-endpoint" && !reportedUnreachable) {
                     reportedUnreachable = true;
-                    hooks.onWaiting(endpointUnreachableMessage(endpoint.webSocketUrl));
+                    hooks.onWaiting(endpointUnreachableMessage());
                 }
 
                 logDaemon(`could not connect to the browser yet, retrying: ${describeError(error)}`);
@@ -322,7 +367,16 @@ export async function runDaemon(
         try {
             const handle = await deps.connectBrowser(
                 config,
-                { onWaiting: (message) => daemon.setWaiting(message) },
+                {
+                    onWaiting     : (message) => daemon.setWaiting(message),
+                    managedBinding: {
+                        directory: pathFor(layout.platform).join(
+                            pathFor(layout.platform).dirname(layout.tokenFile), "managed-browsers",
+                        ),
+                        platform: layout.platform,
+                        uid     : layout.uid,
+                    },
+                },
                 controller.signal,
             );
 

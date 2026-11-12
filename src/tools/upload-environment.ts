@@ -8,7 +8,7 @@ export interface UploadFileSystem {
     realpath(path: string): Promise<string>;
 }
 
-type UploadPath = Pick<typeof posix, "basename" | "isAbsolute" | "resolve">;
+type UploadPath = Pick<typeof posix, "basename" | "isAbsolute" | "relative" | "resolve" | "sep">;
 
 export interface UploadEnvironment {
     fs  : UploadFileSystem;

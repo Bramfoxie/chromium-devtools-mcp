@@ -9,6 +9,8 @@ const TIMEOUT_CLASSES = {
     "daemon.stop"    : "plain",
     "session.open"   : "plain",
     "session.list"   : "plain",
+    "upload.prepare" : "multi-step",
+    "upload.cancel"  : "plain",
     "permission.set" : "cdp-bound",
     "tab.create"     : "cdp-bound",
     "popup.list"     : "cdp-bound",

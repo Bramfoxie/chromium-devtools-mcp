@@ -26,11 +26,13 @@ export function formatConfigReport(report: ConfigReport): string {
         ["tools", config.tools === undefined || config.tools.length === 0 ? "(all)" : config.tools],
         ["excludeTools", config.excludeTools],
         ["auditLog", config.auditLog],
+        ["cdpLog", config.cdpLog],
         ["safety.readOnly", config.safety.readOnly],
         ["safety.allowedDomains", config.safety.allowedDomains],
         ["safety.deniedDomains", config.safety.deniedDomains],
         ["safety.allowPrivateNetworks", config.safety.allowPrivateNetworks],
         ["safety.confirmDangerous", config.safety.confirmDangerous],
+        ["safety.uploadDirs", config.safety.uploadDirs],
     ];
     const nameWidth = Math.max(...rows.map(([name]) => name.length));
     const valueWidth = Math.max(...rows.map(([, value]) => show(value).length));

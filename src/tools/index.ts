@@ -70,6 +70,16 @@ export { NAVIGATION_TIMING_EXPRESSION, pageMetrics, shapePerformanceMetrics } fr
 
 export { pageDetails, pageInfo, pageInfoExpression } from "./page-info.js";
 
+export { browserInfo } from "./browser-info.js";
+
+export { pageExtract } from "./page-extract.js";
+
+export { findInPage } from "./find-in-page.js";
+
+export { findExpression } from "./find-in-page-script.js";
+
+export { extractExpression } from "./page-extract-script.js";
+
 export { pageDialogs } from "./page-dialogs.js";
 
 export { checkConditions, pageWait } from "./page-wait.js";
@@ -118,7 +128,7 @@ export { perfTraceStart, perfTraceStop } from "./perf/perf-trace.js";
 
 export { inputDrag } from "./input-drag.js";
 
-export { closeTab, listSessions, listTabs, newTab, popupList, selectTab, windowList } from "./tabs.js";
+export { closeTab, listSessions, listTabs, newTab, popupList, selectTab, tabDuplicate, windowList } from "./tabs.js";
 
 export { assertElementOriginAllowed, boxOf, ElementRegistry, elementTargetSchema, MAX_UIDS_PER_TAB, rectOfQuad, resolveElement, revealElement, splitPierceChain, STALE_UID_MESSAGE, withElement } from "./element-target.js";
 
@@ -179,6 +189,10 @@ export { emulateMedia, hasMediaSelection } from "./emulation/emulate-media.js";
 export { checkNetworkInput, conditionsOf, emulateNetwork } from "./emulation/emulate-network.js";
 
 export { emulateGeolocation } from "./emulation/emulate-geolocation.js";
+
+export { permissions } from "./permissions.js";
+
+export { emulateCpu } from "./emulation/emulate-cpu.js";
 
 export { checkAcceptLanguage, emulateLocale, hasLocaleSelection } from "./emulation/emulate-locale.js";
 

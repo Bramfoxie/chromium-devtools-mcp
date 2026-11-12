@@ -86,7 +86,7 @@ describe("session handling", () => {
         const client = await connect();
 
         await client.request("session.open", {
-            safety: { readOnly: false, allowedDomains: ["example.com"], deniedDomains: [], allowPrivateNetworks: true, confirmDangerous: false },
+            safety: { readOnly: false, allowedDomains: ["example.com"], deniedDomains: [], allowPrivateNetworks: true, confirmDangerous: false, uploadDirs: [] },
         });
 
         expect((await failure(client.request("tab.create", { url: "https://evil.test/" }))).code).toBe(
@@ -120,6 +120,7 @@ describe("session handling", () => {
                                 deniedDomains       : [],
                                 allowPrivateNetworks: true,
                                 confirmDangerous    : false,
+                                uploadDirs          : [],
                             },
                         }),
                     )

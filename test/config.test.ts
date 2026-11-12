@@ -24,6 +24,7 @@ describe("defaults", () => {
                 deniedDomains       : [],
                 allowPrivateNetworks: false,
                 confirmDangerous    : false,
+                uploadDirs          : [],
             },
         });
     });
@@ -117,6 +118,7 @@ describe("sources and precedence", () => {
             deniedDomains       : ["x.com", "y.com"],
             allowPrivateNetworks: true,
             confirmDangerous    : true,
+            uploadDirs          : [],
         });
     });
 
@@ -178,6 +180,7 @@ describe("sources and precedence", () => {
                 deniedDomains       : ["x.com"],
                 allowPrivateNetworks: true,
                 confirmDangerous    : true,
+                uploadDirs          : [],
             },
         });
     });
@@ -575,5 +578,36 @@ describe("allowedDomains validation", () => {
         const config = loadConfig(withFile(file));
 
         expect(config.safety.allowedDomains).toEqual(domains);
+    });
+});
+
+describe("safety.uploadDirs", () => {
+    it("is empty by default and read from the file, the environment and the command line", () => {
+        expect(loadConfig(withFile(undefined)).safety.uploadDirs).toEqual([]);
+        expect(
+            loadConfig(withFile(JSON.stringify({ safety: { uploadDirs: ["/srv/a"] } }))).safety.uploadDirs,
+        ).toEqual(["/srv/a"]);
+        expect(
+            loadConfig({
+                ...withFile(JSON.stringify({ safety: { uploadDirs: ["/srv/a"] } })),
+                env: { CHROMIUM_DEVTOOLS_MCP_UPLOAD_DIRS: "/srv/b, /srv/c" },
+            }).safety.uploadDirs,
+        ).toEqual(["/srv/b", "/srv/c"]);
+        expect(
+            loadConfig({
+                ...withFile(undefined),
+                env : { CHROMIUM_DEVTOOLS_MCP_UPLOAD_DIRS: "/srv/b" },
+                argv: ["--upload-dirs=/srv/d"],
+            }).safety.uploadDirs,
+        ).toEqual(["/srv/d"]);
+    });
+
+    it("accepts absolute directories of either platform and rejects relative ones", () => {
+        expect(
+            loadConfig({ ...withFile(undefined), argv: ["--upload-dirs=C:\\Users\\u\\up,/srv/x"] })
+                .safety.uploadDirs,
+        ).toEqual(["C:\\Users\\u\\up", "/srv/x"]);
+        expect(() => loadConfig({ ...withFile(undefined), argv: ["--upload-dirs=relative/dir"] }))
+            .toThrow(/safety.uploadDirs.*absolute/);
     });
 });

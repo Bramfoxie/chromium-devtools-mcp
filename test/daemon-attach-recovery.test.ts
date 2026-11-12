@@ -31,6 +31,7 @@ function attachConfig(debugPort: number): Config {
             deniedDomains       : [],
             allowPrivateNetworks: true,
             confirmDangerous    : false,
+            uploadDirs          : [],
         },
     };
 }
