@@ -61,7 +61,9 @@ export function parseListeningUrl(
 
         const port = Number(new URL(webSocketUrl).port);
 
-        if (expectedPort === undefined || port === expectedPort) return { port, webSocketUrl };
+        if (port > 0 && (expectedPort === undefined || port === expectedPort)) {
+            return { port, webSocketUrl };
+        }
     }
 
     return undefined;

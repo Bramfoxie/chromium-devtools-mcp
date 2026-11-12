@@ -126,6 +126,7 @@ describe("parseListeningUrl", () => {
         "ws://user:secret@127.0.0.1:9222/devtools/browser/id",
         "ws://127.0.0.1:9222/devtools/browser/id?token=secret",
         "ws://127.0.0.1:9222/devtools/browser/",
+        "ws://127.0.0.1:0/devtools/browser/id",
     ])("rejects an unsafe listening URL %s", (url) => {
         expect(parseListeningUrl(`DevTools listening on ${url}\n`)).toBeUndefined();
     });
@@ -434,6 +435,7 @@ describe("launchManaged", () => {
         const { deps, child } = harness();
         const pending = launchManaged({ ...config, debugPort: 0 }, deps);
 
+        child.write("DevTools listening on ws://127.0.0.1:0/devtools/browser/id\n");
         child.write("DevTools listening on ws://127.0.0.1:9333/devtools/browser/id\n");
         await expect(pending).resolves.toMatchObject({ port: 9333 });
     });
