@@ -23,10 +23,11 @@ interface Entry extends DownloadItem {
 }
 
 interface TabDownloads {
-    directory?: string;
-    entries   : Map<string, Entry>;
-    waiters   : Set<() => void>;
-    changing? : boolean;
+    directory? : string;
+    entries    : Map<string, Entry>;
+    waiters    : Set<() => void>;
+    changing?  : boolean;
+    transition?: boolean;
 }
 
 export interface DownloadFiles {
@@ -116,7 +117,14 @@ export class DownloadState {
 
         state.changing = true;
 
-        return () => { delete state.changing; };
+        return () => {
+            delete state.changing;
+            delete state.transition;
+        };
+    }
+
+    beginTransition(tab: string): void {
+        this.state(tab).transition = true;
     }
 
     deny(tab: string): void {
@@ -222,7 +230,7 @@ export class DownloadState {
                 state        : "inProgress",
                 receivedBytes: 0,
                 delivered    : false,
-                ...(state.directory === undefined || state.changing
+                ...(state.directory === undefined || state.transition
                     ? {}
                     : { directory: state.directory }),
             });

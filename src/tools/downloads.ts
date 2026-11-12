@@ -51,41 +51,45 @@ export const downloads = defineTool({
         const { downloadState: state } = context;
 
         if (args.action === "allow") {
-            const directory = await context.artifacts.directory("downloads");
-
-            await state.subscribe(targetId);
-            await context.access.send({
-                targetId,
-                method: "Page.enable",
-                params: {},
-            });
-            const previous = state.directoryOf(targetId);
             const endChange = state.beginChange(targetId);
 
             if (endChange === undefined) {
                 throw new ToolError("A download setting change is already in progress for this tab.");
             }
 
-            state.allow(targetId, directory.path);
-
             try {
+                const directory = await context.artifacts.directory("downloads");
+
+                await state.subscribe(targetId);
                 await context.access.send({
                     targetId,
-                    method: "Page.setDownloadBehavior",
-                    params: { behavior: "allow", downloadPath: directory.path },
+                    method: "Page.enable",
+                    params: {},
                 });
-            } catch (error) {
-                if (state.directoryOf(targetId) === directory.path) {
-                    if (previous === undefined) state.deny(targetId);
-                    else state.allow(targetId, previous);
+                const previous = state.directoryOf(targetId);
+
+                state.beginTransition(targetId);
+                state.allow(targetId, directory.path);
+
+                try {
+                    await context.access.send({
+                        targetId,
+                        method: "Page.setDownloadBehavior",
+                        params: { behavior: "allow", downloadPath: directory.path },
+                    });
+                } catch (error) {
+                    if (state.directoryOf(targetId) === directory.path) {
+                        if (previous === undefined) state.deny(targetId);
+                        else state.allow(targetId, previous);
+                    }
+
+                    throw error;
                 }
 
-                throw error;
+                return { tab: targetId, enabled: true, directory: directory.path };
             } finally {
                 endChange();
             }
-
-            return { tab: targetId, enabled: true, directory: directory.path };
         }
 
         if (args.action === "deny") {
@@ -96,6 +100,7 @@ export const downloads = defineTool({
             }
 
             try {
+                state.beginTransition(targetId);
                 await context.access.send({
                     targetId,
                     method: "Page.setDownloadBehavior",

@@ -66,6 +66,46 @@ const progress = (
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe("downloads allow and deny", () => {
+    it("allows another setting change when directory creation fails", async () => {
+        const { runtime } = setup();
+        const create = runtime.artifacts.directory.bind(runtime.artifacts);
+        let attempts = 0;
+
+        runtime.artifacts.directory = async (kind) => {
+            if (attempts++ === 0) throw new Error("failed");
+
+            return create(kind);
+        };
+
+        expect((await runTool(downloads, { action: "allow" }, extra(), runtime)).isError).toBe(true);
+        expect((await runTool(downloads, { action: "allow" }, extra(), runtime)).isError).not.toBe(true);
+    });
+
+    it("does not create another directory for an overlapping allow", async () => {
+        const { fake, runtime } = setup();
+        let release: () => void = () => undefined;
+        let directories = 0;
+        const gate = new Promise<void>((resolve) => (release = resolve));
+        const create = runtime.artifacts.directory.bind(runtime.artifacts);
+
+        runtime.artifacts.directory = async (kind) => {
+            directories += 1;
+
+            return create(kind);
+        };
+
+        fake.respond = (_target, method) => method === "Page.setDownloadBehavior" ? gate : {};
+        const first = runTool(downloads, { action: "allow" }, extra(), runtime);
+
+        await tick();
+        const second = await runTool(downloads, { action: "allow" }, extra(), runtime);
+
+        release();
+        await first;
+        expect(second.isError).toBe(true);
+        expect(directories).toBe(1);
+    });
+
     it("refuses overlapping download setting changes", async () => {
         const { fake, runtime } = setup();
         let release: () => void = () => undefined;
