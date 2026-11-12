@@ -3,6 +3,26 @@ import { FocusEmulation } from "../src/tools/index.js";
 import { FakeAccess } from "./helpers/fake-access.js";
 
 describe("FocusEmulation", () => {
+    it.each(["forget", "reset"])("does not retain a pending enable after %s", async (action) => {
+        const fake = new FakeAccess();
+        const focus = new FocusEmulation();
+        let release: () => void = () => undefined;
+        const gate = new Promise<void>((resolve) => (release = resolve));
+
+        fake.respond = () => gate;
+        const pending = focus.ensure(fake.asAccess(), "tab1");
+
+        if (action === "forget") focus.forget("tab1");
+        else focus.reset();
+
+        release();
+        await pending;
+        expect(focus.enabled("tab1")).toBe(false);
+        fake.respond = () => ({});
+        await focus.ensure(fake.asAccess(), "tab1");
+        expect(fake.sent).toHaveLength(2);
+    });
+
     it("enables focus emulation once per tab", async () => {
         const fake = new FakeAccess();
         const focus = new FocusEmulation();
