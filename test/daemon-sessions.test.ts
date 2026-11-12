@@ -283,6 +283,19 @@ describe("tab ownership", () => {
         expect(await code(listing)).toBe(ErrorCode.sessionClosed);
     });
 
+    it("reports a closed session when a pending tab listing fails", async () => {
+        const { backend, registry, open } = setup();
+        const session = await open("a");
+        let reject: (error: Error) => void = () => undefined;
+
+        backend.gates.listTargets = new Promise<void>((_resolve, fail) => (reject = fail));
+        const outcome = code(session.listTabs("available"));
+
+        await registry.close("a");
+        reject(new Error("browser unavailable"));
+        expect(await outcome).toBe(ErrorCode.sessionClosed);
+    });
+
     it("claims a tab of the user and leaves it open when the session ends", async () => {
         const { backend, registry, open } = setup();
         const a = await open("a");

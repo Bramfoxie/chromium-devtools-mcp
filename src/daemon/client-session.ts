@@ -388,6 +388,8 @@ export class ClientSession {
         try {
             targets = await this.backend.listTargets();
         } catch (error) {
+            this.ensureOpen();
+
             throw translate(error);
         }
 
