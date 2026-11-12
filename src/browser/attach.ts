@@ -1,7 +1,7 @@
 import http from "node:http";
 import net from "node:net";
 import os from "node:os";
-import { BROWSER_PATH_PREFIX, LOOPBACK_HOSTS, pathFor, type Config } from "../config/index.js";
+import { BROWSER_PATH_PREFIX, isValidWsEndpoint, LOOPBACK_HOSTS, pathFor, type Config } from "../config/index.js";
 import { BROWSERS, type BrowserName, type DiscoveryContext } from "./browsers.js";
 import { readIfExists } from "../util/read-if-exists.js";
 import { writeLogLine } from "../util/stderr.js";
@@ -51,8 +51,11 @@ export function parseActivePortFile(
 
     if (!Number.isInteger(port) || port < 1 || port > 65535) return undefined;
     if (!browserPath?.startsWith(BROWSER_PATH_PREFIX)) return undefined;
+    if (browserPath.includes("?") || browserPath.includes("#")) return undefined;
 
-    return { port, webSocketUrl: `ws://127.0.0.1:${port}${browserPath}` };
+    const webSocketUrl = `ws://127.0.0.1:${port}${browserPath}`;
+
+    return isValidWsEndpoint(webSocketUrl) ? { port, webSocketUrl } : undefined;
 }
 
 function browserWebSocketUrl(version: unknown, port: number): string | undefined {
@@ -60,12 +63,15 @@ function browserWebSocketUrl(version: unknown, port: number): string | undefined
 
     const url = (version as Record<string, unknown>).webSocketDebuggerUrl;
 
-    if (typeof url !== "string") return undefined;
+    if (typeof url !== "string" || url.includes("?") || url.includes("#")) return undefined;
 
     try {
         const parsed = new URL(url);
         const isBrowserSocket =
-            parsed.protocol === "ws:" && parsed.pathname.startsWith(BROWSER_PATH_PREFIX);
+            parsed.protocol === "ws:" && parsed.pathname.startsWith(BROWSER_PATH_PREFIX) &&
+            parsed.pathname.length > BROWSER_PATH_PREFIX.length &&
+            parsed.username === "" && parsed.password === "" &&
+            parsed.search === "" && parsed.hash === "";
         const samePort = Number(parsed.port || 80) === port;
 
         return isBrowserSocket && samePort && LOOPBACK_HOSTS.has(parsed.hostname) ? url : undefined;

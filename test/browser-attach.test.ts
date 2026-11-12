@@ -103,7 +103,19 @@ describe("parseActivePortFile", () => {
         });
     });
 
-    it.each(["", "9333", "0\n/devtools/browser/x", "70000\n/devtools/browser/x", "9333\n/other"])(
+    it("accepts a port file using the default WebSocket port", () => {
+        expect(parseActivePortFile("80\n/devtools/browser/x\n")).toEqual({
+            port        : 80,
+            webSocketUrl: "ws://127.0.0.1:80/devtools/browser/x",
+        });
+    });
+
+    it.each([
+        "", "9333", "0\n/devtools/browser/x", "70000\n/devtools/browser/x", "9333\n/other",
+        "9333\n/devtools/browser/", "9333\n/devtools/browser/x?token=secret",
+        "9333\n/devtools/browser/x#fragment",
+        "9333\n/devtools/browser/x?", "9333\n/devtools/browser/x#",
+    ])(
         "rejects %j",
         (content) => {
             expect(parseActivePortFile(content)).toBeUndefined();
@@ -175,6 +187,15 @@ describe("resolveAttachEndpoint", () => {
         expect(await resolveAttachEndpoint(config, value)).toMatchObject({ source: "debug-port" });
     });
 
+    it("falls back to the debug port when the port file contains an unsafe path", async () => {
+        const { value } = deps({
+            files   : { [portFile]: "9333\n/devtools/browser/x?token=secret" },
+            versions: { 9222: version },
+        });
+
+        expect(await resolveAttachEndpoint(config, value)).toMatchObject({ source: "debug-port" });
+    });
+
     it("returns undefined when nothing is reachable", async () => {
         expect(await resolveAttachEndpoint(config, deps().value)).toBeUndefined();
     });
@@ -186,6 +207,12 @@ describe("resolveAttachEndpoint", () => {
         ["not a browser socket", { webSocketDebuggerUrl: "ws://127.0.0.1:9222/devtools/page/1" }],
         ["remote host", { webSocketDebuggerUrl: "ws://evil.example:9222/devtools/browser/x" }],
         ["different port", { webSocketDebuggerUrl: "ws://127.0.0.1:9999/devtools/browser/x" }],
+        ["empty browser id", { webSocketDebuggerUrl: "ws://127.0.0.1:9222/devtools/browser/" }],
+        ["credentials", { webSocketDebuggerUrl: "ws://user:secret@127.0.0.1:9222/devtools/browser/x" }],
+        ["query", { webSocketDebuggerUrl: "ws://127.0.0.1:9222/devtools/browser/x?token=secret" }],
+        ["fragment", { webSocketDebuggerUrl: "ws://127.0.0.1:9222/devtools/browser/x#fragment" }],
+        ["empty query", { webSocketDebuggerUrl: "ws://127.0.0.1:9222/devtools/browser/x?" }],
+        ["empty fragment", { webSocketDebuggerUrl: "ws://127.0.0.1:9222/devtools/browser/x#" }],
         ["implicit port 80", { webSocketDebuggerUrl: "ws://127.0.0.1/devtools/browser/x" }],
         ["wrong scheme", { webSocketDebuggerUrl: "wss://127.0.0.1:9222/devtools/browser/x" }],
         ["unparseable URL", { webSocketDebuggerUrl: "::::" }],
