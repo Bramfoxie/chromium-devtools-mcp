@@ -14,6 +14,7 @@ export class RingBuffer<T> {
     private nextId  = 1;
     private used    = 0;
     private evicted = 0;
+    private epoch = 0;
 
     constructor(options: RingBufferOptions<T>) {
         this.maxEntries = Math.max(1, Math.floor(options.maxEntries));
@@ -32,6 +33,10 @@ export class RingBuffer<T> {
 
     get dropped(): number {
         return this.evicted;
+    }
+
+    get generation(): number {
+        return this.epoch;
     }
 
     get lastId(): number {
@@ -78,9 +83,10 @@ export class RingBuffer<T> {
         return found;
     }
 
-    removeThrough(lastId: number): void {
+    removeThrough(lastId: number, matches: (id: number, value: T) => boolean): void {
         for (const [id, entry] of this.entries) {
             if (id > lastId) break;
+            if (!matches(id, entry.value)) continue;
 
             this.entries.delete(id);
             this.used = Math.max(0, this.used - entry.size);
@@ -89,6 +95,7 @@ export class RingBuffer<T> {
     }
 
     clear(): void {
+        this.epoch += 1;
         this.entries.clear();
         this.used = 0;
         this.evicted = 0;

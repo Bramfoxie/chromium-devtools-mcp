@@ -58,10 +58,11 @@ interface ConsoleQuery {
 }
 
 interface NetworkQuery {
-    filter : NetworkFilter;
-    afterId: number | undefined;
-    limit  : number;
-    clear  : boolean;
+    filter      : NetworkFilter;
+    afterId     : number | undefined;
+    limit       : number;
+    clear       : boolean;
+    acknowledge?: boolean;
 }
 
 interface CaptureManagerOptions {
@@ -280,7 +281,7 @@ export class CaptureManager {
         const capture = this.capture(tab);
         const droppedCount = capture.network.dropped - capture.networkDropped;
 
-        capture.networkDropped = capture.network.dropped;
+        if (query.acknowledge !== false) capture.networkDropped = capture.network.dropped;
 
         const afterId = query.afterId ?? 0;
         const records = capture.network
@@ -302,14 +303,25 @@ export class CaptureManager {
         return { records, nextAfterId, droppedCount, totalBuffered };
     }
 
-    networkClearAfterSave(tab: string): () => void {
+    networkAfterSave(tab: string, clear: boolean): () => void {
         const capture = this.capture(tab);
         const lastId = capture.network.lastId;
+        const generation = capture.network.generation;
+        const dropped = capture.network.dropped;
+        const snapshots = clear
+            ? new Map(capture.network.after(0, Number.MAX_SAFE_INTEGER)
+                .map(({ id, value }) => [id, JSON.stringify(value)]))
+            : new Map<number, string>();
 
         return () => {
-            if (this.tabs.get(tab) !== capture) return;
+            if (this.tabs.get(tab) !== capture || capture.network.generation !== generation) return;
 
-            capture.network.removeThrough(lastId);
+            capture.networkDropped = Math.max(capture.networkDropped, dropped);
+
+            if (clear) {
+                capture.network.removeThrough(lastId, (id, value) =>
+                    snapshots.get(id) === JSON.stringify(value));
+            }
         };
     }
 
