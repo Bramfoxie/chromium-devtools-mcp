@@ -420,6 +420,8 @@ export class ClientSession {
 
             return result;
         } catch (error) {
+            this.assertCurrent(targetId, tab);
+
             throw translate(error);
         }
     }

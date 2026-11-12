@@ -132,6 +132,21 @@ describe("tab ownership", () => {
         expect(await code(result)).toBe(ErrorCode.notFound);
     });
 
+    it("reports a closed tab when its window lookup fails after closure", async () => {
+        const { backend, open } = setup();
+        const session = await open("a");
+        const tab = await session.createTab("about:blank");
+        let reject: (error: Error) => void = () => undefined;
+        const gate = new Promise<never>((_resolve, fail) => (reject = fail));
+
+        vi.spyOn(backend, "getWindowForTarget").mockReturnValue(gate);
+        const outcome = code(session.getWindow(tab));
+
+        await session.closeTab(tab);
+        reject(new Error("browser unavailable"));
+        expect(await outcome).toBe(ErrorCode.notFound);
+    });
+
     it("lists only unclaimed popups in the opener context and requires ownership", async () => {
         const { backend, open } = setup();
         const a = await open("a");
@@ -182,14 +197,16 @@ describe("tab ownership", () => {
         expect(await outcome).toBe(ErrorCode.notFound);
     });
 
-    it("preserves browser errors while listing tabs and popups in an open session", async () => {
+    it("preserves browser errors for open tabs and sessions", async () => {
         const { backend, open } = setup();
         const session = await open("a");
         const opener = await session.createTab("about:blank");
 
         vi.spyOn(backend, "listTargets").mockRejectedValue(new CdpTimeoutError("Target.getTargets", 100));
+        vi.spyOn(backend, "getWindowForTarget").mockRejectedValue(new CdpTimeoutError("Browser.getWindowForTarget", 100));
         expect(await code(session.listTabs("available"))).toBe(ErrorCode.cdpTimeout);
         expect(await code(session.listPopups(opener))).toBe(ErrorCode.cdpTimeout);
+        expect(await code(session.getWindow(opener))).toBe(ErrorCode.cdpTimeout);
     });
 
     it("allows only one concurrent session to claim a discovered popup", async () => {
