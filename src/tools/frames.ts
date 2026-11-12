@@ -22,6 +22,8 @@ interface TabFrames {
     frames     : Map<string, FrameInfo>;
     mainFrameId: string | undefined;
     generations: Map<string, number>;
+    sequence   : number;
+    applied    : number;
 }
 
 type FrameNavigatedListener = (tab: string, frameId: string, main: boolean) => void;
@@ -95,6 +97,7 @@ export class FrameState {
 
         if (!state.ensured) {
             let initial: DaemonFrame[] | undefined;
+            const sequence = ++state.sequence;
 
             try {
                 initial = await this.access.listFrames(tab);
@@ -102,7 +105,7 @@ export class FrameState {
             }
 
             this.assertCurrent(tab, state);
-            if (initial !== undefined) this.replace(tab, initial);
+            if (initial !== undefined) this.applySnapshot(tab, state, sequence, initial);
 
             state.ensured = true;
         }
@@ -134,10 +137,11 @@ export class FrameState {
 
     async refresh(tab: string): Promise<FrameInfo[]> {
         const state = this.state(tab);
+        const sequence = ++state.sequence;
         const frames = await this.access.listFrames(tab);
 
         this.assertCurrent(tab, state);
-        this.replace(tab, frames);
+        this.applySnapshot(tab, state, sequence, frames);
 
         return this.framesOf(tab);
     }
@@ -179,6 +183,11 @@ export class FrameState {
         const parsed = parseFrameEvent(params);
 
         if (parsed === undefined) return;
+
+        if (envelope.event === "Page.frameDetached" || envelope.event === "Page.frameNavigated"
+            || envelope.event === "Page.frameAttached") {
+            state.applied = ++state.sequence;
+        }
 
         if (envelope.event === "Page.frameDetached") {
             state.frames.delete(parsed.frameId);
@@ -230,6 +239,8 @@ export class FrameState {
                 frames     : new Map(),
                 mainFrameId: undefined,
                 generations: new Map(),
+                sequence   : 0,
+                applied    : 0,
             };
             this.tabs.set(tab, state);
         }
@@ -241,6 +252,18 @@ export class FrameState {
         if (this.tabs.get(tab) !== state) {
             throw new ToolError("The tab closed or the session reset while loading frames.");
         }
+    }
+
+    private applySnapshot(
+        tab     : string,
+        state   : TabFrames,
+        sequence: number,
+        frames  : DaemonFrame[],
+    ): void {
+        if (sequence < state.applied) return;
+
+        state.applied = sequence;
+        this.replace(tab, frames);
     }
 
     private replace(tab: string, frames: DaemonFrame[]): void {

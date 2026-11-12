@@ -32,6 +32,59 @@ function emit(
 }
 
 describe("FrameState", () => {
+    it("does not overwrite a frame navigation event with an older tree", async () => {
+        const { fake, frames } = setup();
+
+        await frames.ensure("tab1");
+        const list = fake.listFrames.bind(fake);
+        let release: () => void = () => undefined;
+        const gate = new Promise<void>((resolve) => (release = resolve));
+
+        fake.listFrames = async (tab) => {
+            const result = await list(tab);
+
+            await gate;
+
+            return result;
+        };
+
+        const pending = frames.refresh("tab1");
+
+        await Promise.resolve();
+        emit(fake, "Page.frameNavigated", { frame: { id: "main", url: "https://new.example/" } });
+        release();
+        await pending;
+        expect(frames.frameOf("tab1", "main")?.url).toBe("https://new.example/");
+    });
+
+    it("does not replace a newer frame tree with a late older refresh", async () => {
+        const { fake, frames } = setup();
+
+        await frames.ensure("tab1");
+        let release: () => void = () => undefined;
+        let calls = 0;
+        const gate = new Promise<void>((resolve) => (release = resolve));
+
+        fake.listFrames = async () => {
+            calls += 1;
+
+            if (calls === 1) {
+                await gate;
+
+                return [{ frameId: "old", url: "https://old.example/", name: "", isolated: false }];
+            }
+
+            return [{ frameId: "new", url: "https://new.example/", name: "", isolated: false }];
+        };
+
+        const older = frames.refresh("tab1");
+
+        await frames.refresh("tab1");
+        release();
+        await older;
+        expect(frames.framesOf("tab1").map((item) => item.frameId)).toEqual(["new"]);
+    });
+
     it.each(["forget", "reset"])("rejects a late refresh after %s", async (action) => {
         const { fake, frames } = setup();
 
