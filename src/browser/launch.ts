@@ -107,6 +107,9 @@ export async function launchManaged(
     if (signal?.aborted) throw new BrowserLaunchError(CANCELLED_LAUNCH);
 
     const executable = deps.findExecutable(config.browser);
+
+    if (signal?.aborted) throw new BrowserLaunchError(CANCELLED_LAUNCH);
+
     const startFailure = (detail: string) =>
         new BrowserLaunchError(
             `failed to start ${executable}: ${detail}. Check that the file exists and is executable.`,
@@ -133,6 +136,7 @@ export async function launchManaged(
             if (settled) return;
 
             settled = true;
+            cleanup();
             child.kill("SIGTERM");
             void terminate(child, exited, deps.stopGraceMs).then(() =>
                 reject(
@@ -144,20 +148,20 @@ export async function launchManaged(
             );
         }, deps.startTimeoutMs);
 
-        signal?.addEventListener(
-            "abort",
-            () => {
-                if (settled) return;
+        const onAbort = () => {
+            if (settled) return;
 
-                settled = true;
-                clearTimeout(timer);
-                child.kill("SIGTERM");
-                void terminate(child, exited, deps.stopGraceMs).then(() =>
-                    reject(new BrowserLaunchError(CANCELLED_LAUNCH)),
-                );
-            },
-            { once: true },
-        );
+            settled = true;
+            cleanup();
+            child.kill("SIGTERM");
+            void terminate(child, exited, deps.stopGraceMs).then(() =>
+                reject(new BrowserLaunchError(CANCELLED_LAUNCH)),
+            );
+        };
+        const cleanup = () => {
+            clearTimeout(timer);
+            signal?.removeEventListener("abort", onAbort);
+        };
 
         const stop = () =>
             (stopping ??= (async () => {
@@ -166,6 +170,35 @@ export async function launchManaged(
                 child.kill("SIGTERM");
                 await terminate(child, exited, deps.stopGraceMs);
             })());
+
+        child.onError((message) => {
+            if (settled) return;
+
+            settled = true;
+            cleanup();
+            markExited();
+            reject(startFailure(message));
+        });
+
+        child.onExit((reason) => {
+            exitReason ??= reason;
+            markExited();
+            if (settled) return;
+
+            settled = true;
+            cleanup();
+            reject(
+                new BrowserLaunchError(
+                    `${config.browser} ${reason} before remote debugging was ready. ` +
+            `Another browser instance may already use the profile ${config.profileDir}${config.debugPort === 0 ? "" : ` or the port ${config.debugPort}`}: close it or set another profileDir${config.debugPort === 0 ? "" : " or debugPort"}.`,
+                ),
+            );
+        });
+
+        if (!settled) {
+            signal?.addEventListener("abort", onAbort, { once: true });
+            if (signal?.aborted) onAbort();
+        }
 
         child.onStderr((chunk) => {
             if (settled) return;
@@ -177,32 +210,8 @@ export async function launchManaged(
 
             settled = true;
             buffered = "";
-            clearTimeout(timer);
+            cleanup();
             resolve({ ...endpoint, stop, release: () => child.detach() });
-        });
-
-        child.onError((message) => {
-            if (settled) return;
-
-            settled = true;
-            clearTimeout(timer);
-            markExited();
-            reject(startFailure(message));
-        });
-
-        child.onExit((reason) => {
-            exitReason ??= reason;
-            markExited();
-            if (settled) return;
-
-            settled = true;
-            clearTimeout(timer);
-            reject(
-                new BrowserLaunchError(
-                    `${config.browser} ${reason} before remote debugging was ready. ` +
-            `Another browser instance may already use the profile ${config.profileDir}${config.debugPort === 0 ? "" : ` or the port ${config.debugPort}`}: close it or set another profileDir${config.debugPort === 0 ? "" : " or debugPort"}.`,
-                ),
-            );
         });
     });
 }

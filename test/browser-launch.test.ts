@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { getEventListeners } from "node:events";
 import {
     BrowserLaunchError,
     BrowserNotFoundError,
@@ -166,6 +167,85 @@ describe("launchManaged", () => {
             BrowserLaunchError,
         );
         expect(spawned).toEqual([]);
+    });
+
+    it("cancels when the signal aborts while the browser is spawned", async () => {
+        const controller = new AbortController();
+        const child = new FakeChild();
+        const { deps } = harness(child, {
+            spawn: () => {
+                controller.abort();
+
+                return child;
+            },
+        });
+        const pending = launchManaged(config, deps, controller.signal);
+
+        child.write(listening);
+        await expect(pending).rejects.toThrow("cancelled");
+        expect(child.signals).toEqual(["SIGTERM"]);
+    });
+
+    it("does not accept synchronous readiness after cancellation during spawn", async () => {
+        const controller = new AbortController();
+        const child = new FakeChild();
+
+        vi.spyOn(child, "onStderr").mockImplementation((handler) => handler(listening));
+        const { deps } = harness(child, {
+            spawn: () => {
+                controller.abort();
+
+                return child;
+            },
+        });
+
+        await expect(launchManaged(config, deps, controller.signal)).rejects.toThrow("cancelled");
+        expect(child.signals).toEqual(["SIGTERM"]);
+    });
+
+    it("does not spawn if cancellation arrives during executable discovery", async () => {
+        const controller = new AbortController();
+        const { deps, spawned } = harness(new FakeChild(), {
+            findExecutable: () => {
+                controller.abort();
+
+                return "/bin/browser";
+            },
+        });
+
+        await expect(launchManaged(config, deps, controller.signal)).rejects.toThrow("cancelled");
+        expect(spawned).toEqual([]);
+    });
+
+    it.each(["ready", "error", "exit", "timeout"] as const)(
+        "removes the abort listener after launch ends with %s",
+        async (outcome) => {
+            const { deps, child } = harness(new FakeChild(), { startTimeoutMs: 5 });
+            const controller = new AbortController();
+            const pending = launchManaged(config, deps, controller.signal).catch(() => undefined);
+
+            if (outcome === "ready") child.write(listening);
+            else if (outcome === "error") child.fail("spawn failed");
+            else if (outcome === "exit") child.exit("exited with code 1");
+
+            await pending;
+            expect(getEventListeners(controller.signal, "abort")).toHaveLength(0);
+        },
+    );
+
+    it("does not retain an abort listener when readiness is reported synchronously", async () => {
+        class ImmediateChild extends FakeChild {
+            override onStderr(handler: (chunk: string) => void): void {
+                super.onStderr(handler);
+                handler(listening);
+            }
+        }
+
+        const { deps } = harness(new ImmediateChild());
+        const controller = new AbortController();
+
+        await launchManaged(config, deps, controller.signal);
+        expect(getEventListeners(controller.signal, "abort")).toHaveLength(0);
     });
 
     it("assembles the endpoint from split output chunks", async () => {
