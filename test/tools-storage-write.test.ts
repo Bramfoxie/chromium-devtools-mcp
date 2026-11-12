@@ -517,6 +517,33 @@ describe("storage_write", () => {
         expect(textOf(result)).not.toContain("secret");
     });
 
+    it("does not report a negative clear count when cookies are added concurrently", async () => {
+        const { fake, runtime } = setup();
+        let reads = 0;
+
+        fake.respond = (tab, method) => {
+            if (method === "Runtime.evaluate") return { result: { value: "https://a.example/p" } };
+
+            if (method === "Network.getCookies") {
+                reads += 1;
+
+                return reads === 1
+                    ? { cookies: [{ name: "a", domain: "a.example", path: "/" }] }
+                    : { cookies: [{ name: "b" }, { name: "c" }] };
+            }
+
+            return {};
+        };
+
+        const result = await runTool(storageWrite, { kind: "cookies", action: "clear", confirm: true }, extra(), runtime);
+
+        expect(result.isError).toBe(true);
+        expect(textOf(result)).toContain("number cleared is unknown");
+        expect(textOf(result)).toContain("1 of 1 deletion requests completed");
+        expect(textOf(result)).toContain("Read the storage");
+        expect(JSON.stringify(result)).not.toContain("-1 cookies");
+    });
+
     it("reports completed cookie deletions when the final count fails", async () => {
         const { fake, runtime } = setup();
         let reads = 0;

@@ -510,6 +510,12 @@ async function writeCookies(
 
     const remaining = await cookieCountAfterWrite(access, targetId, applied, scoped.length);
 
+    if (remaining > before) {
+        throw new ToolError(
+            `The cookie count increased while clearing, so the number cleared is unknown. ${applied} of ${scoped.length} deletion requests completed. Read the storage to see its current state.`,
+        );
+    }
+
     return {
         tab    : targetId,
         kind   : "cookies",
