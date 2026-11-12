@@ -493,7 +493,11 @@ async function writeCookies(
         applied += 1;
     }
 
-    const remaining = await cookieCount(access, targetId);
+    const remaining = await cookieCount(access, targetId).catch(() => {
+        throw new ToolError(
+            `${applied} of ${scoped.length} cookie deletion requests completed, but the browser could not report the remaining cookies. Read the storage to see its current state.`,
+        );
+    });
 
     return {
         tab    : targetId,
