@@ -197,7 +197,20 @@ export class DownloadState {
         found.delivered = true;
 
         if (found.state === "completed" && found.path === undefined) {
-            await this.queueLocate(state, found);
+            let wake: () => void = () => undefined;
+            const closed = new Promise<void>((resolve) => {
+                wake = () => {
+                    if (this.tabs.get(tab) !== state) resolve();
+                };
+
+                state.waiters.add(wake);
+            });
+
+            try {
+                await Promise.race([this.queueLocate(state, found), closed]);
+            } finally {
+                state.waiters.delete(wake);
+            }
         }
 
         if (this.tabs.get(tab) !== state) {

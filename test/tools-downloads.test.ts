@@ -415,6 +415,46 @@ describe("DownloadState file lookup", () => {
 });
 
 describe("DownloadState concurrency", () => {
+    it.each(["forget", "reset"])("stops a file lookup wait when tab state is removed by %s", async (action) => {
+        const fake = new FakeAccess();
+        let release: () => void = () => undefined;
+        let settled = false;
+        const gate = new Promise<void>((resolve) => (release = resolve));
+        const value = new DownloadState(fake.asAccess(), {
+            list: async () => { await gate;
+
+                return ["a.txt"]; },
+            size: async () => 1,
+        });
+
+        value.attach();
+        value.allow("tab1", "/d");
+        begin(fake, "a", "a.txt");
+        progress(fake, "a", "completed", 1, 1);
+        const pending = value.next("tab1", 0, async () => undefined).then(
+            () => { settled = true;
+
+                return undefined; },
+            (error: unknown) => { settled = true;
+
+                return error; },
+        );
+
+        if (action === "forget") value.forget("tab1");
+        else value.reset();
+
+        try {
+            await tick();
+            expect(settled).toBe(true);
+            expect(await pending).toMatchObject({
+                message: "The tab closed or the session reset while waiting for a download.",
+            });
+        } finally {
+            release();
+            await pending;
+        }
+    });
+
     it.each(["forget", "reset"])("stops waiting when tab state is removed by %s", async (action) => {
         const fake = new FakeAccess();
         const value = new DownloadState(fake.asAccess());
