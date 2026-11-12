@@ -182,6 +182,16 @@ describe("tab ownership", () => {
         expect(await outcome).toBe(ErrorCode.notFound);
     });
 
+    it("preserves browser errors while listing tabs and popups in an open session", async () => {
+        const { backend, open } = setup();
+        const session = await open("a");
+        const opener = await session.createTab("about:blank");
+
+        vi.spyOn(backend, "listTargets").mockRejectedValue(new CdpTimeoutError("Target.getTargets", 100));
+        expect(await code(session.listTabs("available"))).toBe(ErrorCode.cdpTimeout);
+        expect(await code(session.listPopups(opener))).toBe(ErrorCode.cdpTimeout);
+    });
+
     it("allows only one concurrent session to claim a discovered popup", async () => {
         const { backend, open } = setup();
         const owner = await open("owner");
