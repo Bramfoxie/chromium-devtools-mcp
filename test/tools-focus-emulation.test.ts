@@ -16,7 +16,7 @@ describe("FocusEmulation", () => {
         else focus.reset();
 
         release();
-        await pending;
+        await expect(pending).rejects.toThrow("The tab closed or the session reset while enabling focus emulation.");
         expect(focus.enabled("tab1")).toBe(false);
         fake.respond = () => ({});
         await focus.ensure(fake.asAccess(), "tab1");

@@ -1,4 +1,5 @@
 import type { DaemonAccess } from "../mcp/index.js";
+import { ToolError } from "./errors.js";
 
 export class FocusEmulation {
     private readonly tabs = new Set<string>();
@@ -23,7 +24,12 @@ export class FocusEmulation {
                 method  : "Emulation.setFocusEmulationEnabled",
                 params  : { enabled: true },
             });
-            if (this.pending.get(tab) === operations) this.tabs.add(tab);
+
+            if (this.pending.get(tab) !== operations) {
+                throw new ToolError("The tab closed or the session reset while enabling focus emulation.");
+            }
+
+            this.tabs.add(tab);
         } finally {
             operations.delete(token);
 
