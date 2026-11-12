@@ -79,6 +79,12 @@ function partialFailure(action: string, applied: number, total: number, cause: u
     );
 }
 
+function cookieFailure(action: string, applied: number, total: number): ToolError {
+    return new ToolError(
+        `The browser failed to ${action} a cookie after ${applied} of ${total} requests completed. The last request may also have changed storage. Read the storage to see its current state, then retry.`,
+    );
+}
+
 function unexpected(method: string): ToolError {
     return new ToolError(`The browser sent an unexpected response to ${method}. Try the call again.`);
 }
@@ -382,6 +388,8 @@ async function writeCookies(
                         ...(cookie.httpOnly === undefined ? {} : { httpOnly: cookie.httpOnly }),
                         ...(cookie.sameSite === undefined ? {} : { sameSite: cookie.sameSite }),
                     },
+                }).catch(() => {
+                    throw cookieFailure("set", applied, cookies.length);
                 }),
             );
 
@@ -416,6 +424,8 @@ async function writeCookies(
 
         for (const cookie of cookies) checkCookieDomain(cookie.domain, host);
 
+        let applied = 0;
+
         for (const cookie of cookies) {
             throwIfCancelled(signal);
             await access.send({
@@ -427,7 +437,10 @@ async function writeCookies(
                     ...(cookie.domain === undefined ? {} : { domain: cookie.domain }),
                     ...(cookie.path === undefined ? {} : { path: cookie.path }),
                 },
+            }).catch(() => {
+                throw cookieFailure("remove", applied, cookies.length);
             });
+            applied += 1;
         }
 
         const remaining = await cookieCount(access, targetId);

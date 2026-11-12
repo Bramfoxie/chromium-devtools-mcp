@@ -324,6 +324,35 @@ describe("storage_write", () => {
         expect(textOf(result)).toContain("after 1 of 3 were applied");
     });
 
+    it.each(["set", "remove"] as const)("reports partial cookie %s failures without browser details", async (action) => {
+        const { fake, runtime } = setup();
+        let calls = 0;
+
+        fake.respond = (tab, method) => {
+            if (method === "Runtime.evaluate") return { result: { value: "https://a.example/p" } };
+
+            if (method === "Network.setCookie" || method === "Network.deleteCookies") {
+                calls += 1;
+                if (calls === 2) throw new Error("private browser details");
+
+                return { success: true };
+            }
+
+            return {};
+        };
+
+        const args = action === "set"
+            ? { kind: "cookies", action, cookies: [{ name: "a", value: "secret" }, { name: "b", value: "secret" }] }
+            : { kind: "cookies", action, remove: [{ name: "a" }, { name: "b" }] };
+        const result = await runTool(storageWrite, args, extra(), runtime);
+
+        expect(result.isError).toBe(true);
+        expect(textOf(result)).toContain("after 1 of 2");
+        expect(textOf(result)).toContain("Read the storage");
+        expect(textOf(result)).not.toContain("private browser details");
+        expect(textOf(result)).not.toContain("secret");
+    });
+
     it("reports a browser cookie refusal", async () => {
         const { fake, runtime } = setup();
 
