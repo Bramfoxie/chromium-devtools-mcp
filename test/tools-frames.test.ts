@@ -32,6 +32,23 @@ function emit(
 }
 
 describe("FrameState", () => {
+    it("invalidates a frame generation when refresh finds a changed URL", async () => {
+        const { fake, frames } = setup();
+        const navigated: Array<[string, string, boolean]> = [];
+
+        frames.onNavigated((tab, frame, main) => navigated.push([tab, frame, main]));
+        await frames.ensure("tab1");
+        fake.frames[1] = {
+            frameId: "cross", parentFrameId: "main", url: "https://new.example/", name: "pay", isolated: true,
+        };
+        await frames.refresh("tab1");
+        expect(frames.generation("tab1", "cross")).toBe(1);
+        expect(navigated).toEqual([["tab1", "cross", false]]);
+        await frames.refresh("tab1");
+        expect(frames.generation("tab1", "cross")).toBe(1);
+        expect(navigated).toHaveLength(1);
+    });
+
     it("observes frame navigation during the initial tree read", async () => {
         const { fake, frames } = setup();
         const list = fake.listFrames.bind(fake);

@@ -289,6 +289,18 @@ export class FrameState {
         }
 
         for (const frame of frames) {
+            const known = state.frames.get(frame.frameId);
+
+            if (known !== undefined && known.url !== frame.url) {
+                const generation = state.generations.get(frame.frameId) ?? 0;
+
+                state.generations.set(frame.frameId, generation + 1);
+
+                for (const listener of this.navigated) {
+                    listener(tab, frame.frameId, frame.parentFrameId === undefined);
+                }
+            }
+
             state.frames.set(frame.frameId, { ...frame });
         }
 
