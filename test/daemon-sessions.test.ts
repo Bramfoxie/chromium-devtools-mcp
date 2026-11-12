@@ -168,6 +168,20 @@ describe("tab ownership", () => {
         expect(await code(listing)).toBe(ErrorCode.notFound);
     });
 
+    it("reports a closed opener when popup discovery fails after it closes", async () => {
+        const { backend, open } = setup();
+        const session = await open("a");
+        const opener = await session.createTab("about:blank");
+        let reject: (error: Error) => void = () => undefined;
+
+        backend.gates.listTargets = new Promise<void>((_resolve, fail) => (reject = fail));
+        const outcome = code(session.listPopups(opener));
+
+        await session.closeTab(opener);
+        reject(new Error("browser unavailable"));
+        expect(await outcome).toBe(ErrorCode.notFound);
+    });
+
     it("allows only one concurrent session to claim a discovered popup", async () => {
         const { backend, open } = setup();
         const owner = await open("owner");

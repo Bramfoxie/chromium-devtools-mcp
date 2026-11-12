@@ -432,6 +432,8 @@ export class ClientSession {
         try {
             targets = await this.backend.listTargets();
         } catch (error) {
+            this.assertCurrent(openerId, opener);
+
             throw translate(error);
         }
 
