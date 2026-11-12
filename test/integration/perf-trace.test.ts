@@ -39,11 +39,9 @@ afterAll(async () => {
 let activeTraceTab: string | undefined;
 
 async function startTrace(tab: string, reload?: boolean): Promise<Record<string, unknown>> {
-    const result = await env.ok("perf_trace_start", { tab, ...(reload === undefined ? {} : { reload }) });
-
     activeTraceTab = tab;
 
-    return result;
+    return env.ok("perf_trace_start", { tab, ...(reload === undefined ? {} : { reload }) });
 }
 
 async function stopTrace(tab: string): Promise<Record<string, unknown>> {
@@ -58,7 +56,14 @@ afterEach(async () => {
     const tab = activeTraceTab;
 
     activeTraceTab = undefined;
-    if (tab !== undefined) await env.ok("perf_trace_stop", { tab });
+
+    if (tab !== undefined) {
+        const outcome = await env.call("perf_trace_stop", { tab });
+
+        if (outcome.isError && outcome.text !== "No trace is recording on this tab. Start one with perf_trace_start.") {
+            throw new Error(`Trace cleanup failed: ${outcome.text}`);
+        }
+    }
 });
 
 type Stopped = {
