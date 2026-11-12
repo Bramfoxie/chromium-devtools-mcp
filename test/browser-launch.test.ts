@@ -119,6 +119,25 @@ describe("parseListeningUrl", () => {
             expect(parseListeningUrl(output)).toBeUndefined();
         },
     );
+
+    it.each([
+        "ws://example.com:9222/devtools/browser/id",
+        "ws://127.0.0.1:9222/devtools/page/id",
+        "ws://user:secret@127.0.0.1:9222/devtools/browser/id",
+        "ws://127.0.0.1:9222/devtools/browser/id?token=secret",
+        "ws://127.0.0.1:9222/devtools/browser/",
+    ])("rejects an unsafe listening URL %s", (url) => {
+        expect(parseListeningUrl(`DevTools listening on ${url}\n`)).toBeUndefined();
+    });
+
+    it("finds a valid endpoint after an invalid listening line", () => {
+        const output = `DevTools listening on ws://example.com:9222/devtools/browser/id\n${listening}`;
+
+        expect(parseListeningUrl(output)).toEqual({
+            port        : 9222,
+            webSocketUrl: "ws://127.0.0.1:9222/devtools/browser/abc-123",
+        });
+    });
 });
 
 describe("launchManaged", () => {
@@ -389,6 +408,34 @@ describe("launchManaged", () => {
 
         child.write(`${listening}DevTools listening on ws://127.0.0.1:1/devtools/browser/other\n`);
         await expect(pending).resolves.toMatchObject({ port: 9222 });
+    });
+
+    it("ignores a listening endpoint on a different configured port", async () => {
+        const { deps, child } = harness();
+        const pending = launchManaged(config, deps);
+
+        child.write("DevTools listening on ws://127.0.0.1:9223/devtools/browser/other\n");
+        child.write(listening);
+        await expect(pending).resolves.toMatchObject({ port: 9222 });
+    });
+
+    it("ignores an unsafe listening endpoint before a valid one", async () => {
+        const { deps, child } = harness();
+        const pending = launchManaged(config, deps);
+
+        child.write("DevTools listening on ws://example.com:9222/devtools/browser/id\n");
+        child.write(listening);
+        await expect(pending).resolves.toMatchObject({
+            webSocketUrl: "ws://127.0.0.1:9222/devtools/browser/abc-123",
+        });
+    });
+
+    it("accepts a browser selected port when the configured port is zero", async () => {
+        const { deps, child } = harness();
+        const pending = launchManaged({ ...config, debugPort: 0 }, deps);
+
+        child.write("DevTools listening on ws://127.0.0.1:9333/devtools/browser/id\n");
+        await expect(pending).resolves.toMatchObject({ port: 9333 });
     });
 
     it("does not resolve from a partial line without a line break", async () => {

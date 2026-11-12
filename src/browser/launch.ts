@@ -1,11 +1,11 @@
 import { spawn as nodeSpawn } from "node:child_process";
 import type { Socket } from "node:net";
-import type { Config } from "../config/index.js";
+import { isValidWsEndpoint, type Config } from "../config/index.js";
 import { type BrowserName, findBrowserExecutable } from "./discovery.js";
 import { messageOf } from "../util/message-of.js";
 import { AppError } from "../util/app-error.js";
 
-const LISTENING_PATTERN = /DevTools listening on (ws:\/\/\S+)\r?\n/;
+const LISTENING_PATTERN = /DevTools listening on (ws:\/\/\S+)\r?\n/g;
 const MAX_BUFFERED_STDERR = 64 * 1024;
 const DEFAULT_START_TIMEOUT_MS = 45_000;
 const DEFAULT_STOP_GRACE_MS = 5_000;
@@ -51,19 +51,20 @@ export function buildLaunchArgs(config: ManagedConfig): string[] {
 }
 
 export function parseListeningUrl(
-    output: string,
+    output       : string,
+    expectedPort?: number,
 ): { port: number; webSocketUrl: string } | undefined {
-    const match = LISTENING_PATTERN.exec(output);
+    for (const match of output.matchAll(LISTENING_PATTERN)) {
+        const webSocketUrl = match[1];
 
-    if (!match?.[1]) return undefined;
+        if (webSocketUrl === undefined || !isValidWsEndpoint(webSocketUrl)) continue;
 
-    try {
-        const port = Number(new URL(match[1]).port);
+        const port = Number(new URL(webSocketUrl).port);
 
-        return Number.isInteger(port) && port > 0 ? { port, webSocketUrl: match[1] } : undefined;
-    } catch {
-        return undefined;
+        if (expectedPort === undefined || port === expectedPort) return { port, webSocketUrl };
     }
+
+    return undefined;
 }
 
 export function spawnProcess(command: string, args: string[]): ChildHandle {
@@ -204,7 +205,9 @@ export async function launchManaged(
             if (settled) return;
 
             buffered = (buffered + chunk).slice(-MAX_BUFFERED_STDERR);
-            const endpoint = parseListeningUrl(buffered);
+            const endpoint = parseListeningUrl(
+                buffered, config.debugPort === 0 ? undefined : config.debugPort,
+            );
 
             if (!endpoint) return;
 
