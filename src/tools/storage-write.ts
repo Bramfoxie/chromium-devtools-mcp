@@ -474,6 +474,8 @@ async function writeCookies(
 
     const scoped = parsed.data.cookies.filter((cookie) => cookieDomainAllowed(cookie.domain, host));
 
+    let applied = 0;
+
     for (const cookie of scoped) {
         throwIfCancelled(signal);
         await access.send({
@@ -485,7 +487,10 @@ async function writeCookies(
                 domain: cookie.domain,
                 path  : cookie.path,
             },
+        }).catch(() => {
+            throw cookieFailure("clear", applied, scoped.length);
         });
+        applied += 1;
     }
 
     const remaining = await cookieCount(access, targetId);
