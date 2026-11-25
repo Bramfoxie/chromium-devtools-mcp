@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { chromeAvailable, startEnv, type Env } from "./browser-env.js";
 
 const present = chromeAvailable();
@@ -36,6 +36,36 @@ afterAll(async () => {
     await env?.stop();
 });
 
+let activeTraceTab: string | undefined;
+
+async function startTrace(tab: string, reload?: boolean): Promise<Record<string, unknown>> {
+    activeTraceTab = tab;
+
+    return env.ok("perf_trace_start", { tab, ...(reload === undefined ? {} : { reload }) });
+}
+
+async function stopTrace(tab: string): Promise<Record<string, unknown>> {
+    const result = await env.ok("perf_trace_stop", { tab });
+
+    activeTraceTab = undefined;
+
+    return result;
+}
+
+afterEach(async () => {
+    const tab = activeTraceTab;
+
+    activeTraceTab = undefined;
+
+    if (tab !== undefined) {
+        const outcome = await env.call("perf_trace_stop", { tab });
+
+        if (outcome.isError && outcome.text !== "No trace is recording on this tab. Start one with perf_trace_start.") {
+            throw new Error(`Trace cleanup failed: ${outcome.text}`);
+        }
+    }
+});
+
 type Stopped = {
     tab   : string;
     file  : { path: string; bytes: number };
@@ -58,7 +88,7 @@ describe.skipIf(!present)("perf_trace in a real browser", () => {
         const other = await env.open("/OTHER-TAB-PRIVATE-URL");
         const mine = await env.open("/mine");
 
-        const started = await env.ok("perf_trace_start", { tab: mine, reload: true });
+        const started = await startTrace(mine, true);
 
         expect(started).toMatchObject({ tab: mine, recording: true, reloaded: true });
         await env.ok("page_navigate", { tab: other, action: "reload" });
@@ -69,7 +99,7 @@ describe.skipIf(!present)("perf_trace in a real browser", () => {
         });
         await new Promise((resolve) => setTimeout(resolve, 500));
 
-        const stopped = (await env.ok("perf_trace_stop", { tab: mine })) as unknown as Stopped;
+        const stopped = (await stopTrace(mine)) as unknown as Stopped;
         const text = await readFile(stopped.file.path, "utf8");
         const parsed = JSON.parse(text) as { traceEvents: unknown[] };
 
@@ -100,7 +130,7 @@ describe.skipIf(!present)("perf_trace in a real browser", () => {
         for (let attempt = 0; attempt < 3 && inpMs < 200; attempt += 1) {
             const mine = await env.open("/mine");
 
-            await env.ok("perf_trace_start", { tab: mine });
+            await startTrace(mine);
             await env.ok("input_click", { tab: mine, target: { selector: "#slow" } });
             await env.ok("page_wait", {
                 tab       : mine,
@@ -108,7 +138,7 @@ describe.skipIf(!present)("perf_trace in a real browser", () => {
             });
             await new Promise((resolve) => setTimeout(resolve, 1500));
 
-            const stopped = (await env.ok("perf_trace_stop", { tab: mine })) as unknown as Stopped;
+            const stopped = (await stopTrace(mine)) as unknown as Stopped;
 
             inpMs = stopped.vitals.inpMs ?? 0;
         }
@@ -119,13 +149,13 @@ describe.skipIf(!present)("perf_trace in a real browser", () => {
     it("refuses a second trace on the same tab and a stop without a start", async () => {
         const mine = await env.open("/mine");
 
-        await env.ok("perf_trace_start", { tab: mine });
+        await startTrace(mine);
         const again = await env.call("perf_trace_start", { tab: mine });
 
         expect(again.isError).toBe(true);
         expect(again.text).toContain("already recording");
 
-        await env.ok("perf_trace_stop", { tab: mine });
+        await stopTrace(mine);
         const none = await env.call("perf_trace_stop", { tab: mine });
 
         expect(none.isError).toBe(true);
@@ -135,13 +165,14 @@ describe.skipIf(!present)("perf_trace in a real browser", () => {
     it("can record again after a trace, also when the tab was closed during one", async () => {
         const first = await env.open("/mine");
 
-        await env.ok("perf_trace_start", { tab: first });
+        await startTrace(first);
         await env.ok("close_tab", { tab: first });
+        activeTraceTab = undefined;
 
         const second = await env.open("/mine");
 
-        await env.ok("perf_trace_start", { tab: second });
-        const stopped = (await env.ok("perf_trace_stop", { tab: second })) as unknown as Stopped;
+        await startTrace(second);
+        const stopped = (await stopTrace(second)) as unknown as Stopped;
 
         expect(stopped.events.kept).toBeGreaterThan(0);
     });

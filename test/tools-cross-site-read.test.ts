@@ -341,7 +341,10 @@ describe("dom_snapshot with cross-site frames", () => {
         const partial = fake.sent.find((call) => call.method === "Accessibility.getPartialAXTree");
 
         expect(partial).toMatchObject({ frameId: MID_FRAME, params: { backendNodeId: 101 } });
-        expect(runtime.elements.lookup("tab1", "2_1")).toMatchObject({
+        const freshUid = /\[(\d+_\d+)\]\s+button "go"/.exec(data.snapshot)?.[1];
+
+        expect(freshUid).toBeDefined();
+        expect(runtime.elements.lookup("tab1", freshUid ?? "")).toMatchObject({
             frameId : MID_FRAME,
             isolated: true,
         });

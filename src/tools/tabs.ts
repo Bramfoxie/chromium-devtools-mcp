@@ -91,7 +91,7 @@ export const newTab = defineTool({
                 owned  : true,
                 created: true,
             },
-            waited: load?.waited ?? "load" as const,
+            waited: load?.waited ?? "none" as const,
             ...(load === undefined ? {} : { readyState: load.page.readyState }),
             ...(load?.status === undefined ? {} : { status: load.status }),
             ...(load?.navigationError === undefined

@@ -182,6 +182,19 @@ describe("wait scripts", () => {
 });
 
 describe("page_wait", () => {
+    it.each([
+        { ms: 1, state: "hidden" as const },
+        { selector: ".x", text: "hello", state: "hidden" as const },
+    ])("rejects selector state for a different wait condition", async (args) => {
+        const { fake, runtime } = setup();
+
+        fake.respond = () => ({ result: { value: { met: true, detail: {} } } });
+        const result = await runTool(pageWait, args, extra(), runtime);
+
+        expect(result.isError).toBe(true);
+        expect(textOf(result)).toContain("state only combines with a selector condition");
+    });
+
     it("waits for a selector with one in-page evaluate", async () => {
         const { fake, runtime } = setup();
 

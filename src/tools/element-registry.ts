@@ -18,7 +18,6 @@ const UID_PATTERN = /^(\d+)_(\d+)$/;
 
 interface TabElements {
     generation: number;
-    counter   : number;
     uids      : Map<string, ElementNode>;
     byNode    : Map<string, string>;
 }
@@ -31,6 +30,9 @@ function nodeKeyOf(node: ElementNode | undefined): string {
 
 export class ElementRegistry {
     private readonly tabs = new Map<string, TabElements>();
+    private generationFloor = 0;
+    private highestGeneration = 0;
+    private nextUid = 0;
 
     generation(tab: string): number {
         return this.state(tab).generation;
@@ -40,7 +42,7 @@ export class ElementRegistry {
         const state = this.state(tab);
 
         state.generation += 1;
-        state.counter = 0;
+        this.highestGeneration = Math.max(this.highestGeneration, state.generation);
         state.uids.clear();
         state.byNode.clear();
 
@@ -65,8 +67,8 @@ export class ElementRegistry {
                 state.uids.delete(oldest.value);
             }
 
-            state.counter += 1;
-            const uid = `${state.generation}_${state.counter}`;
+            this.nextUid += 1;
+            const uid = `${state.generation}_${this.nextUid}`;
 
             state.uids.set(uid, { ...node });
             state.byNode.set(key, uid);
@@ -115,18 +117,29 @@ export class ElementRegistry {
     }
 
     forget(tab: string): void {
-        this.tabs.delete(tab);
+        if (this.tabs.delete(tab)) this.advanceFloor();
     }
 
     reset(): void {
+        if (this.tabs.size > 0) this.advanceFloor();
+
         this.tabs.clear();
+    }
+
+    private advanceFloor(): void {
+        this.generationFloor = this.highestGeneration + 1;
+        this.highestGeneration = this.generationFloor;
     }
 
     private state(tab: string): TabElements {
         let state = this.tabs.get(tab);
 
         if (!state) {
-            state = { generation: 0, counter: 0, uids: new Map(), byNode: new Map() };
+            state = {
+                generation: this.generationFloor,
+                uids      : new Map(),
+                byNode    : new Map(),
+            };
             this.tabs.set(tab, state);
         }
 

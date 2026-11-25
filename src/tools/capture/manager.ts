@@ -1,6 +1,7 @@
 import { parseEnvelope } from "../cdp-envelope.js";
 import type { DaemonAccess } from "../../mcp/index.js";
 import type { ToolClock } from "../define-tool.js";
+import { ToolError } from "../errors.js";
 import {
     type ConsoleEntry,
     type ConsoleLevel,
@@ -57,10 +58,11 @@ interface ConsoleQuery {
 }
 
 interface NetworkQuery {
-    filter : NetworkFilter;
-    afterId: number | undefined;
-    limit  : number;
-    clear  : boolean;
+    filter      : NetworkFilter;
+    afterId     : number | undefined;
+    limit       : number;
+    clear       : boolean;
+    acknowledge?: boolean;
 }
 
 interface CaptureManagerOptions {
@@ -107,21 +109,31 @@ export class CaptureManager {
 
         if (capture.consoleEnabled) return;
 
-        for (const event of CONSOLE_EVENTS) await this.access.subscribe(tab, event);
+        const subscribed: string[] = [];
 
         try {
+            for (const event of CONSOLE_EVENTS) {
+                await this.access.subscribe(tab, event);
+                this.assertCurrent(tab, capture);
+                subscribed.push(event);
+            }
+
             await this.access.send({
                 targetId: tab,
                 method  : "Runtime.enable",
                 params  : {},
             });
+            this.assertCurrent(tab, capture);
             await this.access.send({
                 targetId: tab,
                 method  : "Log.enable",
                 params  : {},
             });
+            this.assertCurrent(tab, capture);
         } catch (error) {
-            for (const event of CONSOLE_EVENTS) {
+            for (const event of subscribed) {
+                if (this.tabs.get(tab) !== capture) break;
+
                 await this.access.unsubscribe(tab, event).catch(() => undefined);
             }
 
@@ -136,16 +148,25 @@ export class CaptureManager {
 
         if (capture.networkEnabled) return;
 
-        for (const event of NETWORK_EVENTS) await this.access.subscribe(tab, event);
+        const subscribed: string[] = [];
 
         try {
+            for (const event of NETWORK_EVENTS) {
+                await this.access.subscribe(tab, event);
+                this.assertCurrent(tab, capture);
+                subscribed.push(event);
+            }
+
             await this.access.send({
                 targetId: tab,
                 method  : "Network.enable",
                 params  : {},
             });
+            this.assertCurrent(tab, capture);
         } catch (error) {
-            for (const event of NETWORK_EVENTS) {
+            for (const event of subscribed) {
+                if (this.tabs.get(tab) !== capture) break;
+
                 await this.access.unsubscribe(tab, event).catch(() => undefined);
             }
 
@@ -260,7 +281,7 @@ export class CaptureManager {
         const capture = this.capture(tab);
         const droppedCount = capture.network.dropped - capture.networkDropped;
 
-        capture.networkDropped = capture.network.dropped;
+        if (query.acknowledge !== false) capture.networkDropped = capture.network.dropped;
 
         const afterId = query.afterId ?? 0;
         const records = capture.network
@@ -280,6 +301,28 @@ export class CaptureManager {
         }
 
         return { records, nextAfterId, droppedCount, totalBuffered };
+    }
+
+    networkAfterSave(tab: string, clear: boolean): () => void {
+        const capture = this.capture(tab);
+        const lastId = capture.network.lastId;
+        const generation = capture.network.generation;
+        const dropped = capture.network.dropped;
+        const snapshots = clear
+            ? new Map(capture.network.after(0, Number.MAX_SAFE_INTEGER)
+                .map(({ id, value }) => [id, JSON.stringify(value)]))
+            : new Map<number, string>();
+
+        return () => {
+            if (this.tabs.get(tab) !== capture || capture.network.generation !== generation) return;
+
+            capture.networkDropped = Math.max(capture.networkDropped, dropped);
+
+            if (clear) {
+                capture.network.removeThrough(lastId, (id, value) =>
+                    snapshots.get(id) === JSON.stringify(value));
+            }
+        };
     }
 
     idleNetworkMs(tab: string, since?: number): number {
@@ -332,6 +375,12 @@ export class CaptureManager {
 
     reset(): void {
         this.tabs.clear();
+    }
+
+    private assertCurrent(tab: string, capture: TabCapture): void {
+        if (this.tabs.get(tab) !== capture) {
+            throw new ToolError("The tab closed or the session reset while starting capture.");
+        }
     }
 
     private capture(tab: string): TabCapture {

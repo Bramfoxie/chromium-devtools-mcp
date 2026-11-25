@@ -2,6 +2,14 @@ import { z } from "zod";
 import { redactHeaders, redactUrl } from "./redact.js";
 import { testUrlPattern, type UrlPattern } from "./url-pattern.js";
 
+export interface NetworkTiming {
+    dnsMs?    : number;
+    connectMs?: number;
+    tlsMs?    : number;
+    sendMs?   : number;
+    waitMs?   : number;
+}
+
 export interface NetworkRecord {
     requestId       : string;
     method          : string;
@@ -19,6 +27,7 @@ export interface NetworkRecord {
     wallTime?       : number;
     finishedAt?     : number;
     durationMs?     : number;
+    timing?         : NetworkTiming;
     encodedBytes?   : number;
     initiator?      : string;
     redirectedFrom? : number;
@@ -41,6 +50,7 @@ const responseSchema = z.object({
     headers      : headersSchema.optional(),
     mimeType     : z.string().optional(),
     fromDiskCache: z.boolean().optional(),
+    timing       : z.unknown().optional(),
 });
 
 const requestWillBeSent = z.object({
@@ -109,6 +119,37 @@ function msBetween(start: number | undefined, end: number): number | undefined {
     return Math.max(0, Math.round((end - start) * 1000));
 }
 
+const timingSchema = z.object({
+    dnsStart         : z.number().optional(), dnsEnd           : z.number().optional(),
+    connectStart     : z.number().optional(), connectEnd       : z.number().optional(),
+    sslStart         : z.number().optional(), sslEnd           : z.number().optional(),
+    sendStart        : z.number().optional(), sendEnd          : z.number().optional(),
+    receiveHeadersEnd: z.number().optional(),
+});
+
+function timingOf(raw: unknown): NetworkTiming | undefined {
+    const parsed = timingSchema.safeParse(raw);
+
+    if (!parsed.success) return undefined;
+
+    const t = parsed.data;
+    const span = (start: number | undefined, end: number | undefined): number | undefined =>
+        start === undefined || end === undefined || !Number.isFinite(start) || !Number.isFinite(end)
+            || start < 0 || end < start ? undefined : Math.round((end - start) * 1000) / 1000;
+    const pairs = [
+        ["dnsMs", span(t.dnsStart, t.dnsEnd)],
+        ["connectMs", span(t.connectStart, t.connectEnd)],
+        ["tlsMs", span(t.sslStart, t.sslEnd)],
+        ["sendMs", span(t.sendStart, t.sendEnd)],
+        ["waitMs", span(t.sendEnd, t.receiveHeadersEnd)],
+    ] as const;
+    const timing = Object.fromEntries(
+        pairs.filter(([, value]) => value !== undefined),
+    ) as NetworkTiming;
+
+    return Object.keys(timing).length === 0 ? undefined : timing;
+}
+
 interface NetworkReduction {
     record    : NetworkRecord;
     created   : boolean;
@@ -146,6 +187,7 @@ export function reduceNetworkEvent(
         const previous = data.redirectResponse === undefined ? undefined : known;
 
         if (previous !== undefined && data.redirectResponse) {
+            previous.timing = timingOf(data.redirectResponse.timing);
             previous.status = data.redirectResponse.status;
             previous.statusText = data.redirectResponse.statusText;
             previous.mimeType = data.redirectResponse.mimeType;
@@ -178,6 +220,7 @@ export function reduceNetworkEvent(
 
         if (record.url === "") record.url = redactUrl(data.response.url);
 
+        record.timing = timingOf(data.response.timing);
         record.status = data.response.status;
         record.statusText = data.response.statusText;
         record.mimeType = data.response.mimeType;

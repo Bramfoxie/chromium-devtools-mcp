@@ -2,6 +2,7 @@ import { z } from "zod";
 import { normalizeUrl } from "../daemon/index.js";
 import { type ToolContext } from "./define-tool.js";
 import { describeBlock, describeUrlHost, navigationBlock } from "../safety/index.js";
+import { resolutionProblem } from "../safety/resolution-check.js";
 import { ToolError } from "./errors.js";
 
 const historyEntry = z.object({ id: z.number(), url: z.string(), title: z.string() });
@@ -92,7 +93,7 @@ function isOpenableUrl(url: string): boolean {
 export async function historyEntryId(
     context  : ToolContext,
     targetId : string,
-    direction: "back" | "forward",
+    direction: "back" | "forward" | number,
 ): Promise<number> {
     const history = historySchema.safeParse(
         await context.access.send({
@@ -108,14 +109,18 @@ export async function historyEntryId(
         );
     }
 
-    const index = history.data.currentIndex + (direction === "back" ? -1 : 1);
+    const index = typeof direction === "number"
+        ? direction
+        : history.data.currentIndex + (direction === "back" ? -1 : 1);
     const entry = history.data.entries[index];
 
     if (entry === undefined) {
         throw new ToolError(
-            direction === "back"
-                ? "There is no page to go back to in this tab."
-                : "There is no page to go forward to in this tab.",
+            typeof direction === "number"
+                ? "The history index is no longer available. List the history and try again."
+                : direction === "back"
+                    ? "There is no page to go back to in this tab."
+                    : "There is no page to go forward to in this tab.",
         );
     }
 
@@ -123,7 +128,7 @@ export async function historyEntryId(
 
     if (block !== undefined) {
         const described = describeBlock(block);
-        const which = direction === "back" ? "previous" : "next";
+        const which = typeof direction === "number" ? "selected" : direction === "back" ? "previous" : "next";
 
         throw new ToolError(
             `The ${which} history entry is on ${describeUrlHost(entry.url)}, ${described.reason}. ${described.hint}`,
@@ -131,8 +136,18 @@ export async function historyEntryId(
     }
 
     if (!isOpenableUrl(entry.url)) {
+        const which = typeof direction === "number" ? "selected" : direction === "back" ? "previous" : "next";
+
         throw new ToolError(
-            `The ${direction === "back" ? "previous" : "next"} history entry is not an http, https or about:blank page. Only http, https and about:blank URLs can be opened.`,
+            `The ${which} history entry is not an http, https or about:blank page. Only http, https and about:blank URLs can be opened.`,
+        );
+    }
+
+    const problem = await resolutionProblem(entry.url, context.config.safety, context.resolveHost);
+
+    if (problem !== undefined) {
+        throw new ToolError(
+            `The history entry is on ${describeUrlHost(entry.url)}, ${problem.reason}. ${problem.hint}`,
         );
     }
 

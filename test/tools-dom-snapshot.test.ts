@@ -110,22 +110,28 @@ describe("dom_snapshot", () => {
         const [old] = runtime.elements.assign("tab1", [{ backendNodeId: 99 }]);
         const result = await runTool(domSnapshot, {}, extra(), runtime);
 
-        expect(result.structuredContent).toEqual({
-            snapshot:
-                '[2_1] heading level 1 "Example Domain"\n  [2_2] link "More information..." href="https://www.iana.org/domains/example"',
+        expect(result.structuredContent).toMatchObject({
             generation: 2,
             nodeCount : 2,
             omitted   : 1,
             truncated : false,
             frames    : [],
         });
+        const data = result.structuredContent as { snapshot: string };
+        const matched = [...data.snapshot.matchAll(/\[(\d+_\d+)\]/g)];
+
+        expect(matched).toHaveLength(2);
+        expect(data.snapshot).toBe([
+            `[${matched[0]?.[1]}] heading level 1 "Example Domain"`,
+            `  [${matched[1]?.[1]}] link "More information..." href="https://www.iana.org/domains/example"`,
+        ].join("\n"));
         expect(fake.sent.map((call) => call.method)).toEqual([
             "Accessibility.getFullAXTree",
             "DOM.getDocument",
         ]);
         expect(fake.sent[1]?.params).toEqual({ depth: SNAPSHOT_DOM_DEPTH, pierce: true });
-        expect(runtime.elements.lookup("tab1", "2_1")).toEqual({ backendNodeId: 11 });
-        expect(runtime.elements.lookup("tab1", "2_2")).toEqual({ backendNodeId: 12 });
+        expect(runtime.elements.lookup("tab1", matched[0]?.[1] ?? "")).toEqual({ backendNodeId: 11 });
+        expect(runtime.elements.lookup("tab1", matched[1]?.[1] ?? "")).toEqual({ backendNodeId: 12 });
         expect(runtime.elements.lookup("tab1", old ?? "")).toBeUndefined();
     });
 
@@ -209,9 +215,11 @@ describe("dom_snapshot", () => {
         const result = await runTool(domSnapshot, { root: { uid } }, extra(), runtime);
 
         expect(result.isError).not.toBe(true);
-        expect(result.structuredContent).toMatchObject({
-            snapshot: '[2_1] heading "Example Domain"',
-        });
+        const data = result.structuredContent as { snapshot: string };
+        const matched = /^\[(\d+_\d+)\] heading "Example Domain"$/.exec(data.snapshot);
+
+        expect(matched).not.toBeNull();
+        expect(runtime.elements.lookup("tab1", matched?.[1] ?? "")).toEqual({ backendNodeId: 7 });
         expect(seen).toEqual([{ backendNodeId: 7, fetchRelatives: true }]);
         expect(fake.sent.map((call) => call.method)).toEqual([
             "DOM.resolveNode",

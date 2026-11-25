@@ -1,11 +1,11 @@
 import { spawn as nodeSpawn } from "node:child_process";
 import type { Socket } from "node:net";
-import type { Config } from "../config/index.js";
+import { isValidWsEndpoint, type Config } from "../config/index.js";
 import { type BrowserName, findBrowserExecutable } from "./discovery.js";
 import { messageOf } from "../util/message-of.js";
 import { AppError } from "../util/app-error.js";
 
-const LISTENING_PATTERN = /DevTools listening on (ws:\/\/\S+)\r?\n/;
+const LISTENING_PATTERN = /DevTools listening on (ws:\/\/\S+)\r?\n/g;
 const MAX_BUFFERED_STDERR = 64 * 1024;
 const DEFAULT_START_TIMEOUT_MS = 45_000;
 const DEFAULT_STOP_GRACE_MS = 5_000;
@@ -51,19 +51,23 @@ export function buildLaunchArgs(config: ManagedConfig): string[] {
 }
 
 export function parseListeningUrl(
-    output: string,
+    output       : string,
+    expectedPort?: number,
 ): { port: number; webSocketUrl: string } | undefined {
-    const match = LISTENING_PATTERN.exec(output);
+    for (const match of output.matchAll(LISTENING_PATTERN)) {
+        const webSocketUrl = match[1];
 
-    if (!match?.[1]) return undefined;
+        if (webSocketUrl === undefined || webSocketUrl.includes("?") ||
+            webSocketUrl.includes("#") || !isValidWsEndpoint(webSocketUrl)) continue;
 
-    try {
-        const port = Number(new URL(match[1]).port);
+        const port = Number(new URL(webSocketUrl).port || 80);
 
-        return Number.isInteger(port) && port > 0 ? { port, webSocketUrl: match[1] } : undefined;
-    } catch {
-        return undefined;
+        if (port > 0 && (expectedPort === undefined || port === expectedPort)) {
+            return { port, webSocketUrl };
+        }
     }
+
+    return undefined;
 }
 
 export function spawnProcess(command: string, args: string[]): ChildHandle {
@@ -107,6 +111,9 @@ export async function launchManaged(
     if (signal?.aborted) throw new BrowserLaunchError(CANCELLED_LAUNCH);
 
     const executable = deps.findExecutable(config.browser);
+
+    if (signal?.aborted) throw new BrowserLaunchError(CANCELLED_LAUNCH);
+
     const startFailure = (detail: string) =>
         new BrowserLaunchError(
             `failed to start ${executable}: ${detail}. Check that the file exists and is executable.`,
@@ -133,6 +140,7 @@ export async function launchManaged(
             if (settled) return;
 
             settled = true;
+            cleanup();
             child.kill("SIGTERM");
             void terminate(child, exited, deps.stopGraceMs).then(() =>
                 reject(
@@ -144,20 +152,20 @@ export async function launchManaged(
             );
         }, deps.startTimeoutMs);
 
-        signal?.addEventListener(
-            "abort",
-            () => {
-                if (settled) return;
+        const onAbort = () => {
+            if (settled) return;
 
-                settled = true;
-                clearTimeout(timer);
-                child.kill("SIGTERM");
-                void terminate(child, exited, deps.stopGraceMs).then(() =>
-                    reject(new BrowserLaunchError(CANCELLED_LAUNCH)),
-                );
-            },
-            { once: true },
-        );
+            settled = true;
+            cleanup();
+            child.kill("SIGTERM");
+            void terminate(child, exited, deps.stopGraceMs).then(() =>
+                reject(new BrowserLaunchError(CANCELLED_LAUNCH)),
+            );
+        };
+        const cleanup = () => {
+            clearTimeout(timer);
+            signal?.removeEventListener("abort", onAbort);
+        };
 
         const stop = () =>
             (stopping ??= (async () => {
@@ -167,25 +175,11 @@ export async function launchManaged(
                 await terminate(child, exited, deps.stopGraceMs);
             })());
 
-        child.onStderr((chunk) => {
-            if (settled) return;
-
-            buffered = (buffered + chunk).slice(-MAX_BUFFERED_STDERR);
-            const endpoint = parseListeningUrl(buffered);
-
-            if (!endpoint) return;
-
-            settled = true;
-            buffered = "";
-            clearTimeout(timer);
-            resolve({ ...endpoint, stop, release: () => child.detach() });
-        });
-
         child.onError((message) => {
             if (settled) return;
 
             settled = true;
-            clearTimeout(timer);
+            cleanup();
             markExited();
             reject(startFailure(message));
         });
@@ -196,13 +190,34 @@ export async function launchManaged(
             if (settled) return;
 
             settled = true;
-            clearTimeout(timer);
+            cleanup();
             reject(
                 new BrowserLaunchError(
                     `${config.browser} ${reason} before remote debugging was ready. ` +
             `Another browser instance may already use the profile ${config.profileDir}${config.debugPort === 0 ? "" : ` or the port ${config.debugPort}`}: close it or set another profileDir${config.debugPort === 0 ? "" : " or debugPort"}.`,
                 ),
             );
+        });
+
+        if (!settled) {
+            signal?.addEventListener("abort", onAbort, { once: true });
+            if (signal?.aborted) onAbort();
+        }
+
+        child.onStderr((chunk) => {
+            if (settled) return;
+
+            buffered = (buffered + chunk).slice(-MAX_BUFFERED_STDERR);
+            const endpoint = parseListeningUrl(
+                buffered, config.debugPort === 0 ? undefined : config.debugPort,
+            );
+
+            if (!endpoint) return;
+
+            settled = true;
+            buffered = "";
+            cleanup();
+            resolve({ ...endpoint, stop, release: () => child.detach() });
         });
     });
 }

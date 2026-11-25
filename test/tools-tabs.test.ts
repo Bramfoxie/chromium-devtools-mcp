@@ -280,11 +280,11 @@ describe("new_tab", () => {
         expect(fake.created).toEqual([]);
     });
 
-    it("opens about:blank when no URL is given and skips the safety target", async () => {
+    it.each([{}, { url: "about:blank" }])("opens a blank tab without claiming a load wait", async (args) => {
         const { fake, runtime } = setup();
-        const result = await runTool(newTab, {}, extra(), runtime);
+        const result = await runTool(newTab, args, extra(), runtime);
 
-        expect(result.structuredContent).toMatchObject({ tab: { url: "about:blank" }, waited: "load" });
+        expect(result.structuredContent).toMatchObject({ tab: { url: "about:blank" }, waited: "none" });
         expect(fake.created).toEqual(["tab1"]);
         expect(fake.sent.some((call) => call.method === "Page.navigate")).toBe(false);
     });

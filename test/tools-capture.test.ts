@@ -548,6 +548,91 @@ describe("url pattern", () => {
 });
 
 describe("CaptureManager", () => {
+    it("stops capture setup when the session resets during domain enable", async () => {
+        const { fake, capture } = manager();
+        const send = fake.send.bind(fake);
+        let release: () => void = () => undefined;
+        let signalStarted: () => void = () => undefined;
+        const gate = new Promise<void>((resolve) => (release = resolve));
+        const started = new Promise<void>((resolve) => (signalStarted = resolve));
+
+        fake.send = async (command) => {
+            const result = await send(command);
+
+            if (command.method === "Runtime.enable") {
+                signalStarted();
+                await gate;
+            }
+
+            return result;
+        };
+
+        const pending = capture.ensureConsole("tab1");
+
+        await started;
+        capture.reset();
+        release();
+        await expect(pending).rejects.toThrow("The tab closed or the session reset while starting capture.");
+        expect(fake.sent.some((item) => item.method === "Log.enable")).toBe(false);
+        expect(fake.unsubscribed).toEqual([]);
+    });
+
+    it("does not unsubscribe a new session after an old setup fails", async () => {
+        const { fake, capture } = manager();
+        const subscribe = fake.subscribe.bind(fake);
+        let release: () => void = () => undefined;
+        let signalStarted: () => void = () => undefined;
+        let oldSession = true;
+        let calls = 0;
+        const gate = new Promise<void>((resolve) => (release = resolve));
+        const started = new Promise<void>((resolve) => (signalStarted = resolve));
+
+        fake.subscribe = async (...args) => {
+            if (oldSession && ++calls === 2) {
+                signalStarted();
+                await gate;
+
+                throw new Error("old session failed");
+            }
+
+            await subscribe(...args);
+        };
+
+        const old = capture.ensureConsole("tab1");
+
+        await started;
+        capture.reset();
+        oldSession = false;
+        await capture.ensureConsole("tab1");
+        release();
+        await expect(old).rejects.toThrow("old session failed");
+        expect(fake.unsubscribed).toEqual([]);
+    });
+
+    it.each([
+        ["console", "Runtime.consoleAPICalled"],
+        ["network", "Network.requestWillBeSent"],
+    ])("removes partial %s subscriptions when setup fails", async (kind, firstEvent) => {
+        const { fake, capture } = manager();
+        const subscribe = fake.subscribe.bind(fake);
+        let calls = 0;
+
+        fake.subscribe = async (...args) => {
+            calls += 1;
+            if (calls === 2) throw new Error("subscription failed");
+
+            await subscribe(...args);
+        };
+
+        const pending = kind === "console"
+            ? capture.ensureConsole("tab1")
+            : capture.ensureNetwork("tab1");
+
+        await expect(pending).rejects.toThrow("subscription failed");
+        expect(fake.unsubscribed).toEqual([{ targetId: "tab1", event: firstEvent, frameId: undefined }]);
+        expect(fake.sent).toEqual([]);
+    });
+
     function consoleCall(text: string) {
         return {
             targetId: "tab1",

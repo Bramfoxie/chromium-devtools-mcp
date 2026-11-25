@@ -57,6 +57,34 @@ describe("elementTargetSchema", () => {
 });
 
 describe("ElementRegistry", () => {
+    it("does not resolve an ID from a different tab", () => {
+        const elements = new ElementRegistry();
+        const [first] = elements.assign("tab1", [{ backendNodeId: 1 }]);
+        const [second] = elements.assign("tab2", [{ backendNodeId: 2 }]);
+
+        expect(first).not.toBe(second);
+        expect(elements.lookup("tab2", first ?? "")).toBeUndefined();
+        expect(elements.lookup("tab1", second ?? "")).toBeUndefined();
+    });
+
+    it.each(["forget", "reset"])("does not reuse an old UID after %s", (action) => {
+        const elements = new ElementRegistry();
+
+        elements.nextGeneration("tab1");
+        elements.nextGeneration("tab1");
+        const [old] = elements.assign("tab1", [{ backendNodeId: 1 }]);
+
+        if (action === "forget") elements.forget("tab1");
+        else elements.reset();
+
+        const [fresh] = elements.assign("tab1", [{ backendNodeId: 2 }]);
+
+        expect(old).toBeDefined();
+        expect(fresh).not.toBe(old);
+        expect(elements.lookup("tab1", old ?? "")).toBeUndefined();
+        expect(elements.lookup("tab1", fresh ?? "")).toMatchObject({ backendNodeId: 2 });
+    });
+
     it("assigns uids of the current generation and reads them back", () => {
         const elements = new ElementRegistry();
 
@@ -88,10 +116,10 @@ describe("ElementRegistry", () => {
         elements.nextGeneration("tab1");
         elements.assign("tab1", [{ backendNodeId: 1 }]);
         elements.nextGeneration("tab1");
-        elements.assign("tab1", [{ backendNodeId: 2 }]);
+        const [fresh] = elements.assign("tab1", [{ backendNodeId: 2 }]);
 
         expect(elements.lookup("tab1", "1_1")).toBeUndefined();
-        expect(elements.lookup("tab1", "2_1")).toEqual({ backendNodeId: 2 });
+        expect(elements.lookup("tab1", fresh ?? "")).toEqual({ backendNodeId: 2 });
     });
 
     it("reports unknown tabs, unknown uids and malformed uids as stale", () => {
@@ -121,7 +149,7 @@ describe("ElementRegistry", () => {
         elements.reset();
 
         expect(elements.lookup("tab1", `0_${MAX_UIDS_PER_TAB + 5}`)).toBeUndefined();
-        expect(elements.generation("tab1")).toBe(0);
+        expect(elements.generation("tab1")).toBe(1);
     });
 
     it("keeps the uid of a repeated element instead of burning the budget", () => {

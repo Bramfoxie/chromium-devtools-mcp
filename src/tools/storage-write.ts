@@ -79,6 +79,12 @@ function partialFailure(action: string, applied: number, total: number, cause: u
     );
 }
 
+function cookieFailure(action: string, applied: number, total: number): ToolError {
+    return new ToolError(
+        `The browser failed to ${action} a cookie after ${applied} of ${total} requests completed. The last request may also have changed storage. Read the storage to see its current state, then retry.`,
+    );
+}
+
 function unexpected(method: string): ToolError {
     return new ToolError(`The browser sent an unexpected response to ${method}. Try the call again.`);
 }
@@ -116,12 +122,27 @@ async function cookieCount(access: DaemonAccess, targetId: string): Promise<numb
     return parsed.data.cookies.length;
 }
 
+async function cookieCountAfterWrite(
+    access  : DaemonAccess,
+    targetId: string,
+    applied : number,
+    total   : number,
+): Promise<number> {
+    return cookieCount(access, targetId).catch(() => {
+        throw new ToolError(
+            `${applied} of ${total} cookie requests completed, but the browser could not report the remaining cookies. Read the storage to see its current state.`,
+        );
+    });
+}
+
 export const storageWrite = defineTool({
     name: "storage_write",
     description:
         "Write local storage, session storage or cookies of the page origin. Values are never echoed back.",
     access   : "mutate",
     dangerous: true,
+    cancelledMessage:
+        "The request was cancelled while the tool was running, so its change may already have been applied. Check the storage with storage_read before calling the tool again.",
     summarize: (args) => `It will ${args.action} ${args.kind} of the page origin.`,
     input    : z.strictObject({
         tab    : tabSchema,
@@ -382,6 +403,8 @@ async function writeCookies(
                         ...(cookie.httpOnly === undefined ? {} : { httpOnly: cookie.httpOnly }),
                         ...(cookie.sameSite === undefined ? {} : { sameSite: cookie.sameSite }),
                     },
+                }).catch(() => {
+                    throw cookieFailure("set", applied, cookies.length);
                 }),
             );
 
@@ -394,7 +417,7 @@ async function writeCookies(
             applied += 1;
         }
 
-        const remaining = await cookieCount(access, targetId);
+        const remaining = await cookieCountAfterWrite(access, targetId, applied, cookies.length);
 
         return {
             tab    : targetId,
@@ -416,6 +439,8 @@ async function writeCookies(
 
         for (const cookie of cookies) checkCookieDomain(cookie.domain, host);
 
+        let applied = 0;
+
         for (const cookie of cookies) {
             throwIfCancelled(signal);
             await access.send({
@@ -427,10 +452,13 @@ async function writeCookies(
                     ...(cookie.domain === undefined ? {} : { domain: cookie.domain }),
                     ...(cookie.path === undefined ? {} : { path: cookie.path }),
                 },
+            }).catch(() => {
+                throw cookieFailure("remove", applied, cookies.length);
             });
+            applied += 1;
         }
 
-        const remaining = await cookieCount(access, targetId);
+        const remaining = await cookieCountAfterWrite(access, targetId, applied, cookies.length);
 
         return {
             tab    : targetId,
@@ -445,7 +473,6 @@ async function writeCookies(
         };
     }
 
-    const before = await cookieCount(access, targetId);
     const parsed = z.object({
         cookies: z.array(z.object({
             name  : z.string(),
@@ -459,7 +486,10 @@ async function writeCookies(
 
     if (!parsed.success) throw unexpected("Network.getCookies");
 
+    const before = parsed.data.cookies.length;
     const scoped = parsed.data.cookies.filter((cookie) => cookieDomainAllowed(cookie.domain, host));
+
+    let applied = 0;
 
     for (const cookie of scoped) {
         throwIfCancelled(signal);
@@ -472,10 +502,19 @@ async function writeCookies(
                 domain: cookie.domain,
                 path  : cookie.path,
             },
+        }).catch(() => {
+            throw cookieFailure("clear", applied, scoped.length);
         });
+        applied += 1;
     }
 
-    const remaining = await cookieCount(access, targetId);
+    const remaining = await cookieCountAfterWrite(access, targetId, applied, scoped.length);
+
+    if (remaining > before) {
+        throw new ToolError(
+            `The cookie count increased while clearing, so the number cleared is unknown. ${applied} of ${scoped.length} deletion requests completed. Read the storage to see its current state.`,
+        );
+    }
 
     return {
         tab    : targetId,

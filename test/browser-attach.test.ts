@@ -12,7 +12,7 @@ import {
     resolveAttachEndpoint,
     setupInstructions,
 } from "../src/browser/index.js";
-import { deniedPortFile, fetchVersion, probePort } from "../src/browser/attach.js";
+import { deniedPortFile, explicitEndpoint, fetchVersion, probePort } from "../src/browser/attach.js";
 import { readIfExists } from "../src/util/read-if-exists.js";
 import { abortableSleep } from "../src/util/sleep.js";
 
@@ -28,6 +28,16 @@ const config = { browser: "chrome" as const, debugPort: 9222 };
 const portFile = "/Users/u/Library/Application Support/Google/Chrome/DevToolsActivePort";
 const fileContent = "9333\n/devtools/browser/from-file\n";
 const version = { webSocketDebuggerUrl: "ws://127.0.0.1:9222/devtools/browser/from-http" };
+
+describe("explicitEndpoint", () => {
+    it("retains the default WebSocket port when it is explicitly supplied", () => {
+        expect(explicitEndpoint("ws://127.0.0.1:80/devtools/browser/id")).toEqual({
+            port        : 80,
+            webSocketUrl: "ws://127.0.0.1:80/devtools/browser/id",
+            source      : "ws-endpoint",
+        });
+    });
+});
 
 interface World {
     files?    : Record<string, string>;
@@ -93,7 +103,19 @@ describe("parseActivePortFile", () => {
         });
     });
 
-    it.each(["", "9333", "0\n/devtools/browser/x", "70000\n/devtools/browser/x", "9333\n/other"])(
+    it("accepts a port file using the default WebSocket port", () => {
+        expect(parseActivePortFile("80\n/devtools/browser/x\n")).toEqual({
+            port        : 80,
+            webSocketUrl: "ws://127.0.0.1:80/devtools/browser/x",
+        });
+    });
+
+    it.each([
+        "", "9333", "0\n/devtools/browser/x", "70000\n/devtools/browser/x", "9333\n/other",
+        "9333\n/devtools/browser/", "9333\n/devtools/browser/x?token=secret",
+        "9333\n/devtools/browser/x#fragment",
+        "9333\n/devtools/browser/x?", "9333\n/devtools/browser/x#",
+    ])(
         "rejects %j",
         (content) => {
             expect(parseActivePortFile(content)).toBeUndefined();
@@ -165,6 +187,15 @@ describe("resolveAttachEndpoint", () => {
         expect(await resolveAttachEndpoint(config, value)).toMatchObject({ source: "debug-port" });
     });
 
+    it("falls back to the debug port when the port file contains an unsafe path", async () => {
+        const { value } = deps({
+            files   : { [portFile]: "9333\n/devtools/browser/x?token=secret" },
+            versions: { 9222: version },
+        });
+
+        expect(await resolveAttachEndpoint(config, value)).toMatchObject({ source: "debug-port" });
+    });
+
     it("returns undefined when nothing is reachable", async () => {
         expect(await resolveAttachEndpoint(config, deps().value)).toBeUndefined();
     });
@@ -176,6 +207,12 @@ describe("resolveAttachEndpoint", () => {
         ["not a browser socket", { webSocketDebuggerUrl: "ws://127.0.0.1:9222/devtools/page/1" }],
         ["remote host", { webSocketDebuggerUrl: "ws://evil.example:9222/devtools/browser/x" }],
         ["different port", { webSocketDebuggerUrl: "ws://127.0.0.1:9999/devtools/browser/x" }],
+        ["empty browser id", { webSocketDebuggerUrl: "ws://127.0.0.1:9222/devtools/browser/" }],
+        ["credentials", { webSocketDebuggerUrl: "ws://user:secret@127.0.0.1:9222/devtools/browser/x" }],
+        ["query", { webSocketDebuggerUrl: "ws://127.0.0.1:9222/devtools/browser/x?token=secret" }],
+        ["fragment", { webSocketDebuggerUrl: "ws://127.0.0.1:9222/devtools/browser/x#fragment" }],
+        ["empty query", { webSocketDebuggerUrl: "ws://127.0.0.1:9222/devtools/browser/x?" }],
+        ["empty fragment", { webSocketDebuggerUrl: "ws://127.0.0.1:9222/devtools/browser/x#" }],
         ["implicit port 80", { webSocketDebuggerUrl: "ws://127.0.0.1/devtools/browser/x" }],
         ["wrong scheme", { webSocketDebuggerUrl: "wss://127.0.0.1:9222/devtools/browser/x" }],
         ["unparseable URL", { webSocketDebuggerUrl: "::::" }],
@@ -403,8 +440,118 @@ describe("attachBrowser", () => {
 
         expect(failure).toBeInstanceOf(AttachError);
         expect(fetches).toBe(2);
-        expect(sleeps).toBe(2);
+        expect(sleeps).toBe(1);
         expect(logs).toHaveLength(1);
+    });
+
+    it("does not return an endpoint discovered after cancellation", async () => {
+        const controller = new AbortController();
+        const { value } = deps({}, {
+            fetchVersion: async () => {
+                controller.abort();
+
+                return version;
+            },
+        });
+
+        await expect(attachBrowser(config, value, controller.signal)).rejects.toBeInstanceOf(
+            AttachError,
+        );
+    });
+
+    it("cancels promptly while the port file read is pending", async () => {
+        const controller = new AbortController();
+        let release: (content: string) => void = () => undefined;
+        const readFile = () => new Promise<string>((resolve) => (release = resolve));
+        const isPortOpen = vi.fn(async () => true);
+        const fetchVersion = vi.fn(async () => undefined);
+        const { value } = deps({}, { readFile, isPortOpen, fetchVersion });
+        const attempt = attachBrowser(config, value, controller.signal).catch(
+            (error: unknown) => error,
+        );
+
+        controller.abort();
+        const outcome = await Promise.race([
+            attempt,
+            new Promise<"still waiting">((resolve) => setTimeout(() => resolve("still waiting"), 300)),
+        ]);
+
+        release(fileContent);
+        await attempt;
+        await new Promise((resolve) => setImmediate(resolve));
+        expect(outcome).toBeInstanceOf(AttachError);
+        expect(isPortOpen).not.toHaveBeenCalled();
+        expect(fetchVersion).not.toHaveBeenCalled();
+    });
+
+    it("does not report a late port file error after cancellation", async () => {
+        const controller = new AbortController();
+        let reject: (error: Error) => void = () => undefined;
+        const readFile = () => new Promise<string>((_resolve, fail) => (reject = fail));
+        const fetchVersion = vi.fn(async () => undefined);
+        const { value, logs } = deps({}, { readFile, fetchVersion });
+        const attempt = attachBrowser(config, value, controller.signal).catch(
+            (error: unknown) => error,
+        );
+
+        controller.abort();
+        const outcome = await Promise.race([
+            attempt,
+            new Promise<"still waiting">((resolve) => setTimeout(() => resolve("still waiting"), 300)),
+        ]);
+
+        reject(new Error("late read error"));
+        await attempt;
+        await new Promise((resolve) => setImmediate(resolve));
+        expect(outcome).toBeInstanceOf(AttachError);
+        expect(fetchVersion).not.toHaveBeenCalled();
+        expect(logs).toEqual([]);
+    });
+
+    it.each(["port", "version"] as const)("cancels while the %s probe is pending", async (phase) => {
+        const controller = new AbortController();
+        let release: () => void = () => undefined;
+        let started: () => void = () => undefined;
+        const gate = new Promise<void>((resolve) => (release = resolve));
+        const entered = new Promise<void>((resolve) => (started = resolve));
+        const isPortOpen = vi.fn(async () => {
+            if (phase === "port") {
+                started();
+                await gate;
+            }
+
+            return false;
+        });
+        const fetchVersion = vi.fn(async () => {
+            if (phase === "version") {
+                started();
+                await gate;
+            }
+
+            return version;
+        });
+        const { value, logs } = deps(
+            phase === "port" ? { files: { [portFile]: fileContent } } : {},
+            { isPortOpen, fetchVersion },
+        );
+        const attempt = attachBrowser(config, value, controller.signal).catch(
+            (error: unknown) => error,
+        );
+
+        await entered;
+        controller.abort();
+        const outcome = await Promise.race([
+            attempt,
+            new Promise<"still waiting">((resolve) => setTimeout(() => resolve("still waiting"), 300)),
+        ]);
+
+        release();
+        await attempt;
+        await new Promise((resolve) => setImmediate(resolve));
+        expect(outcome).toBeInstanceOf(AttachError);
+        if (phase === "port") expect(fetchVersion).not.toHaveBeenCalled();
+
+        expect(logs).toEqual([]);
     });
 
     it("passes the abort signal to the probes and the sleep", async () => {

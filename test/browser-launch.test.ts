@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { getEventListeners } from "node:events";
 import {
     BrowserLaunchError,
     BrowserNotFoundError,
@@ -112,12 +113,39 @@ describe("parseListeningUrl", () => {
         });
     });
 
+    it("accepts an explicitly supplied default WebSocket port", () => {
+        expect(parseListeningUrl("DevTools listening on ws://127.0.0.1:80/devtools/browser/id\n"))
+            .toEqual({ port: 80, webSocketUrl: "ws://127.0.0.1:80/devtools/browser/id" });
+    });
+
     it.each(["", "DevTools listening on", "DevTools listening on ws://host/path", "unrelated"])(
         "returns undefined for %j",
         (output) => {
             expect(parseListeningUrl(output)).toBeUndefined();
         },
     );
+
+    it.each([
+        "ws://example.com:9222/devtools/browser/id",
+        "ws://127.0.0.1:9222/devtools/page/id",
+        "ws://user:secret@127.0.0.1:9222/devtools/browser/id",
+        "ws://127.0.0.1:9222/devtools/browser/id?token=secret",
+        "ws://127.0.0.1:9222/devtools/browser/id?",
+        "ws://127.0.0.1:9222/devtools/browser/id#",
+        "ws://127.0.0.1:9222/devtools/browser/",
+        "ws://127.0.0.1:0/devtools/browser/id",
+    ])("rejects an unsafe listening URL %s", (url) => {
+        expect(parseListeningUrl(`DevTools listening on ${url}\n`)).toBeUndefined();
+    });
+
+    it("finds a valid endpoint after an invalid listening line", () => {
+        const output = `DevTools listening on ws://example.com:9222/devtools/browser/id\n${listening}`;
+
+        expect(parseListeningUrl(output)).toEqual({
+            port        : 9222,
+            webSocketUrl: "ws://127.0.0.1:9222/devtools/browser/abc-123",
+        });
+    });
 });
 
 describe("launchManaged", () => {
@@ -166,6 +194,85 @@ describe("launchManaged", () => {
             BrowserLaunchError,
         );
         expect(spawned).toEqual([]);
+    });
+
+    it("cancels when the signal aborts while the browser is spawned", async () => {
+        const controller = new AbortController();
+        const child = new FakeChild();
+        const { deps } = harness(child, {
+            spawn: () => {
+                controller.abort();
+
+                return child;
+            },
+        });
+        const pending = launchManaged(config, deps, controller.signal);
+
+        child.write(listening);
+        await expect(pending).rejects.toThrow("cancelled");
+        expect(child.signals).toEqual(["SIGTERM"]);
+    });
+
+    it("does not accept synchronous readiness after cancellation during spawn", async () => {
+        const controller = new AbortController();
+        const child = new FakeChild();
+
+        vi.spyOn(child, "onStderr").mockImplementation((handler) => handler(listening));
+        const { deps } = harness(child, {
+            spawn: () => {
+                controller.abort();
+
+                return child;
+            },
+        });
+
+        await expect(launchManaged(config, deps, controller.signal)).rejects.toThrow("cancelled");
+        expect(child.signals).toEqual(["SIGTERM"]);
+    });
+
+    it("does not spawn if cancellation arrives during executable discovery", async () => {
+        const controller = new AbortController();
+        const { deps, spawned } = harness(new FakeChild(), {
+            findExecutable: () => {
+                controller.abort();
+
+                return "/bin/browser";
+            },
+        });
+
+        await expect(launchManaged(config, deps, controller.signal)).rejects.toThrow("cancelled");
+        expect(spawned).toEqual([]);
+    });
+
+    it.each(["ready", "error", "exit", "timeout"] as const)(
+        "removes the abort listener after launch ends with %s",
+        async (outcome) => {
+            const { deps, child } = harness(new FakeChild(), { startTimeoutMs: 5 });
+            const controller = new AbortController();
+            const pending = launchManaged(config, deps, controller.signal).catch(() => undefined);
+
+            if (outcome === "ready") child.write(listening);
+            else if (outcome === "error") child.fail("spawn failed");
+            else if (outcome === "exit") child.exit("exited with code 1");
+
+            await pending;
+            expect(getEventListeners(controller.signal, "abort")).toHaveLength(0);
+        },
+    );
+
+    it("does not retain an abort listener when readiness is reported synchronously", async () => {
+        class ImmediateChild extends FakeChild {
+            override onStderr(handler: (chunk: string) => void): void {
+                super.onStderr(handler);
+                handler(listening);
+            }
+        }
+
+        const { deps } = harness(new ImmediateChild());
+        const controller = new AbortController();
+
+        await launchManaged(config, deps, controller.signal);
+        expect(getEventListeners(controller.signal, "abort")).toHaveLength(0);
     });
 
     it("assembles the endpoint from split output chunks", async () => {
@@ -309,6 +416,43 @@ describe("launchManaged", () => {
 
         child.write(`${listening}DevTools listening on ws://127.0.0.1:1/devtools/browser/other\n`);
         await expect(pending).resolves.toMatchObject({ port: 9222 });
+    });
+
+    it("ignores a listening endpoint on a different configured port", async () => {
+        const { deps, child } = harness();
+        const pending = launchManaged(config, deps);
+
+        child.write("DevTools listening on ws://127.0.0.1:9223/devtools/browser/other\n");
+        child.write(listening);
+        await expect(pending).resolves.toMatchObject({ port: 9222 });
+    });
+
+    it("ignores an unsafe listening endpoint before a valid one", async () => {
+        const { deps, child } = harness();
+        const pending = launchManaged(config, deps);
+
+        child.write("DevTools listening on ws://example.com:9222/devtools/browser/id\n");
+        child.write(listening);
+        await expect(pending).resolves.toMatchObject({
+            webSocketUrl: "ws://127.0.0.1:9222/devtools/browser/abc-123",
+        });
+    });
+
+    it("accepts a browser selected port when the configured port is zero", async () => {
+        const { deps, child } = harness();
+        const pending = launchManaged({ ...config, debugPort: 0 }, deps);
+
+        child.write("DevTools listening on ws://127.0.0.1:0/devtools/browser/id\n");
+        child.write("DevTools listening on ws://127.0.0.1:9333/devtools/browser/id\n");
+        await expect(pending).resolves.toMatchObject({ port: 9333 });
+    });
+
+    it("accepts the explicit default WebSocket port when configured", async () => {
+        const { deps, child } = harness();
+        const pending = launchManaged({ ...config, debugPort: 80 }, deps);
+
+        child.write("DevTools listening on ws://127.0.0.1:80/devtools/browser/id\n");
+        await expect(pending).resolves.toMatchObject({ port: 80 });
     });
 
     it("does not resolve from a partial line without a line break", async () => {

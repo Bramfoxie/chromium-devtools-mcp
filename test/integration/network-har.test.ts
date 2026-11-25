@@ -36,6 +36,21 @@ afterAll(async () => {
 });
 
 describe.skipIf(!present)("network_har in a real browser", () => {
+    it("reports available request timing phases from Chrome", async () => {
+        const tab = await env.open("/har");
+
+        await env.ok("network_requests", { tab });
+        await env.ok("page_navigate", { tab, action: "reload", ignoreCache: true });
+        const result = await env.ok("network_requests", { tab });
+        const requests = result.requests as Array<{
+            url: string; timing?: { sendMs?: number; waitMs?: number };
+        }>;
+        const document = requests.find((item) => item.url.endsWith("/har"));
+
+        expect(document?.timing?.sendMs).toBeGreaterThanOrEqual(0);
+        expect(document?.timing?.waitMs).toBeGreaterThanOrEqual(0);
+    });
+
     it("saves the requests of a tab as a HAR file with redacted secrets", async () => {
         const tab = await env.open("/har");
 

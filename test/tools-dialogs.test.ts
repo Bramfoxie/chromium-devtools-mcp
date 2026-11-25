@@ -31,6 +31,48 @@ function closed(fake: FakeAccess, tab: string): void {
 }
 
 describe("DialogState", () => {
+    it.each(["forget", "reset"])("rejects a late Page.enable response after %s", async (action) => {
+        const { fake, state } = dialogs();
+        let release: () => void = () => undefined;
+        const gate = new Promise<void>((resolve) => (release = resolve));
+        const send = fake.send.bind(fake);
+
+        fake.send = async (command) => {
+            const result = await send(command);
+
+            if (command.method === "Page.enable") await gate;
+
+            return result;
+        };
+
+        const pending = ensureNoDialog(state, "tab1");
+
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        expect(fake.sent.some((call) => call.method === "Page.enable")).toBe(true);
+        if (action === "forget") state.forget("tab1");
+        else state.reset();
+
+        release();
+        await expect(pending).rejects.toThrow("The tab closed or the session reset while checking dialogs.");
+        expect(state.pageEnabled("tab1")).toBe(false);
+    });
+
+    it.each(["forget", "reset"])("stops a pending dialog check after %s", async (action) => {
+        const { fake, state } = dialogs();
+        let release: () => void = () => undefined;
+        const gate = new Promise<void>((resolve) => (release = resolve));
+
+        fake.subscribe = async () => gate;
+        const pending = ensureNoDialog(state, "tab1");
+
+        if (action === "forget") state.forget("tab1");
+        else state.reset();
+
+        release();
+        await expect(pending).rejects.toThrow("The tab closed or the session reset while checking dialogs.");
+        expect(fake.sent.some((call) => call.method === "Page.enable")).toBe(false);
+    });
+
     it("enables Page and subscribes once per tab", async () => {
         const { fake, state } = dialogs();
 
@@ -161,8 +203,8 @@ describe("DialogState", () => {
         const { fake, state } = dialogs();
 
         opening(fake, "tab1", { url: "https://a.example/", message: "name?", type: "prompt" });
-        await state.resolve("tab1", true, "Milana");
-        expect(fake.sent.at(-1)?.params).toEqual({ accept: true, promptText: "Milana" });
+        await state.resolve("tab1", true, "Alex");
+        expect(fake.sent.at(-1)?.params).toEqual({ accept: true, promptText: "Alex" });
     });
 
     it("records one entry when the browser acks the resolve", async () => {

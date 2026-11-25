@@ -49,6 +49,72 @@ afterAll(async () => {
 });
 
 describe.skipIf(!present)("page_extract in a real browser", () => {
+    it("preserves adjacent text and reports a bounded node traversal", async () => {
+        env.fixture.pages.set("/table-nodes", html(`<table><tr><td><b>foo</b>bar</td>
+            <td>${"<i></i>".repeat(10005)}last</td></tr></table>`));
+        const tab = await env.open("/table-nodes");
+        const page = await env.ok("page_extract", { tab, kinds: ["tables"] });
+        const tables = page.tables as {
+            items: Array<{ rows: Array<{ cells: Array<{ text: string; truncated: boolean }> }> }>;
+        };
+        const cells = tables.items[0]?.rows[0]?.cells;
+
+        expect(cells?.[0]).toEqual({ text: "foobar", truncated: false });
+        expect(cells?.[1]?.truncated).toBe(true);
+    });
+
+    it("does not invoke page overrides while reading table cells", async () => {
+        env.fixture.pages.set("/table-overrides", html(`<table><tr><td>Text</td></tr></table><script>
+            window.sideEffects = 0;
+            const original = Document.prototype.createTreeWalker;
+            Document.prototype.createTreeWalker = function(...args) {
+              window.sideEffects++; return original.apply(this, args);
+            };
+        </script>`));
+        const tab = await env.open("/table-overrides");
+
+        await env.ok("page_extract", { tab, kinds: ["tables"] });
+        const result = await env.ok("js_evaluate", { tab, expression: "window.sideEffects" });
+
+        expect(result.value).toBe(0);
+    });
+
+    it("does not construct custom elements when reading table cells", async () => {
+        env.fixture.pages.set("/table-custom", html(`<table><tr><td><x-custom>Text</x-custom></td></tr></table>
+            <script>window.constructed = 0; customElements.define('x-custom', class extends HTMLElement {
+              constructor() { super(); window.constructed += 1; }
+            });</script>`));
+        const tab = await env.open("/table-custom");
+        const before = await env.ok("js_evaluate", { tab, expression: "window.constructed" });
+
+        await env.ok("page_extract", { tab, kinds: ["tables"] });
+        const after = await env.ok("js_evaluate", { tab, expression: "window.constructed" });
+
+        expect(after.value).toBe(before.value);
+    });
+
+    it("extracts bounded table cells without form values", async () => {
+        env.fixture.pages.set("/table", html(`<table><tr><th>Heading</th><td>Cell <input value="INPUT-SECRET"><textarea>TEXTAREA-SECRET</textarea><select><option>SELECT-SECRET</option></select></td></tr>${"<tr><td>row</td></tr>".repeat(25)}</table>`));
+        const tab = await env.open("/table");
+        const page = await env.ok("page_extract", { tab, kinds: ["tables"] });
+        const tables = page.tables as {
+            total: number;
+            items: Array<{
+                total    : number;
+                truncated: boolean;
+                rows     : Array<{ cells: Array<{ text: string }> }>;
+            }>;
+        };
+
+        expect(tables.total).toBe(1);
+        expect(tables.items[0]?.total).toBe(26);
+        expect(tables.items[0]?.truncated).toBe(true);
+        expect(tables.items[0]?.rows[0]?.cells).toEqual([
+            { text: "Heading", truncated: false }, { text: "Cell", truncated: false },
+        ]);
+        expect(JSON.stringify(page)).not.toMatch(/INPUT-SECRET|TEXTAREA-SECRET|SELECT-SECRET/);
+    });
+
     it("lists links, headings, meta tags and form structure without values or secrets", async () => {
         const tab = await env.open("/extract");
         const page = await env.ok("page_extract", { tab });
