@@ -324,6 +324,64 @@ describe("storage_write", () => {
         expect(textOf(result)).toContain("after 1 of 3 were applied");
     });
 
+    it("directs callers to storage after a cancelled write", async () => {
+        const { fake, runtime } = setup();
+        const controller = new AbortController();
+
+        fake.respond = (tab, method) => {
+            if (method === "Runtime.evaluate") return { result: { value: "https://a.example/p" } };
+
+            if (method === "Network.setCookie") {
+                controller.abort();
+
+                return { success: true };
+            }
+
+            return {};
+        };
+
+        const result = await runTool(
+            storageWrite,
+            { kind: "cookies", action: "set", cookies: [{ name: "a", value: "secret" }] },
+            { signal: controller.signal } as Extra,
+            runtime,
+        );
+
+        expect(result.isError).toBe(true);
+        expect(textOf(result)).toContain("storage_read");
+        expect(textOf(result)).toContain("may already have been applied");
+        expect(textOf(result)).not.toContain("secret");
+    });
+
+    it.each(["set", "remove"] as const)("reports partial cookie %s failures without browser details", async (action) => {
+        const { fake, runtime } = setup();
+        let calls = 0;
+
+        fake.respond = (tab, method) => {
+            if (method === "Runtime.evaluate") return { result: { value: "https://a.example/p" } };
+
+            if (method === "Network.setCookie" || method === "Network.deleteCookies") {
+                calls += 1;
+                if (calls === 2) throw new Error("private browser details");
+
+                return { success: true };
+            }
+
+            return {};
+        };
+
+        const args = action === "set"
+            ? { kind: "cookies", action, cookies: [{ name: "a", value: "secret" }, { name: "b", value: "secret" }] }
+            : { kind: "cookies", action, remove: [{ name: "a" }, { name: "b" }] };
+        const result = await runTool(storageWrite, args, extra(), runtime);
+
+        expect(result.isError).toBe(true);
+        expect(textOf(result)).toContain("after 1 of 2");
+        expect(textOf(result)).toContain("Read the storage");
+        expect(textOf(result)).not.toContain("private browser details");
+        expect(textOf(result)).not.toContain("secret");
+    });
+
     it("reports a browser cookie refusal", async () => {
         const { fake, runtime } = setup();
 
@@ -377,7 +435,7 @@ describe("storage_write", () => {
             if (method === "Network.getCookies") {
                 calls += 1;
 
-                return calls <= 2
+                return calls <= 1
                     ? {
                         cookies: [
                             { name: "a", domain: "a.example", path: "/" },
@@ -409,6 +467,133 @@ describe("storage_write", () => {
 
         expect(cleared.structuredContent).toMatchObject({ changed: 2, remaining: 0 });
         expect(fake.sent.filter((call) => call.method === "Network.deleteCookies")).toHaveLength(2);
+    });
+
+    it("counts cookies from the same snapshot used for clearing", async () => {
+        const { fake, runtime } = setup();
+        let reads = 0;
+
+        fake.respond = (tab, method) => {
+            if (method === "Runtime.evaluate") return { result: { value: "https://a.example/p" } };
+
+            if (method === "Network.getCookies") {
+                reads += 1;
+
+                return reads === 1
+                    ? { cookies: [{ name: "a", domain: "a.example", path: "/" }] }
+                    : { cookies: [] };
+            }
+
+            return {};
+        };
+
+        const result = await runTool(storageWrite, { kind: "cookies", action: "clear", confirm: true }, extra(), runtime);
+
+        expect(result.structuredContent).toMatchObject({ changed: 1, remaining: 0 });
+        expect(fake.sent.filter((call) => call.method === "Network.deleteCookies")).toHaveLength(1);
+        expect(reads).toBe(2);
+    });
+
+    it.each(["set", "remove"] as const)("reports completed cookie %s requests when the final count fails", async (action) => {
+        const { fake, runtime } = setup();
+
+        fake.respond = (tab, method) => {
+            if (method === "Runtime.evaluate") return { result: { value: "https://a.example/p" } };
+            if (method === "Network.getCookies") throw new Error("private browser details");
+            if (method === "Network.setCookie") return { success: true };
+
+            return {};
+        };
+
+        const args = action === "set"
+            ? { kind: "cookies", action, cookies: [{ name: "a", value: "secret" }] }
+            : { kind: "cookies", action, remove: [{ name: "a" }] };
+        const result = await runTool(storageWrite, args, extra(), runtime);
+
+        expect(result.isError).toBe(true);
+        expect(textOf(result)).toContain("1 of 1");
+        expect(textOf(result)).toContain("Read the storage");
+        expect(textOf(result)).not.toContain("private browser details");
+        expect(textOf(result)).not.toContain("secret");
+    });
+
+    it("does not report a negative clear count when cookies are added concurrently", async () => {
+        const { fake, runtime } = setup();
+        let reads = 0;
+
+        fake.respond = (tab, method) => {
+            if (method === "Runtime.evaluate") return { result: { value: "https://a.example/p" } };
+
+            if (method === "Network.getCookies") {
+                reads += 1;
+
+                return reads === 1
+                    ? { cookies: [{ name: "a", domain: "a.example", path: "/" }] }
+                    : { cookies: [{ name: "b" }, { name: "c" }] };
+            }
+
+            return {};
+        };
+
+        const result = await runTool(storageWrite, { kind: "cookies", action: "clear", confirm: true }, extra(), runtime);
+
+        expect(result.isError).toBe(true);
+        expect(textOf(result)).toContain("number cleared is unknown");
+        expect(textOf(result)).toContain("1 of 1 deletion requests completed");
+        expect(textOf(result)).toContain("Read the storage");
+        expect(JSON.stringify(result)).not.toContain("-1 cookies");
+    });
+
+    it("reports completed cookie deletions when the final count fails", async () => {
+        const { fake, runtime } = setup();
+        let reads = 0;
+
+        fake.respond = (tab, method) => {
+            if (method === "Runtime.evaluate") return { result: { value: "https://a.example/p" } };
+
+            if (method === "Network.getCookies") {
+                reads += 1;
+                if (reads === 2) throw new Error("private browser details");
+
+                return { cookies: [{ name: "a", domain: "a.example", path: "/" }] };
+            }
+
+            return {};
+        };
+
+        const result = await runTool(storageWrite, { kind: "cookies", action: "clear", confirm: true }, extra(), runtime);
+
+        expect(result.isError).toBe(true);
+        expect(textOf(result)).toContain("1 of 1");
+        expect(textOf(result)).toContain("Read the storage");
+        expect(textOf(result)).not.toContain("private browser details");
+    });
+
+    it("reports completed deletes when clearing cookies fails", async () => {
+        const { fake, runtime } = setup();
+        let deletes = 0;
+
+        fake.respond = (tab, method) => {
+            if (method === "Runtime.evaluate") return { result: { value: "https://a.example/p" } };
+            if (method === "Network.getCookies") return { cookies: [
+                { name: "a", domain: "a.example", path: "/" },
+                { name: "b", domain: "a.example", path: "/" },
+            ] };
+
+            if (method === "Network.deleteCookies") {
+                deletes += 1;
+                if (deletes === 2) throw new Error("private browser details");
+            }
+
+            return {};
+        };
+
+        const result = await runTool(storageWrite, { kind: "cookies", action: "clear", confirm: true }, extra(), runtime);
+
+        expect(result.isError).toBe(true);
+        expect(textOf(result)).toContain("after 1 of 2");
+        expect(textOf(result)).toContain("Read the storage");
+        expect(textOf(result)).not.toContain("private browser details");
     });
 
     it("fails a cookie clear when the cookie list cannot be read", async () => {

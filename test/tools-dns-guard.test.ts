@@ -1,6 +1,6 @@
 import type { RequestHandlerExtra } from "@modelcontextprotocol/sdk/shared/protocol.js";
 import type { ServerNotification, ServerRequest } from "@modelcontextprotocol/sdk/types.js";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { Config } from "../src/config/index.js";
 import { newTab, pageNavigate, runTool, ToolRuntime } from "../src/tools/index.js";
 import { managedConfig } from "./helpers/daemon-env.js";
@@ -56,6 +56,79 @@ describe("a public name that resolves to a private address", () => {
         expect(result.isError).toBe(true);
         expect(text(result)).toContain("resolves to a local or private network address");
         expect(fake.sent.some((call) => call.method === "Page.navigate")).toBe(false);
+    });
+
+    it.each(["back", "forward"] as const)("refuses a %s history entry that resolves to a private address", async (action) => {
+        const { fake, runtime } = setup(guarded(), async () => ["10.1.2.3"]);
+
+        await runTool(newTab, {}, extra(), runtime);
+        fake.respond = (_tab, method) => method === "Page.getNavigationHistory" ? {
+            currentIndex: action === "back" ? 1 : 0,
+            entries     : action === "back" ? [
+                { id: 1, url: "https://rebind.example/", title: "old" },
+                { id: 2, url: "about:blank", title: "current" },
+            ] : [
+                { id: 2, url: "about:blank", title: "current" },
+                { id: 1, url: "https://rebind.example/", title: "old" },
+            ],
+        } : {};
+        fake.sent.length = 0;
+        const result = await runTool(pageNavigate, { action, waitUntil: "none" }, extra(), runtime);
+
+        expect(result.isError).toBe(true);
+        expect(text(result)).toContain("resolves to a local or private network address");
+        expect(fake.sent.some((call) => call.method === "Page.navigateToHistoryEntry")).toBe(false);
+    });
+
+    it("refuses a selected history entry that resolves to a private address", async () => {
+        const { fake, runtime } = setup(guarded(), async () => ["10.1.2.3"]);
+
+        await runTool(newTab, {}, extra(), runtime);
+        fake.respond = () => ({
+            currentIndex: 1,
+            entries     : [
+                { id: 1, url: "https://rebind.example/", title: "old" },
+                { id: 2, url: "about:blank", title: "current" },
+            ],
+        });
+        fake.sent.length = 0;
+        const result = await runTool(pageNavigate, {
+            action: "history", historyIndex: 0, waitUntil: "none",
+        }, extra(), runtime);
+
+        expect(result.isError).toBe(true);
+        expect(fake.sent.some((call) => call.method === "Page.navigateToHistoryEntry")).toBe(false);
+    });
+
+    it("times out while resolving a history entry without navigating later", async () => {
+        let release: (addresses: string[]) => void = () => undefined;
+        const lookup = new Promise<string[]>((resolve) => { release = resolve; });
+        const { fake, runtime } = setup(guarded(), () => lookup);
+
+        await runTool(newTab, {}, extra(), runtime);
+        fake.respond = () => ({
+            currentIndex: 1,
+            entries     : [
+                { id: 1, url: "https://pending.example/", title: "old" },
+                { id: 2, url: "about:blank", title: "current" },
+            ],
+        });
+        fake.sent.length = 0;
+        let finished = false;
+        const pending = runTool(pageNavigate, { action: "back", waitUntil: "none", timeoutMs: 20 }, extra(), runtime)
+            .then((result) => { finished = true;
+
+                return result; });
+
+        try {
+            await vi.waitFor(() => expect(finished).toBe(true), { timeout: 250, interval: 10 });
+            expect((await pending).isError).toBe(true);
+        } finally {
+            release(["93.184.216.34"]);
+            await pending;
+        }
+
+        expect(fake.sent.some((call) => call.method === "Page.navigateToHistoryEntry")).toBe(false);
     });
 
     it("is refused when one of several addresses is private", async () => {

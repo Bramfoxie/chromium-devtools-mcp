@@ -388,9 +388,12 @@ export class ClientSession {
         try {
             targets = await this.backend.listTargets();
         } catch (error) {
+            this.ensureOpen();
+
             throw translate(error);
         }
 
+        this.ensureOpen();
         const result: TabInfo[] = [];
 
         for (const target of targets) {
@@ -417,6 +420,8 @@ export class ClientSession {
 
             return result;
         } catch (error) {
+            this.assertCurrent(targetId, tab);
+
             throw translate(error);
         }
     }
@@ -429,6 +434,8 @@ export class ClientSession {
         try {
             targets = await this.backend.listTargets();
         } catch (error) {
+            this.assertCurrent(openerId, opener);
+
             throw translate(error);
         }
 

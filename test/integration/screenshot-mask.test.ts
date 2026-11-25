@@ -5,6 +5,23 @@ import { chromeAvailable, eventually, html, startEnv, type Env } from "./browser
 const present = chromeAvailable();
 let env: Env;
 
+async function expectRedPixel(tab: string, x: number, y: number, width: number, height: number) {
+    const result = await env.client.callTool({
+        name: "screenshot", arguments: { tab, format: "png", clip: { x: 0, y: 0, width, height } },
+    });
+    const image = (result.content as Array<{ type: string; data?: string }>)
+        .find((entry) => entry.type === "image");
+
+    expect(result.isError, JSON.stringify(result.content)).not.toBe(true);
+    const { data, info } = await sharp(Buffer.from(image?.data ?? "", "base64"))
+        .removeAlpha().raw().toBuffer({ resolveWithObject: true });
+    const offset = (y * info.width + x) * info.channels;
+
+    expect(data[offset]).toBeGreaterThan(245);
+    expect(data[offset + 1]).toBeLessThan(10);
+    expect(data[offset + 2]).toBeLessThan(10);
+}
+
 beforeAll(async () => {
     if (!present) return;
 
@@ -44,6 +61,330 @@ beforeAll(async () => {
 afterAll(async () => { await env?.stop(); });
 
 describe.skipIf(!present)("password masking in a real browser", () => {
+    it("covers explicitly selected elements without changing the page", async () => {
+        env.fixture.pages.set("/selected-mask", html(`<style>body { margin: 0; background: white }
+            #private { position: absolute; left: 10px; top: 10px; width: 50px; height: 30px; background: red }</style>
+            <div id="private">Sensitive text</div>`));
+        const tab = await env.open("/selected-mask");
+        const result = await env.client.callTool({
+            name     : "screenshot", arguments: {
+                tab, format      : "png", clip        : { x: 0, y: 0, width: 100, height: 100 },
+                maskElements: [{ selector: "#private" }],
+            },
+        });
+        const image = (result.content as Array<{ type: string; data?: string }>)
+            .find((entry) => entry.type === "image");
+
+        expect(result.isError, JSON.stringify(result.content)).not.toBe(true);
+        expect(result.structuredContent).toMatchObject({ maskedElements: 1, maskIncomplete: true });
+        const { data, info } = await sharp(Buffer.from(image?.data ?? "", "base64"))
+            .removeAlpha().raw().toBuffer({ resolveWithObject: true });
+
+        expect(data[(20 * info.width + 20) * info.channels]).toBeLessThan(10);
+        expect(data[(80 * info.width + 80) * info.channels]).toBeGreaterThan(245);
+    });
+
+    it("covers a selected element in a cross site frame", async () => {
+        const tab = await env.open("/mask");
+
+        await eventually(async () => {
+            const snapshot = await env.ok("dom_snapshot", { tab });
+            const frames = snapshot.frames as Array<{ isolated?: boolean }>;
+
+            return frames.some((frame) => frame.isolated === true) ? true : undefined;
+        });
+        const result = await env.client.callTool({
+            name     : "screenshot", arguments: {
+                tab, format      : "png", clip        : { x: 0, y: 0, width: 260, height: 200 },
+                maskElements: [{ selector: "input", frame: "iframe" }],
+            },
+        });
+        const image = (result.content as Array<{ type: string; data?: string }>)
+            .find((entry) => entry.type === "image");
+
+        expect(result.isError, JSON.stringify(result.content)).not.toBe(true);
+        expect(result.structuredContent).toMatchObject({ maskedElements: 1 });
+        const { data, info } = await sharp(Buffer.from(image?.data ?? "", "base64"))
+            .removeAlpha().raw().toBuffer({ resolveWithObject: true });
+
+        expect(data[(120 * info.width + 120) * info.channels]).toBeLessThan(10);
+    });
+
+    it("does not invoke page overrides while measuring selected elements", async () => {
+        env.fixture.pages.set("/mask-overrides", html(`<div id="private">secret</div><script>
+            window.sideEffects = 0;
+            const original = Document.prototype.createRange;
+            Document.prototype.createRange = function() { window.sideEffects++; return original.call(this); };
+        </script>`));
+        const tab = await env.open("/mask-overrides");
+        const result = await env.client.callTool({
+            name: "screenshot", arguments: { tab, maskElements: [{ selector: "#private" }] },
+        });
+        const count = await env.ok("js_evaluate", { tab, expression: "window.sideEffects" });
+
+        expect(result.isError, JSON.stringify(result.content)).not.toBe(true);
+        expect(count.value).toBe(0);
+    });
+
+    it.each(["closed shadow", "pseudo element"])("does not expose overflow from %s", async (kind) => {
+        const contents = kind === "closed shadow"
+            ? `<div id="private"></div><script>
+                document.querySelector('#private').attachShadow({mode:'closed'}).innerHTML =
+                  '<span style="position:absolute;left:50px;top:0;width:20px;height:20px;background:red"></span>';
+              </script>`
+            : `<style>#private::after { content: ''; position: absolute; left: 50px; top: 0;
+                  width: 20px; height: 20px; background: red }</style><div id="private"></div>`;
+
+        env.fixture.pages.set("/mask-special", html(`<style>body { margin: 0; background: white }
+            #private { position: absolute; left: 10px; top: 10px; width: 20px; height: 20px }</style>${contents}`));
+        const tab = await env.open("/mask-special");
+        const result = await env.client.callTool({
+            name     : "screenshot", arguments: {
+                tab, format      : "png", clip        : { x: 0, y: 0, width: 100, height: 100 },
+                maskElements: [{ selector: "#private" }],
+            },
+        });
+        const image = (result.content as Array<{ type: string; data?: string }>)
+            .find((entry) => entry.type === "image");
+
+        if (result.isError) {
+            expect(image).toBeUndefined();
+
+            return;
+        }
+
+        const { data, info } = await sharp(Buffer.from(image?.data ?? "", "base64"))
+            .removeAlpha().raw().toBuffer({ resolveWithObject: true });
+
+        expect(data[(20 * info.width + 70) * info.channels]).toBeLessThan(10);
+    });
+
+    it.each(["wide", "deep"])("refuses a %s element tree beyond the mask limit", async (shape) => {
+        env.fixture.pages.set("/mask-large", html(`<div id="private"></div><script>
+            let parent = document.querySelector('#private');
+            for (let i = 0; i < 5100; i++) {
+              const child = document.createElement('span');
+              parent.appendChild(child);
+              if (${JSON.stringify(shape)} === 'deep') parent = child;
+            }
+        </script>`));
+        const tab = await env.open("/mask-large");
+        const result = await env.client.callTool({
+            name: "screenshot", arguments: { tab, maskElements: [{ selector: "#private" }] },
+        });
+
+        expect(result.isError).toBe(true);
+        expect((result.content as Array<{ type: string }>).some((item) => item.type === "image")).toBe(false);
+    });
+
+    it("does not expose overflow through a pierced same site frame", async () => {
+        env.fixture.pages.set("/pierced-inner", html(`<style>body { margin: 0 }
+            #private { position: absolute; left: 10px; top: 10px; width: 20px; height: 20px }
+            #secret { position: absolute; left: 50px; width: 20px; height: 20px; background: red }</style>
+            <div id="private"><span id="secret"></span></div>`));
+        env.fixture.pages.set("/pierced-outer", html(`<style>body { margin: 0; background: white }
+            iframe { position: absolute; left: 100px; top: 100px; width: 150px; height: 100px; border: 0 }</style>
+            <iframe src="/pierced-inner"></iframe>`));
+        const tab = await env.open("/pierced-outer");
+        const result = await env.client.callTool({
+            name     : "screenshot", arguments: {
+                tab, format      : "png", clip        : { x: 0, y: 0, width: 300, height: 250 },
+                maskElements: [{ selector: "#private", pierce: true }],
+            },
+        });
+        const image = (result.content as Array<{ type: string; data?: string }>)
+            .find((entry) => entry.type === "image");
+
+        expect(result.isError, JSON.stringify(result.content)).not.toBe(true);
+
+        const { data, info } = await sharp(Buffer.from(image?.data ?? "", "base64"))
+            .removeAlpha().raw().toBuffer({ resolveWithObject: true });
+
+        expect(data[(120 * info.width + 170) * info.channels]).toBeLessThan(10);
+    });
+
+    it("does not return an unsafe mask for a uid in a same site frame", async () => {
+        env.fixture.pages.set("/uid-inner", html(`<style>body { margin: 0 }
+            #private { position: absolute; left: 10px; top: 10px; width: 20px; height: 20px }
+            #secret { position: absolute; left: 50px; width: 20px; height: 20px; background: red }</style>
+            <div id="private"><span id="secret"></span></div>`));
+        env.fixture.pages.set("/uid-outer", html(`<style>body { margin: 0 }
+            iframe { position: absolute; left: 100px; top: 100px; width: 150px; height: 100px; border: 0 }</style>
+            <iframe src="/uid-inner"></iframe>`));
+        const tab = await env.open("/uid-outer");
+        const query = await env.ok("dom_query", { tab, selector: "#private", frame: "iframe" });
+        const uid = String((query.matches as Array<{ uid: string }>)[0]?.uid);
+        const result = await env.client.callTool({
+            name     : "screenshot", arguments: {
+                tab, format      : "png", clip        : { x: 0, y: 0, width: 300, height: 250 },
+                maskElements: [{ uid }],
+            },
+        });
+        const image = (result.content as Array<{ type: string; data?: string }>)
+            .find((entry) => entry.type === "image");
+
+        expect(result.isError, JSON.stringify(result.content)).not.toBe(true);
+
+        const { data, info } = await sharp(Buffer.from(image?.data ?? "", "base64"))
+            .removeAlpha().raw().toBuffer({ resolveWithObject: true });
+
+        expect(data[(120 * info.width + 170) * info.channels]).toBeLessThan(10);
+    });
+
+    it("covers overflow inside an offset same site frame", async () => {
+        env.fixture.pages.set("/same-mask-inner", html(`<style>body { margin: 0 }
+            #private { position: absolute; left: 10px; top: 10px; width: 20px; height: 20px }
+            #secret { position: absolute; left: 50px; top: 0; width: 20px; height: 20px; background: red }</style>
+            <div id="private"><span id="secret"></span></div>`));
+        env.fixture.pages.set("/same-mask-outer", html(`<style>body { margin: 0; background: white }
+            iframe { position: absolute; left: 100px; top: 100px; width: 150px; height: 100px; border: 0 }</style>
+            <iframe src="/same-mask-inner"></iframe>`));
+        const tab = await env.open("/same-mask-outer");
+        const result = await env.client.callTool({
+            name     : "screenshot", arguments: {
+                tab, format      : "png", clip        : { x: 0, y: 0, width: 300, height: 250 },
+                maskElements: [{ selector: "#private", frame: "iframe" }],
+            },
+        });
+        const image = (result.content as Array<{ type: string; data?: string }>)
+            .find((entry) => entry.type === "image");
+
+        expect(result.isError, JSON.stringify(result.content)).not.toBe(true);
+
+        const { data, info } = await sharp(Buffer.from(image?.data ?? "", "base64"))
+            .removeAlpha().raw().toBuffer({ resolveWithObject: true });
+
+        expect(data[(120 * info.width + 170) * info.channels]).toBeLessThan(10);
+    });
+
+    it("covers overflow through nested same site frames", async () => {
+        env.fixture.pages.set("/nested-local-leaf", html(`<style>body { margin: 0 }
+            #private { position: absolute; left: 10px; top: 10px; width: 20px; height: 20px }
+            #secret { position: absolute; left: 50px; width: 20px; height: 20px; background: red }</style>
+            <div id="private"><span id="secret"></span></div>`));
+        env.fixture.pages.set("/nested-local-middle", html(`<style>body { margin: 0 }
+            iframe { position: absolute; left: 30px; top: 30px; width: 150px; height: 100px; border: 0 }</style>
+            <iframe src="/nested-local-leaf"></iframe>`));
+        env.fixture.pages.set("/nested-local-outer", html(`<style>body { margin: 0; background: white }
+            iframe { position: absolute; left: 100px; top: 100px; width: 220px; height: 180px; border: 0 }</style>
+            <iframe src="/nested-local-middle"></iframe>`));
+        const tab = await env.open("/nested-local-outer");
+        const snap = await env.ok("dom_snapshot", { tab });
+        const frame = (snap.frames as Array<{ frameId: string; url: string }>)
+            .find((item) => item.url.endsWith("/nested-local-leaf"));
+
+        expect(frame).toBeDefined();
+        await expectRedPixel(tab, 200, 150, 350, 300);
+        const result = await env.client.callTool({
+            name     : "screenshot", arguments: {
+                tab, format      : "png", clip        : { x: 0, y: 0, width: 350, height: 300 },
+                maskElements: [{ selector: "#private", frame: frame?.frameId }],
+            },
+        });
+        const image = (result.content as Array<{ type: string; data?: string }>)
+            .find((entry) => entry.type === "image");
+
+        expect(result.isError, JSON.stringify(result.content)).not.toBe(true);
+        const { data, info } = await sharp(Buffer.from(image?.data ?? "", "base64"))
+            .removeAlpha().raw().toBuffer({ resolveWithObject: true });
+
+        for (const [x, y] of [[192, 142], [200, 150], [208, 158]] as const) {
+            expect(data[(y * info.width + x) * info.channels]).toBeLessThan(10);
+        }
+    });
+
+    it("covers overflow inside a scrolled same site frame", async () => {
+        env.fixture.pages.set("/scroll-local-inner", html(`<style>body { margin: 0; height: 2000px }
+            #private { position: absolute; left: 10px; top: 240px; width: 20px; height: 20px }
+            #secret { position: absolute; left: 50px; width: 20px; height: 20px; background: red }</style>
+            <div id="private"><span id="secret"></span></div><script>scrollTo(0, 200)</script>`));
+        env.fixture.pages.set("/scroll-local-outer", html(`<style>body { margin: 0; background: white }
+            iframe { position: absolute; left: 100px; top: 100px; width: 150px; height: 100px; border: 0 }</style>
+            <iframe src="/scroll-local-inner"></iframe>`));
+        const tab = await env.open("/scroll-local-outer");
+
+        await expectRedPixel(tab, 170, 150, 300, 250);
+        const result = await env.client.callTool({
+            name     : "screenshot", arguments: {
+                tab, format      : "png", clip        : { x: 0, y: 0, width: 300, height: 250 },
+                maskElements: [{ selector: "#private", frame: "iframe" }],
+            },
+        });
+        const image = (result.content as Array<{ type: string; data?: string }>)
+            .find((entry) => entry.type === "image");
+
+        expect(result.isError, JSON.stringify(result.content)).not.toBe(true);
+        const { data, info } = await sharp(Buffer.from(image?.data ?? "", "base64"))
+            .removeAlpha().raw().toBuffer({ resolveWithObject: true });
+
+        for (const [x, y] of [[162, 142], [170, 150], [178, 158]] as const) {
+            expect(data[(y * info.width + x) * info.channels]).toBeLessThan(10);
+        }
+    });
+
+    it.each(["zoom", "rotated ancestor"])("refuses ambiguous %s frame geometry", async (kind) => {
+        env.fixture.pages.set("/ambiguous-inner", html('<div id="private" style="width:20px;height:20px">secret</div>'));
+        const style = kind === "zoom" ? "zoom:1.1" : "transform:rotate(10deg)";
+
+        env.fixture.pages.set("/ambiguous-outer", html(`<div style="${style}"><iframe src="/ambiguous-inner"></iframe></div>`));
+        const tab = await env.open("/ambiguous-outer");
+        const result = await env.client.callTool({
+            name: "screenshot", arguments: { tab, maskElements: [{ selector: "#private", frame: "iframe" }] },
+        });
+
+        expect(result.isError).toBe(true);
+        expect((result.content as Array<{ type: string }>).some((item) => item.type === "image")).toBe(false);
+    });
+
+    it("refuses a scaled same site frame", async () => {
+        env.fixture.pages.set("/scaled-inner", html('<div id="private" style="width:20px;height:20px">secret</div>'));
+        env.fixture.pages.set("/scaled-outer", html('<iframe style="transform:scale(1.1)" src="/scaled-inner"></iframe>'));
+        const tab = await env.open("/scaled-outer");
+        const result = await env.client.callTool({
+            name: "screenshot", arguments: { tab, maskElements: [{ selector: "#private", frame: "iframe" }] },
+        });
+
+        expect(result.isError).toBe(true);
+        expect((result.content as Array<{ type: string }>).some((item) => item.type === "image")).toBe(false);
+    });
+
+    it("does not expose a child outside the selected element box", async () => {
+        env.fixture.pages.set("/overflow-mask", html(`<style>body { margin: 0; background: white }
+            #private { position: absolute; left: 10px; top: 10px; width: 20px; height: 20px }
+            #secret { position: absolute; left: 50px; top: 0; width: 20px; height: 20px; background: red }</style>
+            <div id="private"><span id="secret"></span></div>`));
+        const tab = await env.open("/overflow-mask");
+        const result = await env.client.callTool({
+            name     : "screenshot", arguments: {
+                tab, format      : "png", clip        : { x: 0, y: 0, width: 100, height: 100 },
+                maskElements: [{ selector: "#private" }],
+            },
+        });
+        const image = (result.content as Array<{ type: string; data?: string }>)
+            .find((entry) => entry.type === "image");
+
+        if (result.isError) {
+            expect(image).toBeUndefined();
+
+            return;
+        }
+
+        const { data, info } = await sharp(Buffer.from(image?.data ?? "", "base64"))
+            .removeAlpha().raw().toBuffer({ resolveWithObject: true });
+
+        expect(data[(20 * info.width + 70) * info.channels]).toBeLessThan(10);
+    });
+
+    it("does not return an image when a selected element is missing", async () => {
+        const tab = await env.open("/mask");
+        const result = await env.client.callTool({
+            name: "screenshot", arguments: { tab, maskElements: [{ selector: "#missing" }] },
+        });
+
+        expect(result.isError).toBe(true);
+        expect((result.content as Array<{ type: string }>).some((item) => item.type === "image")).toBe(false);
+    });
+
     it("covers fields in the main document, a closed shadow root and a cross site frame", async () => {
         const tab = await env.open("/mask");
 
@@ -116,7 +457,7 @@ describe.skipIf(!present)("password masking in a real browser", () => {
         });
 
         expect(result.isError).toBe(true);
-        expect(JSON.stringify(result.content)).toContain("Password masking could not cover");
+        expect(JSON.stringify(result.content)).toContain("Screenshot masking could not cover");
         expect((result.content as Array<{ type: string }>).some((entry) => entry.type === "image"))
             .toBe(false);
     });

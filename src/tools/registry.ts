@@ -46,7 +46,11 @@ export function toolAnnotations(tool: AnyTool): {
 }
 
 function raceWithSignal<T>(work: Promise<T>, signal: AbortSignal, message: string): Promise<T> {
-    if (signal.aborted) return Promise.reject(new ToolError(message));
+    if (signal.aborted) {
+        void work.then(undefined, () => {});
+
+        return Promise.reject(new ToolError(message));
+    }
 
     return new Promise<T>((resolve, reject) => {
         const onAbort = () => reject(new ToolError(message));
@@ -143,7 +147,7 @@ async function runToolUnaudited(
             tool.handler(parsed.data, runtime.context(extra.signal, admission.confirmed)),
             extra.signal,
             accessFor(tool, parsed.data) === "mutate"
-                ? CANCELLED_MUTATING_MESSAGE
+                ? tool.cancelledMessage ?? CANCELLED_MUTATING_MESSAGE
                 : CANCELLED_MESSAGE,
         );
         const validated = tool.output.safeParse(output);

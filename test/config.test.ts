@@ -380,6 +380,9 @@ describe("wsEndpoint", () => {
     it.each([
         "ws://localhost:9222/devtools/browser/abc",
         "ws://[::1]:9222/devtools/browser/abc",
+        "ws://127.0.0.1:80/devtools/browser/abc",
+        "ws://localhost:080/devtools/browser/abc",
+        "ws://[::1]:80/devtools/browser/abc",
     ])("accepts the loopback endpoint %s", (value) => {
         expect(loadConfig({ ...withFile(undefined), argv: [`--ws-endpoint=${value}`] }).wsEndpoint).toBe(
             value,
@@ -398,6 +401,8 @@ describe("wsEndpoint", () => {
         "ws://user:pass@127.0.0.1:9222/devtools/browser/abc",
         "ws://127.0.0.1:9222/devtools/browser/abc?x=1",
         "ws://127.0.0.1:9222/devtools/browser/abc#x",
+        "ws://user:pass@127.0.0.1:80/devtools/browser/abc",
+        "ws://127.0.0.1:80/devtools/browser/abc?x=1",
     ])("rejects the endpoint %s", (value) => {
         expect(() =>
             loadConfig({ ...withFile(undefined), argv: [`--ws-endpoint=${value}`] }),

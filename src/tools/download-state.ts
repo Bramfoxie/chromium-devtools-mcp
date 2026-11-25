@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { DaemonAccess } from "../mcp/index.js";
 import { redactUrl } from "./capture/redact.js";
 import { parseEnvelope } from "./cdp-envelope.js";
+import { ToolError } from "./errors.js";
 
 export type DownloadStatus = "inProgress" | "completed" | "canceled";
 
@@ -18,13 +19,16 @@ export interface DownloadItem {
 }
 
 interface Entry extends DownloadItem {
-    delivered: boolean;
+    delivered : boolean;
+    directory?: string;
 }
 
 interface TabDownloads {
-    directory?: string;
-    entries   : Map<string, Entry>;
-    waiters   : Set<() => void>;
+    directory? : string;
+    entries    : Map<string, Entry>;
+    waiters    : Set<() => void>;
+    changing?  : boolean;
+    transition?: boolean;
 }
 
 export interface DownloadFiles {
@@ -75,7 +79,7 @@ export class DownloadState {
     private readonly tabs = new Map<string, TabDownloads>();
     private readonly subscribed = new Map<string, Set<string>>();
     private attached = false;
-    private locating: Promise<void> = Promise.resolve();
+    private readonly locating = new Map<string, Promise<void>>();
 
     constructor(
         private readonly access: DaemonAccess,
@@ -91,20 +95,44 @@ export class DownloadState {
     }
 
     async subscribe(tab: string): Promise<void> {
+        const state = this.state(tab);
         const done = this.subscribed.get(tab) ?? new Set<string>();
+
+        this.subscribed.set(tab, done);
 
         for (const event of EVENTS) {
             if (done.has(event)) continue;
 
             await this.access.subscribe(tab, event);
+            if (this.tabs.get(tab) !== state) return;
+
             done.add(event);
         }
-
-        this.subscribed.set(tab, done);
     }
 
     allow(tab: string, directory: string): void {
         this.state(tab).directory = directory;
+    }
+
+    beginChange(tab: string): {
+        current   : () => boolean;
+        transition: () => void;
+        end       : () => void;
+    } | undefined {
+        const state = this.state(tab);
+
+        if (state.changing) return undefined;
+
+        state.changing = true;
+
+        return {
+            current   : () => this.tabs.get(tab) === state,
+            transition: () => { state.transition = true; },
+            end       : () => {
+                delete state.changing;
+                delete state.transition;
+            },
+        };
     }
 
     deny(tab: string): void {
@@ -147,7 +175,7 @@ export class DownloadState {
                 for (const wake of [...state.waiters]) wake();
             });
 
-            while (found === undefined && !expired) {
+            while (found === undefined && !expired && this.tabs.get(tab) === state) {
                 await new Promise<void>((resolve) => {
                     const wake = (): void => {
                         state.waiters.delete(wake);
@@ -160,25 +188,52 @@ export class DownloadState {
             }
         }
 
-        if (found === undefined) return undefined;
-
-        if (found.state === "completed" && found.path === undefined) {
-            await this.locate(state, found);
+        if (this.tabs.get(tab) !== state) {
+            throw new ToolError("The tab closed or the session reset while waiting for a download.");
         }
 
+        if (found === undefined) return undefined;
+
         found.delivered = true;
+
+        if (found.state === "completed" && found.path === undefined) {
+            let wake: () => void = () => undefined;
+            const closed = new Promise<void>((resolve) => {
+                wake = () => {
+                    if (this.tabs.get(tab) !== state) resolve();
+                };
+
+                state.waiters.add(wake);
+            });
+
+            try {
+                await Promise.race([this.queueLocate(state, found), closed]);
+            } finally {
+                state.waiters.delete(wake);
+            }
+        }
+
+        if (this.tabs.get(tab) !== state) {
+            throw new ToolError("The tab closed or the session reset while waiting for a download.");
+        }
 
         return publicItem(found);
     }
 
     forget(tab: string): void {
+        const state = this.tabs.get(tab);
+
         this.tabs.delete(tab);
         this.subscribed.delete(tab);
+        if (state !== undefined) for (const wake of [...state.waiters]) wake();
     }
 
     reset(): void {
+        const states = [...this.tabs.values()];
+
         this.tabs.clear();
         this.subscribed.clear();
+        for (const state of states) for (const wake of [...state.waiters]) wake();
     }
 
     private state(tab: string): TabDownloads {
@@ -210,6 +265,9 @@ export class DownloadState {
                 state        : "inProgress",
                 receivedBytes: 0,
                 delivered    : false,
+                ...(state.directory === undefined || state.transition
+                    ? {}
+                    : { directory: state.directory }),
             });
 
             return;
@@ -228,13 +286,29 @@ export class DownloadState {
         if (parsed.data.totalBytes > 0) entry.totalBytes = parsed.data.totalBytes;
 
         if (entry.state === "completed") {
-            const turn = this.locating.then(() => this.locate(state, entry));
-
-            this.locating = turn.catch(() => undefined);
-            await turn;
+            await this.queueLocate(state, entry);
         }
 
         if (entry.state !== "inProgress") for (const wake of [...state.waiters]) wake();
+    }
+
+    private queueLocate(state: TabDownloads, entry: Entry): Promise<void> {
+        const directory = entry.directory;
+
+        if (directory === undefined) return Promise.resolve();
+
+        const turn = (this.locating.get(directory) ?? Promise.resolve()).then(() =>
+            entry.path === undefined
+                ? this.locate(state, entry, directory)
+                : undefined);
+        const next = turn.catch(() => undefined);
+
+        this.locating.set(directory, next);
+        void next.then(() => {
+            if (this.locating.get(directory) === next) this.locating.delete(directory);
+        });
+
+        return turn;
     }
 
     private async choose(
@@ -259,10 +333,7 @@ export class DownloadState {
         return free.includes(exact) ? exact : free.length === 1 ? free[0] : undefined;
     }
 
-    private async locate(state: TabDownloads, entry: Entry): Promise<void> {
-        if (state.directory === undefined) return;
-
-        const directory = state.directory;
+    private async locate(state: TabDownloads, entry: Entry, directory: string): Promise<void> {
         let chosen: string | undefined | null;
 
         for (let attempt = 0; chosen === undefined && attempt < LOCATE_ATTEMPTS; attempt += 1) {

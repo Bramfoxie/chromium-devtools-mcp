@@ -32,6 +32,222 @@ function emit(
 }
 
 describe("FrameState", () => {
+    it("invalidates a frame generation when refresh finds a changed URL", async () => {
+        const { fake, frames } = setup();
+        const navigated: Array<[string, string, boolean]> = [];
+
+        frames.onNavigated((tab, frame, main) => navigated.push([tab, frame, main]));
+        await frames.ensure("tab1");
+        fake.frames[1] = {
+            frameId: "cross", parentFrameId: "main", url: "https://new.example/", name: "pay", isolated: true,
+        };
+        await frames.refresh("tab1");
+        expect(frames.generation("tab1", "cross")).toBe(1);
+        expect(navigated).toEqual([["tab1", "cross", false]]);
+        await frames.refresh("tab1");
+        expect(frames.generation("tab1", "cross")).toBe(1);
+        expect(navigated).toHaveLength(1);
+    });
+
+    it("observes frame navigation during the initial tree read", async () => {
+        const { fake, frames } = setup();
+        const list = fake.listFrames.bind(fake);
+        let first = true;
+
+        fake.listFrames = async (tab) => {
+            const result = await list(tab);
+
+            if (first) {
+                first = false;
+                fake.frames[0] = { frameId: "main", url: "https://new.example/", name: "", isolated: false };
+
+                if (fake.subscribed.some((item) => item.event === "Page.frameNavigated")) {
+                    emit(fake, "Page.frameNavigated", { frame: { id: "main", url: "https://new.example/" } });
+                }
+            }
+
+            return result;
+        };
+
+        await frames.ensure("tab1");
+        expect(frames.frameOf("tab1", "main")?.url).toBe("https://new.example/");
+    });
+
+    it("stops retrying when frame events keep changing the tree", async () => {
+        const { fake, frames } = setup();
+        const list = fake.listFrames.bind(fake);
+        let calls = 0;
+
+        fake.listFrames = async (tab) => {
+            calls += 1;
+            const result = await list(tab);
+
+            emit(fake, "Page.frameNavigated", { frame: { id: "main", url: "https://new.example/" } });
+
+            return result;
+        };
+
+        await expect(frames.ensure("tab1")).rejects.toThrow("The frame tree kept changing");
+        expect(calls).toBe(3);
+        expect(frames.ensured("tab1")).toBe(false);
+    });
+
+    it("keeps the complete initial tree when a frame attaches during discovery", async () => {
+        const { fake, frames } = setup();
+        const list = fake.listFrames.bind(fake);
+        let release: () => void = () => undefined;
+        let first = true;
+        const gate = new Promise<void>((resolve) => (release = resolve));
+
+        fake.listFrames = async (tab) => {
+            const result = await list(tab);
+
+            if (first) {
+                first = false;
+                await gate;
+            }
+
+            return result;
+        };
+
+        const pending = frames.ensure("tab1");
+
+        await Promise.resolve();
+        fake.frames.push({ frameId: "late", parentFrameId: "main", url: "", name: "", isolated: false });
+        emit(fake, "Page.frameAttached", { frameId: "late", frame: { id: "late", parentId: "main" } });
+        release();
+        await pending;
+        expect(frames.framesOf("tab1").map((item) => item.frameId).sort()).toEqual([
+            "cross", "late", "main",
+        ]);
+    });
+
+    it("does not overwrite a frame navigation event with an older tree", async () => {
+        const { fake, frames } = setup();
+
+        await frames.ensure("tab1");
+        const list = fake.listFrames.bind(fake);
+        let release: () => void = () => undefined;
+        const gate = new Promise<void>((resolve) => (release = resolve));
+
+        fake.listFrames = async (tab) => {
+            const result = await list(tab);
+
+            await gate;
+
+            return result;
+        };
+
+        const pending = frames.refresh("tab1");
+
+        await Promise.resolve();
+        fake.frames[0] = { frameId: "main", url: "https://new.example/", name: "", isolated: false };
+        emit(fake, "Page.frameNavigated", { frame: { id: "main", url: "https://new.example/" } });
+        release();
+        await pending;
+        expect(frames.frameOf("tab1", "main")?.url).toBe("https://new.example/");
+    });
+
+    it("does not replace a newer frame tree with a late older refresh", async () => {
+        const { fake, frames } = setup();
+
+        await frames.ensure("tab1");
+        let release: () => void = () => undefined;
+        let calls = 0;
+        const gate = new Promise<void>((resolve) => (release = resolve));
+
+        fake.listFrames = async () => {
+            calls += 1;
+
+            if (calls === 1) {
+                await gate;
+
+                return [{ frameId: "old", url: "https://old.example/", name: "", isolated: false }];
+            }
+
+            return [{ frameId: "new", url: "https://new.example/", name: "", isolated: false }];
+        };
+
+        const older = frames.refresh("tab1");
+
+        await frames.refresh("tab1");
+        release();
+        await older;
+        expect(frames.framesOf("tab1").map((item) => item.frameId)).toEqual(["new"]);
+    });
+
+    it.each(["forget", "reset"])("rejects a late refresh after %s", async (action) => {
+        const { fake, frames } = setup();
+
+        await frames.ensure("tab1");
+        const list = fake.listFrames.bind(fake);
+        let release: () => void = () => undefined;
+        const gate = new Promise<void>((resolve) => (release = resolve));
+
+        fake.listFrames = async (tab) => {
+            const result = await list(tab);
+
+            await gate;
+
+            return result;
+        };
+
+        const pending = frames.refresh("tab1");
+
+        if (action === "forget") frames.forget("tab1");
+        else frames.reset();
+
+        release();
+        await expect(pending).rejects.toThrow("The tab closed or the session reset while loading frames.");
+        expect(frames.framesOf("tab1")).toEqual([]);
+    });
+
+    it.each(["forget", "reset"])("rejects a late frame subscription after %s", async (action) => {
+        const { fake, frames } = setup();
+        let release: () => void = () => undefined;
+        const gate = new Promise<void>((resolve) => (release = resolve));
+
+        fake.subscribe = async () => gate;
+        const pending = frames.ensure("tab1");
+
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        if (action === "forget") frames.forget("tab1");
+        else frames.reset();
+
+        release();
+        await expect(pending).rejects.toThrow("The tab closed or the session reset while loading frames.");
+        expect(frames.framesOf("tab1")).toEqual([]);
+    });
+
+    it.each(["forget", "reset"])("rejects a late frame tree after %s", async (action) => {
+        const { fake, frames } = setup();
+        const list = fake.listFrames.bind(fake);
+        let release: () => void = () => undefined;
+        let signalStarted: () => void = () => undefined;
+        const gate = new Promise<void>((resolve) => (release = resolve));
+        const started = new Promise<void>((resolve) => (signalStarted = resolve));
+
+        fake.listFrames = async (tab) => {
+            const result = await list(tab);
+
+            signalStarted();
+            await gate;
+
+            return result;
+        };
+
+        const pending = frames.ensure("tab1");
+
+        await started;
+        if (action === "forget") frames.forget("tab1");
+        else frames.reset();
+
+        release();
+        await expect(pending).rejects.toThrow("The tab closed or the session reset while loading frames.");
+        expect(frames.framesOf("tab1")).toEqual([]);
+        expect(fake.subscribed).toHaveLength(FRAME_EVENTS.length);
+    });
+
     it("loads the frame tree and subscribes to frame events once", async () => {
         const { fake, frames } = setup();
 

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { CdpProtocolError, type CdpSession } from "../src/cdp/index.js";
+import { CdpProtocolError, CdpTimeoutError, type CdpSession } from "../src/cdp/index.js";
 import { CHILD_ATTACH_HANDLER_TIMEOUT_MS, CHILD_AUTO_ATTACH_TIMEOUT_MS, ChildTargets, type ChildTargetsDeps } from "../src/daemon/child-targets.js";
 import { MAX_CHILD_ATTACH_DEPTH, MAX_CHILD_SESSIONS_PER_TAB } from "../src/daemon/browser-backend.js";
 
@@ -248,6 +248,97 @@ describe("ChildTargets.attach", () => {
         attach("child1", "child-session-1", peer, "iframe", true);
         await vi.waitFor(() =>
             expect(sent.map((call) => call.method)).toContain("Runtime.runIfWaitingForDebugger"));
+    });
+
+    it("retries a timed out resume for a paused child", async () => {
+        const { sent, peer, deps, attach } = setup();
+        let attempts = 0;
+        const transient: ChildTargetsDeps = {
+            ...deps,
+            send: async (session, method, params, timeoutMs) => {
+                if (method === "Runtime.runIfWaitingForDebugger" && ++attempts === 1) {
+                    throw new CdpTimeoutError(method, timeoutMs ?? 0);
+                }
+
+                return deps.send(session, method, params, timeoutMs);
+            },
+        };
+
+        await ChildTargets.attach(peer, { onDetached: () => undefined }, transient);
+        attach("child1", "child-session-1", peer, "iframe", true);
+        await vi.waitFor(() => expect(attempts).toBe(2));
+        expect(sent.filter((call) => call.method === "Runtime.runIfWaitingForDebugger")).toHaveLength(1);
+    });
+
+    it("stops retrying and reports a repeated resume timeout", async () => {
+        const { peer, deps, attach, log } = setup();
+        let attempts = 0;
+        const unavailable: ChildTargetsDeps = {
+            ...deps,
+            send: async (session, method, params, timeoutMs) => {
+                if (method === "Runtime.runIfWaitingForDebugger") {
+                    attempts += 1;
+
+                    throw new CdpTimeoutError(method, timeoutMs ?? 0);
+                }
+
+                return deps.send(session, method, params, timeoutMs);
+            },
+        };
+
+        await ChildTargets.attach(peer, { onDetached: () => undefined }, unavailable);
+        attach("child1", "child-session-1", peer, "iframe", true);
+        await vi.waitFor(() => expect(log.some((line) => line.includes("could not resume an iframe"))).toBe(true));
+        expect(attempts).toBe(2);
+    });
+
+    it("does not retry a rejected resume command", async () => {
+        const { peer, deps, attach, log } = setup();
+        let attempts = 0;
+        const rejected: ChildTargetsDeps = {
+            ...deps,
+            send: async (session, method, params, timeoutMs) => {
+                if (method === "Runtime.runIfWaitingForDebugger") {
+                    attempts += 1;
+
+                    throw new CdpProtocolError(method, -32000, "rejected");
+                }
+
+                return deps.send(session, method, params, timeoutMs);
+            },
+        };
+
+        await ChildTargets.attach(peer, { onDetached: () => undefined }, rejected);
+        attach("child1", "child-session-1", peer, "iframe", true);
+        await vi.waitFor(() => expect(log.some((line) => line.includes("could not resume an iframe"))).toBe(true));
+        expect(attempts).toBe(1);
+    });
+
+    it("does not retry a timed out resume after the child detaches", async () => {
+        const { peer, deps, attach, emit, log } = setup();
+        let attempts = 0;
+        let reject: (error: Error) => void = () => undefined;
+        const pending = new Promise<never>((_resolve, fail) => (reject = fail));
+        const delayed: ChildTargetsDeps = {
+            ...deps,
+            send: async (session, method, params, timeoutMs) => {
+                if (method === "Runtime.runIfWaitingForDebugger") {
+                    attempts += 1;
+
+                    return pending;
+                }
+
+                return deps.send(session, method, params, timeoutMs);
+            },
+        };
+
+        await ChildTargets.attach(peer, { onDetached: () => undefined }, delayed);
+        attach("child1", "child-session-1", peer, "iframe", true);
+        await vi.waitFor(() => expect(attempts).toBe(1));
+        emit(peer, "Target.detachedFromTarget", { sessionId: "child-session-1" });
+        reject(new CdpTimeoutError("Runtime.runIfWaitingForDebugger", 5000));
+        await vi.waitFor(() => expect(log.some((line) => line.includes("could not resume an iframe"))).toBe(true));
+        expect(attempts).toBe(1);
     });
 
     it("resumes a paused child within the bound when the child hangs", async () => {

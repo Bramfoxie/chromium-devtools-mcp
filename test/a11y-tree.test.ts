@@ -125,12 +125,12 @@ describe("a11yEntries", () => {
         const nodes = [
             node("1", { role: "rootwebarea" }, ["2", "3"]),
             node("2", { role: "textbox", name: "Password", value: "hunter2" }),
-            node("3", { role: "textbox", name: "User", value: "milana" }),
+            node("3", { role: "textbox", name: "User", value: "alex" }),
         ];
         const entries = a11yEntries(nodes, { ...defaults, isPassword: (id) => id === 2 });
 
         expect(entries[0]?.value).toBeUndefined();
-        expect(entries[1]?.value).toBe("milana");
+        expect(entries[1]?.value).toBe("alex");
     });
 
     it("starts at the given node for a subtree", () => {

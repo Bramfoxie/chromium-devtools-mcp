@@ -203,6 +203,91 @@ describe("navigationWaitReduce", () => {
 });
 
 describe("page_navigate", () => {
+    it("opens the requested history index", async () => {
+        const fake = new FakeAccess();
+        const { runtime } = setup(fake);
+
+        await runTool(newTab, {}, extra(), runtime);
+        fake.respond = (_tab, method) => method === "Page.getNavigationHistory" ? {
+            currentIndex: 1,
+            entries     : [
+                { id: 41, url: "https://example.org/first", title: "First" },
+                { id: 42, url: "https://example.org/second", title: "Second" },
+            ],
+        } : method === "Runtime.evaluate" ? pageState("https://example.org/first") : {};
+        fake.sent.length = 0;
+        const result = await runTool(pageNavigate, {
+            action: "history", historyIndex: 0, waitUntil: "none",
+        }, extra(), runtime);
+
+        expect(result.structuredContent).toMatchObject({ navigationType: "history" });
+        expect(fake.sent).toContainEqual(expect.objectContaining({
+            method: "Page.navigateToHistoryEntry", params: { entryId: 41 },
+        }));
+    });
+
+    it("rejects a missing or out of range history index", async () => {
+        const fake = new FakeAccess();
+        const { runtime } = setup(fake);
+
+        await runTool(newTab, {}, extra(), runtime);
+        fake.respond = () => ({ currentIndex: 0, entries: [{ id: 1, url: "about:blank", title: "" }] });
+
+        for (const args of [{ action: "history" }, { action: "history", historyIndex: 4 }]) {
+            const result = await runTool(pageNavigate, { ...args, waitUntil: "none" }, extra(), runtime);
+
+            expect(result.isError).toBe(true);
+        }
+
+        expect(fake.sent.some((call) => call.method === "Page.navigateToHistoryEntry")).toBe(false);
+    });
+
+    it("stops loading without waiting for a navigation event", async () => {
+        const fake = new FakeAccess();
+
+        fake.respond = (_targetId, method) => method === "Runtime.evaluate"
+            ? pageState("https://example.org/", "Example", "loading")
+            : {};
+        const { runtime } = setup(fake);
+
+        await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+        const result = await runTool(pageNavigate, { action: "stop" }, extra(), runtime);
+
+        expect(result.structuredContent).toMatchObject({
+            tab: "tab1", url: "https://example.org/", waited: "none", navigationType: "stop",
+        });
+        expect(fake.sent.map((call) => call.method)).toEqual(["Page.stopLoading", "Runtime.evaluate"]);
+    });
+
+    it("rejects ignoreCache outside reload before sending a navigation", async () => {
+        const { fake, runtime } = setup();
+
+        await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+        const result = await runTool(pageNavigate, {
+            url: "https://example.org/", ignoreCache: true, waitUntil: "none",
+        }, extra(), runtime);
+
+        expect(result.isError).toBe(true);
+        expect(JSON.stringify(result)).toContain("ignoreCache");
+        expect(fake.sent.some((call) => call.method === "Page.navigate")).toBe(false);
+    });
+
+    it("rejects a URL for a non-URL action before sending a command", async () => {
+        const { fake, runtime } = setup();
+
+        await runTool(newTab, {}, extra(), runtime);
+        fake.sent.length = 0;
+        const result = await runTool(pageNavigate, {
+            action: "stop", url: "https://example.org/",
+        }, extra(), runtime);
+
+        expect(result.isError).toBe(true);
+        expect(JSON.stringify(result)).toContain("url is only available for the url action");
+        expect(fake.sent.some((call) => call.method === "Page.stopLoading")).toBe(false);
+    });
+
     it("navigates to a url and waits for the load event of the new loader", async () => {
         const fake = new FakeAccess();
         const { clock } = trackingSleep();

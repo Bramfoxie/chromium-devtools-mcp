@@ -7,6 +7,10 @@ export const FRAME_EVENTS = [
     "Page.frameDetached",
 ] as const;
 
+const MAX_DISCOVERY_ATTEMPTS = 3;
+
+class FrameTreeChangedError extends ToolError {}
+
 export interface FrameInfo {
     frameId       : string;
     parentFrameId?: string | undefined;
@@ -17,11 +21,15 @@ export interface FrameInfo {
 }
 
 interface TabFrames {
-    ensured    : boolean;
-    subscribed : Set<string>;
-    frames     : Map<string, FrameInfo>;
-    mainFrameId: string | undefined;
-    generations: Map<string, number>;
+    ensured     : boolean;
+    subscribed  : Set<string>;
+    frames      : Map<string, FrameInfo>;
+    mainFrameId : string | undefined;
+    generations : Map<string, number>;
+    sequence    : number;
+    applied     : number;
+    eventVersion: number;
+    appliedEvent: number;
 }
 
 type FrameNavigatedListener = (tab: string, frameId: string, main: boolean) => void;
@@ -93,20 +101,24 @@ export class FrameState {
     async ensure(tab: string): Promise<void> {
         const state = this.state(tab);
 
-        if (!state.ensured) {
-            try {
-                this.replace(tab, await this.access.listFrames(tab));
-            } catch {
-            }
-
-            state.ensured = true;
-        }
-
         for (const event of FRAME_EVENTS) {
             if (state.subscribed.has(event)) continue;
 
             await this.access.subscribe(tab, event);
+            this.assertCurrent(tab, state);
             state.subscribed.add(event);
+        }
+
+        if (!state.ensured) {
+            try {
+                await this.discover(tab, state);
+            } catch (error) {
+                this.assertCurrent(tab, state);
+                if (error instanceof FrameTreeChangedError) throw error;
+            }
+
+            this.assertCurrent(tab, state);
+            state.ensured = true;
         }
     }
 
@@ -127,9 +139,9 @@ export class FrameState {
     }
 
     async refresh(tab: string): Promise<FrameInfo[]> {
-        const frames = await this.access.listFrames(tab);
+        const state = this.state(tab);
 
-        this.replace(tab, frames);
+        await this.discover(tab, state);
 
         return this.framesOf(tab);
     }
@@ -171,6 +183,11 @@ export class FrameState {
         const parsed = parseFrameEvent(params);
 
         if (parsed === undefined) return;
+
+        if (envelope.event === "Page.frameDetached" || envelope.event === "Page.frameNavigated"
+            || envelope.event === "Page.frameAttached") {
+            state.eventVersion += 1;
+        }
 
         if (envelope.event === "Page.frameDetached") {
             state.frames.delete(parsed.frameId);
@@ -217,16 +234,47 @@ export class FrameState {
 
         if (!state) {
             state = {
-                ensured    : false,
-                subscribed : new Set(),
-                frames     : new Map(),
-                mainFrameId: undefined,
-                generations: new Map(),
+                ensured     : false,
+                subscribed  : new Set(),
+                frames      : new Map(),
+                mainFrameId : undefined,
+                generations : new Map(),
+                sequence    : 0,
+                applied     : 0,
+                eventVersion: 0,
+                appliedEvent: 0,
             };
             this.tabs.set(tab, state);
         }
 
         return state;
+    }
+
+    private assertCurrent(tab: string, state: TabFrames): void {
+        if (this.tabs.get(tab) !== state) {
+            throw new ToolError("The tab closed or the session reset while loading frames.");
+        }
+    }
+
+    private async discover(tab: string, state: TabFrames): Promise<void> {
+        for (let attempt = 0; attempt < MAX_DISCOVERY_ATTEMPTS; attempt += 1) {
+            const sequence = ++state.sequence;
+            const eventVersion = state.eventVersion;
+            const frames = await this.access.listFrames(tab);
+
+            this.assertCurrent(tab, state);
+            if (state.applied > sequence && state.appliedEvent === state.eventVersion) return;
+            if (state.eventVersion !== eventVersion) continue;
+            if (sequence < state.applied) return;
+
+            state.applied = sequence;
+            state.appliedEvent = eventVersion;
+            this.replace(tab, frames);
+
+            return;
+        }
+
+        throw new FrameTreeChangedError("The frame tree kept changing while it was being read. Try again.");
     }
 
     private replace(tab: string, frames: DaemonFrame[]): void {
@@ -241,6 +289,18 @@ export class FrameState {
         }
 
         for (const frame of frames) {
+            const known = state.frames.get(frame.frameId);
+
+            if (known !== undefined && known.url !== frame.url) {
+                const generation = state.generations.get(frame.frameId) ?? 0;
+
+                state.generations.set(frame.frameId, generation + 1);
+
+                for (const listener of this.navigated) {
+                    listener(tab, frame.frameId, frame.parentFrameId === undefined);
+                }
+            }
+
             state.frames.set(frame.frameId, { ...frame });
         }
 

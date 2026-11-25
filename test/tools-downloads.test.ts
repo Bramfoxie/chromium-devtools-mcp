@@ -66,6 +66,149 @@ const progress = (
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe("downloads allow and deny", () => {
+    it("stops an enable operation when the tab state is forgotten during preparation", async () => {
+        const { fake, runtime } = setup();
+        const create = runtime.artifacts.directory.bind(runtime.artifacts);
+        let release: () => void = () => undefined;
+        const gate = new Promise<void>((resolve) => (release = resolve));
+
+        runtime.artifacts.directory = async (kind) => {
+            await gate;
+
+            return create(kind);
+        };
+
+        const pending = runTool(downloads, { action: "allow" }, extra(), runtime);
+
+        await tick();
+        runtime.downloadState.forget("tab1");
+        release();
+        expect((await pending).isError).toBe(true);
+        expect(fake.sent.some((item) => item.method === "Page.setDownloadBehavior")).toBe(false);
+    });
+
+    it("allows another setting change when directory creation fails", async () => {
+        const { runtime } = setup();
+        const create = runtime.artifacts.directory.bind(runtime.artifacts);
+        let attempts = 0;
+
+        runtime.artifacts.directory = async (kind) => {
+            if (attempts++ === 0) throw new Error("failed");
+
+            return create(kind);
+        };
+
+        expect((await runTool(downloads, { action: "allow" }, extra(), runtime)).isError).toBe(true);
+        expect((await runTool(downloads, { action: "allow" }, extra(), runtime)).isError).not.toBe(true);
+    });
+
+    it("does not create another directory for an overlapping allow", async () => {
+        const { fake, runtime } = setup();
+        let release: () => void = () => undefined;
+        let directories = 0;
+        const gate = new Promise<void>((resolve) => (release = resolve));
+        const create = runtime.artifacts.directory.bind(runtime.artifacts);
+
+        runtime.artifacts.directory = async (kind) => {
+            directories += 1;
+
+            return create(kind);
+        };
+
+        fake.respond = (_target, method) => method === "Page.setDownloadBehavior" ? gate : {};
+        const first = runTool(downloads, { action: "allow" }, extra(), runtime);
+
+        await tick();
+        const second = await runTool(downloads, { action: "allow" }, extra(), runtime);
+
+        release();
+        await first;
+        expect(second.isError).toBe(true);
+        expect(directories).toBe(1);
+    });
+
+    it("refuses overlapping download setting changes", async () => {
+        const { fake, runtime } = setup();
+        let release: () => void = () => undefined;
+        const gate = new Promise<void>((resolve) => (release = resolve));
+
+        fake.respond = (_target, method) => method === "Page.setDownloadBehavior" ? gate : {};
+        const first = runTool(downloads, { action: "allow" }, extra(), runtime);
+
+        await tick();
+        const second = await runTool(downloads, { action: "deny" }, extra(), runtime);
+
+        release();
+        expect(second.isError).toBe(true);
+        expect((await first).isError).not.toBe(true);
+        expect(fake.sent.filter((item) => item.method === "Page.setDownloadBehavior")).toHaveLength(1);
+    });
+
+    it("does not guess the file directory for a download during a change", async () => {
+        const { fake, runtime } = setup();
+        const directories: string[] = [];
+        const state = new DownloadState(fake.asAccess(), {
+            list: async (directory) => {
+                directories.push(directory);
+
+                return ["a.txt"];
+            },
+            size: async () => 1,
+        }, async () => undefined);
+
+        Object.assign(runtime, { downloadState: state });
+        state.attach();
+        state.allow("tab1", "/old");
+
+        fake.respond = (_target, method) => {
+            if (method === "Page.setDownloadBehavior") {
+                begin(fake, "during", "a.txt");
+                progress(fake, "during", "completed", 1, 1);
+            }
+
+            return {};
+        };
+
+        await runTool(downloads, { action: "allow" }, extra(), runtime);
+        await tick();
+        expect(directories).toEqual([]);
+        expect(state.list("tab1")[0]?.path).toBeUndefined();
+    });
+
+    it.each([undefined, "/old"])("restores the directory after allow fails from %s", async (old) => {
+        const { fake, runtime } = setup();
+
+        if (old !== undefined) runtime.downloadState.allow("tab1", old);
+
+        fake.failSend = (_target, method) =>
+            method === "Page.setDownloadBehavior" ? new Error("failed") : undefined;
+        const result = await runTool(downloads, { action: "allow" }, extra(), runtime);
+
+        expect(result.isError).toBe(true);
+        expect(runtime.downloadState.directoryOf("tab1")).toBe(old);
+    });
+
+    it.each([undefined, "/old"])("sets the directory before enabling downloads from %s", async (old) => {
+        const { fake, runtime } = setup();
+        let seen: string | undefined;
+
+        if (old !== undefined) runtime.downloadState.allow("tab1", old);
+
+        fake.respond = (_target, method) => {
+            if (method === "Page.setDownloadBehavior") {
+                seen = runtime.downloadState.directoryOf("tab1");
+                begin(fake, "during-allow");
+            }
+
+            return {};
+        };
+
+        await runTool(downloads, { action: "allow" }, extra(), runtime);
+
+        expect(seen).toBe(DIR);
+        expect(runtime.downloadState.list("tab1").map((item) => item.id)).toContain("during-allow");
+    });
+
     it("saves into a new private directory and subscribes to the download events", async () => {
         const { fake, runtime } = setup();
         const result = await runTool(downloads, { action: "allow" }, extra(), runtime);
@@ -272,6 +415,244 @@ describe("DownloadState file lookup", () => {
 });
 
 describe("DownloadState concurrency", () => {
+    it.each(["forget", "reset"])("stops a file lookup wait when tab state is removed by %s", async (action) => {
+        const fake = new FakeAccess();
+        let release: () => void = () => undefined;
+        let settled = false;
+        const gate = new Promise<void>((resolve) => (release = resolve));
+        const value = new DownloadState(fake.asAccess(), {
+            list: async () => { await gate;
+
+                return ["a.txt"]; },
+            size: async () => 1,
+        });
+
+        value.attach();
+        value.allow("tab1", "/d");
+        begin(fake, "a", "a.txt");
+        progress(fake, "a", "completed", 1, 1);
+        const pending = value.next("tab1", 0, async () => undefined).then(
+            () => { settled = true;
+
+                return undefined; },
+            (error: unknown) => { settled = true;
+
+                return error; },
+        );
+
+        if (action === "forget") value.forget("tab1");
+        else value.reset();
+
+        try {
+            await tick();
+            expect(settled).toBe(true);
+            expect(await pending).toMatchObject({
+                message: "The tab closed or the session reset while waiting for a download.",
+            });
+        } finally {
+            release();
+            await pending;
+        }
+    });
+
+    it.each(["forget", "reset"])("stops waiting when tab state is removed by %s", async (action) => {
+        const fake = new FakeAccess();
+        const value = new DownloadState(fake.asAccess());
+        let release: () => void = () => undefined;
+        let settled = false;
+        const gate = new Promise<void>((resolve) => (release = resolve));
+
+        value.allow("tab1", "/d");
+        const pending = value.next("tab1", 10_000, () => gate).then(
+            () => { settled = true;
+
+                return undefined; },
+            (error: unknown) => { settled = true;
+
+                return error; },
+        );
+
+        if (action === "forget") value.forget("tab1");
+        else value.reset();
+
+        try {
+            await tick();
+            expect(settled).toBe(true);
+            expect(await pending).toMatchObject({
+                message: "The tab closed or the session reset while waiting for a download.",
+            });
+        } finally {
+            release();
+            await pending;
+        }
+    });
+
+    it("does not retain stale subscriptions after a reset", async () => {
+        const fake = new FakeAccess();
+        const events: string[] = [];
+        let release: () => void = () => undefined;
+        let first = true;
+        const gate = new Promise<void>((resolve) => (release = resolve));
+
+        fake.subscribe = async (_tab, event) => {
+            events.push(event);
+
+            if (first) {
+                first = false;
+                await gate;
+            }
+        };
+
+        const value = new DownloadState(fake.asAccess());
+        const pending = value.subscribe("tab1");
+
+        value.reset();
+        release();
+        await pending;
+        events.length = 0;
+        await value.subscribe("tab1");
+        expect(events).toEqual(["Page.downloadWillBegin", "Page.downloadProgress"]);
+    });
+
+    it("finds a queued download in the directory where it began", async () => {
+        const fake = new FakeAccess();
+        let release: () => void = () => undefined;
+        const gate = new Promise<void>((resolve) => (release = resolve));
+        const value = new DownloadState(fake.asAccess(), {
+            list: async (directory) => {
+                if (directory === "/old") await gate;
+
+                return directory === "/old" ? ["a.txt", "b.txt"] : [];
+            },
+            size: async () => 1,
+        }, async () => undefined);
+
+        value.attach();
+        value.allow("tab1", "/old");
+        begin(fake, "a", "a.txt");
+        begin(fake, "b", "b.txt");
+        progress(fake, "a", "completed", 1, 1);
+        progress(fake, "b", "completed", 1, 1);
+        const pending = value.next("tab1", 0, async () => undefined, "b");
+
+        value.allow("tab1", "/new");
+        release();
+        expect((await pending)?.path).toBe(path.join("/old", "b.txt"));
+    });
+
+    it("does not block a tab on another tab's file lookup", async () => {
+        const fake = new FakeAccess();
+        let release: () => void = () => undefined;
+        const gate = new Promise<void>((resolve) => (release = resolve));
+        const value = new DownloadState(fake.asAccess(), {
+            list: async (directory) => {
+                if (directory === "/slow") await gate;
+
+                return ["a.txt"];
+            },
+            size: async () => 1,
+        }, async () => undefined);
+
+        value.attach();
+        value.allow("tab1", "/slow");
+        value.allow("tab2", "/fast");
+        begin(fake, "a", "a.txt");
+        progress(fake, "a", "completed", 1, 1);
+        fake.emit("cdp.event", {
+            targetId: "tab2",
+            event   : "Page.downloadWillBegin",
+            params  : { guid: "b", url: "https://a.example/", suggestedFilename: "a.txt" },
+        });
+        fake.emit("cdp.event", {
+            targetId: "tab2",
+            event   : "Page.downloadProgress",
+            params  : { guid: "b", state: "completed", receivedBytes: 1, totalBytes: 1 },
+        });
+        let settled = false;
+        const pending = value.next("tab2", 0, async () => undefined).then((result) => {
+            settled = true;
+
+            return result;
+        });
+
+        try {
+            await tick();
+            expect(settled).toBe(true);
+        } finally {
+            release();
+            await pending;
+        }
+    });
+
+    it("allows repeated waits for the same explicit download ID", async () => {
+        const fake = new FakeAccess();
+        const value = new DownloadState(fake.asAccess());
+
+        value.attach();
+        value.allow("tab1", "/d");
+        begin(fake, "a", "a.txt");
+        progress(fake, "a", "canceled", 0);
+        const first = value.next("tab1", 0, async () => undefined, "a");
+        const second = value.next("tab1", 0, async () => undefined, "a");
+
+        expect((await first)?.id).toBe("a");
+        expect((await second)?.id).toBe("a");
+    });
+
+    it("does not assign the same file to concurrent download waits", async () => {
+        const fake = new FakeAccess();
+        let release: () => void = () => undefined;
+        const gate = new Promise<void>((resolve) => (release = resolve));
+        const value = new DownloadState(fake.asAccess(), {
+            list: async () => {
+                await gate;
+
+                return ["only.txt"];
+            },
+            size: async () => 1,
+        }, async () => undefined);
+
+        value.attach();
+        value.allow("tab1", "/d");
+        begin(fake, "a", "a.txt");
+        begin(fake, "b", "b.txt");
+        progress(fake, "a", "completed", 1, 1);
+        progress(fake, "b", "completed", 1, 1);
+        const first = value.next("tab1", 0, async () => undefined, "a");
+        const second = value.next("tab1", 0, async () => undefined, "b");
+
+        release();
+        const results = await Promise.all([first, second]);
+        const paths = results.map((item) => item?.path).filter((file) => file !== undefined);
+
+        expect(paths).toEqual([path.join("/d", "only.txt")]);
+    });
+
+    it("hands a completed download to only one concurrent waiter", async () => {
+        const fake = new FakeAccess();
+        let release: () => void = () => undefined;
+        const gate = new Promise<void>((resolve) => (release = resolve));
+        const value = new DownloadState(fake.asAccess(), {
+            list: async () => {
+                await gate;
+
+                return ["a.txt"];
+            },
+            size: async () => 1,
+        }, async () => undefined);
+
+        value.attach();
+        value.allow("tab1", "/d");
+        begin(fake, "a", "a.txt");
+        progress(fake, "a", "completed", 1, 1);
+        const first = value.next("tab1", 0, async () => undefined);
+        const second = value.next("tab1", 0, async () => undefined);
+
+        release();
+        expect((await first)?.id).toBe("a");
+        expect(await second).toBeUndefined();
+    });
+
     it("gives two downloads that finish together two different files", async () => {
         const fake = new FakeAccess();
         const value = new DownloadState(fake.asAccess(), {

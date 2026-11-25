@@ -123,7 +123,7 @@ describe("tool declarations", () => {
         expect(text).toContain(`${allTools.length} tools. Details and parameters`);
     });
 
-    it("declares sixty two tools with unique names, descriptions and access", () => {
+    it("declares sixty three tools with unique names, descriptions and access", () => {
         expect(allTools.map((tool) => tool.name)).toEqual([
             "list_tabs",
             "popup_list",
@@ -135,6 +135,7 @@ describe("tool declarations", () => {
             "close_tab",
             "bring_to_front",
             "page_info",
+            "page_history",
             "browser_info",
             "page_extract",
             "page_navigate",
@@ -686,6 +687,31 @@ describe("runTool", () => {
         expect(JSON.stringify(after.content)).not.toContain("may already have been applied");
     });
 
+    it("observes a handler rejection after synchronous cancellation", async () => {
+        const controller = new AbortController();
+        const work = Promise.reject(new Error("late handler failure"));
+
+        work.catch(() => {});
+        const then = vi.spyOn(work, "then");
+        const tool = defineTool({
+            name       : "cancel_immediately",
+            description: "Cancels during startup.",
+            access     : "read",
+            input      : z.object({}),
+            output     : z.object({}),
+            handler    : () => {
+                controller.abort();
+
+                return work;
+            },
+        });
+        const result = await runTool(tool, {}, extra(controller.signal), runtime());
+
+        expect(result.isError).toBe(true);
+        expect(JSON.stringify(result.content)).toContain("cancelled");
+        expect(then).toHaveBeenCalled();
+    });
+
     it("warns that a cancelled mutating call may have changed the page", async () => {
         const controller = new AbortController();
         const never = new Promise<never>(() => undefined);
@@ -731,6 +757,7 @@ describe("tools/list", () => {
             "close_tab",
             "bring_to_front",
             "page_info",
+            "page_history",
             "browser_info",
             "page_extract",
             "page_navigate",

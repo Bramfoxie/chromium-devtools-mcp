@@ -1,4 +1,4 @@
-export const EXTRACT_KINDS = ["links", "headings", "meta", "forms"] as const;
+export const EXTRACT_KINDS = ["links", "headings", "meta", "forms", "tables"] as const;
 
 export type ExtractKind = (typeof EXTRACT_KINDS)[number];
 
@@ -84,6 +84,48 @@ const PAGE_FUNCTION = `(kinds, limit, textChars, fieldLimit) => {
         fields: controls.items,
       };
     });
+  }
+  if (kinds.includes("tables")) {
+    const tableRows = getter(HTMLTableElement.prototype, "rows");
+    const rowCells = getter(HTMLTableRowElement.prototype, "cells");
+    out.tables = take(all("table"), (table) => {
+      const rows = take(tableRows.call(table), (row) => {
+        const cells = take(rowCells.call(row), (cell) => {
+          const limitReached = {};
+          let visited = 0;
+          const walker = Document.prototype.createTreeWalker.call(document, cell, NodeFilter.SHOW_ALL, {
+            acceptNode(node) {
+              if (++visited > 10000) throw limitReached;
+              if (node.nodeType === Node.ELEMENT_NODE &&
+                  ["INPUT", "TEXTAREA", "SELECT", "SCRIPT", "STYLE", "TABLE"].includes(tagOf.call(node))) {
+                return NodeFilter.FILTER_REJECT;
+              }
+              return NodeFilter.FILTER_ACCEPT;
+            },
+          });
+          const chunks = [];
+          let length = 0;
+          let truncated = false;
+          try {
+            while (walker.nextNode()) {
+              const node = walker.currentNode;
+              if (node.nodeType !== Node.TEXT_NODE) continue;
+              const part = String(node.nodeValue || "");
+              chunks.push(part.slice(0, textChars + 1));
+              length += part.length;
+              if (length > textChars) { truncated = true; break; }
+            }
+          } catch (error) {
+            if (error !== limitReached) throw error;
+            truncated = true;
+          }
+          const raw = chunks.join("").replace(/\\s+/g, " ").trim();
+          return { text: raw.slice(0, textChars), truncated: truncated || raw.length > textChars };
+        }, 20);
+        return { cells: cells.items, total: cells.total, truncated: cells.total > cells.items.length };
+      }, 20);
+      return { rows: rows.items, total: rows.total, truncated: rows.total > rows.items.length };
+    }, Math.min(limit, 10));
   }
   return out;
 }`;

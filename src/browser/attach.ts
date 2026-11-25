@@ -1,7 +1,7 @@
 import http from "node:http";
 import net from "node:net";
 import os from "node:os";
-import { BROWSER_PATH_PREFIX, LOOPBACK_HOSTS, pathFor, type Config } from "../config/index.js";
+import { BROWSER_PATH_PREFIX, isValidWsEndpoint, LOOPBACK_HOSTS, pathFor, type Config } from "../config/index.js";
 import { BROWSERS, type BrowserName, type DiscoveryContext } from "./browsers.js";
 import { readIfExists } from "../util/read-if-exists.js";
 import { writeLogLine } from "../util/stderr.js";
@@ -51,8 +51,11 @@ export function parseActivePortFile(
 
     if (!Number.isInteger(port) || port < 1 || port > 65535) return undefined;
     if (!browserPath?.startsWith(BROWSER_PATH_PREFIX)) return undefined;
+    if (browserPath.includes("?") || browserPath.includes("#")) return undefined;
 
-    return { port, webSocketUrl: `ws://127.0.0.1:${port}${browserPath}` };
+    const webSocketUrl = `ws://127.0.0.1:${port}${browserPath}`;
+
+    return isValidWsEndpoint(webSocketUrl) ? { port, webSocketUrl } : undefined;
 }
 
 function browserWebSocketUrl(version: unknown, port: number): string | undefined {
@@ -60,12 +63,15 @@ function browserWebSocketUrl(version: unknown, port: number): string | undefined
 
     const url = (version as Record<string, unknown>).webSocketDebuggerUrl;
 
-    if (typeof url !== "string") return undefined;
+    if (typeof url !== "string" || url.includes("?") || url.includes("#")) return undefined;
 
     try {
         const parsed = new URL(url);
         const isBrowserSocket =
-            parsed.protocol === "ws:" && parsed.pathname.startsWith(BROWSER_PATH_PREFIX);
+            parsed.protocol === "ws:" && parsed.pathname.startsWith(BROWSER_PATH_PREFIX) &&
+            parsed.pathname.length > BROWSER_PATH_PREFIX.length &&
+            parsed.username === "" && parsed.password === "" &&
+            parsed.search === "" && parsed.hash === "";
         const samePort = Number(parsed.port || 80) === port;
 
         return isBrowserSocket && samePort && LOOPBACK_HOSTS.has(parsed.hostname) ? url : undefined;
@@ -94,6 +100,8 @@ async function endpointInDir(
     try {
         content = await deps.readFile(file);
     } catch (error) {
+        if (signal?.aborted) return undefined;
+
         const denied = isAccessDenied(error) ? file : undefined;
 
         onProblem?.(`Cannot read ${file}: ${messageOf(error)}`, denied);
@@ -101,7 +109,7 @@ async function endpointInDir(
         return undefined;
     }
 
-    if (content === undefined) return undefined;
+    if (signal?.aborted || content === undefined) return undefined;
 
     const parsed = parseActivePortFile(content);
 
@@ -111,7 +119,11 @@ async function endpointInDir(
         return undefined;
     }
 
-    if (await deps.isPortOpen(parsed.port, signal).catch(() => false)) {
+    const open = await deps.isPortOpen(parsed.port, signal).catch(() => false);
+
+    if (signal?.aborted) return undefined;
+
+    if (open) {
         return { ...parsed, source: "port-file" };
     }
 
@@ -137,6 +149,7 @@ export async function resolveAttachEndpoint(
 ): Promise<AttachEndpoint | undefined> {
     const fromFile = await portFileEndpoint(deps, config.browser, signal, onProblem);
 
+    if (signal?.aborted) return undefined;
     if (fromFile) return fromFile;
 
     let version: unknown;
@@ -179,7 +192,7 @@ export function findAttachEndpoint(
 }
 
 export function explicitEndpoint(webSocketUrl: string): AttachEndpoint {
-    return { port: Number(new URL(webSocketUrl).port), webSocketUrl, source: "ws-endpoint" };
+    return { port: Number(new URL(webSocketUrl).port || 80), webSocketUrl, source: "ws-endpoint" };
 }
 
 export function endpointUnreachableMessage(): string {
@@ -218,6 +231,26 @@ export function accessDeniedInstructions(
     ].join("\n");
 }
 
+async function discoveryOrAbort(
+    discovery: Promise<AttachEndpoint | undefined>,
+    signal?  : AbortSignal,
+): Promise<AttachEndpoint | undefined> {
+    if (signal === undefined) return discovery;
+
+    let onAbort: () => void = () => undefined;
+    const aborted = new Promise<undefined>((resolve) => {
+        onAbort = () => resolve(undefined);
+        signal.addEventListener("abort", onAbort, { once: true });
+        if (signal.aborted) onAbort();
+    });
+
+    try {
+        return await Promise.race([discovery, aborted]);
+    } finally {
+        signal.removeEventListener("abort", onAbort);
+    }
+}
+
 export async function attachBrowser(
     config   : AttachConfig,
     overrides: Partial<AttachDeps> = {},
@@ -228,6 +261,8 @@ export async function attachBrowser(
     const reported = new Set<string>();
     let deniedFile: string | undefined;
     const onProblem: ProblemReporter = (message, denied) => {
+        if (signal?.aborted) return;
+
         deniedFile = denied;
 
         if (reported.has(message)) return;
@@ -239,7 +274,11 @@ export async function attachBrowser(
     while (!signal?.aborted) {
         deniedFile = undefined;
 
-        const endpoint = await resolveAttachEndpoint(config, deps, signal, onProblem);
+        const endpoint = await discoveryOrAbort(
+            resolveAttachEndpoint(config, deps, signal, onProblem), signal,
+        );
+
+        if (signal?.aborted) break;
 
         if (endpoint) {
             deps.log(`Attaching to ${BROWSERS[config.browser].label} on port ${endpoint.port} (${endpoint.source}).`);

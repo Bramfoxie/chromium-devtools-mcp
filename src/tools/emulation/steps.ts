@@ -11,18 +11,25 @@ interface EmulationStep {
 }
 
 async function sendBestEffort(
-    access  : DaemonAccess,
-    targetId: string,
-    commands: CdpCommand[],
+    access    : DaemonAccess,
+    targetId  : string,
+    commands  : CdpCommand[],
+    generation: number,
 ): Promise<boolean> {
     try {
+        access.assertCurrent(generation);
+
         for (const command of commands) {
+            access.assertCurrent(generation);
             await access.send({
                 targetId,
                 method: command.method,
                 params: command.params,
             });
+            access.assertCurrent(generation);
         }
+
+        access.assertCurrent(generation);
 
         return true;
     } catch {
@@ -38,6 +45,7 @@ export async function runSteps(
     steps   : EmulationStep[],
 ): Promise<void> {
     const done: EmulationStep[] = [];
+    const generation = access.sessionGeneration;
 
     for (const step of steps) {
         let attempted = false;
@@ -45,22 +53,28 @@ export async function runSteps(
         try {
             for (const command of step.commands) {
                 throwIfCancelled(signal);
+                access.assertCurrent(generation);
                 attempted = true;
                 await access.send({
                     targetId,
                     method: command.method,
                     params: command.params,
                 });
+                access.assertCurrent(generation);
             }
         } catch (error) {
+            if (access.sessionGeneration !== generation) throw error;
+
             if (attempted && step.undo !== undefined) {
-                if (!await sendBestEffort(access, targetId, step.undo)) step.undoFailed?.();
+                const restored = await sendBestEffort(access, targetId, step.undo, generation);
+
+                if (!restored && access.sessionGeneration === generation) step.undoFailed?.();
             }
 
             for (const finished of done.reverse()) {
                 if (finished.undo === undefined) continue;
 
-                const restored = await sendBestEffort(access, targetId, finished.undo);
+                const restored = await sendBestEffort(access, targetId, finished.undo, generation);
 
                 if (restored) finished.unrecord?.();
             }

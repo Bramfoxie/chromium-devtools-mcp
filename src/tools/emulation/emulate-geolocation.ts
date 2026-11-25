@@ -93,19 +93,29 @@ export const emulateGeolocation = defineTool({
             throw new ToolError("Provide latitude and longitude, or reset: true. Nothing was changed.");
         }
 
+        const generation = context.access.sessionGeneration;
+        const assertCurrent = () => context.access.assertCurrent(generation);
+
         return context.emulation.withGeolocation(async () => {
+            assertCurrent();
             throwIfCancelled(context.signal);
 
             try {
                 await context.emulation.retryGeolocationCleanup(async (origin) => {
+                    assertCurrent();
                     await context.access.setPermission({ name: "geolocation", setting: "reset", origin });
+                    assertCurrent();
                 });
             } catch {
+                assertCurrent();
+
                 throw new ToolError("A previous geolocation permission could not be released. Retry or end the session, then check the browser permissions.");
             }
 
+            assertCurrent();
             throwIfCancelled(context.signal);
             await ensureNoDialog(context.dialogs, targetId);
+            assertCurrent();
             throwIfCancelled(context.signal);
 
             const previous = context.emulation.snapshot(targetId).geolocation;
@@ -120,6 +130,7 @@ export const emulateGeolocation = defineTool({
                         setting: "reset",
                         origin : previous.origin,
                     });
+                    assertCurrent();
                 }
 
                 let undoFailed = false;
@@ -136,6 +147,7 @@ export const emulateGeolocation = defineTool({
                         },
                     ]);
                 } catch (error) {
+                    assertCurrent();
                     if (undoFailed) logDaemon("could not restore geolocation after a failed reset");
 
                     if (release) {
@@ -143,7 +155,9 @@ export const emulateGeolocation = defineTool({
                             await context.access.setPermission({
                                 name: "geolocation", setting: "granted", origin: previous.origin,
                             });
+                            assertCurrent();
                         } catch {
+                            assertCurrent();
                             logDaemon("could not restore a geolocation permission after a failed reset");
 
                             if (undoFailed) {
@@ -168,10 +182,13 @@ export const emulateGeolocation = defineTool({
             }
 
             await context.focus.ensure(context.access, targetId);
+            assertCurrent();
 
             const origin = args.origin === undefined
                 ? await tabOrigin(context, targetId)
                 : explicitOrigin(args.origin);
+
+            assertCurrent();
             const next = {
                 latitude : args.latitude ?? 0,
                 longitude: args.longitude ?? 0,
@@ -186,6 +203,7 @@ export const emulateGeolocation = defineTool({
 
             if (releasePrevious) {
                 await context.access.setPermission({ name: "geolocation", setting: "reset", origin: previous.origin });
+                assertCurrent();
             }
 
             let granted = false;
@@ -194,6 +212,7 @@ export const emulateGeolocation = defineTool({
                 throwIfCancelled(context.signal);
                 await context.access.setPermission({ name: "geolocation", setting: "granted", origin });
                 granted = true;
+                assertCurrent();
                 await runSteps(context.access, context.signal, targetId, [
                     {
                         commands: buildGeolocationCommands(next),
@@ -209,13 +228,16 @@ export const emulateGeolocation = defineTool({
                     },
                 ]);
             } catch (error) {
+                assertCurrent();
                 const stillUsed = context.emulation.geolocationOrigins().has(origin);
                 let cleanupFailed = false;
 
                 if (granted && !stillUsed && previous?.origin !== origin) {
                     try {
                         await context.access.setPermission({ name: "geolocation", setting: "reset", origin });
+                        assertCurrent();
                     } catch {
+                        assertCurrent();
                         cleanupFailed = true;
                     }
                 }
@@ -223,7 +245,9 @@ export const emulateGeolocation = defineTool({
                 if (releasePrevious) {
                     try {
                         await context.access.setPermission({ name: "geolocation", setting: "granted", origin: previous.origin });
+                        assertCurrent();
                     } catch {
+                        assertCurrent();
                         cleanupFailed = true;
                     }
                 }
@@ -238,6 +262,8 @@ export const emulateGeolocation = defineTool({
             const reported = await readGeolocation(
                 context.access, targetId, origin, context.signal,
             );
+
+            assertCurrent();
 
             return {
                 tab      : targetId,

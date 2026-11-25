@@ -132,11 +132,17 @@ export class DialogState {
 
     async ensure(tab: string): Promise<void> {
         const state = this.state(tab);
+        const ensureCurrent = () => {
+            if (this.tabs.get(tab) !== state) {
+                throw new ToolError("The tab closed or the session reset while checking dialogs.");
+            }
+        };
 
         for (const event of DIALOG_EVENTS) {
             if (state.subscribed.has(event)) continue;
 
             await this.access.subscribe(tab, event);
+            ensureCurrent();
             state.subscribed.add(event);
         }
 
@@ -160,6 +166,7 @@ export class DialogState {
             throw error;
         }
 
+        ensureCurrent();
         state.pageEnabled = true;
     }
 

@@ -17,7 +17,7 @@ export function isValidWsEndpoint(value: string): boolean {
     return (
         url.protocol === "ws:" &&
         LOOPBACK_HOSTS.has(url.hostname) &&
-        url.port !== "" &&
+        (url.port !== "" || /^ws:\/\/[^/?#]*:0*80(?=\/|[?#]|$)/i.test(value.trim())) &&
         url.username === "" &&
         url.password === "" &&
         url.search === "" &&

@@ -104,7 +104,7 @@ describe("maxSocketPathBytes", () => {
 
 describe("currentUsername", () => {
     it("returns the account name when the lookup works", () => {
-        expect(currentUsername({}, () => ({ username: "milana" }))).toBe("milana");
+        expect(currentUsername({}, () => ({ username: "alex" }))).toBe("alex");
     });
 
     it("falls back to the environment when the account has no passwd entry", () => {

@@ -152,6 +152,10 @@ export const pageWait = defineTool({
             throw new ToolError("selector only combines with text, not with other conditions.");
         }
 
+        if (args.state !== undefined && kind !== "selector") {
+            throw new ToolError("state only combines with a selector condition.");
+        }
+
         if ((args.pierce !== undefined || args.frame !== undefined) && kind !== "selector") {
             throw new ToolError("pierce and frame only combine with a selector condition.");
         }

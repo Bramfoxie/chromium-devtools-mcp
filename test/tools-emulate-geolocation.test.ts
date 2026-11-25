@@ -55,6 +55,86 @@ const overrides = (fake: FakeAccess) =>
 const text = (result: { content: unknown }) => JSON.stringify(result.content);
 
 describe("emulate_geolocation", () => {
+    it("does not clean up permissions in a replacement session", async () => {
+        const { fake, runtime } = setup();
+        const access = fake.asAccess();
+        let release: () => void = () => undefined;
+        let signalStarted: () => void = () => undefined;
+        const gate = new Promise<void>((resolve) => (release = resolve));
+        const started = new Promise<void>((resolve) => (signalStarted = resolve));
+
+        runtime.attach();
+
+        access.assertCurrent = (generation) => {
+            if (generation !== fake.generation) throw new Error("session reset");
+        };
+
+        const respond = fake.respond;
+
+        fake.respond = (tab, method, params) => {
+            if (method === "Emulation.setGeolocationOverride") {
+                signalStarted();
+
+                return gate;
+            }
+
+            return respond?.(tab, method, params);
+        };
+
+        const pending = runTool(
+            emulateGeolocation, { latitude: 1, longitude: 2, origin: SITE }, extra(), runtime,
+        );
+
+        await started;
+        fake.bumpGeneration();
+        fake.permissions.length = 0;
+        release();
+        const result = await pending;
+
+        expect(result.isError).toBe(true);
+        expect(fake.permissions).toEqual([]);
+        expect(runtime.emulation.snapshot("tab1").geolocation).toBeUndefined();
+    });
+
+    it("does not apply geolocation after a session reset during permission grant", async () => {
+        const { fake, runtime } = setup();
+        const access = fake.asAccess();
+        const setPermission = fake.setPermission.bind(fake);
+        let release: () => void = () => undefined;
+        let signalStarted: () => void = () => undefined;
+        const gate = new Promise<void>((resolve) => (release = resolve));
+        const started = new Promise<void>((resolve) => (signalStarted = resolve));
+
+        runtime.attach();
+
+        access.assertCurrent = (generation) => {
+            if (generation !== fake.generation) throw new Error("session reset");
+        };
+
+        fake.setPermission = async (request) => {
+            await setPermission(request);
+
+            if (request.setting === "granted") {
+                signalStarted();
+                await gate;
+            }
+        };
+
+        const pending = runTool(
+            emulateGeolocation, { latitude: 1, longitude: 2, origin: SITE }, extra(), runtime,
+        );
+
+        await started;
+        fake.bumpGeneration();
+        fake.permissions.length = 0;
+        release();
+        const result = await pending;
+
+        expect(result.isError).toBe(true);
+        expect(overrides(fake)).toEqual([]);
+        expect(fake.permissions).toEqual([]);
+    });
+
     it("allows the origin of the tab, sets the position and reports what the page reads", async () => {
         const { fake, runtime } = setup();
         const result = await runTool(

@@ -51,31 +51,75 @@ export const downloads = defineTool({
         const { downloadState: state } = context;
 
         if (args.action === "allow") {
-            const directory = await context.artifacts.directory("downloads");
+            const change = state.beginChange(targetId);
 
-            await state.subscribe(targetId);
-            await context.access.send({
-                targetId,
-                method: "Page.enable",
-                params: {},
-            });
-            await context.access.send({
-                targetId,
-                method: "Page.setDownloadBehavior",
-                params: { behavior: "allow", downloadPath: directory.path },
-            });
-            state.allow(targetId, directory.path);
+            if (change === undefined) {
+                throw new ToolError("A download setting change is already in progress for this tab.");
+            }
 
-            return { tab: targetId, enabled: true, directory: directory.path };
+            const ensureCurrent = () => {
+                if (!change.current()) throw new ToolError("The tab closed while changing downloads.");
+            };
+
+            try {
+                const directory = await context.artifacts.directory("downloads");
+
+                ensureCurrent();
+                await state.subscribe(targetId);
+                ensureCurrent();
+                await context.access.send({
+                    targetId,
+                    method: "Page.enable",
+                    params: {},
+                });
+                ensureCurrent();
+                const previous = state.directoryOf(targetId);
+
+                change.transition();
+                state.allow(targetId, directory.path);
+
+                try {
+                    await context.access.send({
+                        targetId,
+                        method: "Page.setDownloadBehavior",
+                        params: { behavior: "allow", downloadPath: directory.path },
+                    });
+                    ensureCurrent();
+                } catch (error) {
+                    if (change.current() && state.directoryOf(targetId) === directory.path) {
+                        if (previous === undefined) state.deny(targetId);
+                        else state.allow(targetId, previous);
+                    }
+
+                    throw error;
+                }
+
+                return { tab: targetId, enabled: true, directory: directory.path };
+            } finally {
+                change.end();
+            }
         }
 
         if (args.action === "deny") {
-            await context.access.send({
-                targetId,
-                method: "Page.setDownloadBehavior",
-                params: { behavior: "deny" },
-            });
-            state.deny(targetId);
+            const change = state.beginChange(targetId);
+
+            if (change === undefined) {
+                throw new ToolError("A download setting change is already in progress for this tab.");
+            }
+
+            try {
+                change.transition();
+                await context.access.send({
+                    targetId,
+                    method: "Page.setDownloadBehavior",
+                    params: { behavior: "deny" },
+                });
+                if (!change.current()) throw new ToolError("The tab closed while changing downloads.");
+
+                state.deny(targetId);
+            } finally {
+                change.end();
+            }
 
             return { tab: targetId, enabled: false };
         }
