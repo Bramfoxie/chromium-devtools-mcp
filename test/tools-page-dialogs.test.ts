@@ -91,7 +91,7 @@ describe("page_dialogs", () => {
 
         const accepted = await runTool(
             pageDialogs,
-            { action: "accept", promptText: "Milana" },
+            { action: "accept", promptText: "Alex" },
             extra(),
             runtime,
         );
@@ -103,7 +103,7 @@ describe("page_dialogs", () => {
         });
         expect(fake.sent.at(-1)).toMatchObject({
             method: "Page.handleJavaScriptDialog",
-            params: { accept: true, promptText: "Milana" },
+            params: { accept: true, promptText: "Alex" },
         });
 
         fake.emit("cdp.event", {

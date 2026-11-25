@@ -203,8 +203,8 @@ describe("DialogState", () => {
         const { fake, state } = dialogs();
 
         opening(fake, "tab1", { url: "https://a.example/", message: "name?", type: "prompt" });
-        await state.resolve("tab1", true, "Milana");
-        expect(fake.sent.at(-1)?.params).toEqual({ accept: true, promptText: "Milana" });
+        await state.resolve("tab1", true, "Alex");
+        expect(fake.sent.at(-1)?.params).toEqual({ accept: true, promptText: "Alex" });
     });
 
     it("records one entry when the browser acks the resolve", async () => {
