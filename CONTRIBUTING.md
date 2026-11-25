@@ -21,10 +21,6 @@ The root package temporarily overrides `minimatch` for ESLint and TypeScript ESL
 - `npm test`: unit tests and, when a Chrome is found, integration tests in a temporary profile; the test of the built server over stdio runs only when `dist/` exists, so build first
 - `npm run build`: compile to `dist/`
 
-## Temporary VM checks
-
-For an ad hoc VM check, create a unique working directory under the OS temporary directory for source archives, dependencies, profiles, scripts and logs. Run the check there and remove that directory on success or failure, including when the check is interrupted. Copy any evidence that must be retained to a location chosen for that purpose before cleanup. Do not create test snapshots or logs in the user's home directory.
-
 ## Definition of done
 
 Run `npm run lint && npm run typecheck && npm run build && npm test`. Update the README and docs when behavior changes. Every new behavior has tests in `test/`, and a bug fix starts with a failing test. Unit tests need no browser and no network.
